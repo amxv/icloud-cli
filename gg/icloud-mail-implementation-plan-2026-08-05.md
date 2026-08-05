@@ -38,11 +38,13 @@ icloud man ...
 
 A user can securely connect multiple iCloud Mail accounts, assign friendly names and a default account, inspect discovered folders, synchronize recent and historical mail, watch for changes, read full bodies and raw MIME, search locally or explicitly remotely, export attachments, manage message flags and locations, send/reply/reply-all/forward, work with iCloud Drafts, and diagnose account or sync problems.
 
-The CLI is equally usable by humans and agents:
+The CLI is designed for agents first without becoming hostile to humans:
 
-- concise human output is the TTY default;
-- every command has stable `--json` output;
-- streaming commands use JSONL;
+- every command defaults to compact, clean plain text optimized for low context/token cost;
+- the default renderer is operation-aware: bounded summaries for lists/sync/status, essential headers plus bounded decoded-text excerpts for messages/threads, concise lifecycle lines for streams, and status plus stable IDs for writes;
+- default output never emits JSON, JSONL, HTML, raw MIME, full headers, decorative tables, ANSI decoration, or repeated request payloads unless the caller explicitly asks for that representation;
+- `--full`, `--format text|html|raw`, `--headers`, `--body-only`, and `--verbose` expose richer human/content views where supported;
+- every non-streaming command retains stable `--json` output and streaming/bulk commands retain explicit `--jsonl` output;
 - noninteractive commands never prompt implicitly;
 - dangerous or externally visible writes require explicit authorization;
 - errors have stable machine codes and retryability metadata;
@@ -90,7 +92,8 @@ flowchart LR
 - **`OutboundAttempt`** — a pre-send durable record with `pending`, `sent`, `failed`, or `unknown` outcome and optional idempotency key.
 - **`Draft`** — a message in local or remote draft state, optionally carrying a Drafts-folder location.
 - **`AppError`** — a typed error with stable code, message, retryability, and structured details.
-- **`OutputEnvelope`** — the stable JSON success/error boundary used by all non-streaming commands.
+- **`CompactTextRenderer`** — the universal default output boundary, producing bounded operation-specific plain text without JSON/HTML/raw payload expansion or decorative noise.
+- **`OutputEnvelope`** — the stable opt-in JSON success/error boundary used by all non-streaming commands.
 
 Local implementation names may vary. These names and responsibilities do not: later phases and public contracts depend on them.
 
@@ -178,8 +181,14 @@ Command names are stable; shallow aliases may be added only when they do not cre
 
 ### Output contract
 
-- Human output goes to stdout; warnings and errors go to stderr.
-- `--json` emits exactly one `OutputEnvelope`:
+- Compact plain text is the default for every command, whether stdout is a TTY or redirected to an agent. Normal execution must not require an agent to pass a flag merely to avoid JSON, HTML, raw MIME, or verbose prose.
+- The compact renderer uses stable field order, omits empty/default fields, avoids borders and repeated labels, keeps pages bounded, prints stable IDs needed for follow-up actions, and never repeats a body or request value the caller already supplied unless review is the command's purpose.
+- List/search/inbox/latest output emits one concise record per result plus a minimal next-cursor/more marker. Sync/status/doctor output emits one summary per account/folder and only actionable warnings or failures; per-message/per-stage detail requires `--verbose`.
+- Message and thread reads default to essential identity/routing fields and a bounded decoded plain-text excerpt. `--full` returns complete decoded text; `--format text|html|raw`, `--headers`, and `--body-only` select explicit richer representations. HTML and raw MIME are never selected implicitly.
+- Successful write output defaults to outcome plus stable attempt/message/thread/draft/location IDs and any next action. It does not echo submitted bodies, HTML, headers, recipient lists, or attachment paths unless required to explain a failure. `--dry-run` is the deliberate review exception: it renders the normalized envelope and clean text body once, compactly, with richer header/HTML/raw detail only when requested.
+- Streaming/watch commands default to concise plain-text lifecycle lines; `--jsonl` opts into typed JSONL events. Bulk commands likewise use compact per-item text unless `--jsonl` is requested.
+- Plain-text success output goes to stdout; warnings and errors go to stderr.
+- `--json` opts into exactly one `OutputEnvelope`:
 
 ```json
 {"ok":true,"data":{},"meta":{"request_id":"..."}}
@@ -191,14 +200,29 @@ or:
 {"ok":false,"error":{"code":"...","message":"...","retryable":false,"details":{}},"meta":{"request_id":"..."}}
 ```
 
-- Watch and other streaming operations emit one JSON object per line with `event`, `sequence`, `account_id`, timestamp, and typed payload or error.
+- With `--jsonl`, watch and other streaming/bulk operations emit one JSON object per line with `event`, `sequence`, `account_id`, timestamp, and typed payload or error.
+- `--json`, `--jsonl`, `--full`, `--verbose`, `--headers`, `--body-only`, and content-format flags are orthogonal opt-ins where meaningful; help must state when combinations are invalid or when JSON intentionally omits body data unless a content-bearing mode was also requested.
 - Secrets and body content are omitted from diagnostics unless the command explicitly requests that content.
 - Stable exit-code classes distinguish usage, configuration, authentication, unavailable/timeout, conflict/lock, not-found, safety confirmation, and internal failure.
-- `NO_COLOR` is honored and redirected/non-TTY output does not contain terminal decoration.
+- Compact-output golden fixtures carry byte/line budgets for representative commands so later phases cannot silently bloat the default agent context. Tokenizer-specific counts may be sampled, but correctness must not depend on one model tokenizer.
+- `NO_COLOR` is honored; the compact default contains no ANSI decoration or box-drawing output even on a TTY.
+
+Representative compact shapes establish the intended information density. Empty fields are omitted, parent context appears once, excerpts are bounded, and `next=` appears only when another page exists:
+
+```text
+sync account=personal folder=INBOX fetched=12 new=10 updated=2 flags=4 more=false
+msg msg_01 2026-08-05T18:42Z unread from=alice@example.com subject="Launch notes" — Can you review the final…
+thread th_01 messages=3 unread=1 subject="Launch notes"
+  msg msg_01 18:42Z alice@example.com — Can you review the final…
+  msg msg_02 19:07Z me — Reviewed; two comments…
+sent attempt=send_01 message=msg_03 thread=th_01 state=sent
+```
+
+Commands may use a command-specific compact shape, but they must preserve the same rules: sufficient information to decide the next action, stable IDs for that action, no repeated parent/request data, and a clear `more`/`next`/warning marker whenever omitted information changes what the caller should do.
 
 ### Send-safety contract
 
-- `--dry-run` renders the exact normalized outgoing envelope, headers, body-part summary, and attachment metadata without contacting SMTP.
+- `--dry-run` contacts no SMTP server and defaults to one compact review: normalized envelope, safety-relevant headers, clean decoded text body once, body-part summary, and attachment metadata. `--verbose`, `--headers`, `--format html|raw`, and `--json` explicitly expand that review.
 - In an interactive TTY, a real externally visible send may ask for confirmation unless `--yes` is supplied.
 - In noninteractive mode, send, draft-send, permanent delete, destructive folder deletion, and similarly dangerous operations fail with a safety error unless `--yes` is supplied.
 - `--idempotency-key` is accepted on externally visible writes. Reusing it with the same normalized request returns the original attempt; reusing it with a different request is a conflict.
@@ -208,7 +232,7 @@ or:
 
 ### Synthesis and alignment check
 
-The requested outcome is not a thin wrapper around the five files in `internal/mailprovider/icloud`. It is a complete local mail control plane for agents, using the working AMAOS behavior as evidence while removing its case/document/event dependencies. The target must preserve the mature parts—account profiles, resumable sync, normalized messages, attachments, search, reply policy, safe previews, diagnostics, and JSON output—while changing the data and protocol shapes that made the current defects representable.
+The requested outcome is not a thin wrapper around the five files in `internal/mailprovider/icloud`. It is a complete local mail control plane for agents, using the working AMAOS behavior as evidence while removing its case/document/event dependencies. The target must preserve the mature parts—account profiles, resumable sync, normalized messages, attachments, search, reply policy, safe previews, diagnostics, and JSON output—while making compact token-efficient plain text the universal default and changing the data/protocol shapes that made the current defects representable.
 
 The plan interprets “full-feature mail API through the command line” as broad iCloud Mail coverage: all folders, message bodies/raw MIME/attachments, flags and moves, send/reply/forward, drafts, sync/backfill/watch/repair, search, and agent-safe machine contracts. It does not interpret the request as pixel-level parity with Apple Mail, a hosted synchronization service, or work on non-Mail iCloud services in this track.
 
@@ -457,14 +481,15 @@ The plan proceeds on the following falsifiable assumptions.
 
 ---
 
-#### 16. Output and error format
+#### 16. Default output, expansion modes, and error format
 
 **One-way public contract.**
 
-- **A. Stable success/error envelopes for `--json`, JSONL for streams, typed exit classes.** — **Recommended**
-- **B. Emit command-specific bare JSON values and free-form stderr errors.**
+- **A. Universal compact plain-text default; explicit full/text/HTML/raw/verbose modes; stable `--json` envelopes and opt-in `--jsonl`; typed exit classes.** — **Recommended**
+- **B. Default to JSON/JSONL because agents are primary callers.**
+- **C. Let every command invent its own human and machine output shape.**
 
-**Why A:** agents can handle every command through one parser and reason about retryability without scraping text. B resembles the source CLI but makes automation command-specific.
+**Why A:** agents usually need the smallest sufficient answer, not a schema-sized response. Compact text avoids context bloat for ordinary reads and writes, while explicit JSON/JSONL remains available when structural parsing matters and full/HTML/raw modes remain available when content fidelity matters. B spends tokens on keys, braces, null/default fields, and duplicated structure on every call; C creates command-specific scraping and uncontrolled output growth.
 
 **Selected:** A.
 
@@ -568,12 +593,12 @@ An independent reviewer can mark this track complete only when all applicable it
 29. Interrupted processes leave a valid SQLite database, valid content-addressed blobs, and retryable checkpoints; temporary blobs are cleaned or repairable.
 30. `sync status`, `checkpoints`, `rebaseline`, `backfill`, and `repair` describe what will change and never delete stored messages merely to move a cursor.
 31. Historical backfill can be resumed by folder and bounded by date/count/page controls without disturbing the forward incremental checkpoint.
-32. `sync watch` uses IDLE when supported, falls back explicitly when not, survives reconnects with bounded backoff, and emits ordered JSONL lifecycle events.
+32. `sync watch` uses IDLE when supported, falls back explicitly when not, survives reconnects with bounded backoff, and defaults to concise ordered plain-text lifecycle lines; `--jsonl` emits the documented typed event stream.
 
 ### Reading, bodies, raw mail, and attachments
 
-33. Inbox/latest/list commands are paginated with stable cursors and use indexed store queries rather than whole-mailbox in-memory filtering.
-34. A message can be shown as normalized metadata, decoded text, decoded HTML, headers, body-only content, or raw RFC822/EML.
+33. Inbox/latest/list commands are paginated with stable cursors, use indexed store queries rather than whole-mailbox in-memory filtering, and default to one compact record per result with only stable identity, sender/subject/time/state, a bounded snippet, and the next-cursor/more marker.
+34. A message can be shown as compact metadata plus a bounded decoded plain-text excerpt, complete decoded text, decoded HTML, headers, body-only content, or raw RFC822/EML; only the compact plain-text representation is selected by default.
 35. MIME-word and body charset decoding correctly normalizes supported non-UTF-8 subjects, names, filenames, and bodies to UTF-8 while preserving raw bytes.
 36. Multipart/alternative, multipart/mixed, nested multipart, inline resources, and `message/rfc822` attachments are represented without losing MIME metadata.
 37. Raw MIME and large attachment data are streamed to/from the content-addressed blob store under configurable size limits rather than held wholly in SQLite.
@@ -582,7 +607,7 @@ An independent reviewer can mark this track complete only when all applicable it
 
 ### Search and threading
 
-40. Local search supports body/snippet, sender, recipients, subject, RFC Message-ID, folder, flags, date range, attachment filename/type, account, and result limit with keyset pagination.
+40. Local search supports body/snippet, sender, recipients, subject, RFC Message-ID, folder, flags, date range, attachment filename/type, account, and result limit with keyset pagination; default results are compact bounded text rather than full matched bodies or JSON.
 41. Local FTS results update transactionally when messages, bodies, folders, or deletions change.
 42. Explicit remote search can find unsynchronized provider messages, identify its remote nature in output, and optionally hydrate selected results into the local index without changing unrelated checkpoints.
 43. A normal A -> B -> C RFC References chain appears as one thread even though B and C have different immediate `In-Reply-To` values.
@@ -599,7 +624,7 @@ An independent reviewer can mark this track complete only when all applicable it
 
 ### Sending, replying, forwarding, and drafts
 
-51. `mail send --dry-run` emits the exact normalized envelope/header/body-part/attachment plan and performs no SMTP connection.
+51. `mail send --dry-run` performs no SMTP connection and defaults to a compact review containing the normalized envelope, clean decoded text body once, body-part/attachment summary, and safety-relevant headers; verbose/HTML/raw/header detail remains explicit.
 52. A noninteractive real send fails without `--yes`; an interactive send can be reviewed and confirmed.
 53. New sends support display-name From, To/CC/BCC, Reply-To, custom safe headers, text and HTML alternatives, stdin/file bodies, and filesystem attachments.
 54. BCC recipients are included in the SMTP envelope and absent from message headers and non-authorized logs/output.
@@ -615,26 +640,32 @@ An independent reviewer can mark this track complete only when all applicable it
 
 ### Agent and operational contract
 
-64. Every non-streaming command has a stable JSON success/error envelope; every streaming command has documented JSONL event types.
-65. Machine errors include stable code and retryability without leaking secret values, raw authentication responses, or unintended message body content.
-66. Non-TTY execution never waits for an implicit prompt; missing required authorization returns a safety error immediately.
-67. Global account selection is deterministic: explicit flag, then configured default, otherwise a typed ambiguity/no-account error.
-68. Long operations honor cancellation and timeouts; cancellation does not convert an unknown provider outcome into a safe retry.
-69. Diagnostics distinguish configuration, secret resolution, DNS/connectivity, TLS, IMAP auth, SMTP auth, folder discovery, database, blob, checkpoint, lock, and send-attempt health.
-70. Human output honors `NO_COLOR`; JSON/JSONL is free of decoration and remains parseable when stdout is redirected.
+64. Every command defaults to compact plain text with stable field order, bounded pages/excerpts, no decorative table borders or ANSI sequences, no empty/default-field noise, and no implicit JSON, JSONL, HTML, raw MIME, full headers, or verbose diagnostics.
+65. Default list/search/inbox/latest output emits one concise result record plus the minimum pagination marker; default sync/status/doctor output emits compact account/folder summaries and only actionable warnings, while per-item/per-stage details require `--verbose`.
+66. Default message/thread output includes stable IDs, essential routing/time/state fields, and bounded decoded plain-text excerpts; `--full`, `--format text|html|raw`, `--headers`, and `--body-only` expose the retained complete representations explicitly.
+67. Default successful write output reports outcome, stable IDs, and required next action without echoing supplied bodies, HTML, headers, recipient lists, or attachment paths; dry-run presents review content exactly once in compact text unless richer modes are requested.
+68. Streaming/watch and bulk commands default to concise plain-text lines; every streaming/bulk command has documented opt-in `--jsonl` event/item types.
+69. Every non-streaming command has a stable opt-in `--json` success/error envelope, and JSON/body expansion follows documented redaction and size rules rather than dumping every stored field by default.
+70. Representative compact outputs have golden fixtures and explicit byte/line budgets that fail when default output gains repeated labels, duplicated payloads, unbounded bodies, verbose diagnostics, or schema-like noise without an approved contract change.
+71. Machine errors include stable code and retryability without leaking secret values, raw authentication responses, or unintended message body content.
+72. Non-TTY execution never waits for an implicit prompt; missing required authorization returns a safety error immediately.
+73. Global account selection is deterministic: explicit flag, then configured default, otherwise a typed ambiguity/no-account error.
+74. Long operations honor cancellation and timeouts; cancellation does not convert an unknown provider outcome into a safe retry.
+75. Diagnostics distinguish configuration, secret resolution, DNS/connectivity, TLS, IMAP auth, SMTP auth, folder discovery, database, blob, checkpoint, lock, and send-attempt health while keeping the default summary bounded.
+76. Compact text honors `NO_COLOR` and remains undecorated when stdout is redirected; JSON/JSONL remains parseable and decoration-free.
 
 ### Quality, release, and scope
 
-71. Protocol behavior has deterministic fake-server/fixture coverage for cursor paging, flags, special-use folders, IDLE, MOVE fallback, UIDVALIDITY, MIME charsets, archive/unarchive, and ambiguous SMTP outcomes.
-72. Parser and identity boundaries have fuzz/property coverage for malformed RFC822, headers, MIME trees, mailbox names, references, and dedupe/rethread invariants.
-73. Optional live integration tests can run against a disposable iCloud account without hard-coded credentials and are excluded safely when credentials are absent.
-74. Large-mailbox query plans and representative large-message/attachment tests demonstrate bounded memory and responsive paginated reads.
-75. The release matrix continues to build without CGO for supported macOS, Linux, and Windows architectures, and release assets/npm installation invoke `icloud` successfully.
-76. Checksums and release metadata cover every native artifact; package contents include required man/completion/docs assets.
-77. The docs site contains setup, app-specific-password safety, command reference, agent usage, JSON schemas, sync semantics, troubleshooting, privacy/storage, and changelog content matching the shipped CLI.
-78. No production code, command, persisted schema, help text, or documentation refers to AMA, AMAOS, cases, immigration, document requests, or Gmail.
-79. No permanent copy of the hand-written AMAOS IMAP path, JSON whole-state store, template `hello` command, or dual `icloud-cli` executable remains after cutover.
-80. iCloud Contacts, Calendar, Drive, Notes, Photos, Find My, and a hosted mail service are explicitly outside this implementation track.
+77. Protocol behavior has deterministic fake-server/fixture coverage for cursor paging, flags, special-use folders, IDLE, MOVE fallback, UIDVALIDITY, MIME charsets, archive/unarchive, and ambiguous SMTP outcomes.
+78. Parser and identity boundaries have fuzz/property coverage for malformed RFC822, headers, MIME trees, mailbox names, references, and dedupe/rethread invariants.
+79. Optional live integration tests can run against a disposable iCloud account without hard-coded credentials and are excluded safely when credentials are absent.
+80. Large-mailbox query plans and representative large-message/attachment tests demonstrate bounded memory and responsive paginated reads.
+81. The release matrix continues to build without CGO for supported macOS, Linux, and Windows architectures, and release assets/npm installation invoke `icloud` successfully.
+82. Checksums and release metadata cover every native artifact; package contents include required man/completion/docs assets.
+83. The docs site contains setup, app-specific-password safety, compact-default/full-text/HTML/raw/JSON/JSONL output guidance, command reference, agent usage, JSON schemas, sync semantics, troubleshooting, privacy/storage, and changelog content matching the shipped CLI.
+84. No production code, command, persisted schema, help text, or documentation refers to AMA, AMAOS, cases, immigration, document requests, or Gmail.
+85. No permanent copy of the hand-written AMAOS IMAP path, JSON whole-state store, template `hello` command, or dual `icloud-cli` executable remains after cutover.
+86. iCloud Contacts, Calendar, Drive, Notes, Photos, Find My, and a hosted mail service are explicitly outside this implementation track.
 
 ## Plan Phases
 
@@ -643,10 +674,11 @@ An independent reviewer can mark this track complete only when all applicable it
 1. Start from the current `main`, inspect Git status/log, read this plan, and reconcile [`gg/progress.md`](./progress.md) against code before changing anything.
 2. Read only the phase-scoped sweep sections and source regions listed below; do not reload the entire reference repository by habit.
 3. Use the existing Zodex checkout `/tmp/icloud-cli-recon/gg-ama` and keep `gg-ama` read-only. Port behavior and tests deliberately; do not copy AMA storage/contracts/case/event dependencies.
-4. A phase is complete only when its positive evidence exists, the relevant regression scope passes, help/docs for commands added in that phase are updated, and the branch is usable at the boundary.
-5. Update `gg/progress.md` in the same commit or final commit for the phase. Record current SHA, files, validation evidence, decisions, risks, and the exact next handoff.
-6. If evidence invalidates this plan, append an entry under Amendments immediately and identify every affected later phase. Do not silently reinterpret an acceptance criterion.
-7. Push coherent commits directly to `main`; never leave generated secrets, mailbox fixtures containing private mail, local databases, or blob data tracked.
+4. Every phase that introduces or changes a command must define and test its compact plain-text default, including field omission, page/excerpt bounds, byte/line budget, and absence of implicit JSON/JSONL/HTML/raw/verbose content; it must also preserve every applicable explicit expansion mode.
+5. A phase is complete only when its positive evidence exists, the relevant regression scope passes, help/docs for commands added in that phase are updated, and the branch is usable at the boundary.
+6. Update `gg/progress.md` in the same commit or final commit for the phase. Record current SHA, files, validation evidence, decisions, risks, and the exact next handoff.
+7. If evidence invalidates this plan, append an entry under Amendments immediately and identify every affected later phase. Do not silently reinterpret an acceptance criterion.
+8. Push coherent commits directly to `main`; never leave generated secrets, mailbox fixtures containing private mail, local databases, or blob data tracked.
 
 Future-phase reading entries marked **phase output** name files that an earlier phase is required to create. They do not exist at the planning SHA; the implementation agent must verify their current path and public contract on the live branch before proceeding. A rename is acceptable only when recorded in `gg/progress.md` or Amendments so later agents can resolve it.
 
@@ -675,7 +707,7 @@ Future-phase reading entries marked **phase output** name files that an earlier 
 
 Replace the template dispatcher with a Cobra command tree whose displayed and installed command is `icloud`. Move the process entrypoint to the final command path, align Makefile, npm bin mapping, wrapper names, postinstall fallback, project identity, release workflow, and version output, and remove the `hello` command and template help.
 
-Create the shared CLI boundary for later phases: global home/account/timeout/output/no-input controls, grouped help, typed `AppError`, stable exit-code classes, `OutputEnvelope`, JSONL event primitives, request IDs, `NO_COLOR`, and deterministic stdout/stderr behavior. Add `version`, initial `capabilities`, completion generation, and a man-generation command capable of rendering the current tree even though most mail commands do not exist yet.
+Create the shared CLI boundary for later phases: global home/account/timeout/output/no-input controls, grouped help, typed `AppError`, stable exit-code classes, `CompactTextRenderer`, opt-in `OutputEnvelope`, opt-in JSONL event primitives, request IDs, `NO_COLOR`, and deterministic stdout/stderr behavior. Compact plain text is the universal default, not a TTY-only presentation layer. Define reusable compact record/summary/event primitives, omission rules, excerpt/page limits, and global or command-local `--full`, `--verbose`, `--format`, `--headers`, `--body-only`, `--json`, and `--jsonl` precedence without making unsupported combinations appear valid. Add `version`, initial `capabilities`, completion generation, and a man-generation command capable of rendering the current tree even though most mail commands do not exist yet.
 
 Expected decomposition:
 
@@ -687,7 +719,7 @@ Do not add storage, account configuration, or network behavior in this phase.
 
 #### Validation strategy
 
-Positive evidence must show that the branch now builds and exercises `icloud --help`, `icloud version`, `icloud capabilities --json`, each completion shell, man generation, JSON success/error envelopes, typed usage exits, redirected output, and `NO_COLOR`. At least one test must fail against the current scaffold because it expects the `icloud` identity and grouped command contract.
+Positive evidence must show that the branch now builds and exercises `icloud --help`, compact `icloud version`/`icloud capabilities`, `icloud capabilities --json`, each completion shell, man generation, JSON success/error envelopes, opt-in JSONL primitives, typed usage exits, redirected output, and `NO_COLOR`. Golden tests must prove the default is undecorated compact text, omits empty/default fields and JSON punctuation, and stays inside explicit byte/line budgets. At least one test must fail against the current scaffold because it expects the `icloud` identity and grouped command/output contract.
 
 Regression scope includes linker version injection, every release target's expected native asset name, npm wrapper fallback, unknown-command suggestions, help on stdout, errors on stderr, and non-zero process exits.
 
@@ -729,7 +761,7 @@ The first migration should create `accounts`, `credential_refs`, and schema meta
 
 #### Validation strategy
 
-Positive evidence must demonstrate a clean first run, idempotent reopen, embedded migration version reporting, an empty human/JSON account list, a not-found account error, deterministic isolated `ICLOUD_HOME`, stable immutable IDs, and two processes contending for the migration lock without corrupting the database.
+Positive evidence must demonstrate a clean first run, idempotent reopen, embedded migration version reporting, an empty compact-text account list and the equivalent opt-in JSON envelope, a not-found account error, deterministic isolated `ICLOUD_HOME`, stable immutable IDs, and two processes contending for the migration lock without corrupting the database.
 
 Regression scope includes every Phase 1 help/output/release check and CGO-disabled builds with the SQLite driver.
 
@@ -755,7 +787,7 @@ Regression scope includes every Phase 1 help/output/release check and CGO-disabl
 
 - `apps/amaos/internal/mailprovider/icloud/secrets.go` (read in full) — current `env:`/`file:` schemes and redacted failures.
 - `apps/amaos/internal/cases/service.go` (`RegisterMailboxAccount`, `findMailboxAccountByEmail`, `toMailboxAccountSummary`) — upsert/list semantics and fields worth retaining.
-- `apps/amaos/internal/cli/app.go` (`runMailAccount` account list/connect/status parsing) — current human/JSON ergonomics, not command names.
+- `apps/amaos/internal/cli/app.go` (`runMailAccount` account list/connect/status parsing) — current text/JSON ergonomics, not command names.
 - `apps/amaos/internal/mailprovider/icloud/adapter_test.go` (`TestEnvFileSecretResolverReadsEnvReferences`, `TestEnvFileSecretResolverRejectsUnsupportedRefs`) — minimum portable tests.
 - `gg/icloud-mail-sweep-2026-08-05.md` (Authentication, Account registration, Landmines 22, 25-27) — current limits.
 
@@ -876,7 +908,7 @@ Do not fetch message bodies or create mailbox-management commands yet.
 
 #### Validation strategy
 
-Positive evidence must cover special-use discovery, common Sent fallback only when special-use is absent, localized/modified UTF-7 names, nested folders and delimiters, non-selectable containers, missing optional folders, policy preservation across rediscovery, remote status counts, and human/JSON folder output.
+Positive evidence must cover special-use discovery, common Sent fallback only when special-use is absent, localized/modified UTF-7 names, nested folders and delimiters, non-selectable containers, missing optional folders, policy preservation across rediscovery, remote status counts, and compact-default/opt-in-JSON folder output.
 
 Regression scope includes account validation, timeouts, locks, stable account IDs, and zero-account/no-default behavior.
 
@@ -895,7 +927,7 @@ Regression scope includes account validation, timeouts, locks, stable account ID
 **Phase output:**
 
 - `Folder`, IMAP fetch/search interfaces, account locks, and repositories from Phases 2-5.
-- `OutputEnvelope` and pagination conventions from Phase 1.
+- `CompactTextRenderer`, opt-in `OutputEnvelope`, and pagination conventions from Phase 1.
 
 **Reference behavior and defects:**
 
@@ -930,7 +962,7 @@ icloud mail sync status
 icloud mail sync checkpoints
 ```
 
-Inbox reads use repository pagination and return stable cursors. The default sync operates only enabled folders, but this phase implements Inbox content only; Sent is handled in Phase 10.
+Inbox reads use repository pagination and return stable cursors. Default `mail sync` prints one compact account/folder summary containing fetched/new/updated/flag/location counts, warning/failure state, `more`, and the next cursor only when applicable; it does not enumerate every synchronized message. Default `mail inbox` prints one bounded record per message with stable ID, time, unread/flag state, sender, subject, bounded snippet, attachment count only when nonzero, and a minimal next-cursor marker. The default sync operates only enabled folders, but this phase implements Inbox content only; Sent is handled in Phase 10.
 
 #### Validation strategy
 
@@ -986,13 +1018,13 @@ icloud mail message raw <id>
 icloud mail message export <id> --output <path|->
 ```
 
-`message show` supports metadata, headers, text, HTML, and body-only modes. Raw/export commands stream bytes. Human output must not dump HTML or raw MIME accidentally; the caller opts into content-bearing modes. JSON output identifies whether body/raw/parts are locally present or require explicit remote hydration later.
+`message show` defaults to a compact block containing stable message/thread/account IDs, From/To/CC only when present, subject, timestamp, state/location summary, attachment count, and a bounded best decoded plain-text excerpt. It supports explicit complete decoded text (`--full` with text format), HTML, headers, body-only, metadata-only, and raw modes. Raw/export commands stream bytes. Default output must never dump complete long bodies, HTML, headers, MIME trees, or raw MIME accidentally. JSON output remains opt-in and identifies whether body/raw/parts are locally present or require explicit remote hydration later; body-bearing JSON requires the same explicit content request rather than including full bodies automatically.
 
 Do not implement attachment saving yet; attachment parts may be indexed in this phase but byte export lands in Phase 8.
 
 #### Validation strategy
 
-Positive evidence must cover UTF-8 and non-UTF-8 encoded subjects/names/bodies, multipart/alternative selection, nested multipart, inline content metadata, malformed Date without wall-clock substitution, unknown encodings with preserved raw bytes, `message/rfc822`, exact raw round-trip, large-body streaming, and each requested output mode.
+Positive evidence must cover UTF-8 and non-UTF-8 encoded subjects/names/bodies, multipart/alternative selection, nested multipart, inline content metadata, malformed Date without wall-clock substitution, unknown encodings with preserved raw bytes, `message/rfc822`, exact raw round-trip, large-body streaming, compact excerpt truncation with an explicit continuation/full hint, and each requested full-text/HTML/headers/body-only/raw/JSON output mode. A golden compact fixture must stay bounded even for a very large message.
 
 Regression scope includes Phase 6 cursor/transaction tests, Inbox pagination, blob integrity, JSON redaction, and migration upgrade from a Phase 6 database.
 
@@ -1176,7 +1208,7 @@ icloud mail thread show <thread-id|message-id>
 icloud mail latest
 ```
 
-Thread display and JSON make clear that this is a local reconstructed conversation, not an Apple native thread identifier.
+Thread display and JSON make clear that this is a local reconstructed conversation, not an Apple native thread identifier. Default thread output prints thread ID/subject/count/unread/participants/folders once, then one compact chronological message entry with message ID, relative or absolute time, sender, state, attachment count when nonzero, and bounded decoded-text excerpt. It does not repeat the thread/account/participant block for every message; `--full` expands complete decoded text for every selected message and the existing HTML/headers/raw/JSON modes remain explicit.
 
 #### Validation strategy
 
@@ -1221,7 +1253,7 @@ icloud mail inbox [filters]
 icloud mail latest [filters]
 ```
 
-Define opaque keyset page cursors, deterministic tie-breaking, query metadata, result-kind selection (messages or threads), and snippets/highlights that never corrupt JSON or terminal output. Empty query with structured filters is valid; a remote query is not part of this phase.
+Define opaque keyset page cursors, deterministic tie-breaking, query metadata, result-kind selection (messages or threads), and bounded snippets/highlights. Default output is one compact line/block per hit with stable ID, sender/participants, subject, time/state, matched-field cue, and bounded excerpt; it does not repeat the query, dump full matched bodies, print every metadata field, or render JSON/table scaffolding. Empty query with structured filters is valid; a remote query is not part of this phase.
 
 #### Validation strategy
 
@@ -1265,7 +1297,7 @@ icloud mail message show <remote-ref> --remote [--cache]
 icloud mail sync --hydrate <remote-ref,...>
 ```
 
-Remote references carry account, folder, UIDVALIDITY, and UID. Hydration uses the same dedupe/message-location path as sync, records provenance, and leaves normal backfill/incremental frontiers unchanged. Bound result count and folder fan-out; require explicit all-folder intent.
+Remote references carry account, folder, UIDVALIDITY, and UID. Hydration uses the same dedupe/message-location path as sync, records provenance, and leaves normal backfill/incremental frontiers unchanged. Bound result count and folder fan-out; require explicit all-folder intent. Default remote-search output is a compact uncached-location summary with the minimum stable remote reference, folder, date, sender, subject, flags, and bounded provider snippet; it never fetches or prints full bodies as a side effect. Full message text, HTML, raw MIME, headers, and JSON require the same explicit content/output flags as local reads.
 
 #### Validation strategy
 
@@ -1310,7 +1342,7 @@ icloud mail send --to ... --subject ... [body options]
 
 Use `go-message` to stream a standards-compliant message and `go-smtp` over enforced STARTTLS. Support account display name, To/CC/BCC, Reply-To, text and HTML alternatives, safe custom headers, body/body-file/stdin, and generated RFC Message-ID. Validate and canonicalize addresses while preserving user display names where supplied.
 
-Create `outbound_attempts` and `idempotency_records`. Normalize the complete request before preview/idempotency comparison. Write a `pending` attempt before contacting SMTP. Implement exact dry-run output and TTY/non-TTY confirmation behavior from the hard contract. For this phase, messages have no filesystem attachments; Phase 15 adds them.
+Create `outbound_attempts` and `idempotency_records`. Normalize the complete request before preview/idempotency comparison. Write a `pending` attempt before contacting SMTP. Implement dry-run and TTY/non-TTY confirmation behavior from the hard contract. Compact dry-run prints recipients and safety-relevant headers once, the clean text body once, and body-part/attachment counts; full headers, HTML, raw MIME, and JSON remain explicit. A successful real send prints only outcome plus attempt/message/thread IDs and reconciliation state, not the submitted body or duplicated recipient payload. For this phase, messages have no filesystem attachments; Phase 15 adds them.
 
 After a proven SMTP acceptance, create the local outbound logical message and attempt state in one transaction. A proven pre-DATA/provider rejection is `failed`; an outcome that cannot prove acceptance is already represented as `unknown`, even though full Sent reconciliation lands next phase.
 
@@ -1493,7 +1525,7 @@ icloud mail delete <message-id> --from <folder>
 
 Use discovered folder identities. Prefer UID MOVE when supported; otherwise perform the library's safe COPY/STORE/EXPUNGE fallback and capture COPYUID/UIDPLUS mappings when available. Persist operation intent, reconcile returned/new locations and flags, and mark unresolved provider state for targeted sync. Archive only eligible non-Sent source locations; unarchive requires an Archive location and restores to Inbox; restore requires a Trash location and a deliberate destination rule.
 
-Permanent delete and ambiguous multi-location operations require explicit selection and noninteractive `--yes`. Thread convenience may expand to a previewed set of eligible locations, never remote header search across Sent.
+Permanent delete and ambiguous multi-location operations require explicit selection and noninteractive `--yes`. Thread convenience may expand to a previewed set of eligible locations, never remote header search across Sent. Default mutation output reports only operation outcome, message ID, source/destination folder/location IDs, new provider UID when known, unresolved reconciliation state, and required next action; it does not reprint message bodies, full headers, or the entire thread.
 
 #### Validation strategy
 
@@ -1587,7 +1619,7 @@ icloud mail sync repair [--account ...] [--check|--apply]
 
 Maintain separate forward and historical-backfill frontiers so older work cannot move or corrupt the new-mail checkpoint. Backfill is page-resumable, cancellation-safe, and reports progress/cursors. Rebaseline changes only the selected frontier and includes before/after evidence; it never deletes cached messages.
 
-`repair --check` audits database foreign keys, location uniqueness, missing/corrupt blobs, orphan temporary files, stale FTS rows, checkpoint/frontier consistency, thread redirects, unresolved dedupe conflicts, and outbound unknown attempts. `--apply` performs only deterministic repairs and requires explicit authorization for destructive cache cleanup. Provider truth recovery is targeted by account/folder/location and does not launch an uncontrolled full crawl.
+`repair --check` audits database foreign keys, location uniqueness, missing/corrupt blobs, orphan temporary files, stale FTS rows, checkpoint/frontier consistency, thread redirects, unresolved dedupe conflicts, and outbound unknown attempts. `--apply` performs only deterministic repairs and requires explicit authorization for destructive cache cleanup. Provider truth recovery is targeted by account/folder/location and does not launch an uncontrolled full crawl. Default status/backfill/rebaseline/repair output is a compact summary of checked/changed/pending counts, before/after frontiers where relevant, actionable warnings, and required next action. Per-row findings, query plans, and diagnostic traces require `--verbose` or structured JSON.
 
 #### Validation strategy
 
@@ -1628,11 +1660,11 @@ icloud mail watch [--account ...] [--all-accounts]
 
 Use IMAP IDLE for enabled high-priority folders when supported. On a notification, stop IDLE cleanly, run the ordinary bounded sync engine, emit result events, and resume. When IDLE is unsupported, use an explicit configurable polling fallback reported in status/output. Implement reconnect with bounded exponential backoff and jitter, periodic full reconciliation, credential/UIDVALIDITY/folder-change handling, and SIGINT/context cancellation.
 
-For all-account watch, coordinate one account worker per selected account within documented limits, preserving per-account locks and ordered per-account event sequences. The command is foreground and does not introduce a hidden daemon/service. JSONL events include startup, capability/mode, idle, change, sync result, reconnect, degraded, stopped, and completed.
+For all-account watch, coordinate one account worker per selected account within documented limits, preserving per-account locks and ordered per-account event sequences. The command is foreground and does not introduce a hidden daemon/service. Default output uses concise plain-text lifecycle lines, suppresses repeated idle/no-change chatter, and summarizes bounded sync results; `--verbose` expands operational detail. With `--jsonl`, typed events include startup, capability/mode, idle, change, sync result, reconnect, degraded, stopped, and completed.
 
 #### Validation strategy
 
-Positive evidence must process fake IDLE updates, stop IDLE before issuing sync commands, fall back to polling, reconnect after dropped connections, avoid a hot loop on auth failure, cancel promptly, serialize conflicting account operations, and emit valid ordered JSONL for one and several accounts.
+Positive evidence must process fake IDLE updates, stop IDLE before issuing sync commands, fall back to polling, reconnect after dropped connections, avoid a hot loop on auth failure, cancel promptly, serialize conflicting account operations, produce bounded compact text without repeated idle/no-change spam, and emit valid ordered JSONL only when requested for one and several accounts.
 
 Regression scope includes ordinary `mail sync`, checkpoint correctness, account health, no implicit prompts, timeout handling, and `NO_COLOR`/redirected output.
 
@@ -1711,18 +1743,19 @@ Regression scope includes ordinary send/reply, MIME/raw export, folder mutations
 Make the complete command tree predictable for agents without adding a second RPC-style product:
 
 - every write command accepts one documented JSON input shape via `--input-json <path|->`, mutually exclusive with equivalent write flags;
-- repeated/bulk message operations accept bounded ID lists or JSONL input and emit per-item JSONL results with explicit atomic versus continue-on-error mode;
-- `--request-id`, `--idempotency-key`, `--timeout`, `--account`, `--home`, `--no-input`, `--json`, and `--jsonl` have consistent precedence and help;
+- repeated/bulk message operations accept bounded ID lists or JSONL input and default to compact per-item text; `--jsonl` emits typed per-item results with explicit atomic versus continue-on-error mode;
+- `--request-id`, `--idempotency-key`, `--timeout`, `--account`, `--home`, `--no-input`, `--full`, `--verbose`, `--format`, `--headers`, `--body-only`, `--json`, and `--jsonl` have consistent precedence and help;
 - `icloud capabilities --json` includes command/version/schema/optional IMAP capability information and links request/response schema identifiers;
 - generated JSON Schemas describe stable account, folder, message, thread, attachment, checkpoint, attempt, draft, event, and error shapes;
 - dynamic completion resolves local account/folder IDs without network access or secret resolution;
-- output redaction and size controls prevent accidental body/raw dumps in bulk status output.
+- the compact renderer remains the default even for non-TTY agent execution; output redaction, pagination, excerpt limits, omitted-empty-field rules, and byte/line budgets prevent accidental body/raw/schema dumps or repeated payloads in ordinary and bulk output;
+- JSON/JSONL remains an explicit structural mode, while complete decoded text, HTML, raw MIME, headers, and verbose diagnostics remain explicit content/detail modes rather than being removed or silently folded into compact output.
 
 Do not add an embedded LLM, natural-language command parser, MCP server, HTTP daemon, or generic arbitrary-command JSON RPC in this phase.
 
 #### Validation strategy
 
-Positive evidence must run representative account, sync, search, send, reply, move, and draft writes from JSON stdin; reject mixed flag/JSON inputs; process bounded bulk state operations in atomic and continue modes; preserve ordered JSONL item results; validate emitted envelopes against generated schemas; and show noninteractive execution never waits for a prompt.
+Positive evidence must run representative account, sync, search, message/thread read, send, reply, move, and draft operations in the compact default; run representative writes from JSON stdin; reject mixed flag/JSON inputs; process bounded bulk state operations in compact text and in atomic/continue JSONL modes; validate emitted envelopes against generated schemas; demonstrate every retained full-text/HTML/raw/headers/verbose mode; enforce compact byte/line budgets; and show noninteractive execution never waits for a prompt.
 
 Regression scope includes every existing human command, dry-run/safety/idempotency, command help/completion, exit codes, body/secret redaction, and cancellation.
 
@@ -1753,7 +1786,9 @@ Replace all template product copy and build a complete public documentation set:
 - installation and first account setup;
 - Apple app-specific-password and keyring safety;
 - account/folder/sync/search/read/attachment/state/send/reply/forward/draft workflows;
-- agent/noninteractive JSON and JSONL usage;
+- token-efficient compact plain-text defaults for every command family, including the exact fields/excerpts/summaries shown and the flags that expand them;
+- agent/noninteractive compact, JSON, and JSONL usage;
+- full decoded text, HTML, raw MIME, headers, body-only, verbose diagnostics, pagination, and output-size controls;
 - output/error/schema reference;
 - sync checkpoint, backfill, rebaseline, IDLE, and repair semantics;
 - local privacy/data paths, backup, cache/blob, removal, and credential rotation;
@@ -1767,7 +1802,7 @@ Docs checks must detect command/help/schema drift. Generated references are buil
 
 #### Validation strategy
 
-Positive evidence must install the packed npm tarball on supported runner classes, invoke `icloud`, open a man page, generate/use each completion, verify release asset/checksum names, build/check the docs site serially, compare generated command reference/schema to the live command tree, and find no template/AMA wording.
+Positive evidence must install the packed npm tarball on supported runner classes, invoke `icloud`, open a man page, generate/use each completion, verify release asset/checksum names, build/check the docs site serially, compare generated command reference/schema to the live command tree, verify the docs explain compact defaults and every retained full-text/HTML/raw/headers/verbose/JSON/JSONL expansion, and find no template/AMA wording.
 
 Regression scope includes the full Go check suite, CGO-disabled cross builds, version injection, postinstall fallback, tag-driven publishing, and links/raw Markdown endpoints in the docs site.
 
@@ -1805,6 +1840,7 @@ Perform the terminal exhaustive hardening and cutover pass:
 - run race/concurrency/interruption/partial-failure suites;
 - run opt-in live receive/send/reply/move/draft/IDLE smoke tests with a disposable account and scrub generated artifacts;
 - review secret/BCC/body/log redaction and filesystem permissions;
+- measure representative default outputs for account/folder/inbox/search/message/thread/sync/watch/send/reply/move/doctor commands against their compact golden byte/line budgets, and reject duplicated payloads, decorative noise, unbounded excerpts, or accidental JSON/HTML/raw output;
 - verify database migration/repair from every released schema in this track;
 - review dependency licenses and pinning;
 - resolve or explicitly escalate every open progress item that affects acceptance;
@@ -1815,7 +1851,7 @@ This phase may fix defects discovered by exhaustive validation, but it must not 
 
 #### Validation strategy
 
-Positive evidence is a final acceptance matrix mapping every numbered criterion to code/tests/manual or live evidence, with no unexplained “not tested” for a gating item. The old skipped-UID, unread-reset, thread-fragmentation, Sent-to-Inbox unarchive, plaintext SMTP, full-view search, and duplicate-unknown-send scenarios must each have a failing-against-old/passing-now regression.
+Positive evidence is a final acceptance matrix mapping every numbered criterion to code/tests/manual or live evidence, with no unexplained “not tested” for a gating item. The old skipped-UID, unread-reset, thread-fragmentation, Sent-to-Inbox unarchive, plaintext SMTP, full-view search, and duplicate-unknown-send scenarios must each have a failing-against-old/passing-now regression. The matrix must also include representative compact-output snapshots and byte/line budgets alongside explicit full-text, HTML, raw, headers, verbose, JSON, and JSONL expansion tests.
 
 Regression scope is the entire repository: Go formatting/vet/test/race/fuzz where supported, npm package/install, cross-platform binaries, docs checks/build, generated-reference drift, release workflow validation, clean Git status, and optional live smoke evidence.
 

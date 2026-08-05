@@ -59,6 +59,8 @@ Before editing:
 During implementation:
 
 - optimize for the final architecture, not a minimal template patch;
+- enforce the compact-output contract from the first phase: clean token-efficient plain text is the default for every command and non-TTY agent run; JSON, JSONL, complete decoded text, HTML, raw MIME, headers, body-only views, and verbose diagnostics remain explicit opt-ins;
+- add golden default-output tests with bounded bytes/lines and reject repeated labels, duplicated request/body payloads, decorative tables/ANSI, unbounded excerpts, or implicit JSON/HTML/raw output;
 - keep the branch working at the phase boundary;
 - add positive tests whose result changes because of Phase 1, plus the regression scope named in the plan;
 - update command-local help and any documentation directly affected by the phase;
@@ -135,6 +137,8 @@ Implement as many contiguous complete phases as context safely permits, but neve
 - Keep work vertically exercisable. A phase is not complete because an unused backend/module exists.
 - Add phase-specific positive tests and the named regression scope. Use fake protocol servers/fixtures by default.
 - Maintain bounded pages, streaming blobs, transaction boundaries, locks, cancellation, secret/BCC/body redaction, and non-TTY safety.
+- Preserve compact plain text as the universal default for every command, including redirected/non-TTY agent use. Lists/sync/status must be bounded summaries; message/thread reads must use essential fields plus bounded decoded-text excerpts; writes must return outcome and stable IDs without echoing submitted payloads; watch/bulk must use concise text unless `--jsonl` is explicitly requested.
+- Do not remove or weaken `--json`, `--jsonl`, complete decoded text, HTML, raw MIME, headers, body-only, verbose, or export modes. They are explicit expansions. Add or maintain golden compact-output byte/line budgets so later phases cannot bloat default context.
 
 ## Progress, amendments, commits, and push
 
