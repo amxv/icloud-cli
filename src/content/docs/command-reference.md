@@ -9,10 +9,10 @@ summary: Starter commands, make targets, and docs commands in one scannable page
 ## Starter command
 
 ```bash
-mycli --help
-mycli hello
-mycli hello <name>
-mycli --version
+icloud-cli --help
+icloud-cli hello
+icloud-cli hello <name>
+icloud-cli --version
 ```
 
 Replace these commands with behavior specific to your project.
@@ -59,11 +59,11 @@ bun run docs:preview
 ## Main files
 
 ```bash
-cmd/mycli/main.go             # CLI entrypoint
+cmd/icloud-cli/main.go             # CLI entrypoint
 internal/app/app.go           # command parser and handlers
 internal/app/app_test.go      # starter tests
 internal/buildinfo/buildinfo.go # version plumbing
-bin/mycli.js                  # npm executable shim
+bin/icloud-cli.js                  # npm executable shim
 scripts/postinstall.js        # release binary installer
 .github/workflows/release.yml # release workflow
 src/content/docs/*.md         # docs content

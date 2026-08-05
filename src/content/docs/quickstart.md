@@ -31,7 +31,7 @@ The bootstrap command runs from the repository root and never reclones. Omit
 visibility for the normal anonymous npm installation path.
 
 For an existing clone, run `make bootstrap` with the identity options shown in the
-customization guide. No manual `mycli` rename sweep is required.
+customization guide. No manual `icloud-cli` rename sweep is required.
 
 ## Install dependencies
 
@@ -50,8 +50,8 @@ Use the make targets to validate and build the starter command:
 ```bash
 make check
 make build
-./dist/mycli --help
-./dist/mycli hello
+./dist/icloud-cli --help
+./dist/icloud-cli hello
 ```
 
 The sample command is intentionally small so it is easy to replace.

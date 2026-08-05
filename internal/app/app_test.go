@@ -32,7 +32,7 @@ func TestRunVersion(t *testing.T) {
 		t.Fatalf("Run returned error: %v", err)
 	}
 
-	if !strings.Contains(out.String(), "mycli ") {
+	if !strings.Contains(out.String(), "icloud-cli ") {
 		t.Fatalf("unexpected version output: %q", out.String())
 	}
 }

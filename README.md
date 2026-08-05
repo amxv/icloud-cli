@@ -4,24 +4,24 @@ Minimal template for shipping a Go CLI with:
 
 - one-command identity bootstrap after GitHub template cloning
 - a local command runner (`Makefile`)
-- npm global install wrapper (`bin/mycli.js`)
+- npm global install wrapper (`bin/icloud-cli.js`)
 - automatic GitHub Release + npm publish on tag
 - bundled ZueDocs-powered docs site
 
 ## Install (template example)
 
 ```bash
-npm i -g @amxv/go-cli-template
-mycli --help
+npm i -g @amxv/icloud-cli
+icloud-cli --help
 ```
 
 ## Commands in this starter
 
 ```bash
-mycli --help
-mycli hello
-mycli hello <name>
-mycli --version
+icloud-cli --help
+icloud-cli hello
+icloud-cli hello <name>
+icloud-cli --version
 ```
 
 ## Docs site
@@ -127,7 +127,7 @@ release. No local token synchronization or release orchestration is required.
 
 ## Project layout
 
-- `cmd/mycli/main.go`: CLI entrypoint
+- `cmd/icloud-cli/main.go`: CLI entrypoint
 - `internal/app/`: command logic
 - `internal/buildinfo/`: build-time version plumbing for `--version`
 - `scripts/postinstall.js`: installs binary from GitHub release (falls back to local `go build`)
@@ -144,4 +144,4 @@ See `AGENTS.md` and `CONTRIBUTORS.md` for complete dev/release instructions.
 
 ## License
 
-Apache-2.0
+Apache 2.0
