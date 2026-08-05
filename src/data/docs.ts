@@ -1,21 +1,21 @@
 export const siteConfig = {
-  name: "icloud-cli",
-  strapline: "A Go CLI shipped through npm",
+  name: "icloud",
+  strapline: "iCloud from the command line",
   description:
-    "Documentation for icloud-cli, a starter Go command-line tool template with npm distribution, GitHub release automation, and an embedded ZueDocs-powered docs site.",
+    "Install and use icloud, a local-first CLI designed for compact human and agent workflows.",
   repoUrl: "https://github.com/amxv/icloud-cli",
   accentColor: "#0369a1",
   accentColorDark: "#38bdf8",
   footerSections: [
     {
-      title: "icloud-cli",
+      title: "icloud",
       text:
-        "A starter Go CLI template with native binaries, npm installation, release automation, and docs included from day one."
+        "A local-first command-line client for iCloud services with compact output by default."
     },
     {
-      title: "What this site covers",
+      title: "Current command set",
       text:
-        "Installation, local development, command customization, release workflow, npm packaging, and docs site maintenance."
+        "Version and capability inspection, shell completion generation, man-page generation, and stable automation errors."
     },
     {
       title: "Repository",
@@ -26,12 +26,7 @@ export const siteConfig = {
   ]
 } as const;
 
-export const docCategories = [
-  "Start",
-  "Development",
-  "Distribution",
-  "Reference"
-] as const;
+export const docCategories = ["Start", "Guides", "Reference"] as const;
 
 export const primaryNav = [
   { href: "/docs", label: "Docs" },

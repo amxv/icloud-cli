@@ -1,28 +1,20 @@
 ---
 title: Changelog
-description: "Release notes for this CLI."
+description: Release notes and unreleased user-visible changes for icloud.
 order: 99
-category: Distribution
-summary: Placeholder changelog for projects created from this template.
+category: Reference
+summary: Public command, output, installation, and documentation changes.
 ---
 
-This page is a starter changelog for projects created from this template. Replace the placeholder entries with real release notes when you cut versions.
+## Unreleased
 
-## 0.1.0 - 2026-08-05
+- Replaced the placeholder command with the public `icloud` executable across Go builds, npm installation, project metadata, and release automation.
+- Added grouped Cobra help, compact `version` and `capabilities` commands, explicit JSON envelopes, request IDs, stable error classes, and deterministic stdout/stderr behavior.
+- Added Bash, Zsh, Fish, and PowerShell completion generation.
+- Added root and full-tree man-page generation from the live command tree.
+- Added bounded compact-output golden tests and packaging checks for all supported release targets.
+- Replaced the starter documentation with installation, quickstart, automation, troubleshooting, and current command-reference guides.
 
-- Initial scaffold release, bootstrapped from `amxv/go-cli-template`.
-- No iCloud-specific CLI behavior yet; the binary still exposes the
-  template's placeholder `hello` command.
-- Establishes the npm wrapper package, GitHub release workflow, and docs site.
+## 0.1.0 — 2026-08-05
 
-## Maintainer notes
-
-When adding future entries:
-
-- Keep the newest version at the top.
-- Add sections only for version tags that exist.
-- Summarize code and product changes from `main` since the previous version tag.
-- This is an OSS template, so internal code changes may be included when useful.
-- Do not include docs-site-only changes such as site styling, docs package bumps, deploy plumbing, footer/layout changes, or documentation navigation changes.
-- Rewrite commit subjects into clear release notes instead of pasting raw commit messages.
-- If a release contains only tagging/release metadata, write: `Maintenance release. No direct code behavior changes beyond release preparation.`
+- Published the initial repository scaffold, npm wrapper, release workflow, and documentation site before iCloud-specific command implementation began.

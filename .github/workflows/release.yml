@@ -9,7 +9,7 @@ env:
   GO_VERSION: "1.26"
   NODE_VERSION: "22"
   CLI_BINARY: "icloud"
-  CLI_ENTRYPOINT: "icloud-cli"
+  CLI_ENTRYPOINT: "icloud"
   CLI_MODULE: "github.com/amxv/icloud-cli"
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 

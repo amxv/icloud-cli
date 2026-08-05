@@ -1,72 +1,120 @@
 ---
 title: Command reference
-description: A compact map of the starter command and the files that usually change as the CLI grows.
-order: 4
+description: A complete reference for the current icloud command tree, global controls, output modes, and generated help assets.
+order: 5
 category: Reference
-summary: Starter commands, make targets, and docs commands in one scannable page.
+summary: Every command and flag available at the Phase 1 public boundary.
 ---
 
-## Starter command
+## Root command
 
 ```bash
-icloud-cli --help
-icloud-cli hello
-icloud-cli hello <name>
-icloud-cli --version
+icloud [global flags] <command> [command flags]
 ```
 
-Replace these commands with behavior specific to your project.
+Running `icloud` without a command prints root help to stdout.
 
-## Go development
+### Global flags
+
+| Flag | Default | Purpose |
+| --- | --- | --- |
+| `--home <path>` | platform default later | Override the application data directory for commands that use local state. |
+| `--account <selector>` | none | Select an account by friendly name, email, or stable ID when required. |
+| `--timeout <duration>` | `30s` | Bound command execution with a positive Go-style duration. |
+| `--no-input` | false | Prevent interactive prompting. |
+| `--request-id <id>` | generated for structured output | Correlate JSON success and error envelopes. |
+| `--version` | — | Print the compact installed version and exit. |
+| `-h`, `--help` | — | Print help to stdout. |
+
+The current inspection and documentation commands do not access account state. The shared flags are accepted now so scripts use one stable root contract.
+
+## `icloud version`
+
+Print the version injected into the binary at build time.
 
 ```bash
-make fmt
-make test
-make vet
-make lint
-make check
-make build
-make build-all
-make install-local
-make clean
+icloud version
+icloud version --json
 ```
 
-## Project bootstrap and release
+Compact output:
+
+```text
+version 0.1.0
+```
+
+`--json` emits one success envelope with `command` and `version` fields.
+
+## `icloud capabilities`
+
+Describe behavior supported by the installed binary.
 
 ```bash
-make bootstrap BOOTSTRAP_ARGS='--cli-name pluck --github-owner acme --github-repo pluck'
-make check
-bun run docs:check
-bun run docs:build
-# edit src/content/docs/changelog.md, then commit and push it
-make release-tag VERSION=0.2.0
+icloud capabilities
+icloud capabilities --json
 ```
 
-The bootstrap target updates the repeated project identity fields from the
-repository root. Releases are triggered by pushing a `v*` tag after the
-changelog has been edited and committed. GitHub Actions handles the release
-assets and npm publication.
+Compact output:
 
-## Docs development
+```text
+capabilities command=icloud version=0.1.0 default_output=compact json=true completion=bash,zsh,fish,powershell man=true
+```
+
+The JSON form also reports that no JSONL command is present in this build.
+
+## `icloud completion`
+
+Generate a completion script to stdout:
 
 ```bash
-bun run docs:dev
-bun run docs:check
-bun run docs:build
-bun run docs:preview
+icloud completion bash
+icloud completion zsh
+icloud completion fish
+icloud completion powershell
 ```
 
-## Main files
+Each shell is a command-local help target:
 
 ```bash
-cmd/icloud-cli/main.go             # CLI entrypoint
-internal/app/app.go           # command parser and handlers
-internal/app/app_test.go      # starter tests
-internal/buildinfo/buildinfo.go # version plumbing
-bin/icloud-cli.js                  # npm executable shim
-scripts/postinstall.js        # release binary installer
-.github/workflows/release.yml # release workflow
-src/content/docs/*.md         # docs content
-src/data/docs.ts              # docs site config
-project.config.json           # canonical project identity
+icloud completion zsh --help
 ```
+
+Completion output is intentionally the native shell script, not compact text or JSON.
+
+## `icloud man`
+
+Generate the root man page to stdout:
+
+```bash
+icloud man > icloud.1
+```
+
+Generate the complete page tree:
+
+```bash
+icloud man --output-dir ./man
+```
+
+Directory mode prints one compact summary after successful generation:
+
+```text
+man generated dir=man
+```
+
+The pages are generated from the same Cobra command tree used for help and completions.
+
+## `icloud help`
+
+Print root or command-local help:
+
+```bash
+icloud help
+icloud help capabilities
+icloud capabilities --help
+```
+
+Help goes to stdout. Usage failures go to stderr and exit with code `2`.
+
+## Output availability
+
+Only `version` and `capabilities` expose `--json` in this build. No command silently accepts unsupported JSONL, full-body, HTML, raw, header, body-only, or verbose modes. See [Output and automation](/docs/output-and-automation) for the stable envelope and exit contracts.

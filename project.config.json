@@ -1,17 +1,17 @@
 {
-  "cliName": "icloud-cli",
+  "cliName": "icloud",
   "binaryName": "icloud",
   "goModule": "github.com/amxv/icloud-cli",
   "githubOwner": "amxv",
   "githubRepo": "icloud-cli",
   "npmPackage": "@amxv/icloud-cli",
-  "description": "A CLI for interacting with iCloud",
-  "homepage": "https://github.com/amxv/icloud-cli#readme",
-  "canonicalUrl": "https://github.com/amxv/icloud-cli",
+  "description": "A local-first command-line client for iCloud services",
+  "homepage": "https://icloud.ashray.xyz",
+  "canonicalUrl": "https://icloud.ashray.xyz",
   "license": "Apache-2.0",
   "paths": {
-    "command": "cmd/icloud-cli",
-    "wrapper": "bin/icloud-cli.js",
+    "command": "cmd/icloud",
+    "wrapper": "bin/icloud.js",
     "binary": "bin/icloud-bin"
   }
 }

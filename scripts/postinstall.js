@@ -6,7 +6,7 @@ const https = require("node:https");
 const { spawnSync } = require("node:child_process");
 
 const pkg = require("../package.json");
-const cliName = pkg.config?.cliName || Object.keys(pkg.bin || {})[0] || "mycli";
+const cliName = pkg.config?.cliName || Object.keys(pkg.bin || {})[0] || "icloud";
 const binaryBaseName = pkg.config?.cliBinaryName || cliName;
 
 const repoURL = pkg.repository?.url || "";
@@ -30,48 +30,65 @@ const goarchMap = {
   arm64: "arm64"
 };
 
-const goos = goosMap[process.platform];
-const goarch = goarchMap[process.arch];
-
 const rootDir = path.resolve(__dirname, "..");
 const binDir = path.join(rootDir, "bin");
-const binaryName = process.platform === "win32" ? `${binaryBaseName}.exe` : `${binaryBaseName}-bin`;
-const destination = path.join(binDir, binaryName);
 
 function buildLdflags(version) {
   const resolvedVersion = `${version || ""}`.trim() || "dev";
-  const modulePath = pkg.config?.goModule || "github.com/amxv/go-cli-template";
+  const modulePath = pkg.config?.goModule || "github.com/amxv/icloud-cli";
   return `-s -w -X ${modulePath}/internal/buildinfo.Version=${resolvedVersion}`;
 }
 
+function createInstallPlan(platform = process.platform, architecture = process.arch) {
+  const resolvedGoos = goosMap[platform];
+  const resolvedGoarch = goarchMap[architecture];
+  const installedBinaryName = platform === "win32" ? `${binaryBaseName}.exe` : `${binaryBaseName}-bin`;
+  const destinationPath = path.join(binDir, installedBinaryName);
+  const assetName = resolvedGoos && resolvedGoarch
+    ? `${binaryBaseName}_${resolvedGoos}_${resolvedGoarch}${resolvedGoos === "windows" ? ".exe" : ""}`
+    : "";
+
+  return {
+    goos: resolvedGoos,
+    goarch: resolvedGoarch,
+    binaryName: installedBinaryName,
+    destination: destinationPath,
+    assetName,
+    sourcePath: path.join(rootDir, "cmd", cliName, "main.go")
+  };
+}
+
 async function main() {
-  if (!goos || !goarch) {
+  const plan = createInstallPlan();
+  if (!plan.goos || !plan.goarch) {
     console.warn(`Unsupported platform/arch: ${process.platform}/${process.arch}`);
-    fallbackBuildOrExit();
+    fallbackBuildOrExit(plan);
     return;
   }
 
   fs.mkdirSync(binDir, { recursive: true });
 
   const version = pkg.version;
-  const assetName = `${binaryBaseName}_${goos}_${goarch}${goos === "windows" ? ".exe" : ""}`;
-  const assetURL = `https://github.com/${repoOwner}/${repoName}/releases/download/v${version}/${assetName}`;
+  const assetURL = `https://github.com/${repoOwner}/${repoName}/releases/download/v${version}/${plan.assetName}`;
 
   try {
-    await downloadToFile(assetURL, destination);
-    if (goos !== "windows") {
-      fs.chmodSync(destination, 0o755);
+    if (process.env.ICLOUD_CLI_FORCE_BUILD === "1") {
+      throw new Error("forced local build");
+    }
+    await downloadToFile(assetURL, plan.destination);
+    if (plan.goos !== "windows") {
+      fs.chmodSync(plan.destination, 0o755);
     }
     console.log(`Installed ${cliName} binary from ${assetURL}`);
   } catch (err) {
     console.warn(`Failed to download prebuilt binary: ${err.message}`);
-    fallbackBuildOrExit();
+    fallbackBuildOrExit(plan);
   }
 }
 
-function fallbackBuildOrExit() {
+function fallbackBuildOrExit(plan = createInstallPlan()) {
   const hasGo = spawnSync("go", ["version"], { stdio: "ignore" }).status === 0;
-  const hasSource = fs.existsSync(path.join(rootDir, "cmd", cliName, "main.go"));
+  const hasSource = fs.existsSync(plan.sourcePath);
 
   if (!hasGo || !hasSource) {
     console.error("Unable to install CLI binary. Missing release asset and local Go build fallback.");
@@ -80,7 +97,7 @@ function fallbackBuildOrExit() {
 
   const result = spawnSync(
     "go",
-    ["build", "-trimpath", `-ldflags=${buildLdflags(pkg.version)}`, "-o", destination, `./cmd/${cliName}`],
+    ["build", "-trimpath", `-ldflags=${buildLdflags(pkg.version)}`, "-o", plan.destination, `./cmd/${cliName}`],
     { cwd: rootDir, stdio: "inherit" }
   );
 
@@ -88,8 +105,8 @@ function fallbackBuildOrExit() {
     process.exit(result.status || 1);
   }
 
-  if (goos !== "windows") {
-    fs.chmodSync(destination, 0o755);
+  if (plan.goos !== "windows") {
+    fs.chmodSync(plan.destination, 0o755);
   }
 
   console.log("Installed CLI binary by building from source.");
@@ -133,7 +150,15 @@ function downloadToFile(url, destinationPath) {
   });
 }
 
-main().catch((err) => {
-  console.error(err.message);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    console.error(err.message);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  buildLdflags,
+  createInstallPlan,
+  fallbackBuildOrExit
+};

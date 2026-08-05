@@ -1,78 +1,91 @@
 ---
 title: Quickstart
-description: Install dependencies, run the starter CLI, and start the bundled ZueDocs site.
+description: Install the icloud command, verify the build, and inspect its current capabilities without configuring credentials.
 order: 1
 category: Start
-summary: The fastest path from a fresh clone to a working CLI and local docs site.
+summary: The shortest safe path from installation to a verified compact CLI session.
 ---
 
-## Clone and initialize
+## What this build does
 
-For a brand-new CLI, create the repository from the directory where the clone
-should be created:
+The current `icloud` build establishes the public command and automation contract. It can report its version and capabilities, generate shell completions, and generate man pages.
+
+It does **not** request an Apple Account password, read a keychain, create local mail state, or contact iCloud. No credential setup is required for this quickstart.
+
+## Install
+
+Install the npm package globally:
 
 ```bash
-gh repo create acme/pluck \
-  --public \
-  --template amxv/go-cli-template \
-  --clone
+npm install --global @amxv/icloud-cli
 ```
 
-Then run bootstrap from the new repository root:
+The package downloads the matching native release binary. When a release asset is unavailable and Go is installed, the installer can build the same `icloud` binary from the packaged source.
+
+From a source checkout, build locally instead:
 
 ```bash
-cd pluck
-make bootstrap BOOTSTRAP_ARGS='--cli-name pluck --github-owner acme \
-  --github-repo pluck --npm-package @acme/pluck --license Apache-2.0'
-```
-
-The bootstrap command runs from the repository root and never reclones. Omit
-`--public` in the GitHub command for the safe private default. Use public
-visibility for the normal anonymous npm installation path.
-
-For an existing clone, run `make bootstrap` with the identity options shown in the
-customization guide. No manual `icloud-cli` rename sweep is required.
-
-## Install dependencies
-
-Install Go, Node.js, and Bun, then install JavaScript dependencies:
-
-```bash
-bun install
-```
-
-The repository uses Go for the CLI, Node for the npm wrapper, and Astro/ZueDocs for the docs site.
-
-## Run the starter CLI
-
-Use the make targets to validate and build the starter command:
-
-```bash
-make check
 make build
-./dist/icloud-cli --help
-./dist/icloud-cli hello
+./dist/icloud version
 ```
 
-The sample command is intentionally small so it is easy to replace.
+## Verify the command
 
-## Start the docs site
-
-Run the embedded documentation site locally:
+Run:
 
 ```bash
-bun run docs:dev
+icloud version
+icloud capabilities
+icloud --help
 ```
 
-Astro usually serves the site at `http://localhost:4321`.
+Representative compact output:
 
-## First customization pass
+```text
+version 0.1.0
+capabilities command=icloud version=0.1.0 default_output=compact json=true completion=bash,zsh,fish,powershell man=true
+```
 
-Replace the starter command behavior in:
+The installed version replaces `0.1.0` with the version embedded in that binary.
+
+## Use structured output deliberately
+
+`version` and `capabilities` support one JSON envelope when a script needs named fields:
 
 ```bash
-internal/app/app.go
-internal/app/app_test.go
+icloud capabilities --json
 ```
 
-Keep the docs open while you edit so the quickstart, command reference, and release notes stay aligned with the actual CLI.
+```json
+{"ok":true,"data":{"command":"icloud","version":"0.1.0","output":{"default":"compact","json":true,"jsonl":false},"completion":["bash","zsh","fish","powershell"],"man":true},"meta":{"request_id":"req_example"}}
+```
+
+Plain text remains the default in terminals and redirected non-interactive runs. See [Output and automation](/docs/output-and-automation) for errors, request IDs, and exit classes.
+
+## Generate local help assets
+
+Generate a completion script for the shell you use:
+
+```bash
+icloud completion zsh > ~/.zsh/completions/_icloud
+```
+
+Generate a root man page:
+
+```bash
+icloud man > icloud.1
+```
+
+Generate the complete man-page tree:
+
+```bash
+icloud man --output-dir ./man
+```
+
+## Common errors
+
+- **`icloud binary is not installed`** — run `npm rebuild --global @amxv/icloud-cli`, or install Go and reinstall so the local-build fallback can run.
+- **Unknown command** — run `icloud --help`. Close misspellings include a compact suggestion.
+- **Invalid timeout** — use a positive Go-style duration such as `--timeout 30s` or `--timeout 2m`.
+
+Next, read the [command reference](/docs/command-reference) for every command and global flag available in this build.

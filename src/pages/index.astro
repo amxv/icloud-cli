@@ -7,28 +7,28 @@ const docs = (await getCollection("docs")).sort((a, b) => a.data.order - b.data.
 
 const proofPoints = [
   {
-    title: "Go binary first",
-    body: "Keep the runtime simple: one Go entrypoint, internal command logic, and build-time version metadata."
+    title: "Compact by default",
+    body: "Ordinary commands return bounded plain text without JSON scaffolding, ANSI decoration, or repeated labels."
   },
   {
-    title: "npm install path",
-    body: "Ship a tiny Node shim that downloads the right GitHub release binary after npm install."
+    title: "Structured on request",
+    body: "Commands that support machine output expose an explicit --json success or error envelope with a request ID."
   },
   {
-    title: "Release automation included",
-    body: "Tag a version and let GitHub Actions build platform binaries, publish a release, and publish npm."
+    title: "Safe for automation",
+    body: "Errors use stable exit classes, normal output stays on stdout, and diagnostics stay on stderr."
   },
   {
-    title: "Docs from day one",
-    body: "Use the embedded ZueDocs site for quickstarts, command reference, release notes, and operator guidance."
+    title: "Self-documenting",
+    body: "The live command tree generates shell completions and man pages, keeping reference output aligned with the binary."
   }
 ];
 
 const workflows = [
-  "Create a repository from the template, then initialize the command, module, npm, release, and docs identity in one pass.",
-  "Keep docs next to the CLI so every future command has a guide, reference page, and maintenance notes.",
-  "Use make targets locally for formatting, tests, vetting, builds, and multi-platform release binaries.",
-  "Edit the changelog, commit it, and push a version tag so GitHub Actions can publish the release."
+  "Install the package or build from source, then verify the exact binary with icloud version.",
+  "Inspect supported behavior with icloud capabilities before an agent chooses an output mode.",
+  "Generate completions for Bash, Zsh, Fish, or PowerShell directly from the installed command tree.",
+  "Generate a single root man page to stdout or the complete man-page tree into a directory."
 ];
 ---
 
@@ -40,46 +40,39 @@ const workflows = [
 >
   <section class="hero shell">
     <div class="hero__copy">
-      <p class="section-label">Go CLI template</p>
-      <h1>Start a Go command-line app with npm distribution, releases, and docs already wired up.</h1>
+      <p class="section-label">Local-first iCloud CLI</p>
+      <h1>Control iCloud services with a command surface built for agents and humans.</h1>
       <p class="hero__lede">
-        This template gives future CLIs a practical baseline: a small Go command surface,
-        a native-binary npm install wrapper, GitHub release automation, and a ZueDocs-powered
-        site that can grow with the project.
+        <code>icloud</code> uses compact plain text by default, stable structured output when requested,
+        and one public executable across local builds, npm installs, and release assets.
       </p>
       <p class="hero__annotation">
-        Replace the sample command, update project identity, write your first guides,
-        and keep shipping from one repo.
+        The current build establishes the command, output, help, completion, and man-page contract.
+        It does not request credentials or contact iCloud yet.
       </p>
       <div class="hero__actions">
         <a class="button button--solid" href="/docs/quickstart">Start with the quickstart</a>
-        <a class="button button--ghost" href="/docs">Browse all docs</a>
+        <a class="button button--ghost" href="/docs/command-reference">View commands</a>
       </div>
     </div>
     <aside class="hero__panel">
-      <p class="hero__panel-label">Starter session</p>
-      <ul class="hero__signal-list">
-        <li>Rename the command from icloud-cli to your real binary name.</li>
-        <li>Replace starter handlers with your CLI behavior.</li>
-        <li>Keep docs updated as command groups are added.</li>
-      </ul>
+      <p class="hero__panel-label">First session</p>
       <div class="hero__terminal">
-        <span>$ make check</span>
-        <span>$ make build</span>
-        <span>$ bun run docs:dev</span>
-        <span>$ make release-tag VERSION=0.2.0</span>
+        <span>$ icloud version</span>
+        <span>version 0.1.0</span>
+        <span>$ icloud capabilities</span>
+        <span>capabilities command=icloud version=0.1.0 default_output=compact …</span>
       </div>
     </aside>
   </section>
 
   <section class="shell section-grid">
     <div class="section-heading">
-      <p class="section-label">Why it exists</p>
-      <h2>A reusable baseline for CLIs that need more than a single binary.</h2>
+      <p class="section-label">CLI contract</p>
+      <h2>Small outputs for routine decisions, explicit expansion for structured consumers.</h2>
       <p>
-        Most internal and public CLIs need the same supporting pieces: tests, release builds,
-        install scripts, package metadata, contributor notes, and a docs site. This template
-        keeps those pieces ready so new tools can focus on the command behavior.
+        Redirecting output does not switch formats. An agent receives the same compact default as a
+        terminal user unless it deliberately asks for JSON.
       </p>
     </div>
     <div class="proof-grid">
@@ -94,8 +87,8 @@ const workflows = [
 
   <section class="shell split-section">
     <div>
-      <p class="section-label">Built for</p>
-      <h2>Small Go CLIs that should be easy to install, document, and release.</h2>
+      <p class="section-label">Available now</p>
+      <h2>Inspect the build and generate local reference assets.</h2>
     </div>
     <div class="stack-list">
       {workflows.map((item) => (
@@ -106,38 +99,12 @@ const workflows = [
     </div>
   </section>
 
-  <section class="shell capability-band">
-    <div class="capability-band__intro">
-      <p class="section-label">Included pieces</p>
-      <h2>One repo with the app, distribution path, and documentation shell.</h2>
-    </div>
-    <div class="capability-band__grid">
-      <div>
-        <p class="capability-title">Go app</p>
-        <p>Entrypoint, command handlers, tests, version plumbing, and make targets.</p>
-      </div>
-      <div>
-        <p class="capability-title">npm wrapper</p>
-        <p>A Node shim and postinstall script for installing native release binaries.</p>
-      </div>
-      <div>
-        <p class="capability-title">Release workflow</p>
-        <p>GitHub Actions build matrix, release asset upload, and npm publish flow.</p>
-      </div>
-      <div>
-        <p class="capability-title">ZueDocs site</p>
-        <p>Astro routes, docs collection, shared layouts, markdown source routes, and starter guides.</p>
-      </div>
-    </div>
-  </section>
-
   <section class="shell docs-teaser">
     <div class="section-heading">
-      <p class="section-label">Docs map</p>
-      <h2>Use the starter guides to customize the CLI and keep the docs site useful.</h2>
+      <p class="section-label">Documentation</p>
+      <h2>Install, inspect, automate, and troubleshoot the current command set.</h2>
       <p>
-        The docs cover bootstrap, command customization, release packaging, command reference,
-        and maintenance notes for the embedded ZueDocs site.
+        Every page describes behavior present on the current branch and uses sanitized examples.
       </p>
     </div>
     <div class="docs-teaser__grid">
@@ -149,12 +116,5 @@ const workflows = [
         </a>
       ))}
     </div>
-  </section>
-
-  <section class="shell closing-note">
-    <p>
-      Use this template when the next CLI should start with releases, npm installation,
-      and docs already in place.
-    </p>
   </section>
 </BaseLayout>

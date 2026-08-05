@@ -1,146 +1,81 @@
-# go-cli-template
+# icloud
 
-Minimal template for shipping a Go CLI with:
+`icloud` is a local-first command-line client for iCloud services. The project is being built for agent workflows without making the normal terminal experience noisy: compact plain text is the default, and structured or expanded output is always explicit.
 
-- one-command identity bootstrap after GitHub template cloning
-- a local command runner (`Makefile`)
-- npm global install wrapper (`bin/icloud-cli.js`)
-- automatic GitHub Release + npm publish on tag
-- bundled ZueDocs-powered docs site
+The current implementation establishes the public executable and CLI contract. It provides version and capability inspection, shell completion generation, man-page generation, stable JSON envelopes, typed exit classes, and deterministic stdout/stderr behavior. It does not configure accounts or contact iCloud yet.
 
-## Install (template example)
+## Install
 
 ```bash
-npm i -g @amxv/icloud-cli
-icloud-cli --help
+npm install --global @amxv/icloud-cli
+icloud version
+icloud capabilities
 ```
 
-## Commands in this starter
+Build from source:
 
 ```bash
-icloud-cli --help
-icloud-cli hello
-icloud-cli hello <name>
-icloud-cli --version
+make check
+make build
+./dist/icloud --help
 ```
 
-## Docs site
+## Current commands
 
-This template includes an Astro docs site powered by ZueDocs.
+```bash
+icloud version [--json]
+icloud capabilities [--json]
+icloud completion bash|zsh|fish|powershell
+icloud man [--output-dir <directory>]
+icloud help [command]
+```
+
+Representative default output:
+
+```text
+version 0.1.0
+capabilities command=icloud version=0.1.0 default_output=compact json=true completion=bash,zsh,fish,powershell man=true
+```
+
+Redirected and non-interactive execution uses the same compact default. Use `--json` only on commands that advertise it.
+
+## Development
+
+Prerequisites: Go 1.26+, Node.js 18+, and Bun 1+ for the docs site.
+
+```bash
+make fmt
+make test
+make vet
+make lint
+make check
+make build-all
+bun run docs:check
+bun run docs:build
+```
+
+Run the docs commands serially.
+
+## Project layout
+
+- `cmd/icloud`: process startup and final exit behavior
+- `internal/app`: dependency composition and execution entry
+- `internal/cli`: Cobra tree, compact rendering, JSON/JSONL primitives, help, errors, completion, and man generation
+- `internal/buildinfo`: linker-injected version metadata
+- `bin/icloud.js`: npm executable shim
+- `scripts/postinstall.js`: release-asset installer with local Go fallback
+- `.github/workflows/release.yml`: cross-platform release and npm publication
+- `src/content/docs`: user-facing guides
+- `gg`: implementation plan, sweep, and progress ledger
+
+## Documentation
+
+The hosted documentation is at `https://icloud.ashray.xyz`. Local docs development:
 
 ```bash
 bun install
 bun run docs:dev
-bun run docs:check
-bun run docs:build
 ```
-
-Customize the docs alongside the CLI:
-
-- `src/data/docs.ts`: site name, repo URL, footer sections, nav, categories
-- `src/pages/index.astro`: landing page
-- `src/content/docs/*.md`: guides and command reference
-
-## Start a new CLI
-
-Create the repository from the directory where the new clone should be placed:
-
-```bash
-gh repo create acme/pluck \
-  --public \
-  --template amxv/go-cli-template \
-  --clone
-```
-
-Then run the identity bootstrap from the new repository root:
-
-```bash
-cd pluck
-make bootstrap BOOTSTRAP_ARGS='--cli-name pluck \
-  --binary-name pluck \
-  --go-module github.com/acme/pluck \
-  --github-owner acme --github-repo pluck \
-  --npm-package @acme/pluck \
-  --description "A fast file picker" \
-  --license Apache-2.0'
-```
-
-The bootstrap command runs from the cloned repository root and never creates or
-clones another repository. Omit `--public` in the GitHub command for the safe
-private default, while public repositories are the normal path for anonymous npm
-installs. If a private repo is intentionally paired with anonymous npm installs,
-pass `--visibility private --anonymous-npm` to the bootstrap command for the warning.
-
-For any existing clone, `make bootstrap` accepts the same identity options:
-
-```bash
-make bootstrap BOOTSTRAP_ARGS='--cli-name pluck \
-  --binary-name pluck \
-  --go-module github.com/acme/pluck \
-  --github-owner acme --github-repo pluck \
-  --npm-package @acme/pluck \
-  --description "A fast file picker" \
-  --homepage https://pluck.dev \
-  --canonical-url https://pluck.dev \
-  --license Apache-2.0'
-```
-
-The bootstrap script updates the command path, Go module, npm metadata, GitHub URLs,
-Makefile, release workflow, postinstall metadata, docs configuration, and license
-references together. Apache-2.0 is built in and does not require an extra CLI.
-Other license-generator names listed by `license-generator --list` are supported
-when that optional CLI is installed. Without it, bootstrap keeps the project on
-Apache-2.0 and prints a warning.
-
-## Customize the CLI
-
-After bootstrap, replace starter logic:
-
-- `internal/app/app.go`
-- `internal/app/app_test.go`
-
-Update bundled docs as the command surface changes:
-
-- `src/data/docs.ts`
-- `src/pages/index.astro`
-- `src/content/docs/*.md`
-
-## Release flow
-
-Future releases are tag-driven. Edit `src/content/docs/changelog.md` manually,
-run the checks, commit and push the changelog, then push a `v*` tag:
-
-```bash
-make check
-bun run docs:check
-bun run docs:build
-# edit src/content/docs/changelog.md
-git add src/content/docs/changelog.md
-git commit -m "docs: update changelog for v0.2.0"
-git push origin HEAD
-make release-tag VERSION=0.2.0
-```
-
-GitHub Actions builds the release binaries, creates the GitHub Release, and
-publishes npm. Configure the `NPM_TOKEN` GitHub secret once before the first
-release. No local token synchronization or release orchestration is required.
-
-## Project layout
-
-- `cmd/icloud-cli/main.go`: CLI entrypoint
-- `internal/app/`: command logic
-- `internal/buildinfo/`: build-time version plumbing for `--version`
-- `scripts/postinstall.js`: installs binary from GitHub release (falls back to local `go build`)
-- `scripts/setup.js`: initializes the repeated project identity fields
-- `.agents/skills/release/SKILL.md`: manual changelog and tag release checklist
-- `.github/workflows/release.yml`: automated release pipeline
-- `project.config.json`: canonical project identity
-- `src/`: ZueDocs-powered documentation site
-- `astro.config.mjs`: docs site build config
-- `AGENTS.md`: instructions for coding agents
-- `CONTRIBUTORS.md`: maintainer/release operations
-
-See `AGENTS.md` and `CONTRIBUTORS.md` for complete dev/release instructions.
 
 ## License
 

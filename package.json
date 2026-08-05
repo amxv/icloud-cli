@@ -1,7 +1,7 @@
 {
   "name": "@amxv/icloud-cli",
   "version": "0.1.0",
-  "description": "A CLI for interacting with iCloud",
+  "description": "A local-first command-line client for iCloud services",
   "license": "Apache-2.0",
   "author": "amxv",
   "repository": {
@@ -13,19 +13,20 @@
     "url": "https://github.com/amxv/icloud-cli/issues"
   },
   "bin": {
-    "icloud-cli": "bin/icloud-cli.js"
+    "icloud": "bin/icloud.js"
   },
   "config": {
-    "cliName": "icloud-cli",
+    "cliName": "icloud",
     "cliBinaryName": "icloud",
     "goModule": "github.com/amxv/icloud-cli"
   },
   "files": [
-    "bin/icloud-cli.js",
+    "bin/icloud.js",
     "scripts/postinstall.js",
     "cmd",
     "internal",
     "go.mod",
+    "go.sum",
     "README.md",
     "LICENSE",
     "AGENTS.md",
@@ -35,7 +36,7 @@
   ],
   "scripts": {
     "postinstall": "node scripts/postinstall.js",
-    "test": "node --check bin/icloud-cli.js && node --check scripts/postinstall.js && node --check scripts/project.js && node --check scripts/setup.js",
+    "test": "node --check bin/icloud.js && node --check scripts/postinstall.js && node --test scripts/packaging.test.js",
     "lint": "npm run test",
     "docs:dev": "astro dev",
     "docs:build": "astro build",
@@ -46,11 +47,11 @@
     "node": ">=18"
   },
   "keywords": [
-    "go",
     "cli",
-    "template",
-    "npm",
-    "release"
+    "icloud",
+    "apple",
+    "mail",
+    "automation"
   ],
   "devDependencies": {
     "@astrojs/check": "^0.9.4",

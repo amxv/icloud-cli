@@ -1,100 +1,51 @@
-# CONTRIBUTORS.md
-
-Maintainer notes for this template repository.
+# Contributing
 
 ## Prerequisites
 
-- Go `1.26+`
-- Node `18+`
-- Bun `1+`
-- optional `license-generator` for non-Apache license changes
-- npm account with publish rights for the package name in `package.json`
-- GitHub repo admin access
+- Go 1.26+
+- Node.js 18+
+- Bun 1+
+- npm publish rights for `@amxv/icloud-cli` when preparing a release
 
-## Local development
+## Local validation
 
 ```bash
 make check
 make build
-./dist/icloud-cli --help
-```
-
-Install command locally:
-
-```bash
-make install-local
-icloud-cli --help
-```
-
-For a new CLI, use the bootstrap flow so the command, module, repository,
-npm package, release metadata, docs config, and license stay synchronized:
-
-```bash
-make bootstrap BOOTSTRAP_ARGS='--cli-name pluck --go-module github.com/acme/pluck \
-  --github-owner acme --github-repo pluck --npm-package @acme/pluck'
-```
-
-## Release process
-
-1. Ensure `main` is green and the docs pass serially:
-
-```bash
-make check
+./dist/icloud --help
+./dist/icloud capabilities
 bun run docs:check
 bun run docs:build
 ```
 
-2. Edit `src/content/docs/changelog.md` manually, then commit and push it:
+Run the documentation commands serially. Use `make build-all` when changing command paths, linker flags, packaging, or release behavior.
+
+## Release process
+
+1. Ensure `main` is clean, current, and fully validated.
+2. Update `src/content/docs/changelog.md` with user-visible changes.
+3. Commit and push the changelog and any release metadata.
+4. Create and push a `v*` tag:
 
 ```bash
-git add src/content/docs/changelog.md
-git commit -m "docs: update changelog for v0.1.0"
-git push origin HEAD
+make release-tag VERSION=0.2.0
 ```
 
-3. Push the version tag. The low-level Make target is optional:
+The GitHub Actions release workflow runs Go and Node checks, builds CGO-disabled native binaries, publishes GitHub release assets, and publishes npm.
 
-```bash
-make release-tag VERSION=0.1.0
-# or: git tag v0.1.0 && git push origin v0.1.0
-```
+## Required secret
 
-4. GitHub Actions `release` workflow runs automatically:
-- quality checks
-- cross-platform binary build
-- GitHub release publish
-- npm publish
+`NPM_TOKEN` must exist in the repository Actions secrets with permission to publish `@amxv/icloud-cli`. Never print or synchronize it through repository tooling.
 
-## Required GitHub secret
+## Public identity
 
-- `NPM_TOKEN`: npm automation token with publish rights for your package.
+Keep these surfaces aligned in one change:
 
-Configure it once in the repository settings or with `gh secret set NPM_TOKEN`.
-The template does not read local keychains or synchronize release secrets.
+- executable and help name: `icloud`
+- Go entrypoint: `cmd/icloud`
+- npm shim: `bin/icloud.js`
+- native asset base: `icloud`
+- package: `@amxv/icloud-cli`
+- docs: `https://icloud.ashray.xyz`
 
-## npm token setup
-
-Create token at npm:
-
-- Profile -> Access Tokens -> Create New Token
-- Use an automation/granular token scoped to required package/org
-
-Validate npm auth locally with your normal npm tooling if needed. Do not print
-the token.
-
-## Notes on package naming
-
-Before first publish, set a package name you control in `package.json`.
-
-- Example unscoped: `"name": "your-cli-name"`
-- Example scoped: `"name": "@your-scope/your-cli-name"`
-
-The default license is Apache-2.0 and does not require `license-generator`. Use
-`make bootstrap BOOTSTRAP_ARGS='--license MIT'` (or another name from
-`license-generator --list`) to regenerate `LICENSE` and synchronize the package
-and docs metadata when the optional CLI is installed. Without it, bootstrap
-continues with Apache-2.0 and prints a warning.
-
-For a private GitHub repository, release assets require authenticated downloads.
-The normal anonymous npm path is a public repository; use the explicit
-`--anonymous-npm` warning before choosing a private repo for that flow.
+When command behavior changes, update command-local help, tests, progressive user docs, and `gg/progress.md` before marking the phase complete.

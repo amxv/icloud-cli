@@ -4,12 +4,12 @@ description: Prepare a Go CLI changelog and push a tag for the GitHub Actions re
 allowed-tools: Bash, Read, Write, Edit
 ---
 
-# Release a Go CLI from this template
+# Release icloud
 
-Use this skill when cutting a release for a project generated from
-`go-cli-template`. The release is intentionally controlled by the repository:
-edit the changelog, commit it, and push a `v*` tag. GitHub Actions builds the
-native binaries, creates the GitHub Release, and publishes npm.
+Use this skill when cutting a release of `icloud`. The repository controls the
+release: edit the changelog, validate the current command and documentation,
+commit the release notes, and push a `v*` tag. GitHub Actions builds the native
+binaries, creates the GitHub Release, and publishes npm.
 
 ## Preconditions
 
@@ -18,6 +18,8 @@ native binaries, creates the GitHub Release, and publishes npm.
 - The package name in `package.json` is publishable.
 - The `NPM_TOKEN` GitHub secret is configured.
 - The release workflow exists at `.github/workflows/release.yml`.
+- The public executable is `icloud` in the local build, npm package, and
+  generated help.
 
 ## Changelog first
 
@@ -40,6 +42,7 @@ Run the checks serially from the repository root:
 
 ```bash
 make check
+make build-all
 bun run docs:check
 bun run docs:build
 ```
@@ -66,5 +69,5 @@ npm view "$(node -p "require('./package.json').name")" version
 ```
 
 Report the tag, workflow URL, release URL, asset names, and published npm
-version. The template does not sync local keychains, validate release secrets,
-or orchestrate the workflow from a local `ship` command.
+version. Repository tooling does not read local keychains, validate release
+secrets, or orchestrate the workflow from a local `ship` command.
