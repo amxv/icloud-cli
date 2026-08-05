@@ -1,7 +1,7 @@
 ---
 title: Local state and account inspection
 description: Choose an isolated data directory, inspect bounded account inventories, understand selection rules, and handle concurrent access safely.
-order: 5
+order: 6
 category: Guides
 summary: State roots, account list and show, selector/default behavior, privacy, locks, and cleanup.
 ---
@@ -95,7 +95,7 @@ icloud --request-id inventory-01 account list --json
 ```
 
 ```json
-{"ok":true,"data":{"accounts":[],"count":0,"schema_version":2},"meta":{"request_id":"inventory-01"}}
+{"ok":true,"data":{"accounts":[],"count":0,"schema_version":3},"meta":{"request_id":"inventory-01"}}
 ```
 
 JSON remains explicit. Redirection and non-TTY execution do not change the output mode. Structured account and credential output applies the same reference/value redaction as compact text.
@@ -118,8 +118,8 @@ Let the other process finish and retry. Do not remove lock files to bypass a run
 
 ## Privacy and cleanup
 
-The database stores account metadata and credential references, never plaintext app-specific passwords. A keyring password lives in the operating-system credential store. Environment values and file contents remain external to the CLI state root.
+The database stores account metadata, credential references, and durable folder observations/policy, never plaintext app-specific passwords. Folder records retain decoded/wire names, provider attributes and counts, presence/stale state, and local sync enablement. A keyring password lives in the operating-system credential store. Environment values and file contents remain external to the CLI state root.
 
 Removing an account deletes its native keyring entry when present. It does not delete an environment variable or external credential file. Uninstalling the npm package does not remove the selected state root or external credentials.
 
-Continue with [Account setup and credentials](/docs/account-setup-and-credentials) for lifecycle commands, [Account validation and doctor](/docs/account-validation-and-doctor) for persisted health, or [Output and automation](/docs/output-and-automation) for envelopes and exit classes.
+Continue with [Account setup and credentials](/docs/account-setup-and-credentials) for lifecycle commands, [Account validation and doctor](/docs/account-validation-and-doctor) for persisted health, [Folder discovery and sync policy](/docs/folder-discovery-and-sync-policy) for the mailbox tree, or [Output and automation](/docs/output-and-automation) for envelopes and exit classes.

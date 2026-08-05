@@ -1,9 +1,9 @@
 ---
 title: Command reference
-description: A complete reference for account lifecycle, read-only iCloud validation, doctor diagnostics, global controls, output modes, completion, and man generation.
-order: 8
+description: A complete reference for account lifecycle, read-only iCloud validation, folder discovery and sync policy, doctor diagnostics, global controls, output modes, completion, and man generation.
+order: 9
 category: Reference
-summary: Every account, credential, validation, doctor, capability, completion, man, help, and global control available now.
+summary: Every account, credential, validation, folder, doctor, capability, completion, man, help, and global control available now.
 ---
 
 ## Root command
@@ -158,6 +158,49 @@ icloud doctor --json
 
 Without `--live`, reads stored account, credential, last-error, last-tested, and last-healthy metadata without resolving a secret or contacting Apple. With `--live`, runs the same read-only validation as `account test` first. An empty state returns `doctor status=configuration_required`.
 
+## `icloud mail folders status`
+
+```bash
+icloud mail folders status
+icloud mail folders status --limit 50
+icloud --account Personal mail folders status --verbose
+icloud mail folders status --json
+```
+
+Runs live IMAP LIST plus STATUS for every selectable folder, then transactionally reconciles the complete account-scoped inventory. It stores decoded and modified-UTF-7 wire names, delimiter, attributes, special-use kind/source, selectable/subscription state, counts, UID metadata, discovery time, presence/stale state, and local sync policy. It never fetches messages or mutates a mailbox.
+
+The refresh persists every discovered folder while output is bounded to 20 records by default and 100 with `--limit`. The result includes retained missing folders and reports `more=true` when not every record was printed. `--verbose` adds provider metadata; `--json` returns the same bounded records.
+
+## `icloud mail folders list`
+
+```bash
+icloud mail folders list
+icloud mail folders list --limit 50
+icloud mail folders list --include-missing --verbose
+icloud mail folders list --json
+```
+
+Reads the persisted folder inventory without contacting iCloud. The default bound is 20 and the maximum is 100. Missing/stale folders are hidden unless `--include-missing` is supplied.
+
+## `icloud mail folders show`
+
+```bash
+icloud mail folders show INBOX
+icloud mail folders show 'Unicode-日本語' --verbose
+icloud mail folders show fld_… --json
+```
+
+Selects by stable folder ID, decoded name, exact wire name, or unambiguous kind. Duplicate display names and non-unique kinds return a conflict rather than guessing.
+
+## `icloud mail folders enable` / `disable`
+
+```bash
+icloud mail folders enable Receipts
+icloud mail folders disable Receipts
+```
+
+Changes local future-sync policy only; no message is fetched or changed. Newly discovered selectable Inbox and Sent default enabled, while every other folder defaults disabled. Policy survives rediscovery, rename, missing state, and reappearance. Enabling a non-selectable container returns conflict.
+
 ## `icloud version`
 
 ```bash
@@ -181,7 +224,7 @@ icloud capabilities --json
 Compact output:
 
 ```text
-capabilities command=icloud version=0.1.0 schema=2 account_mode=validated_lifecycle credentials=keyring,env,file network_validation=true diagnostics=true default_output=compact json=true completion=bash,zsh,fish,powershell man=true
+capabilities command=icloud version=0.1.0 schema=3 account_mode=validated_lifecycle credentials=keyring,env,file network_validation=true diagnostics=true mail_folders=true default_output=compact json=true completion=bash,zsh,fish,powershell man=true
 ```
 
 The schema field reports the installed local-state migration version without opening state.
@@ -222,4 +265,4 @@ Help goes to stdout. Usage failures go to stderr and exit `2`.
 
 ## Output availability
 
-Every account and credential lifecycle command above, `account test`, `doctor`, `version`, and `capabilities` supports `--json`. Validation and doctor also support bounded `--verbose` capability detail. Completion and man generation retain native text. No command silently accepts unsupported JSONL, full-body, HTML, raw, header, or body-only modes.
+Every account and credential lifecycle command above, `account test`, every folder command, `doctor`, `version`, and `capabilities` supports `--json`. Validation, doctor, and folder reads/status support bounded `--verbose` detail where advertised. Completion and man generation retain native text. No command silently accepts unsupported JSONL, full-body, HTML, raw, header, or body-only modes.

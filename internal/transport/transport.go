@@ -90,12 +90,37 @@ type IMAPResult struct {
 	Inbox        MailboxStatus `json:"inbox"`
 }
 
+type RemoteFolder struct {
+	Name           string         `json:"name"`
+	WireName       string         `json:"wire_name"`
+	OldName        string         `json:"old_name,omitempty"`
+	OldWireName    string         `json:"old_wire_name,omitempty"`
+	ParentName     string         `json:"parent_name,omitempty"`
+	ParentWireName string         `json:"parent_wire_name,omitempty"`
+	Delimiter      string         `json:"delimiter,omitempty"`
+	Attributes     []string       `json:"attributes,omitempty"`
+	Kind           string         `json:"kind"`
+	KindSource     string         `json:"kind_source,omitempty"`
+	Selectable     bool           `json:"selectable"`
+	Subscription   string         `json:"subscription"`
+	Status         *MailboxStatus `json:"status,omitempty"`
+}
+
+type FolderDiscoveryResult struct {
+	Capabilities []string       `json:"capabilities,omitempty"`
+	Folders      []RemoteFolder `json:"folders"`
+}
+
 type SMTPResult struct {
 	Capabilities []string `json:"capabilities,omitempty"`
 }
 
 type IMAPValidator interface {
 	ValidateIMAP(context.Context, AuthRequest) (IMAPResult, error)
+}
+
+type IMAPFolderClient interface {
+	DiscoverFolders(context.Context, AuthRequest) (FolderDiscoveryResult, error)
 }
 
 type SMTPValidator interface {

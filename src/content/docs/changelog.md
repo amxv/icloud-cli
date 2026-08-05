@@ -8,6 +8,11 @@ summary: Public command, output, installation, and documentation changes.
 
 ## Unreleased
 
+- Added `icloud mail folders status` to discover every remote mailbox and read provider counts without fetching messages or mutating mail.
+- Added durable schema-version-3 folder records containing decoded and modified-UTF-7 wire names, delimiter, attributes, special-use classification, selectable/subscription knowledge, provider counts, UID metadata, and discovery/status timestamps.
+- Added local bounded `mail folders list/show`, explicit `enable/disable` future-sync policy, Inbox/Sent defaults, policy preservation across rediscovery, and retained missing/stale folders.
+- Added nested, Unicode, non-selectable, localized-special-use, Sent-fallback, OLDNAME rename, stale/reappearance, timeout, redaction, and live iCloud folder evidence.
+- Added the folder discovery and sync policy guide and updated quickstart, state, automation, troubleshooting, command reference, landing page, README, capabilities, completion, and man contracts.
 - Added read-only `icloud account test` for one or all accounts with direct-TLS IMAP, mandatory SMTP STARTTLS, separate authentication results, bounded capability summaries, and no send or mailbox mutation commands.
 - Added full-email/short-name IMAP authentication fallback and persistence of the exact successful username.
 - Added durable connected/degraded health, last-tested/last-healthy timestamps, redacted failure stages, and sanitized IMAP/SMTP capabilities through schema version 2.

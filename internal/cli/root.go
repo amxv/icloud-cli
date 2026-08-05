@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/amxv/icloud-cli/internal/account"
+	"github.com/amxv/icloud-cli/internal/folder"
 	"github.com/spf13/cobra"
 	"github.com/spf13/cobra/doc"
 )
@@ -26,6 +27,14 @@ type Config struct {
 	Stderr        io.Writer
 	RequestIDGen  func() string
 	Accounts      AccountService
+	Folders       FolderService
+}
+
+type FolderService interface {
+	FolderList(context.Context, string, string, int, bool) (account.Account, []folder.Folder, bool, int64, error)
+	FolderShow(context.Context, string, string, string) (account.Account, folder.Folder, int64, error)
+	FolderStatus(context.Context, string, string) (account.Account, []folder.Folder, int64, error)
+	FolderSetSync(context.Context, string, string, string, bool) (account.Account, folder.Folder, int64, error)
 }
 
 // AccountService is the application-owned boundary used by account commands.
@@ -65,6 +74,7 @@ type executionState struct {
 	requestID     string
 	global        globalOptions
 	accounts      AccountService
+	folders       FolderService
 	cancel        context.CancelFunc
 }
 
@@ -87,6 +97,7 @@ type capabilitiesData struct {
 	CredentialSchemes []string         `json:"credential_schemes"`
 	NetworkValidation bool             `json:"network_validation"`
 	Diagnostics       bool             `json:"diagnostics"`
+	MailFolders       bool             `json:"mail_folders"`
 	Output            capabilityOutput `json:"output"`
 	Completion        []string         `json:"completion"`
 	Man               bool             `json:"man"`
@@ -120,6 +131,9 @@ func Execute(ctx context.Context, args []string, config Config) Result {
 	if config.Accounts == nil {
 		config.Accounts = unavailableAccountService{}
 	}
+	if config.Folders == nil {
+		config.Folders = unavailableFolderService{}
+	}
 
 	requestID := requestedID(args)
 	if !validRequestID(requestID) {
@@ -133,6 +147,7 @@ func Execute(ctx context.Context, args []string, config Config) Result {
 		stderr:        config.Stderr,
 		requestID:     requestID,
 		accounts:      config.Accounts,
+		folders:       config.Folders,
 	}
 	if state.version == "" {
 		state.version = "dev"
@@ -177,8 +192,8 @@ func newRootCommand(state *executionState) *cobra.Command {
 	root := &cobra.Command{
 		Use:           commandName,
 		Short:         "Control iCloud services from the command line",
-		Long:          "icloud controls iCloud services from the command line. This build provides secure account setup, live read-only IMAP and SMTP validation, account health diagnostics, version and capability reporting, shell completions, and man-page generation.",
-		Example:       "  icloud account add --name Personal --email owner@icloud.com --password-stdin\n  icloud account test\n  icloud doctor",
+		Long:          "icloud controls iCloud services from the command line. This build provides secure account setup, live read-only IMAP and SMTP validation, durable folder discovery and sync policy, account health diagnostics, version and capability reporting, shell completions, and man-page generation.",
+		Example:       "  icloud account add --name Personal --email owner@icloud.com --password-stdin\n  icloud account test\n  icloud mail folders status\n  icloud doctor",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		Args:          cobra.NoArgs,
@@ -221,9 +236,11 @@ func newRootCommand(state *executionState) *cobra.Command {
 	root.AddGroup(
 		&cobra.Group{ID: "core", Title: "Core commands:"},
 		&cobra.Group{ID: "account", Title: "Account commands:"},
+		&cobra.Group{ID: "mail", Title: "Mail commands:"},
 		&cobra.Group{ID: "docs", Title: "Documentation commands:"},
 	)
 	root.AddCommand(newAccountCommand(state))
+	root.AddCommand(newMailCommand(state))
 	root.AddCommand(newDoctorCommand(state))
 	root.AddCommand(newVersionCommand(state))
 	root.AddCommand(newCapabilitiesCommand(state))
@@ -283,6 +300,7 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				CredentialSchemes: []string{"keyring", "env", "file"},
 				NetworkValidation: true,
 				Diagnostics:       true,
+				MailFolders:       true,
 				Output: capabilityOutput{
 					Default: "compact",
 					JSON:    true,
@@ -306,6 +324,7 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				Field("credentials", data.CredentialSchemes),
 				Field("network_validation", data.NetworkValidation),
 				Field("diagnostics", data.Diagnostics),
+				Field("mail_folders", data.MailFolders),
 				Field("default_output", data.Output.Default),
 				Field("json", data.Output.JSON),
 				Field("completion", data.Completion),

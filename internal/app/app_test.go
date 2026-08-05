@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/amxv/icloud-cli/internal/account"
+	"github.com/amxv/icloud-cli/internal/cli"
 	"github.com/amxv/icloud-cli/internal/config"
 	"github.com/amxv/icloud-cli/internal/store"
 	"github.com/amxv/icloud-cli/internal/transport"
@@ -54,6 +55,30 @@ type fakeSMTPValidator struct {
 	result    transport.SMTPResult
 	err       error
 	usernames []string
+}
+
+type fakeFolderClient struct {
+	results   map[string][]transport.FolderDiscoveryResult
+	errors    map[string]error
+	usernames []string
+	calls     int
+}
+
+func (client *fakeFolderClient) DiscoverFolders(_ context.Context, request transport.AuthRequest) (transport.FolderDiscoveryResult, error) {
+	client.usernames = append(client.usernames, request.Username)
+	client.calls++
+	if err := client.errors[request.Username]; err != nil {
+		return transport.FolderDiscoveryResult{}, err
+	}
+	values := client.results[request.Username]
+	if len(values) == 0 {
+		return transport.FolderDiscoveryResult{}, nil
+	}
+	result := values[0]
+	if len(values) > 1 {
+		client.results[request.Username] = values[1:]
+	}
+	return result, nil
 }
 
 func (validator *fakeSMTPValidator) ValidateSMTP(_ context.Context, request transport.AuthRequest) (transport.SMTPResult, error) {
@@ -129,10 +154,12 @@ func TestRootHelpUsesICloudIdentityAndGroups(t *testing.T) {
 		"icloud controls iCloud services from the command line.",
 		"Core commands:",
 		"Account commands:",
+		"Mail commands:",
 		"Documentation commands:",
 		"account",
 		"capabilities",
 		"doctor",
+		"mail",
 		"completion",
 		"man",
 		"version",
@@ -151,6 +178,181 @@ func TestRootHelpUsesICloudIdentityAndGroups(t *testing.T) {
 	if stderr != "" {
 		t.Fatalf("help wrote stderr: %q", stderr)
 	}
+}
+
+func TestFolderDiscoveryAndPolicyWorkflow(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "state")
+	t.Setenv("ICLOUD_FOLDER_PASSWORD", "synthetic-folder-secret")
+	commands, _ := newTestAccountCommands()
+	folderClient := &fakeFolderClient{
+		errors: map[string]error{
+			"owner@icloud.com": transport.NewFailure(transport.StageIMAPAuth, transport.FailureAuthentication, false, errors.New("rejected")),
+		},
+		results: map[string][]transport.FolderDiscoveryResult{
+			"owner": {folderDiscoveryFixture(false), folderDiscoveryFixture(true)},
+		},
+	}
+	commands.folders = folderClient
+
+	exitCode, stdout, stderr := runWithAccountCommands(t, commands, "", "--home", home,
+		"account", "add", "--name", "Personal", "--email", "owner@icloud.com", "--credential-env", "ICLOUD_FOLDER_PASSWORD")
+	if exitCode != 0 || stderr != "" || !strings.Contains(stdout, "status=pending_validation") {
+		t.Fatalf("add code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
+	}
+
+	exitCode, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "folders", "list")
+	if exitCode != 0 || stderr != "" || !strings.Contains(stdout, "folders account=acct_") || !strings.Contains(stdout, "count=0") || folderClient.calls != 0 {
+		t.Fatalf("empty local list code=%d stdout=%q stderr=%q calls=%d", exitCode, stdout, stderr, folderClient.calls)
+	}
+
+	exitCode, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "folders", "status", "--verbose")
+	if exitCode != 0 || stderr != "" {
+		t.Fatalf("status code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
+	}
+	for _, want := range []string{
+		"name=INBOX kind=inbox",
+		`name="Sent Messages" kind=sent`,
+		"name=Projects kind=other selectable=no",
+		"name=Projects/Alpha kind=other parent=Projects",
+		"name=Unicode-日本語",
+		"wire_name=Unicode-&ZeVnLIqe-",
+		"folder-status account=acct_",
+		"count=6",
+		"present=6",
+		"enabled=2",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("status missing %q:\n%s", want, stdout)
+		}
+	}
+	if strings.Contains(stdout, "synthetic-folder-secret") || strings.Contains(stdout, "ICLOUD_FOLDER_PASSWORD") {
+		t.Fatalf("status exposed credential material: %q", stdout)
+	}
+	if len(folderClient.usernames) < 2 || folderClient.usernames[0] != "owner@icloud.com" || folderClient.usernames[1] != "owner" {
+		t.Fatalf("folder usernames = %v", folderClient.usernames)
+	}
+	if lines, bytes := strings.Count(stdout, "\n"), len(stdout); lines != 7 || bytes > 2000 {
+		t.Fatalf("folder status budget lines=%d bytes=%d", lines, bytes)
+	}
+
+	exitCode, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "account", "show")
+	if exitCode != 0 || stderr != "" || !strings.Contains(stdout, "imap_username=owner") {
+		t.Fatalf("working username not persisted code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
+	}
+
+	priorCalls := folderClient.calls
+	exitCode, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "folders", "list")
+	if exitCode != 0 || stderr != "" || folderClient.calls != priorCalls || strings.Count(stdout, "folder fld_") != 6 {
+		t.Fatalf("local list code=%d stdout=%q stderr=%q calls=%d prior=%d", exitCode, stdout, stderr, folderClient.calls, priorCalls)
+	}
+
+	exitCode, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "folders", "enable", "Receipts")
+	if exitCode != 0 || stderr != "" || !strings.Contains(stdout, "sync=enabled") {
+		t.Fatalf("enable code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
+	}
+	exitCode, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "folders", "enable", "Projects")
+	if exitCode != cli.ExitConflict || stdout != "" || !strings.Contains(stderr, "not selectable") {
+		t.Fatalf("enable container code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
+	}
+
+	exitCode, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "folders", "status")
+	if exitCode != 0 || stderr != "" {
+		t.Fatalf("second status code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
+	}
+	for _, want := range []string{
+		"name=Projects/Beta",
+		"name=Receipts kind=other selectable=yes subscription=unknown present=no stale=true sync=enabled",
+		"count=6",
+		"present=5",
+		"stale=1",
+		"enabled=3",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("second status missing %q:\n%s", want, stdout)
+		}
+	}
+
+	exitCode, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "folders", "list")
+	if exitCode != 0 || stderr != "" || strings.Contains(stdout, "name=Receipts") || !strings.Contains(stdout, "count=5") {
+		t.Fatalf("present-only list code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
+	}
+	exitCode, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "folders", "list", "--include-missing", "--json")
+	if exitCode != 0 || stderr != "" || !strings.Contains(stdout, `"name":"Receipts"`) || !strings.Contains(stdout, `"present":false`) || strings.Contains(stdout, "ICLOUD_FOLDER_PASSWORD") {
+		t.Fatalf("missing JSON code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
+	}
+}
+
+func TestFolderStatusPersistsAllButBoundsOutput(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "state")
+	t.Setenv("ICLOUD_FOLDER_PASSWORD", "synthetic-folder-secret")
+	commands, _ := newTestAccountCommands()
+	values := make([]transport.RemoteFolder, 0, 25)
+	for index := 0; index < 25; index++ {
+		name := fmt.Sprintf("Folder-%02d", index)
+		kind, source := "other", ""
+		if index == 0 {
+			name, kind, source = "INBOX", "inbox", "inbox"
+		}
+		values = append(values, transport.RemoteFolder{
+			Name: name, WireName: name, Delimiter: "/", Kind: kind, KindSource: source,
+			Selectable: true, Subscription: "unknown",
+			Status: &transport.MailboxStatus{Mailbox: name, Messages: uint32(index), UIDNext: uint32(index + 1), UIDValidity: uint32(100 + index)},
+		})
+	}
+	commands.folders = &fakeFolderClient{results: map[string][]transport.FolderDiscoveryResult{
+		"owner@icloud.com": {{Folders: values}},
+	}}
+	exitCode, _, stderr := runWithAccountCommands(t, commands, "", "--home", home,
+		"account", "add", "--name", "Personal", "--email", "owner@icloud.com", "--credential-env", "ICLOUD_FOLDER_PASSWORD")
+	if exitCode != 0 || stderr != "" {
+		t.Fatalf("add code=%d stderr=%q", exitCode, stderr)
+	}
+	exitCode, stdout, stderr := runWithAccountCommands(t, commands, "", "--home", home, "mail", "folders", "status")
+	if exitCode != 0 || stderr != "" || strings.Count(stdout, "folder fld_") != 20 || !strings.Contains(stdout, "count=20 total=25 more=true") {
+		t.Fatalf("bounded status code=%d lines=%d stdout=%q stderr=%q", exitCode, strings.Count(stdout, "\n"), stdout, stderr)
+	}
+	exitCode, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "folders", "list", "--limit", "100", "--json")
+	if exitCode != 0 || stderr != "" || strings.Count(stdout, `"id":"fld_`) != 25 || !strings.Contains(stdout, `"count":25`) {
+		t.Fatalf("persisted list code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
+	}
+}
+
+func TestFolderDiscoveryStopsBeforeNetworkWhenCredentialIsMissing(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "state")
+	commands, _ := newTestAccountCommands()
+	folderClient := &fakeFolderClient{}
+	commands.folders = folderClient
+	exitCode, _, stderr := runWithAccountCommands(t, commands, "", "--home", home,
+		"account", "add", "--name", "Personal", "--email", "owner@icloud.com", "--credential-env", "ICLOUD_FOLDER_MISSING")
+	if exitCode != 0 || stderr != "" {
+		t.Fatalf("add code=%d stderr=%q", exitCode, stderr)
+	}
+	exitCode, stdout, stderr := runWithAccountCommands(t, commands, "", "--home", home, "mail", "folders", "status", "--json")
+	if exitCode != cli.ExitAuthentication || stdout != "" || folderClient.calls != 0 {
+		t.Fatalf("status code=%d stdout=%q stderr=%q calls=%d", exitCode, stdout, stderr, folderClient.calls)
+	}
+	if strings.Contains(stderr, "ICLOUD_FOLDER_MISSING") {
+		t.Fatalf("error exposed credential reference: %q", stderr)
+	}
+}
+
+func folderDiscoveryFixture(second bool) transport.FolderDiscoveryResult {
+	values := []transport.RemoteFolder{
+		{Name: "INBOX", WireName: "INBOX", Delimiter: "/", Kind: "inbox", KindSource: "inbox", Selectable: true, Subscription: "unknown", Status: &transport.MailboxStatus{Mailbox: "INBOX", Messages: 15, Unseen: 2, UIDNext: 20, UIDValidity: 100}},
+		{Name: "Sent Messages", WireName: "Sent Messages", Delimiter: "/", Attributes: []string{"\\Sent"}, Kind: "sent", KindSource: "attribute", Selectable: true, Subscription: "unknown", Status: &transport.MailboxStatus{Mailbox: "Sent Messages", Messages: 4, UIDNext: 5, UIDValidity: 101}},
+		{Name: "Projects", WireName: "Projects", Delimiter: "/", Attributes: []string{"\\Noselect"}, Kind: "other", Selectable: false, Subscription: "unknown"},
+		{Name: "Projects/Alpha", WireName: "Projects/Alpha", ParentName: "Projects", ParentWireName: "Projects", Delimiter: "/", Kind: "other", Selectable: true, Subscription: "subscribed", Status: &transport.MailboxStatus{Mailbox: "Projects/Alpha", Messages: 1, Unseen: 1, UIDNext: 2, UIDValidity: 102}},
+		{Name: "Receipts", WireName: "Receipts", Delimiter: "/", Kind: "other", Selectable: true, Subscription: "unknown", Status: &transport.MailboxStatus{Mailbox: "Receipts", Messages: 1, UIDNext: 2, UIDValidity: 103}},
+		{Name: "Unicode-日本語", WireName: "Unicode-&ZeVnLIqe-", Delimiter: "/", Kind: "other", Selectable: true, Subscription: "unknown", Status: &transport.MailboxStatus{Mailbox: "Unicode-日本語", Messages: 2, UIDNext: 3, UIDValidity: 104}},
+	}
+	if second {
+		values = []transport.RemoteFolder{
+			values[0], values[1], values[2],
+			{Name: "Projects/Beta", WireName: "Projects/Beta", OldName: "Projects/Alpha", OldWireName: "Projects/Alpha", ParentName: "Projects", ParentWireName: "Projects", Delimiter: "/", Kind: "other", Selectable: true, Subscription: "unknown", Status: &transport.MailboxStatus{Mailbox: "Projects/Beta", Messages: 2, UIDNext: 3, UIDValidity: 105}},
+			values[5],
+		}
+	}
+	return transport.FolderDiscoveryResult{Capabilities: []string{"IMAP4REV1", "SPECIAL-USE"}, Folders: values}
 }
 
 func TestVersionCompactDefault(t *testing.T) {
@@ -197,7 +399,7 @@ func TestCapabilitiesCompactGoldenBudget(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("exit code = %d, stderr = %q", exitCode, stderr)
 	}
-	const want = "capabilities command=icloud version=dev schema=2 account_mode=validated_lifecycle credentials=keyring,env,file network_validation=true diagnostics=true default_output=compact json=true completion=bash,zsh,fish,powershell man=true\n"
+	const want = "capabilities command=icloud version=dev schema=3 account_mode=validated_lifecycle credentials=keyring,env,file network_validation=true diagnostics=true mail_folders=true default_output=compact json=true completion=bash,zsh,fish,powershell man=true\n"
 	if stdout != want {
 		t.Fatalf("stdout mismatch\nwant: %q\n got: %q", want, stdout)
 	}
@@ -227,7 +429,7 @@ func TestCapabilitiesJSONEnvelope(t *testing.T) {
 		t.Fatalf("ok = %#v", envelope["ok"])
 	}
 	data, ok := envelope["data"].(map[string]any)
-	if !ok || data["data_schema_version"] != float64(2) || data["network_validation"] != true || data["diagnostics"] != true {
+	if !ok || data["data_schema_version"] != float64(3) || data["network_validation"] != true || data["diagnostics"] != true || data["mail_folders"] != true {
 		t.Fatalf("data = %#v", envelope["data"])
 	}
 	if strings.Contains(stdout, "\x1b[") {
@@ -350,7 +552,7 @@ func TestAccountListCreatesAndReopensPrivateZeroState(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &envelope); err != nil {
 		t.Fatalf("invalid JSON: %v\n%s", err, stdout)
 	}
-	if !envelope.OK || envelope.Data.Count != 0 || len(envelope.Data.Accounts) != 0 || envelope.Data.SchemaVersion != 2 {
+	if !envelope.OK || envelope.Data.Count != 0 || len(envelope.Data.Accounts) != 0 || envelope.Data.SchemaVersion != 3 {
 		t.Fatalf("unexpected envelope: %+v", envelope)
 	}
 	if envelope.Meta.RequestID != "req_accounts" {
@@ -478,7 +680,7 @@ func TestAccountListAndShowReadStoredAccountCompactly(t *testing.T) {
 		t.Fatalf("invalid JSON: %v\n%s", err, stdout)
 	}
 	if !envelope.OK || envelope.Data.Account.ID != "acct_0198d704-6c00-7000-8000-000000000001" ||
-		envelope.Data.Account.CredentialScheme != "env" || envelope.Data.SchemaVersion != 2 {
+		envelope.Data.Account.CredentialScheme != "env" || envelope.Data.SchemaVersion != 3 {
 		t.Fatalf("unexpected envelope: %+v", envelope)
 	}
 }

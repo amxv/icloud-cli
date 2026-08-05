@@ -11,6 +11,7 @@ import (
 	"github.com/amxv/icloud-cli/internal/account"
 	"github.com/amxv/icloud-cli/internal/cli"
 	"github.com/amxv/icloud-cli/internal/config"
+	"github.com/amxv/icloud-cli/internal/folder"
 	"github.com/amxv/icloud-cli/internal/id"
 	"github.com/amxv/icloud-cli/internal/secret"
 	"github.com/amxv/icloud-cli/internal/store"
@@ -22,8 +23,146 @@ type accountCommands struct {
 	keyring secret.Keyring
 	imap    transport.IMAPValidator
 	smtp    transport.SMTPValidator
+	folders transport.IMAPFolderClient
 	now     func() time.Time
 	newID   func(string) (string, error)
+}
+
+func (commands accountCommands) FolderList(ctx context.Context, home, accountSelector string, limit int, includeMissing bool) (account.Account, []folder.Folder, bool, int64, error) {
+	state, err := openState(ctx, home)
+	if err != nil {
+		return account.Account{}, nil, false, 0, err
+	}
+	defer state.Close()
+	value, err := state.Accounts().ResolveSelected(ctx, accountSelector)
+	if err != nil {
+		return account.Account{}, nil, false, state.SchemaVersion(), mapAccountError(err)
+	}
+	values, more, err := state.Folders().List(ctx, value.ID, limit, includeMissing)
+	if err != nil {
+		return account.Account{}, nil, false, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot read local folders", false, err)
+	}
+	return value, values, more, state.SchemaVersion(), nil
+}
+
+func (commands accountCommands) FolderShow(ctx context.Context, home, accountSelector, folderSelector string) (account.Account, folder.Folder, int64, error) {
+	state, err := openState(ctx, home)
+	if err != nil {
+		return account.Account{}, folder.Folder{}, 0, err
+	}
+	defer state.Close()
+	value, err := state.Accounts().ResolveSelected(ctx, accountSelector)
+	if err != nil {
+		return account.Account{}, folder.Folder{}, state.SchemaVersion(), mapAccountError(err)
+	}
+	folderValue, err := state.Folders().Resolve(ctx, value.ID, folderSelector)
+	if err != nil {
+		return account.Account{}, folder.Folder{}, state.SchemaVersion(), mapFolderError(err)
+	}
+	return value, folderValue, state.SchemaVersion(), nil
+}
+
+func (commands accountCommands) FolderStatus(ctx context.Context, home, accountSelector string) (account.Account, []folder.Folder, int64, error) {
+	state, _, unlock, err := commands.openWriteState(ctx, home)
+	if err != nil {
+		return account.Account{}, nil, 0, err
+	}
+	defer state.Close()
+	defer unlock()
+	value, err := state.Accounts().ResolveSelected(ctx, accountSelector)
+	if err != nil {
+		return account.Account{}, nil, state.SchemaVersion(), mapAccountError(err)
+	}
+	_, credential, err := state.Accounts().Credential(ctx, value.ID)
+	if err != nil {
+		return account.Account{}, nil, state.SchemaVersion(), mapAccountError(err)
+	}
+	password, err := secret.NewManager(commands.keyring).Resolve(ctx, credential)
+	if err != nil {
+		return account.Account{}, nil, state.SchemaVersion(), mapCredentialError(err)
+	}
+	defer zeroBytes(password)
+
+	var (
+		result       transport.FolderDiscoveryResult
+		usedUsername string
+		lastFailure  *transport.Failure
+	)
+	for _, username := range imapUsernameCandidates(value) {
+		result, err = commands.folderClient().DiscoverFolders(ctx, transport.AuthRequest{Username: username, Password: password})
+		if err == nil {
+			usedUsername = username
+			lastFailure = nil
+			break
+		}
+		failure, ok := transport.AsFailure(err)
+		if !ok {
+			failure = transport.NewFailure(transport.StageConnect, transport.FailureUnavailable, false, err)
+		}
+		lastFailure = failure
+		if failure.Kind != transport.FailureAuthentication {
+			break
+		}
+	}
+	if lastFailure != nil {
+		return account.Account{}, nil, state.SchemaVersion(), mapFolderTransportError(lastFailure)
+	}
+	if usedUsername != "" && usedUsername != value.IMAPUsername {
+		value, err = state.Accounts().UpdateIMAPUsername(ctx, value.ID, usedUsername, commands.timeNow())
+		if err != nil {
+			return account.Account{}, nil, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot persist the working IMAP username", false, err)
+		}
+	}
+	observations := make([]folder.RemoteObservation, 0, len(result.Folders))
+	for _, remote := range result.Folders {
+		observation := folder.RemoteObservation{
+			Name:           remote.Name,
+			WireName:       remote.WireName,
+			OldName:        remote.OldName,
+			OldWireName:    remote.OldWireName,
+			ParentName:     remote.ParentName,
+			ParentWireName: remote.ParentWireName,
+			Delimiter:      remote.Delimiter,
+			Attributes:     append([]string(nil), remote.Attributes...),
+			Kind:           folder.NormalizeKind(remote.Kind),
+			KindSource:     remote.KindSource,
+			Selectable:     remote.Selectable,
+			Subscription:   folder.NormalizeSubscription(remote.Subscription),
+		}
+		if remote.Status != nil {
+			observation.Messages = remote.Status.Messages
+			observation.Unseen = remote.Status.Unseen
+			observation.UIDNext = remote.Status.UIDNext
+			observation.UIDValidity = remote.Status.UIDValidity
+			observation.StatusKnown = true
+		}
+		observations = append(observations, observation)
+	}
+	values, err := state.Folders().Reconcile(ctx, value.ID, observations, commands.timeNow(), func() (string, error) {
+		return commands.generateID("fld")
+	})
+	if err != nil {
+		return account.Account{}, nil, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot persist folder discovery", false, err)
+	}
+	return value, values, state.SchemaVersion(), nil
+}
+
+func (commands accountCommands) FolderSetSync(ctx context.Context, home, accountSelector, folderSelector string, enabled bool) (account.Account, folder.Folder, int64, error) {
+	state, _, unlock, err := commands.openWriteState(ctx, home)
+	if err != nil {
+		return account.Account{}, folder.Folder{}, 0, err
+	}
+	defer state.Close()
+	defer unlock()
+	value, err := state.Accounts().ResolveSelected(ctx, accountSelector)
+	if err != nil {
+		return account.Account{}, folder.Folder{}, state.SchemaVersion(), mapAccountError(err)
+	}
+	folderValue, err := state.Folders().SetSync(ctx, value.ID, folderSelector, enabled, commands.timeNow())
+	if err != nil {
+		return account.Account{}, folder.Folder{}, state.SchemaVersion(), mapFolderError(err)
+	}
+	return value, folderValue, state.SchemaVersion(), nil
 }
 
 func (commands accountCommands) List(ctx context.Context, home string, limit int) ([]account.Account, bool, int64, error) {
@@ -521,6 +660,16 @@ func (commands accountCommands) smtpValidator() transport.SMTPValidator {
 	return commands.smtp
 }
 
+func (commands accountCommands) folderClient() transport.IMAPFolderClient {
+	if commands.folders != nil {
+		return commands.folders
+	}
+	if candidate, ok := commands.imap.(transport.IMAPFolderClient); ok {
+		return candidate
+	}
+	return unavailableFolderClient{}
+}
+
 type unavailableIMAPValidator struct{}
 
 func (unavailableIMAPValidator) ValidateIMAP(context.Context, transport.AuthRequest) (transport.IMAPResult, error) {
@@ -531,6 +680,12 @@ type unavailableSMTPValidator struct{}
 
 func (unavailableSMTPValidator) ValidateSMTP(context.Context, transport.AuthRequest) (transport.SMTPResult, error) {
 	return transport.SMTPResult{}, transport.NewFailure(transport.StageConnect, transport.FailureConfiguration, false, errors.New("SMTP validator unavailable"))
+}
+
+type unavailableFolderClient struct{}
+
+func (unavailableFolderClient) DiscoverFolders(context.Context, transport.AuthRequest) (transport.FolderDiscoveryResult, error) {
+	return transport.FolderDiscoveryResult{}, transport.NewFailure(transport.StageConnect, transport.FailureConfiguration, false, errors.New("folder discovery unavailable"))
 }
 
 func (commands accountCommands) openWriteState(ctx context.Context, home string) (*store.Store, config.AppPaths, func(), error) {
@@ -677,6 +832,35 @@ func mapCredentialError(err error) error {
 	default:
 		return cli.WrapAppError(cli.ErrorInternal, "cannot manage the account credential", false, err)
 	}
+}
+
+func mapFolderError(err error) error {
+	switch {
+	case errors.Is(err, folder.ErrNotFound):
+		return cli.WrapAppError(cli.ErrorNotFound, "folder not found", false, err)
+	case errors.Is(err, folder.ErrAmbiguous):
+		return cli.WrapAppError(cli.ErrorConflict, "folder selection is ambiguous; use a stable folder ID or exact wire name", false, err)
+	case errors.Is(err, folder.ErrNotSelectable):
+		return cli.WrapAppError(cli.ErrorConflict, "folder is not selectable and cannot be enabled for synchronization", false, err)
+	default:
+		return cli.WrapAppError(cli.ErrorInternal, "cannot update local folder state", false, err)
+	}
+}
+
+func mapFolderTransportError(failure *transport.Failure) error {
+	if failure == nil {
+		return cli.WrapAppError(cli.ErrorInternal, "folder discovery failed", false, failure)
+	}
+	code := cli.ErrorUnavailable
+	switch failure.Kind {
+	case transport.FailureAuthentication:
+		code = cli.ErrorAuthentication
+	case transport.FailureConfiguration:
+		code = cli.ErrorConfiguration
+	}
+	appErr := cli.WrapAppError(code, "folder discovery failed at "+string(failure.Stage), failure.Retryable, failure)
+	appErr.Details = map[string]any{"stage": failure.Stage}
+	return appErr
 }
 
 func mapValidationError(validation *account.ValidationError) error {

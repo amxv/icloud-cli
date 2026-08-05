@@ -215,6 +215,24 @@ UPDATE accounts SET is_default = 1, updated_at = ? WHERE account_id = ?`,
 	return value, nil
 }
 
+func (r *AccountRepository) UpdateIMAPUsername(ctx context.Context, accountID, username string, now time.Time) (account.Account, error) {
+	result, err := r.db.ExecContext(ctx, `
+UPDATE accounts SET imap_username = ?, updated_at = ? WHERE account_id = ?`,
+		username, now.UTC().Format(time.RFC3339Nano), accountID,
+	)
+	if err != nil {
+		return account.Account{}, fmt.Errorf("update IMAP username: %w", err)
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return account.Account{}, fmt.Errorf("read IMAP username update result: %w", err)
+	}
+	if changed != 1 {
+		return account.Account{}, account.ErrNotFound
+	}
+	return accountByID(ctx, r.db, accountID)
+}
+
 func (r *AccountRepository) Remove(ctx context.Context, selector string) (account.Account, account.Credential, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {

@@ -11,15 +11,19 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"math/big"
 	"net"
 	"os"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/amxv/icloud-cli/internal/transport"
+	"github.com/emersion/go-imap/v2"
 )
 
 func TestIMAPValidationUsesTLSAndReadOnlyCompatibilityCommands(t *testing.T) {
@@ -95,6 +99,144 @@ func TestIMAPValidationClassifiesAuthenticationTLSDNSAndCancellation(t *testing.
 			t.Fatalf("cancellation took %s", elapsed)
 		}
 	})
+}
+
+func TestFolderDiscoveryPreservesProviderMetadataAndStatus(t *testing.T) {
+	unicodeWire := encodeMailboxWireName("Unicode-日本語")
+	server := newIMAPServer(t, imapServerOptions{
+		AuthOK: true,
+		ListLines: []string{
+			`* LIST (\Noinferiors) "/" "INBOX"`,
+			`* LIST (\HasNoChildren) "/" "Sent"`,
+			`* LIST (\HasNoChildren \Sent) "/" "Sent Messages"`,
+			`* LIST (\Noselect \HasChildren) "/" "Projects"`,
+			`* LIST (\HasNoChildren \Subscribed) "/" "Projects/Alpha"`,
+			`* LIST (\HasNoChildren \Drafts) "/" "Brouillons"`,
+			fmt.Sprintf(`* LIST (\HasNoChildren) "/" %s`, strconv.Quote(unicodeWire)),
+			`* LIST (\HasNoChildren) "/" "Renamed" (OLDNAME ("Old Name"))`,
+		},
+		Statuses: map[string]transport.MailboxStatus{
+			"INBOX":          {Messages: 12, Unseen: 3, UIDNext: 14, UIDValidity: 77},
+			"Sent":           {Messages: 1, UIDNext: 2, UIDValidity: 78},
+			"Sent Messages":  {Messages: 2, UIDNext: 3, UIDValidity: 79},
+			"Projects/Alpha": {Messages: 4, Unseen: 1, UIDNext: 8, UIDValidity: 80},
+			"Brouillons":     {Messages: 1, UIDNext: 2, UIDValidity: 81},
+			"Unicode-日本語":    {Messages: 5, Unseen: 2, UIDNext: 9, UIDValidity: 82},
+			"Renamed":        {Messages: 6, UIDNext: 10, UIDValidity: 83},
+		},
+	})
+	defer server.Close()
+	client := New(Config{IMAPHost: "127.0.0.1", IMAPPort: server.Port(), StageTimeout: time.Second, TLSConfig: server.ClientTLSConfig()})
+	result, err := client.DiscoverFolders(context.Background(), transport.AuthRequest{Username: "owner", Password: []byte("synthetic-secret")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Folders) != 8 {
+		t.Fatalf("folder count = %d", len(result.Folders))
+	}
+	byName := make(map[string]transport.RemoteFolder, len(result.Folders))
+	for _, value := range result.Folders {
+		byName[value.Name] = value
+	}
+	if value := byName["INBOX"]; value.Kind != "inbox" || value.KindSource != "inbox" || !value.Selectable || value.Status == nil || value.Status.Unseen != 3 {
+		t.Fatalf("inbox = %+v", value)
+	}
+	if value := byName["Sent Messages"]; value.Kind != "sent" || value.KindSource != "attribute" {
+		t.Fatalf("sent special-use = %+v", value)
+	}
+	if value := byName["Sent"]; value.Kind != "other" {
+		t.Fatalf("fallback overrode special-use: %+v", value)
+	}
+	if value := byName["Projects"]; value.Selectable || value.Status != nil {
+		t.Fatalf("non-selectable container = %+v", value)
+	}
+	if value := byName["Projects/Alpha"]; value.ParentName != "Projects" || value.Subscription != "subscribed" || value.Status == nil || value.Status.Messages != 4 {
+		t.Fatalf("nested folder = %+v", value)
+	}
+	if value := byName["Brouillons"]; value.Kind != "drafts" || value.KindSource != "attribute" {
+		t.Fatalf("localized special-use = %+v", value)
+	}
+	if value := byName["Unicode-日本語"]; value.WireName != unicodeWire || value.Status == nil || value.Status.UIDValidity != 82 {
+		t.Fatalf("unicode folder = %+v", value)
+	}
+	if value := byName["Renamed"]; value.OldName != "Old Name" || value.OldWireName != "Old Name" {
+		t.Fatalf("old-name metadata = %+v", value)
+	}
+	for _, command := range server.Commands() {
+		for _, forbidden := range []string{"STORE", "COPY", "MOVE", "APPEND", "EXPUNGE", "DELETE", "RENAME", "CREATE"} {
+			if command == forbidden {
+				t.Fatalf("discovery issued mutating command %q", command)
+			}
+		}
+	}
+}
+
+func TestFolderDiscoveryUsesSentFallbackOnlyWithoutSpecialUse(t *testing.T) {
+	folders := []transport.RemoteFolder{{Name: "Sent Mail", Kind: "other"}, {Name: "Other", Kind: "other"}}
+	applySentFallback(folders)
+	if folders[0].Kind != "sent" || folders[0].KindSource != "fallback" {
+		t.Fatalf("fallback folders = %+v", folders)
+	}
+	folders = []transport.RemoteFolder{{Name: "Localized", Kind: "sent", KindSource: "attribute"}, {Name: "Sent", Kind: "other"}}
+	applySentFallback(folders)
+	if folders[1].Kind != "other" {
+		t.Fatalf("fallback applied despite special-use: %+v", folders)
+	}
+}
+
+func TestFolderDiscoveryClassifiesStatusFailureAndRejectsUnsafeInventory(t *testing.T) {
+	t.Run("status failure", func(t *testing.T) {
+		server := newIMAPServer(t, imapServerOptions{
+			AuthOK:    true,
+			ListLines: []string{`* LIST (\HasNoChildren) "/" "INBOX"`, `* LIST (\HasNoChildren) "/" "Receipts"`},
+			Statuses: map[string]transport.MailboxStatus{
+				"INBOX": {Messages: 1, UIDNext: 2, UIDValidity: 7},
+			},
+		})
+		defer server.Close()
+		client := New(Config{IMAPHost: "127.0.0.1", IMAPPort: server.Port(), StageTimeout: time.Second, TLSConfig: server.ClientTLSConfig()})
+		_, err := client.DiscoverFolders(context.Background(), transport.AuthRequest{Username: "owner", Password: []byte("secret")})
+		assertFailure(t, err, transport.StageIMAPStatus, transport.FailureUnavailable)
+	})
+
+	t.Run("folder count bound", func(t *testing.T) {
+		lines := make([]string, 0, maxDiscoveredFolders+1)
+		for index := 0; index <= maxDiscoveredFolders; index++ {
+			lines = append(lines, fmt.Sprintf(`* LIST (\Noselect) "/" "Container-%04d"`, index))
+		}
+		server := newIMAPServer(t, imapServerOptions{AuthOK: true, ListLines: lines})
+		defer server.Close()
+		client := New(Config{IMAPHost: "127.0.0.1", IMAPPort: server.Port(), StageTimeout: time.Second, TLSConfig: server.ClientTLSConfig()})
+		_, err := client.DiscoverFolders(context.Background(), transport.AuthRequest{Username: "owner", Password: []byte("secret")})
+		assertFailure(t, err, transport.StageIMAPList, transport.FailureUnavailable)
+	})
+
+	t.Run("invalid decoded name", func(t *testing.T) {
+		if _, err := remoteFolderFromList(&imap.ListData{Mailbox: string([]byte{0xff}), Delim: '/'}); err == nil {
+			t.Fatal("expected invalid UTF-8 mailbox to fail")
+		}
+	})
+}
+
+func TestEncodeMailboxWireNameRFC3501(t *testing.T) {
+	tests := map[string]string{
+		"":                   "",
+		"a&b":                "a&-b",
+		"日本語":                "&ZeVnLIqe-",
+		"~peter/mail/台北/日本語": "~peter/mail/&U,BTFw-/&ZeVnLIqe-",
+		"Unicode-日本語":        "Unicode-&ZeVnLIqe-",
+		"Hi Mom -☺-!":        "Hi Mom -&Jjo--!",
+	}
+	keys := make([]string, 0, len(tests))
+	for key := range tests {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, input := range keys {
+		if got := encodeMailboxWireName(input); got != tests[input] {
+			t.Fatalf("encode %q = %q want %q", input, got, tests[input])
+		}
+	}
 }
 
 func TestSMTPValidationRequiresSTARTTLSAuthenticatesAndNeverSends(t *testing.T) {
@@ -246,6 +388,8 @@ func newTestCertificate(t *testing.T) testCertificate {
 type imapServerOptions struct {
 	AuthOK        bool
 	StallGreeting bool
+	ListLines     []string
+	Statuses      map[string]transport.MailboxStatus
 }
 
 type imapTestServer struct {
@@ -320,9 +464,28 @@ func (server *imapTestServer) handle(conn net.Conn, options imapServerOptions) {
 				_, _ = writer.WriteString(tag + " NO [AUTHENTICATIONFAILED] rejected\r\n")
 			}
 		case "LIST":
-			_, _ = writer.WriteString("* LIST (\\HasNoChildren) \"/\" \"INBOX\"\r\n" + tag + " OK list\r\n")
+			lines := options.ListLines
+			if len(lines) == 0 {
+				lines = []string{`* LIST (\HasNoChildren) "/" "INBOX"`}
+			}
+			for _, responseLine := range lines {
+				_, _ = writer.WriteString(responseLine + "\r\n")
+			}
+			_, _ = writer.WriteString(tag + " OK list\r\n")
 		case "STATUS":
-			_, _ = writer.WriteString("* STATUS INBOX (MESSAGES 12 UNSEEN 3 UIDNEXT 14 UIDVALIDITY 77)\r\n" + tag + " OK status\r\n")
+			mailbox := parseIMAPMailboxArgument(line, "STATUS")
+			status, ok := options.Statuses[mailbox]
+			if len(options.Statuses) == 0 && mailbox == "INBOX" {
+				status = transport.MailboxStatus{Messages: 12, Unseen: 3, UIDNext: 14, UIDValidity: 77}
+				ok = true
+			}
+			if !ok {
+				_, _ = writer.WriteString(tag + " NO status unavailable\r\n")
+				break
+			}
+			wireName := encodeMailboxWireName(mailbox)
+			_, _ = writer.WriteString(fmt.Sprintf("* STATUS %s (MESSAGES %d UNSEEN %d UIDNEXT %d UIDVALIDITY %d)\r\n%s OK status\r\n",
+				strconv.Quote(wireName), status.Messages, status.Unseen, status.UIDNext, status.UIDValidity, tag))
 		case "LOGOUT":
 			_, _ = writer.WriteString("* BYE logging out\r\n" + tag + " OK logout\r\n")
 			_ = writer.Flush()
@@ -356,6 +519,43 @@ func (server *imapTestServer) Commands() []string {
 }
 
 func (server *imapTestServer) Close() { _ = server.listener.Close() }
+
+func parseIMAPMailboxArgument(line, command string) string {
+	rest := strings.TrimSpace(line)
+	fields := strings.Fields(rest)
+	if len(fields) < 3 || !strings.EqualFold(fields[1], command) {
+		return ""
+	}
+	rest = strings.TrimSpace(strings.TrimPrefix(rest, fields[0]))
+	rest = strings.TrimSpace(strings.TrimPrefix(rest, fields[1]))
+	if !strings.HasPrefix(rest, `"`) {
+		return strings.Fields(rest)[0]
+	}
+	var escaped bool
+	for index := 1; index < len(rest); index++ {
+		switch {
+		case escaped:
+			escaped = false
+		case rest[index] == '\\':
+			escaped = true
+		case rest[index] == '"':
+			quoted := rest[:index+1]
+			value, err := strconv.Unquote(quoted)
+			if err != nil {
+				return ""
+			}
+			// The client writes modified UTF-7. Tests use the canonical encoder,
+			// so map back to a decoded fixture key when one is known.
+			for _, candidate := range []string{"Unicode-日本語"} {
+				if value == encodeMailboxWireName(candidate) {
+					return candidate
+				}
+			}
+			return value
+		}
+	}
+	return ""
+}
 
 type smtpServerOptions struct {
 	AdvertiseSTARTTLS bool

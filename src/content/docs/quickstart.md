@@ -16,9 +16,11 @@ The current `icloud` build can:
 - list, show, rename, default, remove, and manage credential metadata;
 - validate direct-TLS IMAP and mandatory-STARTTLS SMTP without sending mail;
 - persist account health and inspect local or live diagnostics with `icloud doctor`;
+- discover every remote folder and store provider counts without downloading messages;
+- choose local future-sync policy independently from discovery;
 - report its version and local-state schema, generate shell completions, and generate man pages.
 
-Account setup itself is offline and a newly added account is `pending_validation`. `account test` then performs a read-only authentication and compatibility check. The current build does **not** synchronize messages, export content, mutate mailbox state, or send mail.
+Account setup itself is offline and a newly added account is `pending_validation`. `account test` then performs a read-only authentication and compatibility check. Folder status can subsequently discover the complete mailbox tree and counts. The current build does **not** synchronize message content, export content, mutate mailbox state, or send mail.
 
 ## Install
 
@@ -39,7 +41,7 @@ Representative compact output:
 
 ```text
 version 0.1.0
-capabilities command=icloud version=0.1.0 schema=2 account_mode=validated_lifecycle credentials=keyring,env,file network_validation=true diagnostics=true default_output=compact json=true completion=bash,zsh,fish,powershell man=true
+capabilities command=icloud version=0.1.0 schema=3 account_mode=validated_lifecycle credentials=keyring,env,file network_validation=true diagnostics=true mail_folders=true default_output=compact json=true completion=bash,zsh,fish,powershell man=true
 ```
 
 ## Choose an isolated state root
@@ -116,6 +118,23 @@ icloud doctor
 
 Read [Account validation and doctor](/docs/account-validation-and-doctor) for username fallback, all-account checks, live diagnostics, stage codes, and timeouts.
 
+## Discover folders without syncing messages
+
+```bash
+icloud mail folders status
+icloud mail folders list
+```
+
+The live status command lists every mailbox and reads remote counts, while local list reuses the persisted result without contacting Apple. Inbox and Sent default to future sync enabled; every other folder defaults disabled.
+
+Enable an additional folder explicitly:
+
+```bash
+icloud mail folders enable Receipts
+```
+
+This changes local policy only. It does not fetch or change any message. Read [Folder discovery and sync policy](/docs/folder-discovery-and-sync-policy) for nested and Unicode names, special-use roles, missing folders, and verbose provider metadata.
+
 ## Inspect the configured profile
 
 ```bash
@@ -150,5 +169,6 @@ icloud man --output-dir ./man
 - **Cannot remove the default** — set another default account first.
 - **Local state is busy** — let the other `icloud` process finish or retry with an appropriate timeout.
 - **Validation failed at a stage** — run `icloud doctor`, then use the stage in [Account validation and doctor](/docs/account-validation-and-doctor) to choose the next action.
+- **Folder list is empty** — run `icloud mail folders status` once; local list never performs implicit network discovery.
 
 Next, use the [command reference](/docs/command-reference) for every available command and flag.

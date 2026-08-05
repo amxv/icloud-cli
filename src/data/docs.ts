@@ -15,7 +15,7 @@ export const siteConfig = {
     {
       title: "Current command set",
       text:
-        "Secure account lifecycle, read-only IMAP/SMTP validation, persisted health diagnostics, bounded state inspection, shell completions, and man pages."
+        "Secure account lifecycle, read-only IMAP/SMTP validation, durable folder discovery and sync policy, persisted health diagnostics, bounded state inspection, shell completions, and man pages."
     },
     {
       title: "Repository",

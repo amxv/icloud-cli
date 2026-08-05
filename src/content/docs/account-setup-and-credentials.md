@@ -194,6 +194,6 @@ icloud account test Personal
 
 The test is read-only: IMAP performs capability, login, list, and `INBOX` status commands; SMTP requires STARTTLS, authenticates, sends `NOOP`, and quits. It does not prove delivery and cannot send or mutate mail.
 
-Do not interpret `account add` alone as proof that the email, IMAP username, app-specific password, or external reference is valid. Continue with [Account validation and doctor](/docs/account-validation-and-doctor) for health and troubleshooting.
+Do not interpret `account add` alone as proof that the email, IMAP username, app-specific password, or external reference is valid. Continue with [Account validation and doctor](/docs/account-validation-and-doctor) for health and troubleshooting, then [Folder discovery and sync policy](/docs/folder-discovery-and-sync-policy) for the complete mailbox tree.
 
 Continue with [Local state and account inspection](/docs/local-state-and-accounts) for data paths and locking, or [Output and automation](/docs/output-and-automation) for JSON and exit contracts.

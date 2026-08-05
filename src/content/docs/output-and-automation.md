@@ -1,7 +1,7 @@
 ---
 title: Output and automation
 description: Understand compact defaults, JSON envelopes, stdin credential safety, stderr, request IDs, timeouts, and stable exit classes.
-order: 6
+order: 7
 category: Guides
 summary: The agent-facing contract for bounded text, explicit JSON, safe input, and stable failures.
 ---
@@ -30,10 +30,10 @@ icloud --request-id account-01 account show --json
 ```
 
 ```json
-{"ok":true,"data":{"account":{"id":"acct_…","name":"Personal","email":"owner@icloud.com","imap_username":"owner","status":"connected","default":true,"credential_scheme":"keyring","imap_capabilities":["IDLE","IMAP4REV1"],"smtp_capabilities":["AUTH"],"last_healthy_at":"2026-08-06T03:00:00Z","last_tested_at":"2026-08-06T03:00:00Z","created_at":"2026-08-06T02:30:00Z","updated_at":"2026-08-06T03:00:00Z"},"schema_version":2},"meta":{"request_id":"account-01"}}
+{"ok":true,"data":{"account":{"id":"acct_…","name":"Personal","email":"owner@icloud.com","imap_username":"owner","status":"connected","default":true,"credential_scheme":"keyring","imap_capabilities":["IDLE","IMAP4REV1"],"smtp_capabilities":["AUTH"],"last_healthy_at":"2026-08-06T03:00:00Z","last_tested_at":"2026-08-06T03:00:00Z","created_at":"2026-08-06T02:30:00Z","updated_at":"2026-08-06T03:00:00Z"},"schema_version":3},"meta":{"request_id":"account-01"}}
 ```
 
-Account lifecycle, credential, validation, doctor, account reads, `version`, and `capabilities` support JSON. Completion and man generation intentionally return native text formats.
+Account lifecycle, credential, validation, doctor, folder discovery/policy, account reads, `version`, and `capabilities` support JSON. Folder list/show/status also support bounded `--verbose` provider metadata. Completion and man generation intentionally return native text formats.
 
 Credential metadata JSON omits internal IDs, keyring references, environment names, file paths, and values. Error envelopes omit wrapped provider and storage causes.
 

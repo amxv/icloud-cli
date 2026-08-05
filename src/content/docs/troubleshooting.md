@@ -1,7 +1,7 @@
 ---
 title: Troubleshooting
 description: Resolve installation, account setup, credential, IMAP/SMTP validation, state, output, completion, and man-generation problems.
-order: 7
+order: 8
 category: Guides
 summary: Common errors, privacy-safe diagnosis, and the next command to run.
 ---
@@ -194,4 +194,26 @@ Generating completion output does not install it automatically.
 
 ## A local command is not contacting iCloud
 
-That is expected for `account add`, credential replacement, account reads, and `doctor` without `--live`. Use `icloud account test` or `icloud doctor --live` for explicit read-only IMAP and SMTP validation. Message synchronization and sending are not implemented in the current build.
+That is expected for `account add`, credential replacement, account reads, local folder `list`/`show`, folder policy changes, and `doctor` without `--live`. Use `icloud account test`, `icloud doctor --live`, or `icloud mail folders status` for explicit read-only network work. Message-content synchronization and sending are not implemented in the current build.
+
+## Folder list is empty
+
+`icloud mail folders list` reads local state only. Run one live discovery first:
+
+```bash
+icloud mail folders status
+```
+
+If that fails, use the returned credential, authentication, timeout, TLS, LIST, or STATUS stage to choose the next action. The command does not fetch messages.
+
+## A folder says subscription unknown
+
+That is truthful when iCloud does not expose subscription metadata through the LIST command it accepts. Unknown does not mean unsubscribed and does not prevent local future-sync policy from being enabled.
+
+## Archive or Drafts says kind other
+
+The provider did not advertise a corresponding special-use attribute. The CLI deliberately does not infer Archive, Drafts, Trash, or Junk roles from an English display name. Select the folder by stable ID or name and enable it explicitly when future synchronization should include it.
+
+## A removed folder still appears
+
+Live folder status retains absent provider folders as `present=no stale=true` so identity and policy are not silently lost. Normal `folders list` hides retained missing records; add `--include-missing` to inspect them.
