@@ -1,6 +1,6 @@
 # iCloud Mail Implementation Agent Prompts
 
-These prompts are designed for ChatGPT agents with access to the connected Zodex remote-machine tools. The implementation track works directly on `amxv/icloud-cli` `main`, phase by phase, using `progress.md` as the durable handoff ledger.
+These prompts are designed for ChatGPT agents with access to the connected Zodex remote-machine tools. The implementation track works directly on `amxv/icloud-cli` `main`, phase by phase, using `gg/progress.md` as the durable handoff ledger.
 
 ## Prompt for the first implementation agent
 
@@ -20,14 +20,18 @@ You are beginning the standalone iCloud Mail CLI implementation in `amxv/icloud-
 Read these in this order before implementing:
 
 1. `gg/icloud-mail-implementation-plan-2026-08-05.md`
-2. `progress.md`
+2. `gg/progress.md`
 3. The phase-specific sections of `gg/icloud-mail-sweep-2026-08-05.md` named by Phase 1
 
-The implementation plan is the acceptance contract and architecture. `progress.md` is the handoff ledger. The sweep is current-state evidence, not a second plan.
+The implementation plan is the acceptance contract and architecture. `gg/progress.md` is the handoff ledger. The sweep is current-state evidence, not a second plan.
 
 ## Reference repository
 
-Clone or update `amxv/gg-ama` on the Zodex machine only as read-only context. The planning reference commit was:
+The existing read-only `amxv/gg-ama` checkout on the Zodex machine is:
+
+`/tmp/icloud-cli-recon/gg-ama`
+
+Inspect that location first. If it is missing, recreate the clone at that exact path and check out the planning reference commit:
 
 `d5c15aff9b7cab98ef6e4ad9b360eab96b20420b`
 
@@ -50,7 +54,7 @@ Before editing:
 
 - inspect `git status`, current branch, current full SHA, recent commits, and the files listed by Phase 1;
 - confirm whether any prior implementation work unexpectedly exists;
-- reconcile `progress.md` against the code and correct it if necessary.
+- reconcile `gg/progress.md` against the code and correct it if necessary.
 
 During implementation:
 
@@ -67,7 +71,7 @@ You may continue into later contiguous phases only when the current phase is ful
 For every phase or coherent partial slice:
 
 - use coherent commits with descriptive messages;
-- update the phase table, Current handoff, and append a full entry in `progress.md`;
+- update the phase table, Current handoff, and append a full entry in `gg/progress.md`;
 - if reality invalidates the plan, append an Amendment to the implementation plan immediately and identify affected later phases;
 - never mark a phase complete without phase-specific positive evidence;
 - push the code and progress update to `main`;
@@ -75,7 +79,7 @@ For every phase or coherent partial slice:
 
 ## Safety and privacy
 
-- Never commit iCloud credentials, app-specific passwords, live mailbox content, raw MIME, recipient data, local databases, blobs, protocol captures, or private absolute paths.
+- Never commit iCloud credentials, app-specific passwords, live mailbox content, raw MIME, recipient data, local databases, blobs, protocol captures, or private absolute paths other than the explicitly documented read-only checkout `/tmp/icloud-cli-recon/gg-ama`.
 - Use fake servers/fixtures for normal tests. Any live iCloud test must be explicit, opt-in, disposable-account based, and scrubbed.
 - Preserve the plan’s noninteractive send/destructive-operation safety contract; do not add a shortcut around it.
 
@@ -98,22 +102,22 @@ You are continuing the standalone iCloud Mail CLI implementation in `amxv/icloud
 Read these in order:
 
 1. `gg/icloud-mail-implementation-plan-2026-08-05.md`
-2. `progress.md`
+2. `gg/progress.md`
 3. recent Git history and diffs for every commit since the previous recorded handoff
 4. the current code/tests/migrations/help for the last completed and earliest incomplete phases
 5. only the phase-specific sweep sections and source regions listed for the phase you will execute
 
-Do not trust `progress.md` blindly. Reconcile it against code, tests, Git history, and the plan. If it is stale or overclaims completion, correct it before continuing and record the evidence.
+Do not trust `gg/progress.md` blindly. Reconcile it against code, tests, Git history, and the plan. If it is stale or overclaims completion, correct it before continuing and record the evidence.
 
 ## Reference repository
 
-Use `amxv/gg-ama` only as read-only implementation evidence. The planning reference was `d5c15aff9b7cab98ef6e4ad9b360eab96b20420b`, primarily under `apps/amaos`.
+Use the existing Zodex checkout `/tmp/icloud-cli-recon/gg-ama` only as read-only implementation evidence. If the path is missing, recreate `amxv/gg-ama` there and check out `d5c15aff9b7cab98ef6e4ad9b360eab96b20420b`. The reusable source is primarily under `apps/amaos`.
 
 Do not modify it or run Rust/Tauri/workspace builds. Port useful behavior deliberately, but do not copy AMA/case/document-request/event/projection/Gmail/remote-server coupling or any defect identified in the sweep.
 
 ## Work selection
 
-Find the earliest phase in `progress.md` that is not genuinely complete. Start there.
+Find the earliest phase in `gg/progress.md` that is not genuinely complete. Start there.
 
 - If it is `in_progress`, finish its exact remaining outcome and validation before starting another phase.
 - If it is `blocked`, verify the blocker. Resolve it only when the plan already provides the decision; otherwise report the user-decision blocker instead of weakening scope.
@@ -136,7 +140,7 @@ Implement as many contiguous complete phases as context safely permits, but neve
 
 After every coherent implementation session:
 
-- update the phase table and Current handoff in `progress.md`;
+- update the phase table and Current handoff in `gg/progress.md`;
 - append the required detailed progress entry with starting/ending SHAs, outcome, files, positive/regression evidence, decisions, risks, and next boundary;
 - append a dated plan Amendment immediately if an assumption, path, dependency, or approach changed in a way later agents must know;
 - commit the progress/amendment with the code it describes;
@@ -146,7 +150,7 @@ Never mark a phase complete without its full observable outcome, positive eviden
 
 ## Safety and privacy
 
-Never commit credentials, app-specific-password values, private mailbox contents, raw live MIME, live recipient lists, local SQLite databases, blobs, protocol captures, or private absolute paths. Live tests must be opt-in, disposable-account based, and scrubbed.
+Never commit credentials, app-specific-password values, private mailbox contents, raw live MIME, live recipient lists, local SQLite databases, blobs, protocol captures, or private absolute paths other than the explicitly documented read-only checkout `/tmp/icloud-cli-recon/gg-ama`. Live tests must be opt-in, disposable-account based, and scrubbed.
 
 Do not ask the user to repeat prior decisions or wait for confirmation. Reconstruct the branch, continue the earliest real incomplete phase, validate, document, commit, push, and return the exact implementation coordinates and next handoff.
 ```

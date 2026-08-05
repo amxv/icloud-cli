@@ -4,6 +4,7 @@
 
 - **Sweep date:** 2026-08-05
 - **Source repository:** `amxv/gg-ama`, branch `main`, commit `d5c15aff9b7cab98ef6e4ad9b360eab96b20420b`
+- **Zodex source checkout:** `/tmp/icloud-cli-recon/gg-ama` (read-only research clone)
 - **Destination research baseline:** `amxv/icloud-cli`, branch `main`, commit `2bf55d1a4f68c8d49391fa32bd59f2c1447120c8`
 - **Publication base preserved before this report landed:** `69e77c711a96d6ba8cd97d882aa010f0b2752687` (canonical docs URL and docs-only Vercel deployment filter)
 - **Named workflow artifact consumed:** user-supplied `sweep.md`
@@ -49,7 +50,7 @@ flowchart LR
 
 ### `gg-ama`
 
-The mail-relevant Go implementation is concentrated in these areas:
+The inspected Zodex checkout is `/tmp/icloud-cli-recon/gg-ama`. The mail-relevant Go implementation is concentrated in these areas:
 
 | Area | Files | Current responsibility |
 | --- | --- | --- |

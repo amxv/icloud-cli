@@ -1,6 +1,6 @@
 # Standalone iCloud Mail CLI Implementation Plan
 
-> **Execution documents:** [current-state sweep](./icloud-mail-sweep-2026-08-05.md) · [progress ledger](../progress.md) · [agent prompts](./icloud-mail-agent-prompts.md)
+> **Execution documents:** [current-state sweep](./icloud-mail-sweep-2026-08-05.md) · [progress ledger](./progress.md) · [agent prompts](./icloud-mail-agent-prompts.md)
 
 ## Planning Basis
 
@@ -8,6 +8,7 @@
 - **Destination research baseline:** `amxv/icloud-cli`, `main` at `2bf55d1a4f68c8d49391fa32bd59f2c1447120c8`
 - **Publication base preserved during planning:** `69e77c711a96d6ba8cd97d882aa010f0b2752687`; intervening commits set `https://icloud.ashray.xyz` as canonical and added `scripts/should-build-docs.mjs`/`vercel.json.ignoreCommand` for docs-only Vercel builds
 - **Reference branch and commit:** `amxv/gg-ama`, `main` at `d5c15aff9b7cab98ef6e4ad9b360eab96b20420b`
+- **Zodex reference checkout:** `/tmp/icloud-cli-recon/gg-ama`; treat it as read-only, inspect it in place, and recreate it at the same path only if the temporary checkout is absent
 - **Artifacts consumed:** user-supplied `sweep.md`, `blueprint.md`, and `plan-doc.md`; repository research recorded in [`icloud-mail-sweep-2026-08-05.md`](./icloud-mail-sweep-2026-08-05.md)
 - **Code inspected:** the complete iCloud provider package and tests; generic mail contracts and normalization; mail account/sync/send/reply/read-model paths in `cases.Service`; mail storage schema; mail CLI and tests; destination CLI, release, npm, and docs wiring.
 - **External references used to settle dependency and protocol choices:** [Apple iCloud Mail server settings](https://support.apple.com/en-in/102525), [Apple app-specific passwords](https://support.apple.com/en-in/102654), [Cobra](https://github.com/spf13/cobra), [go-imap v2 client](https://pkg.go.dev/github.com/emersion/go-imap/v2/imapclient), [go-message](https://pkg.go.dev/github.com/emersion/go-message), [go-smtp](https://pkg.go.dev/github.com/emersion/go-smtp), [go-keyring](https://pkg.go.dev/github.com/zalando/go-keyring), [modernc SQLite](https://pkg.go.dev/modernc.org/sqlite), [goose](https://pkg.go.dev/github.com/pressly/goose/v3), and [gofrs/flock](https://pkg.go.dev/github.com/gofrs/flock).
@@ -514,7 +515,7 @@ The plan proceeds on the following falsifiable assumptions.
 
 **Reversible process decision, mandatory for this multi-agent track.**
 
-- **A. Every phase updates `progress.md`; plan-invalidating discoveries also append an Amendment before the same push.** — **Recommended**
+- **A. Every phase updates `gg/progress.md`; plan-invalidating discoveries also append an Amendment before the same push.** — **Recommended**
 - **B. Rely on Git history and chat handoffs only.**
 
 **Why A:** each implementation agent starts without the previous agent's full context. The progress ledger records completed evidence, current SHA, unresolved risks, and the exact next boundary; Amendments prevent later phases from following an invalid plan. B forces repeated archaeology.
@@ -540,7 +541,7 @@ An independent reviewer can mark this track complete only when all applicable it
 8. A user can add, list, show, rename, select as default, test, rotate credentials for, and remove multiple iCloud accounts using a friendly name, email, or stable account ID.
 9. Interactive setup can accept an app-specific password without placing it in argv or terminal history and stores it in the operating-system keyring by default.
 10. Headless setup can persist an `env:` or `file:` credential reference and resolve it only when needed.
-11. Plaintext app-specific passwords never appear in SQLite, generated docs, logs, JSON output, error details, `progress.md`, or Git history.
+11. Plaintext app-specific passwords never appear in SQLite, generated docs, logs, JSON output, error details, `gg/progress.md`, or Git history.
 12. Account validation tests IMAP and SMTP separately and reports which stage failed with a typed, redacted error.
 13. An account is not reported healthy/connected merely because its record was inserted; health reflects successful current credential/network validation.
 14. A revoked or missing credential produces an authentication-class error and degraded account health without deleting synchronized mail.
@@ -639,15 +640,15 @@ An independent reviewer can mark this track complete only when all applicable it
 
 ### Execution protocol for every phase
 
-1. Start from the current `main`, inspect Git status/log, read this plan, and reconcile [`progress.md`](../progress.md) against code before changing anything.
+1. Start from the current `main`, inspect Git status/log, read this plan, and reconcile [`gg/progress.md`](./progress.md) against code before changing anything.
 2. Read only the phase-scoped sweep sections and source regions listed below; do not reload the entire reference repository by habit.
-3. Keep `gg-ama` read-only. Port behavior and tests deliberately; do not copy AMA storage/contracts/case/event dependencies.
+3. Use the existing Zodex checkout `/tmp/icloud-cli-recon/gg-ama` and keep `gg-ama` read-only. Port behavior and tests deliberately; do not copy AMA storage/contracts/case/event dependencies.
 4. A phase is complete only when its positive evidence exists, the relevant regression scope passes, help/docs for commands added in that phase are updated, and the branch is usable at the boundary.
-5. Update `progress.md` in the same commit or final commit for the phase. Record current SHA, files, validation evidence, decisions, risks, and the exact next handoff.
+5. Update `gg/progress.md` in the same commit or final commit for the phase. Record current SHA, files, validation evidence, decisions, risks, and the exact next handoff.
 6. If evidence invalidates this plan, append an entry under Amendments immediately and identify every affected later phase. Do not silently reinterpret an acceptance criterion.
 7. Push coherent commits directly to `main`; never leave generated secrets, mailbox fixtures containing private mail, local databases, or blob data tracked.
 
-Future-phase reading entries marked **phase output** name files that an earlier phase is required to create. They do not exist at the planning SHA; the implementation agent must verify their current path and public contract on the live branch before proceeding. A rename is acceptable only when recorded in `progress.md` or Amendments so later agents can resolve it.
+Future-phase reading entries marked **phase output** name files that an earlier phase is required to create. They do not exist at the planning SHA; the implementation agent must verify their current path and public contract on the live branch before proceeding. A rename is acceptable only when recorded in `gg/progress.md` or Amendments so later agents can resolve it.
 
 ### Phase 1 — Cut over the public command and establish the CLI contract
 
@@ -1785,7 +1786,7 @@ Regression scope includes the full Go check suite, CGO-disabled cross builds, ve
 **Whole-track evidence:**
 
 - `gg/icloud-mail-implementation-plan-2026-08-05.md` (Acceptance Criteria, Decisions, and Amendments) — final contract.
-- `progress.md` (read in full) — phase evidence, unresolved risks, and deferred defects.
+- `gg/progress.md` (read in full) — phase evidence, unresolved risks, and deferred defects.
 - `gg/icloud-mail-sweep-2026-08-05.md` (Landmines and Coverage statement) — every source defect that must be absent or explicitly covered.
 - All current package boundaries under `internal/` (read public types and package docs, then only hot paths/tests in depth) — verify final architecture matches the cross-phase vocabulary.
 - `.github/workflows/release.yml`, `Makefile`, `package.json`, docs configuration, and generated artifacts — production/release boundary.
