@@ -5,10 +5,10 @@ import (
 	"io"
 	"strings"
 
-	"github.com/amxv/go-cli-template/internal/buildinfo"
+	"github.com/amxv/icloud-cli/internal/buildinfo"
 )
 
-const commandName = "mycli"
+const commandName = "icloud-cli"
 
 var version = buildinfo.CurrentVersion()
 
@@ -59,32 +59,32 @@ func isHelpArg(v string) bool {
 
 func printRootHelp(w io.Writer) {
 	writeLines(w,
-		"mycli - Go CLI template",
+		"icloud-cli - Go CLI template",
 		"",
 		"Usage:",
-		"  mycli [--version]",
-		"  mycli <command> [arguments]",
+		"  icloud-cli [--version]",
+		"  icloud-cli <command> [arguments]",
 		"",
 		"Commands:",
 		"  hello [name]    print a greeting",
 		"",
 		"Examples:",
-		"  mycli --version",
-		"  mycli hello",
-		"  mycli hello agent",
+		"  icloud-cli --version",
+		"  icloud-cli hello",
+		"  icloud-cli hello agent",
 	)
 }
 
 func printHelloHelp(w io.Writer) {
 	writeLines(w,
-		"mycli hello - print a greeting",
+		"icloud-cli hello - print a greeting",
 		"",
 		"Usage:",
-		"  mycli hello [name]",
+		"  icloud-cli hello [name]",
 		"",
 		"Examples:",
-		"  mycli hello",
-		"  mycli hello Alice",
+		"  icloud-cli hello",
+		"  icloud-cli hello Alice",
 	)
 }
 

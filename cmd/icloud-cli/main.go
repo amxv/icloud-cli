@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/amxv/go-cli-template/internal/app"
+	"github.com/amxv/icloud-cli/internal/app"
 )
 
 func main() {

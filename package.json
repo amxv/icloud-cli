@@ -1,27 +1,27 @@
 {
-  "name": "@amxv/go-cli-template",
+  "name": "@amxv/icloud-cli",
   "version": "0.1.0",
-  "description": "Template for shipping a Go CLI via npm with GitHub release automation",
+  "description": "A CLI for interacting with iCloud",
   "license": "Apache-2.0",
   "author": "amxv",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/amxv/go-cli-template.git"
+    "url": "git+https://github.com/amxv/icloud-cli.git"
   },
-  "homepage": "https://github.com/amxv/go-cli-template#readme",
+  "homepage": "https://github.com/amxv/icloud-cli#readme",
   "bugs": {
-    "url": "https://github.com/amxv/go-cli-template/issues"
+    "url": "https://github.com/amxv/icloud-cli/issues"
   },
   "bin": {
-    "mycli": "bin/mycli.js"
+    "icloud-cli": "bin/icloud-cli.js"
   },
   "config": {
-    "cliName": "mycli",
-    "cliBinaryName": "mycli",
-    "goModule": "github.com/amxv/go-cli-template"
+    "cliName": "icloud-cli",
+    "cliBinaryName": "icloud",
+    "goModule": "github.com/amxv/icloud-cli"
   },
   "files": [
-    "bin/mycli.js",
+    "bin/icloud-cli.js",
     "scripts/postinstall.js",
     "cmd",
     "internal",
@@ -35,7 +35,7 @@
   ],
   "scripts": {
     "postinstall": "node scripts/postinstall.js",
-    "test": "node --check bin/mycli.js && node --check scripts/postinstall.js && node --check scripts/project.js && node --check scripts/setup.js",
+    "test": "node --check bin/icloud-cli.js && node --check scripts/postinstall.js && node --check scripts/project.js && node --check scripts/setup.js",
     "lint": "npm run test",
     "docs:dev": "astro dev",
     "docs:build": "astro build",

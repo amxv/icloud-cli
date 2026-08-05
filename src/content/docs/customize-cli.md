@@ -3,7 +3,7 @@ title: Customize the CLI
 description: Rename the starter command, update project identity, and replace the starter command handlers safely.
 order: 2
 category: Development
-summary: The main checklist for turning mycli into a real Go command-line tool.
+summary: The main checklist for turning icloud-cli into a real Go command-line tool.
 ---
 
 ## Initialize identity

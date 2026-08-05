@@ -2,13 +2,13 @@ SHELL := /bin/bash
 
 GO ?= go
 GOFMT ?= gofmt
-BIN_NAME ?= mycli
-CMD_NAME ?= mycli
+BIN_NAME ?= icloud
+CMD_NAME ?= icloud-cli
 CMD_PATH ?= ./cmd/$(CMD_NAME)
 DIST_DIR ?= dist
 BIN_PATH ?= $(DIST_DIR)/$(BIN_NAME)
 VERSION ?= $(shell node -p "require('./package.json').version" 2>/dev/null)
-LDFLAGS ?= -s -w -X github.com/amxv/go-cli-template/internal/buildinfo.Version=$(if $(VERSION),$(VERSION),dev)
+LDFLAGS ?= -s -w -X github.com/amxv/icloud-cli/internal/buildinfo.Version=$(if $(VERSION),$(VERSION),dev)
 
 .PHONY: help bootstrap fmt test vet lint check docs-check docs-build build build-all install-local clean release-tag
 
@@ -24,9 +24,9 @@ help:
 	@echo "  make check        - fmt + test + vet + lint"
 	@echo "  make docs-check    - validate the Astro/ZueDocs site"
 	@echo "  make docs-build    - build the Astro/ZueDocs site"
-	@echo "  make build        - build local binary to dist/mycli"
+	@echo "  make build        - build local binary to dist/icloud-cli"
 	@echo "  make build-all    - build release binaries for 6 target platforms"
-	@echo "  make install-local - install CLI to ~/.local/bin/mycli"
+	@echo "  make install-local - install CLI to ~/.local/bin/icloud-cli"
 	@echo "  make clean        - remove dist artifacts"
 	@echo "  make release-tag VERSION=x.y.z - create and push a tag for GitHub Actions"
 

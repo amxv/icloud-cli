@@ -1,14 +1,14 @@
 export const siteConfig = {
-  name: "mycli",
+  name: "icloud-cli",
   strapline: "A Go CLI shipped through npm",
   description:
-    "Documentation for mycli, a starter Go command-line tool template with npm distribution, GitHub release automation, and an embedded ZueDocs-powered docs site.",
-  repoUrl: "https://github.com/amxv/go-cli-template",
+    "Documentation for icloud-cli, a starter Go command-line tool template with npm distribution, GitHub release automation, and an embedded ZueDocs-powered docs site.",
+  repoUrl: "https://github.com/amxv/icloud-cli",
   accentColor: "#0369a1",
   accentColorDark: "#38bdf8",
   footerSections: [
     {
-      title: "mycli",
+      title: "icloud-cli",
       text:
         "A starter Go CLI template with native binaries, npm installation, release automation, and docs included from day one."
     },
@@ -20,8 +20,8 @@ export const siteConfig = {
     {
       title: "Repository",
       linkPrefix: "Source: ",
-      linkHref: "https://github.com/amxv/go-cli-template",
-      linkLabel: "github.com/amxv/go-cli-template"
+      linkHref: "https://github.com/amxv/icloud-cli",
+      linkLabel: "github.com/amxv/icloud-cli"
     }
   ]
 } as const;

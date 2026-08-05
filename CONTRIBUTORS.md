@@ -16,14 +16,14 @@ Maintainer notes for this template repository.
 ```bash
 make check
 make build
-./dist/mycli --help
+./dist/icloud-cli --help
 ```
 
 Install command locally:
 
 ```bash
 make install-local
-mycli --help
+icloud-cli --help
 ```
 
 For a new CLI, use the bootstrap flow so the command, module, repository,

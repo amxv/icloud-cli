@@ -6,14 +6,14 @@ Guidance for coding agents working in `go-cli-template`.
 
 This repo is a generic starter for Go command-line tools distributed through npm.
 
-The sample command is `mycli`. Replace it with your actual CLI name and behavior.
+The sample command is `icloud-cli`. Replace it with your actual CLI name and behavior.
 
 ## Architecture
 
-- `cmd/mycli/main.go`: process entrypoint, error handling, exits non-zero on failure.
+- `cmd/icloud-cli/main.go`: process entrypoint, error handling, exits non-zero on failure.
 - `internal/app/app.go`: command parser + handlers.
 - `internal/app/app_test.go`: starter tests.
-- `bin/mycli.js`: npm shim that invokes packaged native binary.
+- `bin/icloud-cli.js`: npm shim that invokes packaged native binary.
 - `scripts/postinstall.js`: downloads release binary on install, falls back to `go build`.
 - `scripts/setup.js`: initializes command, module, repository, npm, docs, and license identity.
 - `project.config.json`: canonical repeated project identity fields.

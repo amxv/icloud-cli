@@ -48,9 +48,9 @@ Release assets use this shape:
 Examples:
 
 ```bash
-mycli_darwin_arm64
-mycli_linux_amd64
-mycli_windows_amd64.exe
+icloud-cli_darwin_arm64
+icloud-cli_linux_amd64
+icloud-cli_windows_amd64.exe
 ```
 
 Do not change this naming convention unless you update the workflow and `scripts/postinstall.js` together.
