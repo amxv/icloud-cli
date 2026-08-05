@@ -3,6 +3,6 @@ import zuedocs from "zuedocs/astro";
 
 export default defineConfig({
   output: "static",
-  site: "https://github.com/amxv/icloud-cli",
+  site: "https://icloud-cli.vercel.app",
   integrations: [zuedocs()]
 });
