@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/amxv/icloud-cli/internal/account"
 	"github.com/spf13/cobra"
 	"github.com/spf13/cobra/doc"
 )
@@ -18,10 +20,19 @@ import (
 const commandName = "icloud"
 
 type Config struct {
-	Version      string
-	Stdout       io.Writer
-	Stderr       io.Writer
-	RequestIDGen func() string
+	Version       string
+	SchemaVersion int64
+	Stdout        io.Writer
+	Stderr        io.Writer
+	RequestIDGen  func() string
+	Accounts      AccountService
+}
+
+// AccountService is the application-owned boundary used by account commands.
+// Implementations may initialize durable state lazily from the selected home.
+type AccountService interface {
+	List(context.Context, string, int) ([]account.Account, bool, int64, error)
+	Show(context.Context, string, string) (account.Account, int64, error)
 }
 
 type Result struct {
@@ -37,12 +48,14 @@ type globalOptions struct {
 }
 
 type executionState struct {
-	version   string
-	stdout    io.Writer
-	stderr    io.Writer
-	requestID string
-	global    globalOptions
-	cancel    context.CancelFunc
+	version       string
+	schemaVersion int64
+	stdout        io.Writer
+	stderr        io.Writer
+	requestID     string
+	global        globalOptions
+	accounts      AccountService
+	cancel        context.CancelFunc
 }
 
 type versionData struct {
@@ -57,11 +70,24 @@ type capabilityOutput struct {
 }
 
 type capabilitiesData struct {
-	Command    string           `json:"command"`
-	Version    string           `json:"version"`
-	Output     capabilityOutput `json:"output"`
-	Completion []string         `json:"completion"`
-	Man        bool             `json:"man"`
+	Command           string           `json:"command"`
+	Version           string           `json:"version"`
+	DataSchemaVersion int64            `json:"data_schema_version"`
+	Output            capabilityOutput `json:"output"`
+	Completion        []string         `json:"completion"`
+	Man               bool             `json:"man"`
+}
+
+type accountListData struct {
+	Accounts      []account.Account `json:"accounts"`
+	Count         int               `json:"count"`
+	More          bool              `json:"more,omitempty"`
+	SchemaVersion int64             `json:"schema_version"`
+}
+
+type accountShowData struct {
+	Account       account.Account `json:"account"`
+	SchemaVersion int64           `json:"schema_version"`
 }
 
 func Execute(ctx context.Context, args []string, config Config) Result {
@@ -74,16 +100,21 @@ func Execute(ctx context.Context, args []string, config Config) Result {
 	if config.RequestIDGen == nil {
 		config.RequestIDGen = NewRequestID
 	}
+	if config.Accounts == nil {
+		config.Accounts = unavailableAccountService{}
+	}
 
 	requestID := requestedID(args)
 	if !validRequestID(requestID) {
 		requestID = config.RequestIDGen()
 	}
 	state := &executionState{
-		version:   strings.TrimSpace(config.Version),
-		stdout:    config.Stdout,
-		stderr:    config.Stderr,
-		requestID: requestID,
+		version:       strings.TrimSpace(config.Version),
+		schemaVersion: config.SchemaVersion,
+		stdout:        config.Stdout,
+		stderr:        config.Stderr,
+		requestID:     requestID,
+		accounts:      config.Accounts,
 	}
 	if state.version == "" {
 		state.version = "dev"
@@ -128,8 +159,8 @@ func newRootCommand(state *executionState) *cobra.Command {
 	root := &cobra.Command{
 		Use:           commandName,
 		Short:         "Control iCloud services from the command line",
-		Long:          "icloud controls iCloud services from the command line. This build provides command discovery, version and capability inspection, shell completions, and man-page generation.",
-		Example:       "  icloud version\n  icloud capabilities\n  icloud completion zsh > _icloud",
+		Long:          "icloud controls iCloud services from the command line. This build provides local account-state inspection, version and capability reporting, shell completions, and man-page generation.",
+		Example:       "  icloud account list\n  icloud version\n  icloud capabilities\n  icloud completion zsh > _icloud",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		Args:          cobra.NoArgs,
@@ -163,7 +194,7 @@ func newRootCommand(state *executionState) *cobra.Command {
 	root.Version = state.version
 	root.SetVersionTemplate("version {{.Version}}\n")
 
-	root.PersistentFlags().StringVar(&state.global.Home, "home", "", "Override the iCloud application data directory")
+	root.PersistentFlags().StringVar(&state.global.Home, "home", "", "Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)")
 	root.PersistentFlags().StringVar(&state.global.Account, "account", "", "Select an account by name, email, or stable ID")
 	root.PersistentFlags().DurationVar(&state.global.Timeout, "timeout", 30*time.Second, "Maximum command duration")
 	root.PersistentFlags().BoolVar(&state.global.NoInput, "no-input", false, "Never prompt for interactive input")
@@ -171,8 +202,10 @@ func newRootCommand(state *executionState) *cobra.Command {
 
 	root.AddGroup(
 		&cobra.Group{ID: "core", Title: "Core commands:"},
+		&cobra.Group{ID: "account", Title: "Account commands:"},
 		&cobra.Group{ID: "docs", Title: "Documentation commands:"},
 	)
+	root.AddCommand(newAccountCommand(state))
 	root.AddCommand(newVersionCommand(state))
 	root.AddCommand(newCapabilitiesCommand(state))
 	root.AddCommand(newCompletionCommand(root))
@@ -224,8 +257,9 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				return err
 			}
 			data := capabilitiesData{
-				Command: commandName,
-				Version: state.version,
+				Command:           commandName,
+				Version:           state.version,
+				DataSchemaVersion: state.schemaVersion,
 				Output: capabilityOutput{
 					Default: "compact",
 					JSON:    true,
@@ -244,6 +278,7 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 			return NewCompactTextRenderer(state.stdout).Record("capabilities", "",
 				Field("command", data.Command),
 				Field("version", data.Version),
+				Field("schema", data.DataSchemaVersion),
 				Field("default_output", data.Output.Default),
 				Field("json", data.Output.JSON),
 				Field("completion", data.Completion),
@@ -253,6 +288,123 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
 	return cmd
+}
+
+func newAccountCommand(state *executionState) *cobra.Command {
+	command := &cobra.Command{
+		Use:     "account",
+		Short:   "Inspect configured iCloud Mail accounts",
+		GroupID: "account",
+		Args:    cobra.NoArgs,
+		Example: "  icloud account list\n  icloud account show personal",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return cmd.Help()
+		},
+	}
+	command.AddCommand(newAccountListCommand(state))
+	command.AddCommand(newAccountShowCommand(state))
+	return command
+}
+
+func newAccountListCommand(state *executionState) *cobra.Command {
+	var jsonOutput bool
+	var limit int
+	command := &cobra.Command{
+		Use:     "list",
+		Short:   "List accounts from the local state database",
+		Args:    cobra.NoArgs,
+		Example: "  icloud account list\n  ICLOUD_HOME=./icloud-state icloud account list --json",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput}, OutputSupport{JSON: true}); err != nil {
+				return err
+			}
+			if limit < 1 || limit > MaximumPageSize {
+				return NewAppError(ErrorUsage, fmt.Sprintf("--limit must be between 1 and %d", MaximumPageSize), false)
+			}
+			accounts, more, schemaVersion, err := state.accounts.List(cmd.Context(), state.global.Home, limit)
+			if err != nil {
+				return err
+			}
+			data := accountListData{Accounts: accounts, Count: len(accounts), More: more, SchemaVersion: schemaVersion}
+			if jsonOutput {
+				return WriteJSON(state.stdout, OutputEnvelope{
+					OK:   true,
+					Data: data,
+					Meta: EnvelopeMeta{RequestID: state.requestID},
+				})
+			}
+			renderer := NewCompactTextRenderer(state.stdout)
+			for _, value := range accounts {
+				if err := renderAccount(renderer, value); err != nil {
+					return err
+				}
+			}
+			return renderer.Summary("accounts",
+				Field("count", fmt.Sprintf("%d", len(accounts))),
+				Field("more", more),
+			)
+		},
+	}
+	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
+	command.Flags().IntVar(&limit, "limit", DefaultPageSize, fmt.Sprintf("Maximum accounts to return (1-%d)", MaximumPageSize))
+	return command
+}
+
+func newAccountShowCommand(state *executionState) *cobra.Command {
+	var jsonOutput bool
+	command := &cobra.Command{
+		Use:     "show <name|email|account-id>",
+		Short:   "Show one account from the local state database",
+		Args:    cobra.ExactArgs(1),
+		Example: "  icloud account show personal\n  icloud account show acct_0198f000-0000-7000-8000-000000000001 --json",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput}, OutputSupport{JSON: true}); err != nil {
+				return err
+			}
+			value, schemaVersion, err := state.accounts.Show(cmd.Context(), state.global.Home, args[0])
+			if err != nil {
+				switch {
+				case errors.Is(err, account.ErrNotFound):
+					return NewAppError(ErrorNotFound, "account not found", false)
+				case errors.Is(err, account.ErrAmbiguous):
+					return NewAppError(ErrorConflict, "account selector is ambiguous", false)
+				default:
+					return err
+				}
+			}
+			if jsonOutput {
+				return WriteJSON(state.stdout, OutputEnvelope{
+					OK:   true,
+					Data: accountShowData{Account: value, SchemaVersion: schemaVersion},
+					Meta: EnvelopeMeta{RequestID: state.requestID},
+				})
+			}
+			return renderAccount(NewCompactTextRenderer(state.stdout), value)
+		},
+	}
+	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
+	return command
+}
+
+func renderAccount(renderer *CompactTextRenderer, value account.Account) error {
+	return renderer.Record("account", value.ID,
+		Field("name", value.Name),
+		Field("email", value.Email),
+		Field("imap_username", value.IMAPUsername),
+		Field("status", value.Status),
+		Field("default", value.Default),
+		Field("credential", value.CredentialScheme),
+	)
+}
+
+type unavailableAccountService struct{}
+
+func (unavailableAccountService) List(context.Context, string, int) ([]account.Account, bool, int64, error) {
+	return nil, false, 0, NewAppError(ErrorConfiguration, "local account state is unavailable", false)
+}
+
+func (unavailableAccountService) Show(context.Context, string, string) (account.Account, int64, error) {
+	return account.Account{}, 0, NewAppError(ErrorConfiguration, "local account state is unavailable", false)
 }
 
 func newCompletionCommand(root *cobra.Command) *cobra.Command {

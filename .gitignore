@@ -16,3 +16,10 @@ npm-debug.log*
 
 # Vercel
 .vercel
+
+# Local iCloud state when an explicit repository-root home is used
+/mail.db
+/mail.db-shm
+/mail.db-wal
+/blobs/
+/locks/

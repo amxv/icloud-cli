@@ -14,7 +14,7 @@ Choose one installation path:
 - source build: Go 1.26 or newer;
 - documentation development: Bun 1 or newer in addition to the source-build tools.
 
-No iCloud credentials are required by the current command set.
+No iCloud credentials are required by the current command set. The first account read creates local application state but does not contact iCloud.
 
 ## Install through npm
 
@@ -59,7 +59,17 @@ icloud version
 icloud capabilities
 ```
 
-Both commands use one compact line by default. Use `--json` only when a consumer needs structured fields.
+Both commands use one compact line by default. `capabilities` includes the installed local-state schema version. Use `--json` only when a consumer needs structured fields.
+
+## Verify local state
+
+Choose an isolated directory for a first read:
+
+```bash
+ICLOUD_HOME=./icloud-state icloud account list
+```
+
+A new installation prints `accounts count=0` and creates the state root. Omitting both `--home` and `ICLOUD_HOME` uses the platform data directory described in [Local state and account inspection](/docs/local-state-and-accounts).
 
 ## Repair an npm installation
 
@@ -79,4 +89,4 @@ For a global npm installation:
 npm uninstall --global @amxv/icloud-cli
 ```
 
-The current build creates no mail database, blob cache, or credential record, so there is no application data to remove yet.
+Package removal does not delete local application state. If you ran an account command, the selected root may contain `mail.db`, `blobs/`, and `locks/`. Confirm the exact root and preserve anything needed before removing it manually. A source-only `version`, `capabilities`, completion, or man command does not create state.

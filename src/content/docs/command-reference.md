@@ -1,9 +1,9 @@
 ---
 title: Command reference
 description: A complete reference for the current icloud command tree, global controls, output modes, and generated help assets.
-order: 5
+order: 6
 category: Reference
-summary: Every command and flag available at the Phase 1 public boundary.
+summary: Every account-inspection, capability, completion, man, help, and global control available now.
 ---
 
 ## Root command
@@ -18,7 +18,7 @@ Running `icloud` without a command prints root help to stdout.
 
 | Flag | Default | Purpose |
 | --- | --- | --- |
-| `--home <path>` | platform default later | Override the application data directory for commands that use local state. |
+| `--home <path>` | `ICLOUD_HOME`, then the platform default | Override the application data directory for commands that use local state. |
 | `--account <selector>` | none | Select an account by friendly name, email, or stable ID when required. |
 | `--timeout <duration>` | `30s` | Bound command execution with a positive Go-style duration. |
 | `--no-input` | false | Prevent interactive prompting. |
@@ -26,7 +26,7 @@ Running `icloud` without a command prints root help to stdout.
 | `--version` | — | Print the compact installed version and exit. |
 | `-h`, `--help` | — | Print help to stdout. |
 
-The current inspection and documentation commands do not access account state. The shared flags are accepted now so scripts use one stable root contract.
+`account list` and `account show` initialize and read local state. The inspection and documentation commands remain disk-free. Shared flags keep one root contract across both kinds of command.
 
 ## `icloud version`
 
@@ -57,10 +57,39 @@ icloud capabilities --json
 Compact output:
 
 ```text
-capabilities command=icloud version=0.1.0 default_output=compact json=true completion=bash,zsh,fish,powershell man=true
+capabilities command=icloud version=0.1.0 schema=1 default_output=compact json=true completion=bash,zsh,fish,powershell man=true
 ```
 
-The JSON form also reports that no JSONL command is present in this build.
+The compact `schema` field and JSON `data_schema_version` field report the installed local-state schema. The JSON form also reports that no JSONL command is present in this build.
+
+## `icloud account list`
+
+Create or upgrade the selected local state and list configured accounts:
+
+```bash
+icloud account list
+icloud account list --limit 50
+icloud --home ./work-state account list --json
+```
+
+A new state returns:
+
+```text
+accounts count=0
+```
+
+A populated state emits at most 20 compact account records by default, followed by one count summary. `--limit` accepts `1` through `100`; the summary and JSON data include `more=true` when additional records exist. `--json` returns `accounts`, `count`, and `schema_version` in one success envelope. No credential reference or secret value is included.
+
+## `icloud account show`
+
+Resolve one stored account by friendly name, email address, or stable account ID:
+
+```bash
+icloud account show Personal
+icloud account show owner@example.com --json
+```
+
+A missing account writes a `not_found` error to stderr and exits `7`.
 
 ## `icloud completion`
 
@@ -117,4 +146,4 @@ Help goes to stdout. Usage failures go to stderr and exit with code `2`.
 
 ## Output availability
 
-Only `version` and `capabilities` expose `--json` in this build. No command silently accepts unsupported JSONL, full-body, HTML, raw, header, body-only, or verbose modes. See [Output and automation](/docs/output-and-automation) for the stable envelope and exit contracts.
+`version`, `capabilities`, `account list`, and `account show` expose `--json` in this build. No command silently accepts unsupported JSONL, full-body, HTML, raw, header, body-only, or verbose modes. See [Output and automation](/docs/output-and-automation) for the stable envelope and exit contracts.

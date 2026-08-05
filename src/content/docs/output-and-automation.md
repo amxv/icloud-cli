@@ -1,7 +1,7 @@
 ---
 title: Output and automation
 description: Understand compact defaults, JSON envelopes, stderr, request IDs, timeouts, and stable exit classes.
-order: 3
+order: 4
 category: Guides
 summary: The agent-facing contract for small default outputs and explicit structured expansion.
 ---
@@ -12,10 +12,12 @@ The CLI does not switch to JSON because stdout is redirected or because a caller
 
 ```text
 version 0.1.0
-capabilities command=icloud version=0.1.0 default_output=compact json=true completion=bash,zsh,fish,powershell man=true
+capabilities command=icloud version=0.1.0 schema=1 default_output=compact json=true completion=bash,zsh,fish,powershell man=true
 ```
 
 Default output omits empty values, ANSI color, box-drawing tables, JSON punctuation, and repeated labels. Successful output goes to stdout.
+
+List commands remain bounded. `account list` returns 20 records by default, accepts an explicit `--limit` up to 100, and reports `more=true` when the selected bound does not include every stored account.
 
 ## JSON is an explicit opt-in
 
@@ -29,7 +31,7 @@ icloud version --json
 {"ok":true,"data":{"command":"icloud","version":"0.1.0"},"meta":{"request_id":"req_example"}}
 ```
 
-The current `version` and `capabilities` commands support JSON. Completion and man generation intentionally return their native text formats and do not advertise JSON.
+The current `version`, `capabilities`, `account list`, and `account show` commands support JSON. Completion and man generation intentionally return their native text formats and do not advertise JSON.
 
 ## Request IDs
 
@@ -73,21 +75,21 @@ The command reserves stable process exit classes:
 | `7` | not found | The selected object does not exist. |
 | `8` | safety | Explicit authorization is required for the requested operation. |
 
-Only success and usage are exercised by the current inspection commands; the remaining classes are part of the established public boundary.
+Account reads also exercise not-found and retryable lock-conflict results. The remaining classes stay reserved for later credential and network workflows.
 
 ## Global controls
 
 These flags are accepted at the root:
 
 ```text
---home <path>         override the future application data root
+--home <path>         override the application data root
 --account <selector>  select an account when a command uses one
 --timeout <duration>  bound command execution; default 30s
 --no-input            prohibit interactive prompts
 --request-id <id>     correlate structured output
 ```
 
-The current inspection and documentation commands do not read account state or prompt. They still validate timeout and request-ID syntax so automation can adopt one stable root invocation pattern.
+`account list` and `account show` read local state and never prompt. Version, capabilities, completion, and man generation remain disk-free. Every command validates timeout and request-ID syntax so automation can use one stable root invocation pattern.
 
 ## Unsupported modes are not silently ignored
 

@@ -26,6 +26,7 @@ const proofPoints = [
 
 const workflows = [
   "Install the package or build from source, then verify the exact binary with icloud version.",
+  "Create an isolated local state and inspect its account inventory with icloud account list.",
   "Inspect supported behavior with icloud capabilities before an agent chooses an output mode.",
   "Generate completions for Bash, Zsh, Fish, or PowerShell directly from the installed command tree.",
   "Generate a single root man page to stdout or the complete man-page tree into a directory."
@@ -47,8 +48,8 @@ const workflows = [
         and one public executable across local builds, npm installs, and release assets.
       </p>
       <p class="hero__annotation">
-        The current build establishes the command, output, help, completion, and man-page contract.
-        It does not request credentials or contact iCloud yet.
+        The current build also creates private local state and exposes bounded account inventory reads.
+        It does not add credentials or contact iCloud yet.
       </p>
       <div class="hero__actions">
         <a class="button button--solid" href="/docs/quickstart">Start with the quickstart</a>
@@ -61,7 +62,9 @@ const workflows = [
         <span>$ icloud version</span>
         <span>version 0.1.0</span>
         <span>$ icloud capabilities</span>
-        <span>capabilities command=icloud version=0.1.0 default_output=compact …</span>
+        <span>capabilities command=icloud version=0.1.0 schema=1 …</span>
+        <span>$ ICLOUD_HOME=./icloud-state icloud account list</span>
+        <span>accounts count=0</span>
       </div>
     </aside>
   </section>
@@ -88,7 +91,7 @@ const workflows = [
   <section class="shell split-section">
     <div>
       <p class="section-label">Available now</p>
-      <h2>Inspect the build and generate local reference assets.</h2>
+      <h2>Initialize local state, inspect accounts, and generate reference assets.</h2>
     </div>
     <div class="stack-list">
       {workflows.map((item) => (
