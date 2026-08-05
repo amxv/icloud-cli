@@ -8,11 +8,12 @@ summary: Placeholder changelog for projects created from this template.
 
 This page is a starter changelog for projects created from this template. Replace the placeholder entries with real release notes when you cut versions.
 
-## 0.1.0 - YYYY-MM-DD
+## 0.1.0 - 2026-08-05
 
-- Initial release.
-- Describe the first usable CLI commands.
-- Describe any install, npm package, or release-binary behavior users should know about.
+- Initial scaffold release, bootstrapped from `amxv/go-cli-template`.
+- No iCloud-specific CLI behavior yet; the binary still exposes the
+  template's placeholder `hello` command.
+- Establishes the npm wrapper package, GitHub release workflow, and docs site.
 
 ## Maintainer notes
 
