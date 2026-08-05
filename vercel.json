@@ -3,5 +3,6 @@
   "framework": "astro",
   "installCommand": "bun install --ignore-scripts",
   "buildCommand": "bun run docs:build",
-  "outputDirectory": "dist"
+  "outputDirectory": "dist",
+  "ignoreCommand": "node scripts/should-build-docs.mjs"
 }
