@@ -34,6 +34,12 @@ type credentialData struct {
 	SchemaVersion int64              `json:"schema_version"`
 }
 
+type accountHealthData struct {
+	Reports       []account.HealthReport `json:"reports"`
+	Count         int                    `json:"count"`
+	SchemaVersion int64                  `json:"schema_version"`
+}
+
 func newAccountAddCommand(state *executionState) *cobra.Command {
 	var (
 		name         string
@@ -284,6 +290,47 @@ func newAccountCredentialDeleteCommand(state *executionState) *cobra.Command {
 	return command
 }
 
+func newAccountTestCommand(state *executionState) *cobra.Command {
+	var all, jsonOutput, verbose bool
+	command := &cobra.Command{
+		Use:     "test [selector]",
+		Short:   "Validate credentials against iCloud IMAP and SMTP without sending mail",
+		Args:    cobra.MaximumNArgs(1),
+		Example: "  icloud account test\n  icloud account test Personal\n  icloud account test --all --json",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput, Verbose: verbose}, OutputSupport{JSON: true, Verbose: true}); err != nil {
+				return err
+			}
+			selector, err := selectedAccountSelector(state, args)
+			if err != nil {
+				return err
+			}
+			if all && strings.TrimSpace(selector) != "" {
+				return NewAppError(ErrorUsage, "--all cannot be combined with an account selector", false)
+			}
+			reports, schemaVersion, err := state.accounts.Test(cmd.Context(), state.global.Home, selector, all)
+			if err != nil {
+				return err
+			}
+			data := accountHealthData{Reports: reports, Count: len(reports), SchemaVersion: schemaVersion}
+			if jsonOutput {
+				return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: data, Meta: EnvelopeMeta{RequestID: state.requestID}})
+			}
+			renderer := NewCompactTextRenderer(state.stdout)
+			for _, report := range reports {
+				if err := renderHealthReport(renderer, report, verbose); err != nil {
+					return err
+				}
+			}
+			return renderer.Summary("account-tests", Field("count", len(reports)), Field("healthy", len(reports)))
+		},
+	}
+	command.Flags().BoolVar(&all, "all", false, "Validate every configured account (maximum 100)")
+	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
+	command.Flags().BoolVar(&verbose, "verbose", false, "Include bounded protocol capability summaries")
+	return command
+}
+
 func bindCredentialSourceFlags(command *cobra.Command, options *credentialSourceOptions) {
 	command.Flags().BoolVar(&options.passwordStdin, "password-stdin", false, "Read an app-specific password from stdin and store it in the native keyring")
 	command.Flags().StringVar(&options.environment, "credential-env", "", "Persist an environment-variable credential reference")
@@ -382,6 +429,36 @@ func renderCredential(renderer *CompactTextRenderer, credential account.Credenti
 		Field("configured", credential.Configured),
 		Field("updated_at", credential.UpdatedAt),
 	)
+}
+
+func renderHealthReport(renderer *CompactTextRenderer, report account.HealthReport, verbose bool) error {
+	fields := []CompactField{
+		Field("status", report.Status),
+		Field("imap", protocolState(report.IMAP)),
+		Field("smtp", protocolState(report.SMTP)),
+		Field("imap_username", report.IMAPUsername),
+		Field("mailboxes", report.IMAP.Mailboxes),
+		Field("inbox_messages", report.IMAP.Inbox.Messages),
+		Field("inbox_unseen", report.IMAP.Inbox.Unseen),
+		Field("checked_at", report.CheckedAt),
+	}
+	if verbose {
+		fields = append(fields,
+			Field("imap_caps", report.IMAP.Capabilities),
+			Field("smtp_caps", report.SMTP.Capabilities),
+		)
+	}
+	return renderer.Record("account-test", report.AccountID, fields...)
+}
+
+func protocolState(check account.ProtocolCheck) string {
+	if check.OK {
+		return "ok"
+	}
+	if check.Stage != "" {
+		return "failed:" + string(check.Stage)
+	}
+	return "failed"
 }
 
 func wipeSecret(value []byte) {

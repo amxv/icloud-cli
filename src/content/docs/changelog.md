@@ -8,12 +8,17 @@ summary: Public command, output, installation, and documentation changes.
 
 ## Unreleased
 
+- Added read-only `icloud account test` for one or all accounts with direct-TLS IMAP, mandatory SMTP STARTTLS, separate authentication results, bounded capability summaries, and no send or mailbox mutation commands.
+- Added full-email/short-name IMAP authentication fallback and persistence of the exact successful username.
+- Added durable connected/degraded health, last-tested/last-healthy timestamps, redacted failure stages, and sanitized IMAP/SMTP capabilities through schema version 2.
+- Added local and opt-in live `icloud doctor` diagnostics, stage-specific typed exits, per-stage deadlines, prompt cancellation, deterministic fake TLS protocol servers, and a disposable-account live harness that skips unless explicitly enabled.
+- Added the account validation and doctor guide and updated the current setup, state, output, troubleshooting, command-reference, landing-page, and README contracts.
 - Added offline multi-account setup with stable IDs, case-insensitive name/email uniqueness, first-account defaulting, deterministic selection, rename/default/remove commands, and `pending_validation` status.
 - Added native keyring credential storage and rotation plus first-class environment and file references; no plaintext credential is stored in SQLite or returned in compact/JSON output.
 - Added secure terminal and `--password-stdin` input without a public `--password` flag, explicit non-TTY behavior, bounded secret input, and redacted keyring/reference failures.
 - Added credential metadata, replace, and delete commands; destructive account/credential operations require `--yes`, and default-account removal is protected while alternatives remain.
 - Added cross-process account mutation locking and keyring rollback/cleanup around failed database transactions.
-- Added the account setup and credentials guide and updated quickstart, installation, local-state, automation, troubleshooting, command reference, landing page, and README for the Phase 3 workflow.
+- Added the account setup and credentials guide and updated quickstart, installation, local-state, automation, troubleshooting, command reference, landing page, and README for the secure account workflow.
 - Added durable local application paths with `--home`, `ICLOUD_HOME`, and platform-default resolution.
 - Added private first-run state creation, automatic versioned upgrades, cross-process locking, and a reported data-schema version.
 - Added `icloud account list` and `icloud account show` with compact defaults, explicit JSON envelopes, typed not-found/conflict exits, and credential-reference redaction.

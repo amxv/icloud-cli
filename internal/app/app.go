@@ -8,6 +8,7 @@ import (
 	"github.com/amxv/icloud-cli/internal/buildinfo"
 	"github.com/amxv/icloud-cli/internal/cli"
 	"github.com/amxv/icloud-cli/internal/store"
+	transporticloud "github.com/amxv/icloud-cli/internal/transport/icloud"
 )
 
 // Run composes the application command tree and returns a process exit code.
@@ -20,7 +21,11 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 // public process uses os.Stdin; tests and embedded callers can provide a
 // bounded non-interactive reader.
 func RunWithInput(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	return runWithAccounts(ctx, args, stdin, stdout, stderr, accountCommands{})
+	protocolClient := transporticloud.New(transporticloud.Config{})
+	return runWithAccounts(ctx, args, stdin, stdout, stderr, accountCommands{
+		imap: protocolClient,
+		smtp: protocolClient,
+	})
 }
 
 func runWithAccounts(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer, accounts cli.AccountService) int {

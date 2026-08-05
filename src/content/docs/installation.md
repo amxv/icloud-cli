@@ -14,7 +14,7 @@ Choose one installation path:
 - source build: Go 1.26 or newer;
 - documentation development: Bun 1 or newer in addition to the source-build tools.
 
-No credential is required to install the binary, inspect capabilities, or create an empty state. Account setup uses an app-specific password or an environment/file reference; it never requires the primary password for your Apple Account and does not contact iCloud yet.
+No credential is required to install the binary, inspect capabilities, run local doctor diagnostics, or create an empty state. Account setup uses an app-specific password or an environment/file reference; it never requires the primary password for your Apple Account. Live contact occurs only when you explicitly run `account test` or `doctor --live`.
 
 ## Install through npm
 
@@ -73,7 +73,7 @@ A new installation prints `accounts count=0` and creates the state root. Omittin
 
 ## Verify account setup
 
-For a safe first profile, read [Account setup and credentials](/docs/account-setup-and-credentials), then choose native keyring, environment, or file-backed setup. A successful add returns `pending_validation`; it is not a live authentication test.
+For a safe first profile, read [Account setup and credentials](/docs/account-setup-and-credentials), then choose native keyring, environment, or file-backed setup. A successful add returns `pending_validation`; follow it with the read-only workflow in [Account validation and doctor](/docs/account-validation-and-doctor).
 
 ## Repair an npm installation
 

@@ -1,9 +1,9 @@
 ---
 title: Quickstart
-description: Install icloud, verify the binary, create an isolated state root, and add an offline iCloud Mail account without exposing its app-specific password.
+description: Install icloud, create an isolated account safely, validate iCloud IMAP and SMTP without sending mail, and inspect health.
 order: 1
 category: Start
-summary: The shortest safe path from installation to a configured pending-validation account.
+summary: The shortest safe path from installation to a configured and read-only validated iCloud Mail account.
 ---
 
 ## What this build does
@@ -14,9 +14,11 @@ The current `icloud` build can:
 - add multiple iCloud Mail profiles with stable IDs and a deterministic default;
 - store an app-specific password in the native keyring or persist an environment/file reference;
 - list, show, rename, default, remove, and manage credential metadata;
+- validate direct-TLS IMAP and mandatory-STARTTLS SMTP without sending mail;
+- persist account health and inspect local or live diagnostics with `icloud doctor`;
 - report its version and local-state schema, generate shell completions, and generate man pages.
 
-Account setup is offline. It does **not** authenticate to Apple, read mail, discover folders, or send mail yet. A newly added account is `pending_validation`.
+Account setup itself is offline and a newly added account is `pending_validation`. `account test` then performs a read-only authentication and compatibility check. The current build does **not** synchronize messages, export content, mutate mailbox state, or send mail.
 
 ## Install
 
@@ -37,7 +39,7 @@ Representative compact output:
 
 ```text
 version 0.1.0
-capabilities command=icloud version=0.1.0 schema=1 account_mode=offline_lifecycle credentials=keyring,env,file default_output=compact json=true completion=bash,zsh,fish,powershell man=true
+capabilities command=icloud version=0.1.0 schema=2 account_mode=validated_lifecycle credentials=keyring,env,file network_validation=true diagnostics=true default_output=compact json=true completion=bash,zsh,fish,powershell man=true
 ```
 
 ## Choose an isolated state root
@@ -89,6 +91,31 @@ icloud account add \
 
 Read [Account setup and credentials](/docs/account-setup-and-credentials) before using file references, rotating credentials, or removing profiles.
 
+## Validate both mail protocols
+
+Ensure an environment/file credential value is available to the current process, then run:
+
+```bash
+icloud account test Personal
+```
+
+Expected compact shape:
+
+```text
+account-test acct_… status=connected imap=ok smtp=ok imap_username=owner mailboxes=6 inbox_messages=42 inbox_unseen=3 checked_at=2026-08-06T03:00:00Z
+account-tests count=1 healthy=1
+```
+
+The IMAP check reads capabilities, mailbox names, and `INBOX` status. The SMTP check requires STARTTLS, authenticates, sends only `NOOP`, and quits. No message or mailbox is changed.
+
+Inspect the persisted result without another network request:
+
+```bash
+icloud doctor
+```
+
+Read [Account validation and doctor](/docs/account-validation-and-doctor) for username fallback, all-account checks, live diagnostics, stage codes, and timeouts.
+
 ## Inspect the configured profile
 
 ```bash
@@ -122,5 +149,6 @@ icloud man --output-dir ./man
 - **Account already exists** — friendly names and email addresses are unique within one state root.
 - **Cannot remove the default** — set another default account first.
 - **Local state is busy** — let the other `icloud` process finish or retry with an appropriate timeout.
+- **Validation failed at a stage** — run `icloud doctor`, then use the stage in [Account validation and doctor](/docs/account-validation-and-doctor) to choose the next action.
 
 Next, use the [command reference](/docs/command-reference) for every available command and flag.

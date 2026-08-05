@@ -1,7 +1,7 @@
 ---
 title: Local state and account inspection
 description: Choose an isolated data directory, inspect bounded account inventories, understand selection rules, and handle concurrent access safely.
-order: 4
+order: 5
 category: Guides
 summary: State roots, account list and show, selector/default behavior, privacy, locks, and cleanup.
 ---
@@ -86,7 +86,7 @@ error code=not_found message="account not found"
 
 ## Understand account status
 
-Offline setup creates accounts in `pending_validation`. Credential replacement and deletion also return the profile to that state. The status does not become connected until a future live account test authenticates both required mail protocols.
+Offline setup creates accounts in `pending_validation`. Credential replacement and deletion also return the profile to that state and clear stale validation evidence. `account test` marks the account `connected` only after both read-only IMAP and SMTP checks succeed. A later failure marks it `degraded` while retaining the last healthy timestamp.
 
 ## Request structured output
 
@@ -95,7 +95,7 @@ icloud --request-id inventory-01 account list --json
 ```
 
 ```json
-{"ok":true,"data":{"accounts":[],"count":0,"schema_version":1},"meta":{"request_id":"inventory-01"}}
+{"ok":true,"data":{"accounts":[],"count":0,"schema_version":2},"meta":{"request_id":"inventory-01"}}
 ```
 
 JSON remains explicit. Redirection and non-TTY execution do not change the output mode. Structured account and credential output applies the same reference/value redaction as compact text.
@@ -122,4 +122,4 @@ The database stores account metadata and credential references, never plaintext 
 
 Removing an account deletes its native keyring entry when present. It does not delete an environment variable or external credential file. Uninstalling the npm package does not remove the selected state root or external credentials.
 
-Continue with [Account setup and credentials](/docs/account-setup-and-credentials) for lifecycle commands or [Output and automation](/docs/output-and-automation) for envelopes and exit classes.
+Continue with [Account setup and credentials](/docs/account-setup-and-credentials) for lifecycle commands, [Account validation and doctor](/docs/account-validation-and-doctor) for persisted health, or [Output and automation](/docs/output-and-automation) for envelopes and exit classes.

@@ -1,9 +1,9 @@
 ---
 title: Command reference
-description: A complete reference for account and credential lifecycle commands, global controls, output modes, completion, and man generation.
-order: 7
+description: A complete reference for account lifecycle, read-only iCloud validation, doctor diagnostics, global controls, output modes, completion, and man generation.
+order: 8
 category: Reference
-summary: Every account, credential, capability, completion, man, help, and global control available now.
+summary: Every account, credential, validation, doctor, capability, completion, man, help, and global control available now.
 ---
 
 ## Root command
@@ -131,6 +131,33 @@ icloud account credential delete Personal --yes --json
 
 `--yes` is required. The account remains, but its credential reference is removed and its status is `pending_validation`. A native keyring entry is cleared when present.
 
+## `icloud account test`
+
+```bash
+icloud account test
+icloud account test Personal
+icloud --account owner@icloud.com account test
+icloud account test --all
+icloud account test --verbose
+icloud account test --json
+```
+
+Resolves the selected credential and validates direct-TLS IMAP plus mandatory-STARTTLS SMTP. IMAP reads capabilities, mailbox names, and `INBOX` status. SMTP authenticates, sends `NOOP`, and quits. The command never sends a message or mutates a mailbox.
+
+`--all` is bounded to 100 profiles and conflicts with a selector. `--verbose` adds sanitized capability names; normal compact output includes protocol outcomes, the successful IMAP username, mailbox count, bounded `INBOX` counts, and the test time. Both protocols must pass for `connected` status.
+
+## `icloud doctor`
+
+```bash
+icloud doctor
+icloud doctor Personal
+icloud doctor --all
+icloud doctor Personal --live
+icloud doctor --json
+```
+
+Without `--live`, reads stored account, credential, last-error, last-tested, and last-healthy metadata without resolving a secret or contacting Apple. With `--live`, runs the same read-only validation as `account test` first. An empty state returns `doctor status=configuration_required`.
+
 ## `icloud version`
 
 ```bash
@@ -154,7 +181,7 @@ icloud capabilities --json
 Compact output:
 
 ```text
-capabilities command=icloud version=0.1.0 schema=1 account_mode=offline_lifecycle credentials=keyring,env,file default_output=compact json=true completion=bash,zsh,fish,powershell man=true
+capabilities command=icloud version=0.1.0 schema=2 account_mode=validated_lifecycle credentials=keyring,env,file network_validation=true diagnostics=true default_output=compact json=true completion=bash,zsh,fish,powershell man=true
 ```
 
 The schema field reports the installed local-state migration version without opening state.
@@ -195,4 +222,4 @@ Help goes to stdout. Usage failures go to stderr and exit `2`.
 
 ## Output availability
 
-Every account and credential lifecycle command above, `version`, and `capabilities` supports `--json`. Completion and man generation retain native text. No command silently accepts unsupported JSONL, full-body, HTML, raw, header, body-only, or verbose modes.
+Every account and credential lifecycle command above, `account test`, `doctor`, `version`, and `capabilities` supports `--json`. Validation and doctor also support bounded `--verbose` capability detail. Completion and man generation retain native text. No command silently accepts unsupported JSONL, full-body, HTML, raw, header, or body-only modes.

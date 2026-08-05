@@ -2,7 +2,7 @@
 
 `icloud` is a local-first command-line client for iCloud services. The project is being built for agent workflows without making the normal terminal experience noisy: compact plain text is the default, and structured or expanded output is always explicit.
 
-The current implementation provides secure offline multi-account and credential lifecycle on top of durable local state. It can add, list, show, rename, default, and remove profiles; store app-specific passwords in the native keyring; persist environment/file references; rotate or delete credential metadata; and retain compact/JSON, exit, completion, man, packaging, and stdout/stderr contracts. Accounts remain `pending_validation`; the CLI does not contact iCloud yet.
+The current implementation provides secure multi-account and credential lifecycle plus read-only live iCloud compatibility testing. It can validate direct-TLS IMAP and mandatory-STARTTLS SMTP authentication, persist the successful IMAP username and redacted account health, and diagnose local or live failures with `icloud doctor`. Validation never sends mail or mutates a mailbox.
 
 ## Install
 
@@ -32,6 +32,8 @@ icloud account remove <selector> --yes [--json]
 icloud account credential show <selector> [--json]
 icloud account credential replace <selector> [--password-stdin|--credential-env <name>|--credential-file <path>] [--json]
 icloud account credential delete <selector> --yes [--json]
+icloud account test [selector] [--all] [--verbose] [--json]
+icloud doctor [selector] [--all] [--live] [--verbose] [--json]
 icloud version [--json]
 icloud capabilities [--json]
 icloud completion bash|zsh|fish|powershell
@@ -42,10 +44,10 @@ icloud help [command]
 Representative default output:
 
 ```text
-account-added acct_… status=pending_validation default=true credential=keyring
-accounts count=1
+account-test acct_… status=connected imap=ok smtp=ok imap_username=owner mailboxes=6 inbox_messages=42 inbox_unseen=3
+doctor accounts=1 status=healthy
 version 0.1.0
-capabilities command=icloud version=0.1.0 schema=1 account_mode=offline_lifecycle credentials=keyring,env,file default_output=compact json=true completion=bash,zsh,fish,powershell man=true
+capabilities command=icloud version=0.1.0 schema=2 account_mode=validated_lifecycle credentials=keyring,env,file network_validation=true diagnostics=true default_output=compact json=true completion=bash,zsh,fish,powershell man=true
 ```
 
 Redirected and non-interactive execution uses the same compact default. Use `--json` only on commands that advertise it. For isolated state, set `ICLOUD_HOME=./icloud-state` or pass `--home ./icloud-state`. Use an app-specific password, never the primary Apple Account password; pass it through a secure prompt or `--password-stdin`, not argv.
@@ -72,6 +74,7 @@ Run the docs commands serially.
 - `cmd/icloud`: process startup and final exit behavior
 - `internal/app`: dependency composition and execution entry
 - `internal/account`, `internal/config`, `internal/id`, `internal/secret`, and `internal/store`: account vocabulary, paths, identifiers, credential boundaries, and persistence
+- `internal/transport`: narrow redacted protocol contracts and the isolated iCloud IMAP/SMTP compatibility client
 - `internal/cli`: Cobra tree, compact rendering, JSON/JSONL primitives, help, errors, completion, and man generation
 - `internal/buildinfo`: linker-injected version metadata
 - `bin/icloud.js`: npm executable shim

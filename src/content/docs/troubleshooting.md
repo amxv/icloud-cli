@@ -1,7 +1,7 @@
 ---
 title: Troubleshooting
-description: Resolve installation, account setup, credential, state, output, completion, and man-generation problems.
-order: 6
+description: Resolve installation, account setup, credential, IMAP/SMTP validation, state, output, completion, and man-generation problems.
+order: 7
 category: Guides
 summary: Common errors, privacy-safe diagnosis, and the next command to run.
 ---
@@ -64,7 +64,7 @@ Headless Linux sessions may not have an unlocked Secret Service session. The com
 
 ## A credential value is missing
 
-Offline setup can persist an environment or file reference without resolving it. Before a future live command, verify that the selected process can read the external source:
+Offline setup can persist an environment or file reference without resolving it. Before `account test` or `doctor --live`, verify that the selected process can read the external source:
 
 ```bash
 read -rsp "App-specific password: " ICLOUD_APP_PASSWORD
@@ -74,6 +74,28 @@ ls -l "$HOME/.config/icloud-cli/personal-password"
 ```
 
 The CLI intentionally keeps the exact stored variable name or path out of normal output and errors. Use your setup record rather than expecting `credential show` to reveal it.
+
+`account test` reports this as the redacted `credential` stage and stops before opening IMAP or SMTP.
+
+## Live validation failed
+
+First inspect stored health without making another network request:
+
+```bash
+icloud doctor Personal
+```
+
+Then use the stage from the error:
+
+- `dns` or `connect` — verify connectivity, DNS, firewall policy, and the command timeout;
+- `tls` — verify the system clock and trusted certificate roots; do not bypass verification;
+- `imap_auth` — confirm the app-specific password and allow the CLI to try the persisted/full/short username forms;
+- `imap_list` or `imap_status` — authentication worked but the read-only compatibility commands failed;
+- `smtp_starttls` — the server did not provide the required encrypted submission path; authentication was not attempted in plaintext;
+- `smtp_auth` — confirm the app-specific password and full iCloud email address;
+- `timeout` — retry with a deliberate larger `--timeout` after checking for a stalled network path.
+
+Run `icloud doctor Personal --live --json` when an agent needs a fresh structured report. Validation never sends a message, so a successful test does not prove delivery.
 
 ## An account already exists
 
@@ -170,6 +192,6 @@ icloud man --output-dir ./man
 
 Generating completion output does not install it automatically.
 
-## The command is not contacting iCloud
+## A local command is not contacting iCloud
 
-That is expected for the current account lifecycle. `account add`, credential replacement, and local reads are offline and leave profiles `pending_validation`. Live IMAP and SMTP validation arrives with the later account-test phase.
+That is expected for `account add`, credential replacement, account reads, and `doctor` without `--live`. Use `icloud account test` or `icloud doctor --live` for explicit read-only IMAP and SMTP validation. Message synchronization and sending are not implemented in the current build.

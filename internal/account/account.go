@@ -3,6 +3,8 @@ package account
 import (
 	"errors"
 	"time"
+
+	"github.com/amxv/icloud-cli/internal/transport"
 )
 
 var (
@@ -12,6 +14,7 @@ var (
 	ErrConflict          = errors.New("account conflicts with existing state")
 	ErrDefaultRemoval    = errors.New("default account cannot be removed while other accounts exist")
 	ErrCredentialMissing = errors.New("account credential is not configured")
+	ErrTooManyAccounts   = errors.New("too many accounts for one bounded operation")
 )
 
 type Status string
@@ -26,15 +29,21 @@ const (
 // Account is one configured iCloud Mail identity. Secret values are never part
 // of this read model.
 type Account struct {
-	ID               string    `json:"id"`
-	Name             string    `json:"name"`
-	Email            string    `json:"email"`
-	IMAPUsername     string    `json:"imap_username"`
-	Status           Status    `json:"status"`
-	Default          bool      `json:"default"`
-	CredentialScheme string    `json:"credential_scheme,omitempty"`
-	CreatedAt        time.Time `json:"created_at"`
-	UpdatedAt        time.Time `json:"updated_at"`
+	ID               string     `json:"id"`
+	Name             string     `json:"name"`
+	Email            string     `json:"email"`
+	IMAPUsername     string     `json:"imap_username"`
+	Status           Status     `json:"status"`
+	Default          bool       `json:"default"`
+	CredentialScheme string     `json:"credential_scheme,omitempty"`
+	IMAPCapabilities []string   `json:"imap_capabilities,omitempty"`
+	SMTPCapabilities []string   `json:"smtp_capabilities,omitempty"`
+	LastErrorCode    string     `json:"last_error_code,omitempty"`
+	LastErrorAt      *time.Time `json:"last_error_at,omitempty"`
+	LastHealthyAt    *time.Time `json:"last_healthy_at,omitempty"`
+	LastTestedAt     *time.Time `json:"last_tested_at,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
 }
 
 type CredentialScheme string
@@ -81,4 +90,59 @@ type CreateRecord struct {
 	CredentialScheme CredentialScheme
 	CredentialRef    string
 	Now              time.Time
+}
+
+type ProtocolCheck struct {
+	OK           bool                    `json:"ok"`
+	Stage        transport.Stage         `json:"stage,omitempty"`
+	Kind         transport.FailureKind   `json:"kind,omitempty"`
+	Retryable    bool                    `json:"retryable,omitempty"`
+	Capabilities []string                `json:"capabilities,omitempty"`
+	Mailboxes    int                     `json:"mailboxes,omitempty"`
+	Inbox        transport.MailboxStatus `json:"inbox,omitempty"`
+}
+
+type HealthReport struct {
+	AccountID    string        `json:"account_id"`
+	Status       Status        `json:"status"`
+	IMAPUsername string        `json:"imap_username,omitempty"`
+	IMAP         ProtocolCheck `json:"imap"`
+	SMTP         ProtocolCheck `json:"smtp"`
+	CheckedAt    time.Time     `json:"checked_at"`
+}
+
+type DoctorReport struct {
+	Account              Account       `json:"account"`
+	CredentialConfigured bool          `json:"credential_configured"`
+	Live                 *HealthReport `json:"live,omitempty"`
+}
+
+type HealthUpdate struct {
+	AccountID        string
+	Status           Status
+	IMAPUsername     string
+	IMAPCapabilities []string
+	SMTPCapabilities []string
+	LastErrorCode    string
+	CheckedAt        time.Time
+	Healthy          bool
+}
+
+type ValidationError struct {
+	Reports []HealthReport
+	Failure *transport.Failure
+}
+
+func (err *ValidationError) Error() string {
+	if err == nil || err.Failure == nil {
+		return "account validation failed"
+	}
+	return "account validation failed at " + string(err.Failure.Stage)
+}
+
+func (err *ValidationError) Unwrap() error {
+	if err == nil {
+		return nil
+	}
+	return err.Failure
 }

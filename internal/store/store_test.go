@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,7 +15,9 @@ import (
 
 	"github.com/amxv/icloud-cli/internal/account"
 	"github.com/amxv/icloud-cli/internal/config"
+	"github.com/amxv/icloud-cli/internal/transport"
 	"github.com/gofrs/flock"
+	"github.com/pressly/goose/v3"
 )
 
 func testPaths(t *testing.T, root string) config.AppPaths {
@@ -503,5 +506,149 @@ func TestAccountCreateConflictsAndAmbiguousSelection(t *testing.T) {
 	}
 	if _, err := state.Accounts().ResolveSelected(context.Background(), ""); !errors.Is(err, account.ErrAmbiguous) {
 		t.Fatalf("selection error = %v", err)
+	}
+}
+
+func TestAccountHealthUpdatesPersistAndPreserveLastKnownGoodState(t *testing.T) {
+	t.Parallel()
+	state, err := Open(context.Background(), testPaths(t, filepath.Join(t.TempDir(), "state")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+
+	createdAt := time.Date(2026, 8, 6, 3, 0, 0, 0, time.UTC)
+	created, err := state.Accounts().Create(context.Background(), account.CreateRecord{
+		AccountID:        "acct_0198d704-6c00-7000-8000-000000000090",
+		CredentialID:     "cred_0198d704-6c00-7000-8000-000000000091",
+		Name:             "Health",
+		Email:            "health@icloud.com",
+		IMAPUsername:     "health@icloud.com",
+		CredentialScheme: account.CredentialEnv,
+		CredentialRef:    "env:ICLOUD_HEALTH_TEST",
+		Now:              createdAt,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	healthyAt := createdAt.Add(time.Minute)
+	healthy, err := state.Accounts().UpdateHealth(context.Background(), account.HealthUpdate{
+		AccountID:        created.ID,
+		Status:           account.StatusConnected,
+		IMAPUsername:     "health",
+		IMAPCapabilities: []string{"IDLE", "IMAP4REV1"},
+		SMTPCapabilities: []string{"AUTH", "SMTPUTF8"},
+		CheckedAt:        healthyAt,
+		Healthy:          true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if healthy.Status != account.StatusConnected || healthy.IMAPUsername != "health" || healthy.LastHealthyAt == nil || healthy.LastTestedAt == nil || healthy.LastErrorAt != nil || healthy.LastErrorCode != "" {
+		t.Fatalf("healthy = %+v", healthy)
+	}
+	if !healthy.LastHealthyAt.Equal(healthyAt) || !healthy.LastTestedAt.Equal(healthyAt) {
+		t.Fatalf("healthy timestamps = %+v", healthy)
+	}
+
+	failedAt := healthyAt.Add(time.Minute)
+	degraded, err := state.Accounts().UpdateHealth(context.Background(), account.HealthUpdate{
+		AccountID:        created.ID,
+		Status:           account.StatusDegraded,
+		IMAPUsername:     "health",
+		IMAPCapabilities: healthy.IMAPCapabilities,
+		SMTPCapabilities: healthy.SMTPCapabilities,
+		LastErrorCode:    string(transport.StageSMTPAuth),
+		CheckedAt:        failedAt,
+		Healthy:          false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if degraded.Status != account.StatusDegraded || degraded.LastErrorCode != string(transport.StageSMTPAuth) || degraded.LastErrorAt == nil || degraded.LastTestedAt == nil || degraded.LastHealthyAt == nil {
+		t.Fatalf("degraded = %+v", degraded)
+	}
+	if !degraded.LastErrorAt.Equal(failedAt) || !degraded.LastTestedAt.Equal(failedAt) || !degraded.LastHealthyAt.Equal(healthyAt) {
+		t.Fatalf("degraded timestamps = %+v", degraded)
+	}
+	if strings.Join(degraded.IMAPCapabilities, ",") != "IDLE,IMAP4REV1" || strings.Join(degraded.SMTPCapabilities, ",") != "AUTH,SMTPUTF8" {
+		t.Fatalf("capabilities were lost: %+v", degraded)
+	}
+}
+
+func TestOpenUpgradesPhaseThreeDatabaseWithoutChangingAccountsOrCredentials(t *testing.T) {
+	t.Parallel()
+	paths := testPaths(t, filepath.Join(t.TempDir(), "state"))
+	if err := config.EnsureAppPaths(paths); err != nil {
+		t.Fatal(err)
+	}
+	database, err := sql.Open("sqlite", paths.Database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := configureSQLite(context.Background(), database); err != nil {
+		t.Fatal(err)
+	}
+	migrationFS, err := fs.Sub(migrations, "migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider, err := goose.NewProvider(goose.DialectSQLite3, database, migrationFS, goose.WithLogger(goose.NopLogger()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.UpTo(context.Background(), 1); err != nil {
+		t.Fatal(err)
+	}
+	timestamp := time.Date(2026, 8, 6, 3, 30, 0, 0, time.UTC).Format(time.RFC3339Nano)
+	if _, err := database.Exec(`
+INSERT INTO accounts (
+    account_id, friendly_name, email_address, imap_username, status,
+    is_default, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, 1, ?, ?)`,
+		"acct_0198d704-6c00-7000-8000-000000000095",
+		"Legacy",
+		"legacy@icloud.com",
+		"legacy",
+		account.StatusPendingValidation,
+		timestamp,
+		timestamp,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(`
+INSERT INTO credential_refs (
+    credential_ref_id, account_id, scheme, reference, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?)`,
+		"cred_0198d704-6c00-7000-8000-000000000096",
+		"acct_0198d704-6c00-7000-8000-000000000095",
+		account.CredentialEnv,
+		"env:ICLOUD_LEGACY_TEST",
+		timestamp,
+		timestamp,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	state, err := Open(context.Background(), paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	if state.SchemaVersion() != 2 {
+		t.Fatalf("schema version = %d", state.SchemaVersion())
+	}
+	value, credential, err := state.Accounts().Credential(context.Background(), "Legacy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value.ID != "acct_0198d704-6c00-7000-8000-000000000095" || credential.Reference != "env:ICLOUD_LEGACY_TEST" || value.Status != account.StatusPendingValidation {
+		t.Fatalf("upgraded values: account=%+v credential=%+v", value, credential)
+	}
+	if value.IMAPCapabilities == nil || value.SMTPCapabilities == nil || len(value.IMAPCapabilities) != 0 || len(value.SMTPCapabilities) != 0 || value.LastTestedAt != nil {
+		t.Fatalf("unexpected health defaults: %+v", value)
 	}
 }

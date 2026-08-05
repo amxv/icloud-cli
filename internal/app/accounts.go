@@ -14,11 +14,14 @@ import (
 	"github.com/amxv/icloud-cli/internal/id"
 	"github.com/amxv/icloud-cli/internal/secret"
 	"github.com/amxv/icloud-cli/internal/store"
+	"github.com/amxv/icloud-cli/internal/transport"
 	"github.com/gofrs/flock"
 )
 
 type accountCommands struct {
 	keyring secret.Keyring
+	imap    transport.IMAPValidator
+	smtp    transport.SMTPValidator
 	now     func() time.Time
 	newID   func(string) (string, error)
 }
@@ -277,6 +280,259 @@ func (commands accountCommands) CredentialDelete(ctx context.Context, home, sele
 	return deleted, state.SchemaVersion(), nil
 }
 
+func (commands accountCommands) Test(ctx context.Context, home, selector string, all bool) ([]account.HealthReport, int64, error) {
+	state, _, unlock, err := commands.openWriteState(ctx, home)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer state.Close()
+	defer unlock()
+
+	values, err := selectedAccounts(ctx, state, selector, all)
+	if err != nil {
+		return nil, state.SchemaVersion(), mapAccountError(err)
+	}
+	reports := make([]account.HealthReport, 0, len(values))
+	var firstFailure *transport.Failure
+	for _, value := range values {
+		report, failure, testErr := commands.testAccount(ctx, state, value)
+		if testErr != nil {
+			return reports, state.SchemaVersion(), testErr
+		}
+		reports = append(reports, report)
+		if firstFailure == nil && failure != nil {
+			firstFailure = failure
+		}
+	}
+	if firstFailure != nil {
+		return reports, state.SchemaVersion(), mapValidationError(&account.ValidationError{Reports: reports, Failure: firstFailure})
+	}
+	return reports, state.SchemaVersion(), nil
+}
+
+func (commands accountCommands) Doctor(ctx context.Context, home, selector string, all, live bool) ([]account.DoctorReport, int64, error) {
+	var (
+		liveReports []account.HealthReport
+		liveErr     error
+	)
+	if live {
+		liveReports, _, liveErr = commands.Test(ctx, home, selector, all)
+	}
+	state, err := openState(ctx, home)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer state.Close()
+	values, err := selectedAccounts(ctx, state, selector, all)
+	if err != nil {
+		return nil, state.SchemaVersion(), mapAccountError(err)
+	}
+	liveByAccount := make(map[string]account.HealthReport, len(liveReports))
+	for _, report := range liveReports {
+		liveByAccount[report.AccountID] = report
+	}
+	reports := make([]account.DoctorReport, 0, len(values))
+	for _, value := range values {
+		report := account.DoctorReport{
+			Account:              value,
+			CredentialConfigured: value.CredentialScheme != "",
+		}
+		if liveReport, ok := liveByAccount[value.ID]; ok {
+			copy := liveReport
+			report.Live = &copy
+		}
+		reports = append(reports, report)
+	}
+	return reports, state.SchemaVersion(), liveErr
+}
+
+func selectedAccounts(ctx context.Context, state *store.Store, selector string, all bool) ([]account.Account, error) {
+	if !all {
+		value, err := state.Accounts().ResolveSelected(ctx, selector)
+		if err != nil {
+			return nil, err
+		}
+		return []account.Account{value}, nil
+	}
+	values, more, err := state.Accounts().List(ctx, 100)
+	if err != nil {
+		return nil, err
+	}
+	if more {
+		return nil, account.ErrTooManyAccounts
+	}
+	return values, nil
+}
+
+func (commands accountCommands) testAccount(ctx context.Context, state *store.Store, value account.Account) (account.HealthReport, *transport.Failure, error) {
+	checkedAt := commands.timeNow()
+	report := account.HealthReport{
+		AccountID:    value.ID,
+		Status:       account.StatusDegraded,
+		IMAPUsername: value.IMAPUsername,
+		CheckedAt:    checkedAt,
+	}
+	_, credential, err := state.Accounts().Credential(ctx, value.ID)
+	if err != nil {
+		failure := transport.NewFailure(transport.StageCredential, transport.FailureConfiguration, false, err)
+		report.IMAP = failedCheck(failure)
+		report.SMTP = failedCheck(failure)
+		if persistErr := commands.persistHealth(ctx, state, value, report, failure); persistErr != nil {
+			return report, failure, persistErr
+		}
+		return report, failure, nil
+	}
+	password, err := secret.NewManager(commands.keyring).Resolve(ctx, credential)
+	if err != nil {
+		kind := transport.FailureConfiguration
+		if errors.Is(err, secret.ErrMissing) {
+			kind = transport.FailureAuthentication
+		}
+		failure := transport.NewFailure(transport.StageCredential, kind, false, err)
+		report.IMAP = failedCheck(failure)
+		report.SMTP = failedCheck(failure)
+		if persistErr := commands.persistHealth(ctx, state, value, report, failure); persistErr != nil {
+			return report, failure, persistErr
+		}
+		return report, failure, nil
+	}
+	defer zeroBytes(password)
+
+	var imapFailure *transport.Failure
+	for _, username := range imapUsernameCandidates(value) {
+		result, validateErr := commands.imapValidator().ValidateIMAP(ctx, transport.AuthRequest{Username: username, Password: password})
+		if validateErr == nil {
+			report.IMAPUsername = username
+			report.IMAP = account.ProtocolCheck{
+				OK:           true,
+				Capabilities: transport.SanitizeCapabilities(result.Capabilities),
+				Mailboxes:    result.Mailboxes,
+				Inbox:        result.Inbox,
+			}
+			imapFailure = nil
+			break
+		}
+		failure, ok := transport.AsFailure(validateErr)
+		if !ok {
+			failure = transport.NewFailure(transport.StageConnect, transport.FailureUnavailable, false, validateErr)
+		}
+		imapFailure = failure
+		if failure.Kind != transport.FailureAuthentication {
+			break
+		}
+	}
+	if !report.IMAP.OK {
+		report.IMAP = failedCheck(imapFailure)
+	}
+
+	smtpResult, smtpErr := commands.smtpValidator().ValidateSMTP(ctx, transport.AuthRequest{Username: value.Email, Password: password})
+	var smtpFailure *transport.Failure
+	if smtpErr == nil {
+		report.SMTP = account.ProtocolCheck{OK: true, Capabilities: transport.SanitizeCapabilities(smtpResult.Capabilities)}
+	} else {
+		var ok bool
+		smtpFailure, ok = transport.AsFailure(smtpErr)
+		if !ok {
+			smtpFailure = transport.NewFailure(transport.StageConnect, transport.FailureUnavailable, false, smtpErr)
+		}
+		report.SMTP = failedCheck(smtpFailure)
+	}
+
+	firstFailure := imapFailure
+	if firstFailure == nil {
+		firstFailure = smtpFailure
+	}
+	if report.IMAP.OK && report.SMTP.OK {
+		report.Status = account.StatusConnected
+	}
+	if err := commands.persistHealth(ctx, state, value, report, firstFailure); err != nil {
+		return report, firstFailure, err
+	}
+	return report, firstFailure, nil
+}
+
+func (commands accountCommands) persistHealth(ctx context.Context, state *store.Store, previous account.Account, report account.HealthReport, failure *transport.Failure) error {
+	update := account.HealthUpdate{
+		AccountID:        report.AccountID,
+		Status:           report.Status,
+		IMAPUsername:     report.IMAPUsername,
+		IMAPCapabilities: report.IMAP.Capabilities,
+		SMTPCapabilities: report.SMTP.Capabilities,
+		CheckedAt:        report.CheckedAt,
+		Healthy:          report.Status == account.StatusConnected,
+	}
+	if !report.IMAP.OK {
+		update.IMAPCapabilities = previous.IMAPCapabilities
+		update.IMAPUsername = previous.IMAPUsername
+	}
+	if !report.SMTP.OK {
+		update.SMTPCapabilities = previous.SMTPCapabilities
+	}
+	if strings.TrimSpace(update.IMAPUsername) == "" {
+		update.IMAPUsername = previous.IMAPUsername
+	}
+	if failure != nil {
+		update.LastErrorCode = string(failure.Stage)
+	}
+	if _, err := state.Accounts().UpdateHealth(ctx, update); err != nil {
+		return cli.WrapAppError(cli.ErrorInternal, "cannot persist account health", false, err)
+	}
+	return nil
+}
+
+func failedCheck(failure *transport.Failure) account.ProtocolCheck {
+	if failure == nil {
+		return account.ProtocolCheck{Stage: transport.StageConnect, Kind: transport.FailureUnavailable}
+	}
+	return account.ProtocolCheck{Stage: failure.Stage, Kind: failure.Kind, Retryable: failure.Retryable}
+}
+
+func imapUsernameCandidates(value account.Account) []string {
+	local, _, _ := strings.Cut(value.Email, "@")
+	values := []string{value.IMAPUsername, value.Email, local}
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, candidate := range values {
+		candidate = strings.TrimSpace(candidate)
+		key := strings.ToLower(candidate)
+		if candidate == "" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, candidate)
+	}
+	return result
+}
+
+func (commands accountCommands) imapValidator() transport.IMAPValidator {
+	if commands.imap == nil {
+		return unavailableIMAPValidator{}
+	}
+	return commands.imap
+}
+
+func (commands accountCommands) smtpValidator() transport.SMTPValidator {
+	if commands.smtp == nil {
+		return unavailableSMTPValidator{}
+	}
+	return commands.smtp
+}
+
+type unavailableIMAPValidator struct{}
+
+func (unavailableIMAPValidator) ValidateIMAP(context.Context, transport.AuthRequest) (transport.IMAPResult, error) {
+	return transport.IMAPResult{}, transport.NewFailure(transport.StageConnect, transport.FailureConfiguration, false, errors.New("IMAP validator unavailable"))
+}
+
+type unavailableSMTPValidator struct{}
+
+func (unavailableSMTPValidator) ValidateSMTP(context.Context, transport.AuthRequest) (transport.SMTPResult, error) {
+	return transport.SMTPResult{}, transport.NewFailure(transport.StageConnect, transport.FailureConfiguration, false, errors.New("SMTP validator unavailable"))
+}
+
 func (commands accountCommands) openWriteState(ctx context.Context, home string) (*store.Store, config.AppPaths, func(), error) {
 	paths, err := config.ResolveAppPaths(home)
 	if err != nil {
@@ -403,6 +659,8 @@ func mapAccountError(err error) error {
 		return cli.WrapAppError(cli.ErrorConflict, "set another default account before removing this one", false, err)
 	case errors.Is(err, account.ErrCredentialMissing):
 		return cli.WrapAppError(cli.ErrorNotFound, "account credential is not configured", false, err)
+	case errors.Is(err, account.ErrTooManyAccounts):
+		return cli.WrapAppError(cli.ErrorConflict, "select one account when more than 100 profiles exist", false, err)
 	default:
 		return cli.WrapAppError(cli.ErrorInternal, "cannot update local account state", false, err)
 	}
@@ -419,6 +677,25 @@ func mapCredentialError(err error) error {
 	default:
 		return cli.WrapAppError(cli.ErrorInternal, "cannot manage the account credential", false, err)
 	}
+}
+
+func mapValidationError(validation *account.ValidationError) error {
+	if validation == nil || validation.Failure == nil {
+		return cli.WrapAppError(cli.ErrorInternal, "account validation failed", false, validation)
+	}
+	code := cli.ErrorUnavailable
+	switch validation.Failure.Kind {
+	case transport.FailureAuthentication:
+		code = cli.ErrorAuthentication
+	case transport.FailureConfiguration:
+		code = cli.ErrorConfiguration
+	}
+	appErr := cli.WrapAppError(code, validation.Error(), validation.Failure.Retryable, validation)
+	appErr.Details = map[string]any{
+		"stage":   validation.Failure.Stage,
+		"reports": validation.Reports,
+	}
+	return appErr
 }
 
 func backupKeyringCredential(ctx context.Context, manager secret.Manager, credential account.Credential) ([]byte, bool, error) {

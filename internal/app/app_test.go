@@ -16,6 +16,7 @@ import (
 	"github.com/amxv/icloud-cli/internal/account"
 	"github.com/amxv/icloud-cli/internal/config"
 	"github.com/amxv/icloud-cli/internal/store"
+	"github.com/amxv/icloud-cli/internal/transport"
 	"github.com/gofrs/flock"
 	keyring "github.com/zalando/go-keyring"
 )
@@ -33,6 +34,31 @@ type fakeKeyring struct {
 	setError    error
 	getError    error
 	deleteError error
+}
+
+type fakeIMAPValidator struct {
+	results   map[string]transport.IMAPResult
+	errors    map[string]error
+	usernames []string
+}
+
+func (validator *fakeIMAPValidator) ValidateIMAP(_ context.Context, request transport.AuthRequest) (transport.IMAPResult, error) {
+	validator.usernames = append(validator.usernames, request.Username)
+	if err := validator.errors[request.Username]; err != nil {
+		return transport.IMAPResult{}, err
+	}
+	return validator.results[request.Username], nil
+}
+
+type fakeSMTPValidator struct {
+	result    transport.SMTPResult
+	err       error
+	usernames []string
+}
+
+func (validator *fakeSMTPValidator) ValidateSMTP(_ context.Context, request transport.AuthRequest) (transport.SMTPResult, error) {
+	validator.usernames = append(validator.usernames, request.Username)
+	return validator.result, validator.err
 }
 
 func newFakeKeyring() *fakeKeyring {
@@ -106,6 +132,7 @@ func TestRootHelpUsesICloudIdentityAndGroups(t *testing.T) {
 		"Documentation commands:",
 		"account",
 		"capabilities",
+		"doctor",
 		"completion",
 		"man",
 		"version",
@@ -170,14 +197,14 @@ func TestCapabilitiesCompactGoldenBudget(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("exit code = %d, stderr = %q", exitCode, stderr)
 	}
-	const want = "capabilities command=icloud version=dev schema=1 account_mode=offline_lifecycle credentials=keyring,env,file default_output=compact json=true completion=bash,zsh,fish,powershell man=true\n"
+	const want = "capabilities command=icloud version=dev schema=2 account_mode=validated_lifecycle credentials=keyring,env,file network_validation=true diagnostics=true default_output=compact json=true completion=bash,zsh,fish,powershell man=true\n"
 	if stdout != want {
 		t.Fatalf("stdout mismatch\nwant: %q\n got: %q", want, stdout)
 	}
 	if lines := strings.Count(stdout, "\n"); lines > 1 {
 		t.Fatalf("line budget exceeded: %d", lines)
 	}
-	if len(stdout) > 220 {
+	if len(stdout) > 280 {
 		t.Fatalf("byte budget exceeded: %d", len(stdout))
 	}
 	for _, unwanted := range []string{"{", "}", "\x1b[", "│", "Command:", "Version:"} {
@@ -200,7 +227,7 @@ func TestCapabilitiesJSONEnvelope(t *testing.T) {
 		t.Fatalf("ok = %#v", envelope["ok"])
 	}
 	data, ok := envelope["data"].(map[string]any)
-	if !ok || data["data_schema_version"] != float64(1) {
+	if !ok || data["data_schema_version"] != float64(2) || data["network_validation"] != true || data["diagnostics"] != true {
 		t.Fatalf("data = %#v", envelope["data"])
 	}
 	if strings.Contains(stdout, "\x1b[") {
@@ -323,7 +350,7 @@ func TestAccountListCreatesAndReopensPrivateZeroState(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &envelope); err != nil {
 		t.Fatalf("invalid JSON: %v\n%s", err, stdout)
 	}
-	if !envelope.OK || envelope.Data.Count != 0 || len(envelope.Data.Accounts) != 0 || envelope.Data.SchemaVersion != 1 {
+	if !envelope.OK || envelope.Data.Count != 0 || len(envelope.Data.Accounts) != 0 || envelope.Data.SchemaVersion != 2 {
 		t.Fatalf("unexpected envelope: %+v", envelope)
 	}
 	if envelope.Meta.RequestID != "req_accounts" {
@@ -451,7 +478,7 @@ func TestAccountListAndShowReadStoredAccountCompactly(t *testing.T) {
 		t.Fatalf("invalid JSON: %v\n%s", err, stdout)
 	}
 	if !envelope.OK || envelope.Data.Account.ID != "acct_0198d704-6c00-7000-8000-000000000001" ||
-		envelope.Data.Account.CredentialScheme != "env" || envelope.Data.SchemaVersion != 1 {
+		envelope.Data.Account.CredentialScheme != "env" || envelope.Data.SchemaVersion != 2 {
 		t.Fatalf("unexpected envelope: %+v", envelope)
 	}
 }
@@ -896,6 +923,236 @@ func TestAccountWritesReturnConflictWhileAccountLockIsHeld(t *testing.T) {
 	)
 	if exitCode != 6 || stdout != "" || !strings.Contains(stderr, "local account state is busy") || !strings.Contains(stderr, "retryable=true") {
 		t.Fatalf("code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
+	}
+}
+
+func TestAccountTestPersistsUsernameFallbackCapabilitiesAndHealthyState(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "state")
+	t.Setenv("ICLOUD_TEST_APP_PASSWORD", "synthetic-phase4-secret")
+	commands, _ := newTestAccountCommands()
+	imapValidator := &fakeIMAPValidator{
+		results: map[string]transport.IMAPResult{
+			"owner": {
+				Capabilities: []string{"special-use", "IMAP4rev1", "IDLE", "IDLE"},
+				Mailboxes:    6,
+				Inbox: transport.MailboxStatus{
+					Mailbox:     "INBOX",
+					Messages:    42,
+					Unseen:      3,
+					UIDNext:     50,
+					UIDValidity: 77,
+				},
+			},
+		},
+		errors: map[string]error{
+			"owner@icloud.com": transport.NewFailure(transport.StageIMAPAuth, transport.FailureAuthentication, false, errors.New("provider text containing a secret")),
+		},
+	}
+	smtpValidator := &fakeSMTPValidator{result: transport.SMTPResult{Capabilities: []string{"smtputf8", "AUTH", "AUTH"}}}
+	commands.imap = imapValidator
+	commands.smtp = smtpValidator
+
+	exitCode, stdout, stderr := runWithAccountCommands(t, commands, "",
+		"--home", home, "account", "add",
+		"--name", "Personal", "--email", "owner@icloud.com",
+		"--credential-env", "ICLOUD_TEST_APP_PASSWORD",
+	)
+	if exitCode != 0 || stderr != "" || !strings.Contains(stdout, "status=pending_validation") {
+		t.Fatalf("add code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
+	}
+
+	exitCode, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "account", "test")
+	if exitCode != 0 || stderr != "" {
+		t.Fatalf("test code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
+	}
+	for _, want := range []string{"status=connected", "imap=ok", "smtp=ok", "imap_username=owner", "mailboxes=6", "inbox_messages=42", "inbox_unseen=3"} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("test output missing %q: %q", want, stdout)
+		}
+	}
+	if lines, bytes := strings.Count(stdout, "\n"), len(stdout); lines != 2 || bytes > 360 {
+		t.Fatalf("account test compact budget exceeded: lines=%d bytes=%d output=%q", lines, bytes, stdout)
+	}
+	if got := strings.Join(imapValidator.usernames, ","); got != "owner@icloud.com,owner" {
+		t.Fatalf("IMAP usernames = %q", got)
+	}
+	if got := strings.Join(smtpValidator.usernames, ","); got != "owner@icloud.com" {
+		t.Fatalf("SMTP usernames = %q", got)
+	}
+
+	exitCode, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "account", "show", "--json")
+	if exitCode != 0 || stderr != "" {
+		t.Fatalf("show code=%d stderr=%q", exitCode, stderr)
+	}
+	var envelope struct {
+		OK   bool `json:"ok"`
+		Data struct {
+			Account account.Account `json:"account"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	stored := envelope.Data.Account
+	if !envelope.OK || stored.Status != account.StatusConnected || stored.IMAPUsername != "owner" || stored.LastHealthyAt == nil || stored.LastTestedAt == nil || stored.LastErrorCode != "" {
+		t.Fatalf("stored account = %+v", stored)
+	}
+	if strings.Join(stored.IMAPCapabilities, ",") != "IDLE,IMAP4REV1,SPECIAL-USE" || strings.Join(stored.SMTPCapabilities, ",") != "AUTH,SMTPUTF8" {
+		t.Fatalf("stored capabilities: imap=%v smtp=%v", stored.IMAPCapabilities, stored.SMTPCapabilities)
+	}
+	for _, private := range []string{"synthetic-phase4-secret", "ICLOUD_TEST_APP_PASSWORD", "provider text"} {
+		if strings.Contains(stdout, private) || strings.Contains(stderr, private) {
+			t.Fatalf("public output contains private value %q", private)
+		}
+	}
+
+	priorCalls := len(imapValidator.usernames) + len(smtpValidator.usernames)
+	exitCode, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "doctor")
+	if exitCode != 0 || stderr != "" || !strings.Contains(stdout, "status=connected") || !strings.Contains(stdout, "status=healthy") {
+		t.Fatalf("doctor code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
+	}
+	if calls := len(imapValidator.usernames) + len(smtpValidator.usernames); calls != priorCalls {
+		t.Fatalf("local doctor unexpectedly contacted protocols: calls=%d prior=%d", calls, priorCalls)
+	}
+	if lines, bytes := strings.Count(stdout, "\n"), len(stdout); lines != 2 || bytes > 320 {
+		t.Fatalf("doctor compact budget exceeded: lines=%d bytes=%d output=%q", lines, bytes, stdout)
+	}
+}
+
+func TestAccountTestFailureDegradesWithoutLosingLastHealthyAndRedactsDetails(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "state")
+	t.Setenv("ICLOUD_TEST_APP_PASSWORD", "synthetic-health-secret")
+	commands, _ := newTestAccountCommands()
+	imapValidator := &fakeIMAPValidator{results: map[string]transport.IMAPResult{
+		"owner@icloud.com": {Capabilities: []string{"IMAP4rev1"}, Mailboxes: 1},
+	}}
+	smtpValidator := &fakeSMTPValidator{result: transport.SMTPResult{Capabilities: []string{"AUTH"}}}
+	commands.imap = imapValidator
+	commands.smtp = smtpValidator
+	if code, _, stderr := runWithAccountCommands(t, commands, "", "--home", home, "account", "add", "--name", "Personal", "--email", "owner@icloud.com", "--credential-env", "ICLOUD_TEST_APP_PASSWORD"); code != 0 {
+		t.Fatalf("add code=%d stderr=%q", code, stderr)
+	}
+	if code, _, stderr := runWithAccountCommands(t, commands, "", "--home", home, "account", "test"); code != 0 {
+		t.Fatalf("initial test code=%d stderr=%q", code, stderr)
+	}
+	paths, err := config.ResolveAppPaths(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := store.Open(context.Background(), paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := state.Accounts().ResolveSelected(context.Background(), "")
+	_ = state.Close()
+	if err != nil || before.LastHealthyAt == nil {
+		t.Fatalf("healthy account = %+v err=%v", before, err)
+	}
+
+	smtpValidator.err = transport.NewFailure(transport.StageSMTPAuth, transport.FailureAuthentication, false, errors.New("535 rejected synthetic-health-secret"))
+	exitCode, stdout, stderr := runWithAccountCommands(t, commands, "", "--home", home, "account", "test", "--json")
+	if exitCode != 4 || stdout != "" {
+		t.Fatalf("failure code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
+	}
+	for _, want := range []string{`"code":"authentication"`, `"stage":"smtp_auth"`, `"status":"degraded"`} {
+		if !strings.Contains(stderr, want) {
+			t.Fatalf("JSON error missing %q: %q", want, stderr)
+		}
+	}
+	for _, private := range []string{"synthetic-health-secret", "ICLOUD_TEST_APP_PASSWORD", "535 rejected"} {
+		if strings.Contains(stderr, private) {
+			t.Fatalf("JSON error leaked %q: %q", private, stderr)
+		}
+	}
+
+	state, err = store.Open(context.Background(), paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := state.Accounts().ResolveSelected(context.Background(), "")
+	_ = state.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Status != account.StatusDegraded || after.LastErrorCode != string(transport.StageSMTPAuth) || after.LastErrorAt == nil || after.LastTestedAt == nil || after.LastHealthyAt == nil || !after.LastHealthyAt.Equal(*before.LastHealthyAt) {
+		t.Fatalf("degraded account = %+v", after)
+	}
+}
+
+func TestAccountTestMissingCredentialValueStopsBeforeNetwork(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "state")
+	_ = os.Unsetenv("ICLOUD_ABSENT_APP_PASSWORD")
+	commands, _ := newTestAccountCommands()
+	imapValidator := &fakeIMAPValidator{}
+	smtpValidator := &fakeSMTPValidator{}
+	commands.imap = imapValidator
+	commands.smtp = smtpValidator
+	if code, _, stderr := runWithAccountCommands(t, commands, "", "--home", home, "account", "add", "--name", "Personal", "--email", "owner@icloud.com", "--credential-env", "ICLOUD_ABSENT_APP_PASSWORD"); code != 0 {
+		t.Fatalf("add code=%d stderr=%q", code, stderr)
+	}
+	exitCode, stdout, stderr := runWithAccountCommands(t, commands, "", "--home", home, "account", "test", "--json")
+	if exitCode != 4 || stdout != "" || !strings.Contains(stderr, `"stage":"credential"`) {
+		t.Fatalf("code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
+	}
+	if len(imapValidator.usernames) != 0 || len(smtpValidator.usernames) != 0 || strings.Contains(stderr, "ICLOUD_ABSENT_APP_PASSWORD") {
+		t.Fatalf("network calls or reference leak: imap=%v smtp=%v stderr=%q", imapValidator.usernames, smtpValidator.usernames, stderr)
+	}
+}
+
+func TestDoctorZeroStateAndLiveMode(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "empty")
+	commands, _ := newTestAccountCommands()
+	commands.imap = &fakeIMAPValidator{}
+	commands.smtp = &fakeSMTPValidator{}
+	exitCode, stdout, stderr := runWithAccountCommands(t, commands, "", "--home", home, "doctor")
+	if exitCode != 0 || stderr != "" || stdout != "doctor status=configuration_required\n" {
+		t.Fatalf("code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
+	}
+}
+
+func TestAccountTestAndLiveDoctorSupportBoundedAllAccountRuns(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "state")
+	t.Setenv("ICLOUD_PERSONAL_TEST", "personal-synthetic-secret")
+	t.Setenv("ICLOUD_WORK_TEST", "work-synthetic-secret")
+	commands, _ := newTestAccountCommands()
+	imapValidator := &fakeIMAPValidator{results: map[string]transport.IMAPResult{
+		"owner@icloud.com": {Capabilities: []string{"IMAP4rev1"}, Mailboxes: 3},
+		"work@icloud.com":  {Capabilities: []string{"IMAP4rev1", "IDLE"}, Mailboxes: 4},
+	}}
+	smtpValidator := &fakeSMTPValidator{result: transport.SMTPResult{Capabilities: []string{"AUTH"}}}
+	commands.imap = imapValidator
+	commands.smtp = smtpValidator
+	for _, args := range [][]string{
+		{"--home", home, "account", "add", "--name", "Personal", "--email", "owner@icloud.com", "--credential-env", "ICLOUD_PERSONAL_TEST"},
+		{"--home", home, "account", "add", "--name", "Work", "--email", "work@icloud.com", "--credential-env", "ICLOUD_WORK_TEST"},
+	} {
+		if code, _, stderr := runWithAccountCommands(t, commands, "", args...); code != 0 {
+			t.Fatalf("add %v code=%d stderr=%q", args, code, stderr)
+		}
+	}
+	exitCode, stdout, stderr := runWithAccountCommands(t, commands, "", "--home", home, "account", "test", "--all")
+	if exitCode != 0 || stderr != "" || !strings.Contains(stdout, "account-tests count=2 healthy=2") || strings.Count(stdout, "account-test ") != 2 {
+		t.Fatalf("all test code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
+	}
+	if lines, bytes := strings.Count(stdout, "\n"), len(stdout); lines != 3 || bytes > 650 {
+		t.Fatalf("all-account compact budget exceeded: lines=%d bytes=%d", lines, bytes)
+	}
+
+	previousCalls := len(imapValidator.usernames) + len(smtpValidator.usernames)
+	exitCode, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "doctor", "--all", "--live")
+	if exitCode != 0 || stderr != "" || !strings.Contains(stdout, "doctor accounts=2 status=healthy") || strings.Count(stdout, "doctor acct_") != 2 {
+		t.Fatalf("live doctor code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
+	}
+	if calls := len(imapValidator.usernames) + len(smtpValidator.usernames); calls != previousCalls+4 {
+		t.Fatalf("live doctor protocol calls=%d want=%d", calls, previousCalls+4)
+	}
+	if lines, bytes := strings.Count(stdout, "\n"), len(stdout); lines != 3 || bytes > 600 {
+		t.Fatalf("live doctor compact budget exceeded: lines=%d bytes=%d", lines, bytes)
+	}
+
+	exitCode, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "--account", "Personal", "account", "test", "--all")
+	if exitCode != 2 || stdout != "" || !strings.Contains(stderr, "--all cannot be combined") {
+		t.Fatalf("selector conflict code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
 	}
 }
 

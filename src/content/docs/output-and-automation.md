@@ -1,7 +1,7 @@
 ---
 title: Output and automation
 description: Understand compact defaults, JSON envelopes, stdin credential safety, stderr, request IDs, timeouts, and stable exit classes.
-order: 5
+order: 6
 category: Guides
 summary: The agent-facing contract for bounded text, explicit JSON, safe input, and stable failures.
 ---
@@ -14,6 +14,7 @@ The CLI does not switch to JSON because stdout is redirected or a caller is non-
 version 0.1.0
 account-added acct_… status=pending_validation default=true credential=keyring
 accounts count=1
+account-test acct_… status=connected imap=ok smtp=ok imap_username=owner mailboxes=6 inbox_messages=42 inbox_unseen=3 checked_at=2026-08-06T03:00:00Z
 ```
 
 Default output omits empty values, ANSI color, box-drawing tables, JSON punctuation, and repeated labels. Successful output goes to stdout.
@@ -29,12 +30,14 @@ icloud --request-id account-01 account show --json
 ```
 
 ```json
-{"ok":true,"data":{"account":{"id":"acct_…","name":"Personal","email":"owner@icloud.com","imap_username":"owner@icloud.com","status":"pending_validation","default":true,"credential_scheme":"keyring","created_at":"2026-08-06T02:30:00Z","updated_at":"2026-08-06T02:30:00Z"},"schema_version":1},"meta":{"request_id":"account-01"}}
+{"ok":true,"data":{"account":{"id":"acct_…","name":"Personal","email":"owner@icloud.com","imap_username":"owner","status":"connected","default":true,"credential_scheme":"keyring","imap_capabilities":["IDLE","IMAP4REV1"],"smtp_capabilities":["AUTH"],"last_healthy_at":"2026-08-06T03:00:00Z","last_tested_at":"2026-08-06T03:00:00Z","created_at":"2026-08-06T02:30:00Z","updated_at":"2026-08-06T03:00:00Z"},"schema_version":2},"meta":{"request_id":"account-01"}}
 ```
 
-Account lifecycle and credential subcommands, account reads, `version`, and `capabilities` support JSON. Completion and man generation intentionally return native text formats.
+Account lifecycle, credential, validation, doctor, account reads, `version`, and `capabilities` support JSON. Completion and man generation intentionally return native text formats.
 
 Credential metadata JSON omits internal IDs, keyring references, environment names, file paths, and values. Error envelopes omit wrapped provider and storage causes.
+
+An `account test --json` failure writes one error envelope to stderr. Its `details.stage` and bounded `details.reports` identify the failing protocol without including the credential reference, password, raw server response, or debug transcript.
 
 ## Supply credentials without prompting
 
@@ -80,8 +83,8 @@ Help remains on stdout. A failed command never writes a success payload to stdou
 | `1` | internal | An unexpected internal failure occurred. |
 | `2` | usage | Arguments, flags, selectors, or references were invalid. |
 | `3` | configuration | Local state or the native keyring was unavailable. |
-| `4` | authentication | A requested credential value was missing. |
-| `5` | unavailable | A future dependency or network service was unavailable. |
+| `4` | authentication | A credential value was missing or IMAP/SMTP rejected it. |
+| `5` | unavailable | DNS, connectivity, TLS, protocol compatibility, or timeout prevented validation. |
 | `6` | conflict | A lock, duplicate account, ambiguous selection, or default-removal rule blocked the command. |
 | `7` | not found | The selected account or credential metadata does not exist. |
 | `8` | safety | Explicit input or `--yes` authorization is required. |
@@ -96,7 +99,7 @@ Help remains on stdout. A failed command never writes a success payload to stdou
 --request-id <id>     correlate structured output
 ```
 
-Version, capabilities, completion, man, and help remain disk-free. Account reads never prompt. Mutations use the same timeout for state and cross-process lock acquisition.
+Version, capabilities, completion, man, and help remain disk-free. Account reads and local `doctor` never prompt or contact Apple. Mutations and live validation use the same global timeout; transport stages also apply deadlines after a connection is established.
 
 ## Unsupported expansions fail visibly
 

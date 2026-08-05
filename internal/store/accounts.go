@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -17,7 +18,10 @@ type AccountRepository struct {
 
 const accountColumns = `
 SELECT a.account_id, a.friendly_name, a.email_address, a.imap_username,
-       a.status, a.is_default, COALESCE(c.scheme, ''), a.created_at, a.updated_at
+       a.status, a.is_default, COALESCE(c.scheme, ''),
+       a.imap_capabilities_json, a.smtp_capabilities_json,
+       COALESCE(a.last_error_code, ''), a.last_error_at, a.last_healthy_at, a.last_tested_at,
+       a.created_at, a.updated_at
 FROM accounts AS a
 LEFT JOIN credential_refs AS c ON c.account_id = a.account_id`
 
@@ -313,7 +317,10 @@ INSERT INTO credential_refs (
 		return account.Account{}, account.Credential{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `
-UPDATE accounts SET status = ?, updated_at = ? WHERE account_id = ?`,
+UPDATE accounts
+SET status = ?, last_error_code = NULL, last_error_at = NULL, last_tested_at = NULL,
+    imap_capabilities_json = '[]', smtp_capabilities_json = '[]', updated_at = ?
+WHERE account_id = ?`,
 		account.StatusPendingValidation, timestamp, value.ID,
 	); err != nil {
 		return account.Account{}, account.Credential{}, fmt.Errorf("mark account pending validation: %w", err)
@@ -353,7 +360,10 @@ func (r *AccountRepository) DeleteCredential(ctx context.Context, selector strin
 		return account.Account{}, account.Credential{}, fmt.Errorf("delete account credential: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `
-UPDATE accounts SET status = ?, updated_at = ? WHERE account_id = ?`,
+UPDATE accounts
+SET status = ?, last_error_code = NULL, last_error_at = NULL, last_tested_at = NULL,
+    imap_capabilities_json = '[]', smtp_capabilities_json = '[]', updated_at = ?
+WHERE account_id = ?`,
 		account.StatusPendingValidation, now.UTC().Format(time.RFC3339Nano), value.ID,
 	); err != nil {
 		return account.Account{}, account.Credential{}, fmt.Errorf("mark account pending validation: %w", err)
@@ -368,6 +378,54 @@ UPDATE accounts SET status = ?, updated_at = ? WHERE account_id = ?`,
 	credential.Configured = false
 	credential.UpdatedAt = now.UTC()
 	return value, credential, nil
+}
+
+func (r *AccountRepository) UpdateHealth(ctx context.Context, update account.HealthUpdate) (account.Account, error) {
+	imapCapabilities, err := json.Marshal(update.IMAPCapabilities)
+	if err != nil {
+		return account.Account{}, fmt.Errorf("encode IMAP capabilities: %w", err)
+	}
+	smtpCapabilities, err := json.Marshal(update.SMTPCapabilities)
+	if err != nil {
+		return account.Account{}, fmt.Errorf("encode SMTP capabilities: %w", err)
+	}
+	timestamp := update.CheckedAt.UTC().Format(time.RFC3339Nano)
+	lastErrorCode := nullableString(update.LastErrorCode)
+	var lastErrorAt any
+	var lastHealthyAt any
+	if update.Healthy {
+		lastHealthyAt = timestamp
+	} else {
+		lastErrorAt = timestamp
+	}
+	result, err := r.db.ExecContext(ctx, `
+UPDATE accounts
+SET status = ?, imap_username = ?, imap_capabilities_json = ?, smtp_capabilities_json = ?,
+    last_error_code = ?, last_error_at = ?,
+    last_healthy_at = COALESCE(?, last_healthy_at), last_tested_at = ?, updated_at = ?
+WHERE account_id = ?`,
+		update.Status,
+		update.IMAPUsername,
+		string(imapCapabilities),
+		string(smtpCapabilities),
+		lastErrorCode,
+		lastErrorAt,
+		lastHealthyAt,
+		timestamp,
+		timestamp,
+		update.AccountID,
+	)
+	if err != nil {
+		return account.Account{}, fmt.Errorf("update account health: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return account.Account{}, fmt.Errorf("read account health update result: %w", err)
+	}
+	if rows != 1 {
+		return account.Account{}, account.ErrNotFound
+	}
+	return accountByID(ctx, r.db, update.AccountID)
 }
 
 type accountQueryer interface {
@@ -457,10 +515,12 @@ func scanAccounts(rows *sql.Rows, capacity int) ([]account.Account, error) {
 
 func scanAccount(row rowScanner) (account.Account, error) {
 	var (
-		value                account.Account
-		status               string
-		isDefault            int
-		createdAt, updatedAt string
+		value                                      account.Account
+		status                                     string
+		isDefault                                  int
+		imapCapabilitiesJSON, smtpCapabilitiesJSON string
+		lastErrorAt, lastHealthyAt, lastTestedAt   sql.NullString
+		createdAt, updatedAt                       string
 	)
 	if err := row.Scan(
 		&value.ID,
@@ -470,6 +530,12 @@ func scanAccount(row rowScanner) (account.Account, error) {
 		&status,
 		&isDefault,
 		&value.CredentialScheme,
+		&imapCapabilitiesJSON,
+		&smtpCapabilitiesJSON,
+		&value.LastErrorCode,
+		&lastErrorAt,
+		&lastHealthyAt,
+		&lastTestedAt,
 		&createdAt,
 		&updatedAt,
 	); err != nil {
@@ -480,7 +546,25 @@ func scanAccount(row rowScanner) (account.Account, error) {
 	}
 	value.Status = account.Status(status)
 	value.Default = isDefault == 1
+	if err := json.Unmarshal([]byte(imapCapabilitiesJSON), &value.IMAPCapabilities); err != nil {
+		return account.Account{}, fmt.Errorf("parse IMAP capabilities: %w", err)
+	}
+	if err := json.Unmarshal([]byte(smtpCapabilitiesJSON), &value.SMTPCapabilities); err != nil {
+		return account.Account{}, fmt.Errorf("parse SMTP capabilities: %w", err)
+	}
 	var err error
+	value.LastErrorAt, err = parseNullableTime(lastErrorAt)
+	if err != nil {
+		return account.Account{}, fmt.Errorf("parse account last error time: %w", err)
+	}
+	value.LastHealthyAt, err = parseNullableTime(lastHealthyAt)
+	if err != nil {
+		return account.Account{}, fmt.Errorf("parse account last healthy time: %w", err)
+	}
+	value.LastTestedAt, err = parseNullableTime(lastTestedAt)
+	if err != nil {
+		return account.Account{}, fmt.Errorf("parse account last tested time: %w", err)
+	}
 	value.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAt)
 	if err != nil {
 		return account.Account{}, fmt.Errorf("parse account created time: %w", err)
@@ -490,6 +574,24 @@ func scanAccount(row rowScanner) (account.Account, error) {
 		return account.Account{}, fmt.Errorf("parse account updated time: %w", err)
 	}
 	return value, nil
+}
+
+func parseNullableTime(value sql.NullString) (*time.Time, error) {
+	if !value.Valid || strings.TrimSpace(value.String) == "" {
+		return nil, nil
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, value.String)
+	if err != nil {
+		return nil, err
+	}
+	return &parsed, nil
+}
+
+func nullableString(value string) any {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	return value
 }
 
 func classifyAccountWrite(action string, err error) error {

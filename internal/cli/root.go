@@ -40,6 +40,8 @@ type AccountService interface {
 	CredentialShow(context.Context, string, string) (account.Credential, int64, error)
 	CredentialReplace(context.Context, string, string, account.CredentialSetup) (account.Credential, int64, error)
 	CredentialDelete(context.Context, string, string) (account.Credential, int64, error)
+	Test(context.Context, string, string, bool) ([]account.HealthReport, int64, error)
+	Doctor(context.Context, string, string, bool, bool) ([]account.DoctorReport, int64, error)
 }
 
 type Result struct {
@@ -83,6 +85,8 @@ type capabilitiesData struct {
 	DataSchemaVersion int64            `json:"data_schema_version"`
 	AccountMode       string           `json:"account_mode"`
 	CredentialSchemes []string         `json:"credential_schemes"`
+	NetworkValidation bool             `json:"network_validation"`
+	Diagnostics       bool             `json:"diagnostics"`
 	Output            capabilityOutput `json:"output"`
 	Completion        []string         `json:"completion"`
 	Man               bool             `json:"man"`
@@ -173,8 +177,8 @@ func newRootCommand(state *executionState) *cobra.Command {
 	root := &cobra.Command{
 		Use:           commandName,
 		Short:         "Control iCloud services from the command line",
-		Long:          "icloud controls iCloud services from the command line. This build provides secure local account and credential setup, account-state inspection, version and capability reporting, shell completions, and man-page generation.",
-		Example:       "  icloud account add --name Personal --email owner@icloud.com --password-stdin\n  icloud account list\n  icloud capabilities",
+		Long:          "icloud controls iCloud services from the command line. This build provides secure account setup, live read-only IMAP and SMTP validation, account health diagnostics, version and capability reporting, shell completions, and man-page generation.",
+		Example:       "  icloud account add --name Personal --email owner@icloud.com --password-stdin\n  icloud account test\n  icloud doctor",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		Args:          cobra.NoArgs,
@@ -220,6 +224,7 @@ func newRootCommand(state *executionState) *cobra.Command {
 		&cobra.Group{ID: "docs", Title: "Documentation commands:"},
 	)
 	root.AddCommand(newAccountCommand(state))
+	root.AddCommand(newDoctorCommand(state))
 	root.AddCommand(newVersionCommand(state))
 	root.AddCommand(newCapabilitiesCommand(state))
 	root.AddCommand(newCompletionCommand(root))
@@ -274,8 +279,10 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				Command:           commandName,
 				Version:           state.version,
 				DataSchemaVersion: state.schemaVersion,
-				AccountMode:       "offline_lifecycle",
+				AccountMode:       "validated_lifecycle",
 				CredentialSchemes: []string{"keyring", "env", "file"},
+				NetworkValidation: true,
+				Diagnostics:       true,
 				Output: capabilityOutput{
 					Default: "compact",
 					JSON:    true,
@@ -297,6 +304,8 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				Field("schema", data.DataSchemaVersion),
 				Field("account_mode", data.AccountMode),
 				Field("credentials", data.CredentialSchemes),
+				Field("network_validation", data.NetworkValidation),
+				Field("diagnostics", data.Diagnostics),
 				Field("default_output", data.Output.Default),
 				Field("json", data.Output.JSON),
 				Field("completion", data.Completion),
@@ -326,6 +335,7 @@ func newAccountCommand(state *executionState) *cobra.Command {
 	command.AddCommand(newAccountDefaultCommand(state))
 	command.AddCommand(newAccountRemoveCommand(state))
 	command.AddCommand(newAccountCredentialCommand(state))
+	command.AddCommand(newAccountTestCommand(state))
 	return command
 }
 
@@ -453,6 +463,14 @@ func (unavailableAccountService) CredentialReplace(context.Context, string, stri
 
 func (unavailableAccountService) CredentialDelete(context.Context, string, string) (account.Credential, int64, error) {
 	return account.Credential{}, 0, NewAppError(ErrorConfiguration, "local account state is unavailable", false)
+}
+
+func (unavailableAccountService) Test(context.Context, string, string, bool) ([]account.HealthReport, int64, error) {
+	return nil, 0, NewAppError(ErrorConfiguration, "account validation is unavailable", false)
+}
+
+func (unavailableAccountService) Doctor(context.Context, string, string, bool, bool) ([]account.DoctorReport, int64, error) {
+	return nil, 0, NewAppError(ErrorConfiguration, "account diagnostics are unavailable", false)
 }
 
 func newCompletionCommand(root *cobra.Command) *cobra.Command {

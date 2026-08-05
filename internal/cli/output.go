@@ -185,6 +185,11 @@ func compactValue(value any) string {
 		return compactToken(string(typed))
 	case time.Time:
 		return typed.UTC().Format(time.RFC3339)
+	case *time.Time:
+		if typed == nil {
+			return ""
+		}
+		return typed.UTC().Format(time.RFC3339)
 	case fmt.Stringer:
 		return compactToken(typed.String())
 	case bool:

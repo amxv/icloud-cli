@@ -8,7 +8,7 @@ summary: Offline account setup, app-specific-password handling, credential refer
 
 ## Before you add an account
 
-Use an **app-specific password**, not the primary password for your Apple Account. Account setup in this build is deliberately offline: it records the profile and credential source, marks the account `pending_validation`, and makes no IMAP or SMTP connection. A later `account test` workflow will perform live validation.
+Use an **app-specific password**, not the primary password for your Apple Account. Account setup is deliberately offline: it records the profile and credential source, marks the account `pending_validation`, and makes no IMAP or SMTP connection. Run `account test` explicitly when the external credential is available and you are ready for live read-only validation.
 
 For experiments or agent-owned runs, choose an isolated state root first:
 
@@ -102,7 +102,7 @@ icloud account add \
   --credential-env ICLOUD_LEGACY_APP_PASSWORD
 ```
 
-Without `--imap-username`, the email address is stored initially. Live account testing will later be responsible for any documented short/full username fallback and for persisting the form that succeeds.
+Without `--imap-username`, the email address is stored initially. `account test` tries the configured value, the full email, and the short local part as needed after authentication rejection, then persists the exact form that succeeds.
 
 ## Inspect and select accounts
 
@@ -184,8 +184,16 @@ icloud account remove Personal --yes
 
 Both destructive commands return a safety error without `--yes`; they never prompt implicitly in redirected or agent execution.
 
-## What setup does not do yet
+## Validate after setup
 
-Every account added or changed in this build remains `pending_validation`. Setup does not authenticate to Apple, discover folders, sync messages, or prove SMTP sending. Do not interpret a successful `account add` as proof that the email, IMAP username, app-specific password, or external reference is valid.
+Every account added or changed remains `pending_validation` until both protocols pass:
+
+```bash
+icloud account test Personal
+```
+
+The test is read-only: IMAP performs capability, login, list, and `INBOX` status commands; SMTP requires STARTTLS, authenticates, sends `NOOP`, and quits. It does not prove delivery and cannot send or mutate mail.
+
+Do not interpret `account add` alone as proof that the email, IMAP username, app-specific password, or external reference is valid. Continue with [Account validation and doctor](/docs/account-validation-and-doctor) for health and troubleshooting.
 
 Continue with [Local state and account inspection](/docs/local-state-and-accounts) for data paths and locking, or [Output and automation](/docs/output-and-automation) for JSON and exit contracts.

@@ -28,6 +28,7 @@ const workflows = [
   "Install the package or build from source, then verify the exact binary with icloud version.",
   "Add an offline iCloud Mail profile using the native keyring or an environment/file credential reference.",
   "Select, rename, default, rotate, or remove multiple profiles without exposing credential references or values.",
+  "Validate direct-TLS IMAP and mandatory-STARTTLS SMTP safely, then inspect stored health with icloud doctor.",
   "Inspect supported behavior with icloud capabilities before an agent chooses an output mode.",
   "Generate completions for Bash, Zsh, Fish, or PowerShell directly from the installed command tree.",
   "Generate a single root man page to stdout or the complete man-page tree into a directory."
@@ -49,8 +50,8 @@ const workflows = [
         and one public executable across local builds, npm installs, and release assets.
       </p>
       <p class="hero__annotation">
-        The current build adds secure offline multi-account and credential lifecycle with private local state.
-        Accounts remain pending validation; no command contacts iCloud yet.
+        The current build validates both iCloud Mail protocols without sending or mutating mail,
+        persists the successful IMAP username, and exposes bounded local or live diagnostics.
       </p>
       <div class="hero__actions">
         <a class="button button--solid" href="/docs/quickstart">Start with the quickstart</a>
@@ -63,10 +64,12 @@ const workflows = [
         <span>$ icloud version</span>
         <span>version 0.1.0</span>
         <span>$ icloud capabilities</span>
-        <span>capabilities command=icloud version=0.1.0 schema=1 …</span>
+        <span>capabilities command=icloud version=0.1.0 schema=2 …</span>
         <span>$ icloud account add --name Personal --email owner@icloud.com</span>
         <span>App-specific password:</span>
         <span>account-added acct_… status=pending_validation default=true credential=keyring</span>
+        <span>$ icloud account test</span>
+        <span>account-test acct_… status=connected imap=ok smtp=ok …</span>
       </div>
     </aside>
   </section>
@@ -93,7 +96,7 @@ const workflows = [
   <section class="shell split-section">
     <div>
       <p class="section-label">Available now</p>
-      <h2>Configure private account profiles, manage credentials, and generate reference assets.</h2>
+      <h2>Configure private profiles, validate both mail protocols, diagnose health, and generate reference assets.</h2>
     </div>
     <div class="stack-list">
       {workflows.map((item) => (
