@@ -1,122 +1,126 @@
 ---
 title: Quickstart
-description: Install the icloud command, verify the build, and create an isolated local account-state inventory without configuring credentials.
+description: Install icloud, verify the binary, create an isolated state root, and add an offline iCloud Mail account without exposing its app-specific password.
 order: 1
 category: Start
-summary: The shortest safe path from installation to a verified local zero-account session.
+summary: The shortest safe path from installation to a configured pending-validation account.
 ---
 
 ## What this build does
 
-The current `icloud` build provides the public command and automation contract plus durable local account-state inspection. It can:
+The current `icloud` build can:
 
-- create or upgrade an isolated application data directory;
-- list stored accounts and show one by name, email, or stable ID;
-- report its version, capabilities, and local-state schema version;
-- generate shell completions and man pages.
+- create or upgrade a private local state directory;
+- add multiple iCloud Mail profiles with stable IDs and a deterministic default;
+- store an app-specific password in the native keyring or persist an environment/file reference;
+- list, show, rename, default, remove, and manage credential metadata;
+- report its version and local-state schema, generate shell completions, and generate man pages.
 
-It does **not** request an Apple Account password, add or validate an account, resolve a credential, read mail, or contact iCloud. No credential setup is required for this quickstart.
+Account setup is offline. It does **not** authenticate to Apple, read mail, discover folders, or send mail yet. A newly added account is `pending_validation`.
 
 ## Install
 
-Install the npm package globally:
-
 ```bash
 npm install --global @amxv/icloud-cli
+icloud version
+icloud capabilities
 ```
 
-The package downloads the matching native release binary. When a release asset is unavailable and Go is installed, the installer can build the same `icloud` binary from the packaged source.
-
-From a source checkout, build locally instead:
+From a source checkout:
 
 ```bash
 make build
 ./dist/icloud version
 ```
 
-## Verify the command
-
-Run:
-
-```bash
-icloud version
-icloud capabilities
-icloud --help
-```
-
 Representative compact output:
 
 ```text
 version 0.1.0
-capabilities command=icloud version=0.1.0 schema=1 default_output=compact json=true completion=bash,zsh,fish,powershell man=true
+capabilities command=icloud version=0.1.0 schema=1 account_mode=offline_lifecycle credentials=keyring,env,file default_output=compact json=true completion=bash,zsh,fish,powershell man=true
 ```
 
-The installed version replaces `0.1.0` with the version embedded in that binary.
-
-## Create an isolated zero-account state
-
-Use an explicit location for a disposable first session:
+## Choose an isolated state root
 
 ```bash
-ICLOUD_HOME=./icloud-state icloud account list
+export ICLOUD_HOME="$PWD/icloud-state"
+icloud account list
 ```
 
-Expected compact output:
+A new state returns:
 
 ```text
 accounts count=0
 ```
 
-The command creates `mail.db`, `blobs/`, and `locks/` under `./icloud-state`, then reads the empty account inventory. It performs no network request and stores no credential value.
+The command creates `mail.db`, `blobs/`, and `locks/` under the selected root. It performs no network request.
 
-Run it again to verify an idempotent reopen:
+## Add an account safely
 
-```bash
-ICLOUD_HOME=./icloud-state icloud account list
-```
-
-For platform defaults, precedence, privacy, conflicts, and cleanup, read [Local state and account inspection](/docs/local-state-and-accounts).
-
-## Use structured output deliberately
-
-Account reads, `version`, and `capabilities` support one JSON envelope when a script needs named fields:
+Use an app-specific password rather than the primary password for your Apple Account. To place the value in the native operating-system keyring without an argv flag or echoed input:
 
 ```bash
-ICLOUD_HOME=./icloud-state icloud --request-id inventory-01 account list --json
+read -rsp "App-specific password: " ICLOUD_APP_PASSWORD
+printf '\n'
+printf '%s\n' "$ICLOUD_APP_PASSWORD" |
+  icloud account add \
+    --name Personal \
+    --email owner@icloud.com \
+    --password-stdin
+unset ICLOUD_APP_PASSWORD
 ```
 
-```json
-{"ok":true,"data":{"accounts":[],"count":0,"schema_version":1},"meta":{"request_id":"inventory-01"}}
+Expected shape:
+
+```text
+account-added acct_… status=pending_validation default=true credential=keyring
 ```
 
-Plain text remains the default in terminals and redirected non-interactive runs. See [Output and automation](/docs/output-and-automation) for errors, request IDs, and exit classes.
+The first account becomes the default. The output does not repeat the email or password. The database contains a credential reference, not the password value.
+
+For a headless process, persist an environment reference instead:
+
+```bash
+icloud account add \
+  --name Agent \
+  --email agent@icloud.com \
+  --credential-env ICLOUD_AGENT_APP_PASSWORD
+```
+
+Read [Account setup and credentials](/docs/account-setup-and-credentials) before using file references, rotating credentials, or removing profiles.
+
+## Inspect the configured profile
+
+```bash
+icloud account list
+icloud account show
+icloud account credential show Personal
+```
+
+A compact account record includes the stable ID, friendly name, email, initial IMAP username, `pending_validation` status, default state, and credential scheme. It never includes the credential reference or value.
+
+## Use JSON deliberately
+
+```bash
+icloud --request-id account-setup-01 account show --json
+```
+
+JSON is opt-in and uses one success envelope. Redirecting stdout does not change the compact default. Credential references and values remain omitted from JSON.
 
 ## Generate local help assets
 
-Generate a completion script for the shell you use:
-
 ```bash
 icloud completion zsh > ~/.zsh/completions/_icloud
-```
-
-Generate a root man page:
-
-```bash
 icloud man > icloud.1
-```
-
-Generate the complete man-page tree:
-
-```bash
 icloud man --output-dir ./man
 ```
 
 ## Common errors
 
-- **`icloud binary is not installed`** — run `npm rebuild --global @amxv/icloud-cli`, or install Go and reinstall so the local-build fallback can run.
-- **Unknown command** — run `icloud --help`. Close misspellings include a compact suggestion.
-- **`account not found`** — the selected state has no matching account; a new state is empty by design.
-- **Local state is busy** — let the other `icloud` process finish its upgrade, then retry.
-- **Invalid timeout** — use a positive Go-style duration such as `--timeout 30s` or `--timeout 2m`.
+- **Native keyring unavailable** — use `--credential-env` or `--credential-file`, especially in headless Linux sessions.
+- **Credential input required** — non-interactive setup must choose `--password-stdin`, `--credential-env`, or `--credential-file`.
+- **Account already exists** — friendly names and email addresses are unique within one state root.
+- **Cannot remove the default** — set another default account first.
+- **Local state is busy** — let the other `icloud` process finish or retry with an appropriate timeout.
 
-Next, read the [command reference](/docs/command-reference) for every command and global flag available in this build.
+Next, use the [command reference](/docs/command-reference) for every available command and flag.

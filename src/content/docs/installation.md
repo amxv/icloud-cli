@@ -14,7 +14,7 @@ Choose one installation path:
 - source build: Go 1.26 or newer;
 - documentation development: Bun 1 or newer in addition to the source-build tools.
 
-No iCloud credentials are required by the current command set. The first account read creates local application state but does not contact iCloud.
+No credential is required to install the binary, inspect capabilities, or create an empty state. Account setup uses an app-specific password or an environment/file reference; it never requires the primary password for your Apple Account and does not contact iCloud yet.
 
 ## Install through npm
 
@@ -71,6 +71,10 @@ ICLOUD_HOME=./icloud-state icloud account list
 
 A new installation prints `accounts count=0` and creates the state root. Omitting both `--home` and `ICLOUD_HOME` uses the platform data directory described in [Local state and account inspection](/docs/local-state-and-accounts).
 
+## Verify account setup
+
+For a safe first profile, read [Account setup and credentials](/docs/account-setup-and-credentials), then choose native keyring, environment, or file-backed setup. A successful add returns `pending_validation`; it is not a live authentication test.
+
 ## Repair an npm installation
 
 When the JavaScript shim exists but its native binary does not:
@@ -89,4 +93,4 @@ For a global npm installation:
 npm uninstall --global @amxv/icloud-cli
 ```
 
-Package removal does not delete local application state. If you ran an account command, the selected root may contain `mail.db`, `blobs/`, and `locks/`. Confirm the exact root and preserve anything needed before removing it manually. A source-only `version`, `capabilities`, completion, or man command does not create state.
+Package removal does not delete local application state, native keyring entries, environment variables, or external credential files. Remove accounts through `icloud account remove <selector> --yes` before uninstalling when you want keyring cleanup. Confirm the selected root and preserve anything needed before deleting it manually. `version`, `capabilities`, completion, man, and help do not create state.

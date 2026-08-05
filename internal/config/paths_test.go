@@ -28,7 +28,8 @@ func TestResolveAppPathsPrecedenceAndShape(t *testing.T) {
 	if paths.Database != filepath.Join(absolute, "mail.db") ||
 		paths.BlobRoot != filepath.Join(absolute, "blobs") ||
 		paths.LockRoot != filepath.Join(absolute, "locks") ||
-		paths.MigrationLock != filepath.Join(absolute, "locks", "migrate.lock") {
+		paths.MigrationLock != filepath.Join(absolute, "locks", "migrate.lock") ||
+		paths.AccountLock != filepath.Join(absolute, "locks", "accounts.lock") {
 		t.Fatalf("unexpected paths: %+v", paths)
 	}
 }

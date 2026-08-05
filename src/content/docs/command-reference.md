@@ -1,9 +1,9 @@
 ---
 title: Command reference
-description: A complete reference for the current icloud command tree, global controls, output modes, and generated help assets.
-order: 6
+description: A complete reference for account and credential lifecycle commands, global controls, output modes, completion, and man generation.
+order: 7
 category: Reference
-summary: Every account-inspection, capability, completion, man, help, and global control available now.
+summary: Every account, credential, capability, completion, man, help, and global control available now.
 ---
 
 ## Root command
@@ -18,19 +18,120 @@ Running `icloud` without a command prints root help to stdout.
 
 | Flag | Default | Purpose |
 | --- | --- | --- |
-| `--home <path>` | `ICLOUD_HOME`, then the platform default | Override the application data directory for commands that use local state. |
-| `--account <selector>` | none | Select an account by friendly name, email, or stable ID when required. |
-| `--timeout <duration>` | `30s` | Bound command execution with a positive Go-style duration. |
-| `--no-input` | false | Prevent interactive prompting. |
+| `--home <path>` | `ICLOUD_HOME`, then platform default | Override the application data directory for state-bearing commands. |
+| `--account <selector>` | none | Select by friendly name, email, or stable ID when supported. |
+| `--timeout <duration>` | `30s` | Bound execution and lock acquisition. |
+| `--no-input` | false | Prevent implicit terminal prompts. Explicit stdin remains allowed. |
 | `--request-id <id>` | generated for structured output | Correlate JSON success and error envelopes. |
 | `--version` | — | Print the compact installed version and exit. |
 | `-h`, `--help` | — | Print help to stdout. |
 
-`account list` and `account show` initialize and read local state. The inspection and documentation commands remain disk-free. Shared flags keep one root contract across both kinds of command.
+## `icloud account add`
+
+Create an offline account profile. `--name` and `--email` are required.
+
+```bash
+icloud account add --name Personal --email owner@icloud.com
+printf '%s\n' "$APP_PASSWORD" |
+  icloud account add --name Personal --email owner@icloud.com --password-stdin
+icloud account add --name Agent --email agent@icloud.com \
+  --credential-env ICLOUD_AGENT_APP_PASSWORD
+icloud account add --name Work --email work@icloud.com \
+  --credential-file "$HOME/.config/icloud-cli/work-password"
+```
+
+Credential-source flags are mutually exclusive:
+
+| Flag | Behavior |
+| --- | --- |
+| `--password-stdin` | Read a bounded value from stdin and store it in the native keyring. |
+| `--credential-env <name>` | Persist an environment-variable reference without resolving it. |
+| `--credential-file <path>` | Persist an absolute file reference without reading or copying it. |
+
+In an interactive terminal, omitting all three sources opens a secure non-echoing keyring prompt. Non-TTY execution requires an explicit source. Optional `--imap-username` overrides the initial full-email username. `--default` makes the new profile the default; otherwise the first profile defaults automatically.
+
+Success returns an outcome, stable ID, `pending_validation`, default state when true, and credential scheme. It does not echo the submitted name, email, path, variable, or password. `--json` returns the same bounded mutation metadata.
+
+## `icloud account list`
+
+```bash
+icloud account list
+icloud account list --limit 50
+icloud account list --json
+```
+
+The default bound is 20 and the maximum is 100. A final summary reports count and `more=true` when truncated. Account records include the credential scheme only.
+
+## `icloud account show`
+
+```bash
+icloud account show Personal
+icloud --account owner@icloud.com account show
+icloud account show
+icloud account show --json
+```
+
+Without a selector, the command chooses the default, then a sole account. A missing account exits `7`; ambiguous selection exits `6`.
+
+## `icloud account rename`
+
+```bash
+icloud account rename Personal Primary
+icloud account rename Personal Primary --json
+```
+
+The stable account ID and email do not change. Friendly-name conflicts exit `6`.
+
+## `icloud account default`
+
+```bash
+icloud account default Work
+icloud account default Work --json
+```
+
+Exactly one account is default after success.
+
+## `icloud account remove`
+
+```bash
+icloud account remove Old --yes
+icloud account remove Old --yes --json
+```
+
+`--yes` is required. Removing a native-keyring profile clears its keyring entry. Environment variables and external files are not deleted. A default account cannot be removed while another profile exists; set another default first.
+
+## `icloud account credential show`
+
+```bash
+icloud account credential show Personal
+icloud account credential show Personal --json
+```
+
+Returns account ID, scheme, configured state, and update time. The command does not resolve or disclose the reference or value.
+
+## `icloud account credential replace`
+
+```bash
+printf '%s\n' "$NEW_APP_PASSWORD" |
+  icloud account credential replace Personal --password-stdin
+icloud account credential replace Personal \
+  --credential-env ICLOUD_PERSONAL_APP_PASSWORD
+icloud account credential replace Personal \
+  --credential-file "$HOME/.config/icloud-cli/personal-password"
+```
+
+Uses the same mutually exclusive source flags as `account add`. A replacement marks the account `pending_validation`. `--json` returns credential metadata without the reference or value.
+
+## `icloud account credential delete`
+
+```bash
+icloud account credential delete Personal --yes
+icloud account credential delete Personal --yes --json
+```
+
+`--yes` is required. The account remains, but its credential reference is removed and its status is `pending_validation`. A native keyring entry is cleared when present.
 
 ## `icloud version`
-
-Print the version injected into the binary at build time.
 
 ```bash
 icloud version
@@ -43,11 +144,7 @@ Compact output:
 version 0.1.0
 ```
 
-`--json` emits one success envelope with `command` and `version` fields.
-
 ## `icloud capabilities`
-
-Describe behavior supported by the installed binary.
 
 ```bash
 icloud capabilities
@@ -57,43 +154,12 @@ icloud capabilities --json
 Compact output:
 
 ```text
-capabilities command=icloud version=0.1.0 schema=1 default_output=compact json=true completion=bash,zsh,fish,powershell man=true
+capabilities command=icloud version=0.1.0 schema=1 account_mode=offline_lifecycle credentials=keyring,env,file default_output=compact json=true completion=bash,zsh,fish,powershell man=true
 ```
 
-The compact `schema` field and JSON `data_schema_version` field report the installed local-state schema. The JSON form also reports that no JSONL command is present in this build.
-
-## `icloud account list`
-
-Create or upgrade the selected local state and list configured accounts:
-
-```bash
-icloud account list
-icloud account list --limit 50
-icloud --home ./work-state account list --json
-```
-
-A new state returns:
-
-```text
-accounts count=0
-```
-
-A populated state emits at most 20 compact account records by default, followed by one count summary. `--limit` accepts `1` through `100`; the summary and JSON data include `more=true` when additional records exist. `--json` returns `accounts`, `count`, and `schema_version` in one success envelope. No credential reference or secret value is included.
-
-## `icloud account show`
-
-Resolve one stored account by friendly name, email address, or stable account ID:
-
-```bash
-icloud account show Personal
-icloud account show owner@example.com --json
-```
-
-A missing account writes a `not_found` error to stderr and exits `7`.
+The schema field reports the installed local-state migration version without opening state.
 
 ## `icloud completion`
-
-Generate a completion script to stdout:
 
 ```bash
 icloud completion bash
@@ -102,48 +168,31 @@ icloud completion fish
 icloud completion powershell
 ```
 
-Each shell is a command-local help target:
-
-```bash
-icloud completion zsh --help
-```
-
-Completion output is intentionally the native shell script, not compact text or JSON.
+Output is the native shell script, not compact text or JSON.
 
 ## `icloud man`
 
-Generate the root man page to stdout:
-
 ```bash
 icloud man > icloud.1
-```
-
-Generate the complete page tree:
-
-```bash
 icloud man --output-dir ./man
 ```
 
-Directory mode prints one compact summary after successful generation:
+Directory mode returns:
 
 ```text
 man generated dir=man
 ```
 
-The pages are generated from the same Cobra command tree used for help and completions.
-
 ## `icloud help`
-
-Print root or command-local help:
 
 ```bash
 icloud help
-icloud help capabilities
-icloud capabilities --help
+icloud help account
+icloud account credential replace --help
 ```
 
-Help goes to stdout. Usage failures go to stderr and exit with code `2`.
+Help goes to stdout. Usage failures go to stderr and exit `2`.
 
 ## Output availability
 
-`version`, `capabilities`, `account list`, and `account show` expose `--json` in this build. No command silently accepts unsupported JSONL, full-body, HTML, raw, header, body-only, or verbose modes. See [Output and automation](/docs/output-and-automation) for the stable envelope and exit contracts.
+Every account and credential lifecycle command above, `version`, and `capabilities` supports `--json`. Completion and man generation retain native text. No command silently accepts unsupported JSONL, full-body, HTML, raw, header, body-only, or verbose modes.

@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -22,6 +21,7 @@ const commandName = "icloud"
 type Config struct {
 	Version       string
 	SchemaVersion int64
+	Stdin         io.Reader
 	Stdout        io.Writer
 	Stderr        io.Writer
 	RequestIDGen  func() string
@@ -33,6 +33,13 @@ type Config struct {
 type AccountService interface {
 	List(context.Context, string, int) ([]account.Account, bool, int64, error)
 	Show(context.Context, string, string) (account.Account, int64, error)
+	Add(context.Context, string, account.AddInput) (account.Account, int64, error)
+	Rename(context.Context, string, string, string) (account.Account, int64, error)
+	SetDefault(context.Context, string, string) (account.Account, int64, error)
+	Remove(context.Context, string, string) (account.Account, bool, int64, error)
+	CredentialShow(context.Context, string, string) (account.Credential, int64, error)
+	CredentialReplace(context.Context, string, string, account.CredentialSetup) (account.Credential, int64, error)
+	CredentialDelete(context.Context, string, string) (account.Credential, int64, error)
 }
 
 type Result struct {
@@ -50,6 +57,7 @@ type globalOptions struct {
 type executionState struct {
 	version       string
 	schemaVersion int64
+	stdin         io.Reader
 	stdout        io.Writer
 	stderr        io.Writer
 	requestID     string
@@ -73,6 +81,8 @@ type capabilitiesData struct {
 	Command           string           `json:"command"`
 	Version           string           `json:"version"`
 	DataSchemaVersion int64            `json:"data_schema_version"`
+	AccountMode       string           `json:"account_mode"`
+	CredentialSchemes []string         `json:"credential_schemes"`
 	Output            capabilityOutput `json:"output"`
 	Completion        []string         `json:"completion"`
 	Man               bool             `json:"man"`
@@ -94,6 +104,9 @@ func Execute(ctx context.Context, args []string, config Config) Result {
 	if config.Stdout == nil {
 		config.Stdout = io.Discard
 	}
+	if config.Stdin == nil {
+		config.Stdin = strings.NewReader("")
+	}
 	if config.Stderr == nil {
 		config.Stderr = io.Discard
 	}
@@ -111,6 +124,7 @@ func Execute(ctx context.Context, args []string, config Config) Result {
 	state := &executionState{
 		version:       strings.TrimSpace(config.Version),
 		schemaVersion: config.SchemaVersion,
+		stdin:         config.Stdin,
 		stdout:        config.Stdout,
 		stderr:        config.Stderr,
 		requestID:     requestID,
@@ -159,8 +173,8 @@ func newRootCommand(state *executionState) *cobra.Command {
 	root := &cobra.Command{
 		Use:           commandName,
 		Short:         "Control iCloud services from the command line",
-		Long:          "icloud controls iCloud services from the command line. This build provides local account-state inspection, version and capability reporting, shell completions, and man-page generation.",
-		Example:       "  icloud account list\n  icloud version\n  icloud capabilities\n  icloud completion zsh > _icloud",
+		Long:          "icloud controls iCloud services from the command line. This build provides secure local account and credential setup, account-state inspection, version and capability reporting, shell completions, and man-page generation.",
+		Example:       "  icloud account add --name Personal --email owner@icloud.com --password-stdin\n  icloud account list\n  icloud capabilities",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		Args:          cobra.NoArgs,
@@ -260,6 +274,8 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				Command:           commandName,
 				Version:           state.version,
 				DataSchemaVersion: state.schemaVersion,
+				AccountMode:       "offline_lifecycle",
+				CredentialSchemes: []string{"keyring", "env", "file"},
 				Output: capabilityOutput{
 					Default: "compact",
 					JSON:    true,
@@ -279,6 +295,8 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				Field("command", data.Command),
 				Field("version", data.Version),
 				Field("schema", data.DataSchemaVersion),
+				Field("account_mode", data.AccountMode),
+				Field("credentials", data.CredentialSchemes),
 				Field("default_output", data.Output.Default),
 				Field("json", data.Output.JSON),
 				Field("completion", data.Completion),
@@ -293,16 +311,21 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 func newAccountCommand(state *executionState) *cobra.Command {
 	command := &cobra.Command{
 		Use:     "account",
-		Short:   "Inspect configured iCloud Mail accounts",
+		Short:   "Configure and inspect iCloud Mail accounts",
 		GroupID: "account",
 		Args:    cobra.NoArgs,
-		Example: "  icloud account list\n  icloud account show personal",
+		Example: "  icloud account add --name Personal --email owner@icloud.com --password-stdin\n  icloud account list\n  icloud account show personal",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
 		},
 	}
+	command.AddCommand(newAccountAddCommand(state))
 	command.AddCommand(newAccountListCommand(state))
 	command.AddCommand(newAccountShowCommand(state))
+	command.AddCommand(newAccountRenameCommand(state))
+	command.AddCommand(newAccountDefaultCommand(state))
+	command.AddCommand(newAccountRemoveCommand(state))
+	command.AddCommand(newAccountCredentialCommand(state))
 	return command
 }
 
@@ -353,24 +376,21 @@ func newAccountListCommand(state *executionState) *cobra.Command {
 func newAccountShowCommand(state *executionState) *cobra.Command {
 	var jsonOutput bool
 	command := &cobra.Command{
-		Use:     "show <name|email|account-id>",
+		Use:     "show [name|email|account-id]",
 		Short:   "Show one account from the local state database",
-		Args:    cobra.ExactArgs(1),
-		Example: "  icloud account show personal\n  icloud account show acct_0198f000-0000-7000-8000-000000000001 --json",
+		Args:    cobra.MaximumNArgs(1),
+		Example: "  icloud account show\n  icloud account show personal\n  icloud --account owner@icloud.com account show --json",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput}, OutputSupport{JSON: true}); err != nil {
 				return err
 			}
-			value, schemaVersion, err := state.accounts.Show(cmd.Context(), state.global.Home, args[0])
+			selector, err := selectedAccountSelector(state, args)
 			if err != nil {
-				switch {
-				case errors.Is(err, account.ErrNotFound):
-					return NewAppError(ErrorNotFound, "account not found", false)
-				case errors.Is(err, account.ErrAmbiguous):
-					return NewAppError(ErrorConflict, "account selector is ambiguous", false)
-				default:
-					return err
-				}
+				return err
+			}
+			value, schemaVersion, err := state.accounts.Show(cmd.Context(), state.global.Home, selector)
+			if err != nil {
+				return err
 			}
 			if jsonOutput {
 				return WriteJSON(state.stdout, OutputEnvelope{
@@ -405,6 +425,34 @@ func (unavailableAccountService) List(context.Context, string, int) ([]account.A
 
 func (unavailableAccountService) Show(context.Context, string, string) (account.Account, int64, error) {
 	return account.Account{}, 0, NewAppError(ErrorConfiguration, "local account state is unavailable", false)
+}
+
+func (unavailableAccountService) Add(context.Context, string, account.AddInput) (account.Account, int64, error) {
+	return account.Account{}, 0, NewAppError(ErrorConfiguration, "local account state is unavailable", false)
+}
+
+func (unavailableAccountService) Rename(context.Context, string, string, string) (account.Account, int64, error) {
+	return account.Account{}, 0, NewAppError(ErrorConfiguration, "local account state is unavailable", false)
+}
+
+func (unavailableAccountService) SetDefault(context.Context, string, string) (account.Account, int64, error) {
+	return account.Account{}, 0, NewAppError(ErrorConfiguration, "local account state is unavailable", false)
+}
+
+func (unavailableAccountService) Remove(context.Context, string, string) (account.Account, bool, int64, error) {
+	return account.Account{}, false, 0, NewAppError(ErrorConfiguration, "local account state is unavailable", false)
+}
+
+func (unavailableAccountService) CredentialShow(context.Context, string, string) (account.Credential, int64, error) {
+	return account.Credential{}, 0, NewAppError(ErrorConfiguration, "local account state is unavailable", false)
+}
+
+func (unavailableAccountService) CredentialReplace(context.Context, string, string, account.CredentialSetup) (account.Credential, int64, error) {
+	return account.Credential{}, 0, NewAppError(ErrorConfiguration, "local account state is unavailable", false)
+}
+
+func (unavailableAccountService) CredentialDelete(context.Context, string, string) (account.Credential, int64, error) {
+	return account.Credential{}, 0, NewAppError(ErrorConfiguration, "local account state is unavailable", false)
 }
 
 func newCompletionCommand(root *cobra.Command) *cobra.Command {

@@ -17,6 +17,7 @@ type AppPaths struct {
 	BlobRoot      string
 	LockRoot      string
 	MigrationLock string
+	AccountLock   string
 }
 
 // ResolveAppPaths applies explicit --home, ICLOUD_HOME, and platform defaults in
@@ -64,6 +65,7 @@ func resolveAppPaths(environment pathEnvironment) (AppPaths, error) {
 		BlobRoot:      filepath.Join(absoluteRoot, "blobs"),
 		LockRoot:      filepath.Join(absoluteRoot, "locks"),
 		MigrationLock: filepath.Join(absoluteRoot, "locks", "migrate.lock"),
+		AccountLock:   filepath.Join(absoluteRoot, "locks", "accounts.lock"),
 	}, nil
 }
 

@@ -15,7 +15,7 @@ export const siteConfig = {
     {
       title: "Current command set",
       text:
-        "Local account-state inspection, version and schema capabilities, shell completions, man pages, and stable automation errors."
+        "Secure offline account and credential lifecycle, bounded state inspection, schema capabilities, shell completions, man pages, and stable automation errors."
     },
     {
       title: "Repository",

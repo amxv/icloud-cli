@@ -16,7 +16,7 @@ const proofPoints = [
   },
   {
     title: "Safe for automation",
-    body: "Errors use stable exit classes, normal output stays on stdout, and diagnostics stay on stderr."
+    body: "Credentials stay out of argv, SQLite, JSON, and errors; failures use stable exits with stdout and stderr kept separate."
   },
   {
     title: "Self-documenting",
@@ -26,7 +26,8 @@ const proofPoints = [
 
 const workflows = [
   "Install the package or build from source, then verify the exact binary with icloud version.",
-  "Create an isolated local state and inspect its account inventory with icloud account list.",
+  "Add an offline iCloud Mail profile using the native keyring or an environment/file credential reference.",
+  "Select, rename, default, rotate, or remove multiple profiles without exposing credential references or values.",
   "Inspect supported behavior with icloud capabilities before an agent chooses an output mode.",
   "Generate completions for Bash, Zsh, Fish, or PowerShell directly from the installed command tree.",
   "Generate a single root man page to stdout or the complete man-page tree into a directory."
@@ -48,8 +49,8 @@ const workflows = [
         and one public executable across local builds, npm installs, and release assets.
       </p>
       <p class="hero__annotation">
-        The current build also creates private local state and exposes bounded account inventory reads.
-        It does not add credentials or contact iCloud yet.
+        The current build adds secure offline multi-account and credential lifecycle with private local state.
+        Accounts remain pending validation; no command contacts iCloud yet.
       </p>
       <div class="hero__actions">
         <a class="button button--solid" href="/docs/quickstart">Start with the quickstart</a>
@@ -63,8 +64,9 @@ const workflows = [
         <span>version 0.1.0</span>
         <span>$ icloud capabilities</span>
         <span>capabilities command=icloud version=0.1.0 schema=1 …</span>
-        <span>$ ICLOUD_HOME=./icloud-state icloud account list</span>
-        <span>accounts count=0</span>
+        <span>$ icloud account add --name Personal --email owner@icloud.com</span>
+        <span>App-specific password:</span>
+        <span>account-added acct_… status=pending_validation default=true credential=keyring</span>
       </div>
     </aside>
   </section>
@@ -91,7 +93,7 @@ const workflows = [
   <section class="shell split-section">
     <div>
       <p class="section-label">Available now</p>
-      <h2>Initialize local state, inspect accounts, and generate reference assets.</h2>
+      <h2>Configure private account profiles, manage credentials, and generate reference assets.</h2>
     </div>
     <div class="stack-list">
       {workflows.map((item) => (
@@ -105,7 +107,7 @@ const workflows = [
   <section class="shell docs-teaser">
     <div class="section-heading">
       <p class="section-label">Documentation</p>
-      <h2>Install, inspect, automate, and troubleshoot the current command set.</h2>
+      <h2>Install, configure credentials, inspect, automate, and troubleshoot the current command set.</h2>
       <p>
         Every page describes behavior present on the current branch and uses sanitized examples.
       </p>

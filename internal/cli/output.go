@@ -183,12 +183,12 @@ func compactValue(value any) string {
 		return compactToken(typed)
 	case ErrorCode:
 		return compactToken(string(typed))
+	case time.Time:
+		return typed.UTC().Format(time.RFC3339)
 	case fmt.Stringer:
 		return compactToken(typed.String())
 	case bool:
 		return strconv.FormatBool(typed)
-	case time.Time:
-		return typed.UTC().Format(time.RFC3339)
 	case []string:
 		return compactToken(strings.Join(typed, ","))
 	default:

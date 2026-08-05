@@ -384,3 +384,124 @@ func TestNoPrivateValuesAppearInSchema(t *testing.T) {
 		}
 	}
 }
+
+func TestAccountLifecycleAndCredentialTransactions(t *testing.T) {
+	t.Parallel()
+	state, err := Open(context.Background(), testPaths(t, filepath.Join(t.TempDir(), "state")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	now := time.Date(2026, 8, 6, 2, 0, 0, 0, time.UTC)
+
+	first, err := state.Accounts().Create(context.Background(), account.CreateRecord{
+		AccountID:        "acct_0198d704-6c00-7000-8000-000000000101",
+		CredentialID:     "cred_0198d704-6c00-7000-8000-000000000102",
+		Name:             "Personal",
+		Email:            "owner@icloud.com",
+		IMAPUsername:     "owner@icloud.com",
+		CredentialScheme: account.CredentialEnv,
+		CredentialRef:    "ICLOUD_PERSONAL_PASSWORD",
+		Now:              now,
+	})
+	if err != nil || !first.Default || first.Status != account.StatusPendingValidation {
+		t.Fatalf("first = %+v, err = %v", first, err)
+	}
+	second, err := state.Accounts().Create(context.Background(), account.CreateRecord{
+		AccountID:        "acct_0198d704-6c00-7000-8000-000000000103",
+		CredentialID:     "cred_0198d704-6c00-7000-8000-000000000104",
+		Name:             "Work",
+		Email:            "work@icloud.com",
+		IMAPUsername:     "work@icloud.com",
+		CredentialScheme: account.CredentialFile,
+		CredentialRef:    "/private/credential",
+		Now:              now.Add(time.Minute),
+	})
+	if err != nil || second.Default {
+		t.Fatalf("second = %+v, err = %v", second, err)
+	}
+	selected, err := state.Accounts().ResolveSelected(context.Background(), "")
+	if err != nil || selected.ID != first.ID {
+		t.Fatalf("selected = %+v, err = %v", selected, err)
+	}
+
+	second, err = state.Accounts().Rename(context.Background(), second.ID, "Work Mail", now.Add(2*time.Minute))
+	if err != nil || second.Name != "Work Mail" {
+		t.Fatalf("renamed = %+v, err = %v", second, err)
+	}
+	second, err = state.Accounts().SetDefault(context.Background(), "work@icloud.com", now.Add(3*time.Minute))
+	if err != nil || !second.Default {
+		t.Fatalf("default = %+v, err = %v", second, err)
+	}
+	if _, _, err := state.Accounts().RemovalCandidate(context.Background(), second.ID); !errors.Is(err, account.ErrDefaultRemoval) {
+		t.Fatalf("default removal error = %v", err)
+	}
+
+	_, credential, err := state.Accounts().UpsertCredential(
+		context.Background(),
+		second.ID,
+		"cred_unused_when_replacing",
+		account.CredentialKeyring,
+		"icloud-cli-deadbeef:"+second.ID,
+		now.Add(4*time.Minute),
+	)
+	if err != nil || credential.Scheme != account.CredentialKeyring || credential.ID != "cred_0198d704-6c00-7000-8000-000000000104" {
+		t.Fatalf("credential = %+v, err = %v", credential, err)
+	}
+	_, deleted, err := state.Accounts().DeleteCredential(context.Background(), second.ID, now.Add(5*time.Minute))
+	if err != nil || deleted.ID != credential.ID || deleted.Configured {
+		t.Fatalf("deleted credential = %+v, err = %v", deleted, err)
+	}
+	if _, _, err := state.Accounts().Credential(context.Background(), second.ID); !errors.Is(err, account.ErrCredentialMissing) {
+		t.Fatalf("credential after delete = %v", err)
+	}
+
+	if _, err := state.Accounts().SetDefault(context.Background(), first.ID, now.Add(6*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	removed, _, err := state.Accounts().Remove(context.Background(), second.ID)
+	if err != nil || removed.ID != second.ID {
+		t.Fatalf("removed = %+v, err = %v", removed, err)
+	}
+	if _, err := state.Accounts().Resolve(context.Background(), second.ID); !errors.Is(err, account.ErrNotFound) {
+		t.Fatalf("resolve removed = %v", err)
+	}
+}
+
+func TestAccountCreateConflictsAndAmbiguousSelection(t *testing.T) {
+	t.Parallel()
+	state, err := Open(context.Background(), testPaths(t, filepath.Join(t.TempDir(), "state")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	now := time.Date(2026, 8, 6, 2, 10, 0, 0, time.UTC)
+	create := func(accountID, credentialID, name, email string) error {
+		_, err := state.Accounts().Create(context.Background(), account.CreateRecord{
+			AccountID:        accountID,
+			CredentialID:     credentialID,
+			Name:             name,
+			Email:            email,
+			IMAPUsername:     email,
+			CredentialScheme: account.CredentialEnv,
+			CredentialRef:    "ICLOUD_PASSWORD",
+			Now:              now,
+		})
+		return err
+	}
+	if err := create("acct_0198d704-6c00-7000-8000-000000000111", "cred_0198d704-6c00-7000-8000-000000000112", "Personal", "owner@icloud.com"); err != nil {
+		t.Fatal(err)
+	}
+	if err := create("acct_0198d704-6c00-7000-8000-000000000113", "cred_0198d704-6c00-7000-8000-000000000114", "Personal", "other@icloud.com"); !errors.Is(err, account.ErrConflict) {
+		t.Fatalf("name conflict = %v", err)
+	}
+	if err := create("acct_0198d704-6c00-7000-8000-000000000115", "cred_0198d704-6c00-7000-8000-000000000116", "Work", "work@icloud.com"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.db.ExecContext(context.Background(), `UPDATE accounts SET is_default = 0`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.Accounts().ResolveSelected(context.Background(), ""); !errors.Is(err, account.ErrAmbiguous) {
+		t.Fatalf("selection error = %v", err)
+	}
+}
