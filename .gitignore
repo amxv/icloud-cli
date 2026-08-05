@@ -13,3 +13,6 @@ npm-debug.log*
 
 # Astro
 .astro/
+
+# Vercel
+.vercel
