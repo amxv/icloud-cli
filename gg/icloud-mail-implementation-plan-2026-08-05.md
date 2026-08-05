@@ -52,6 +52,16 @@ The CLI is designed for agents first without becoming hostile to humans:
 
 This slice remains local-first. There is no hosted proxy, daemon requirement, AMAOS server, Gmail provider, or legal-case model.
 
+### Documentation cadence and audience contract
+
+The documentation site evolves with the usable CLI rather than appearing only at the end of the track. A documentation checkpoint is required whenever a phase or substantial contiguous slice introduces a new public command group, completes a user workflow, or materially changes how an existing command is used. A small internal refactor, test-only commit, or partial implementation that exposes no new supported behavior does not need a documentation edit.
+
+Progressive documentation is written for a person or agent encountering the CLI for the first time, with no knowledge of this repository or AMAOS. Each relevant page should explain the user goal, prerequisites, safe setup, the shortest normal workflow, representative compact output, flags for full text/HTML/raw/headers/verbose/JSON/JSONL where applicable, common errors, and related next actions. Examples use sanitized fictional accounts and messages.
+
+Narrative pages describe the public product, not its implementation. They do not teach Go package layout, SQLite tables, migration phase numbers, internal type names, test fixtures, planning history, or the AMAOS port unless a detail is genuinely required to use or troubleshoot the CLI. They describe only behavior that is present and validated on the current branch; future commands are not presented as shipped.
+
+Generated command references, schemas, man pages, and completions remain derived from the command tree. Hand-authored task guides live under `src/content/docs`, are linked through the existing docs navigation, and are updated or split as workflows become substantial. Every documentation checkpoint runs the repository's docs validation/build scope and is recorded in `gg/progress.md`, including a brief reason when documentation is legitimately not applicable.
+
 ### Target architecture
 
 ```mermaid
@@ -509,14 +519,15 @@ The plan proceeds on the following falsifiable assumptions.
 
 ---
 
-#### 18. Documentation generation
+#### 18. Documentation generation and cadence
 
 **Reversible tooling decision, public docs become a contract.**
 
-- **A. Define commands once in Cobra; generate shell completions, man pages, and command-reference data from that tree.** — **Recommended**
-- **B. Hand-maintain help, man pages, and docs separately.**
+- **A. Define commands once in Cobra; generate reference artifacts from that tree; maintain user-oriented task guides progressively after substantial public slices.** — **Recommended**
+- **B. Defer the docs site until the implementation is otherwise complete.**
+- **C. Hand-maintain help, man pages, command references, and narrative guides independently.**
 
-**Why A:** the requested stacked CLI has too much surface for four drifting descriptions. The current repository already ships docs and npm releases; generated references make drift testable. B repeats manual duplication.
+**Why A:** generated references keep syntax, flags, schemas, man pages, and completions testably aligned, while hand-authored workflow pages explain how a new user or agent actually uses each completed capability. B makes the site misleading for most of the implementation track and prevents it from serving as a progress view. C repeats the drift problem across too many public surfaces.
 
 **Selected:** A.
 
@@ -662,10 +673,14 @@ An independent reviewer can mark this track complete only when all applicable it
 80. Large-mailbox query plans and representative large-message/attachment tests demonstrate bounded memory and responsive paginated reads.
 81. The release matrix continues to build without CGO for supported macOS, Linux, and Windows architectures, and release assets/npm installation invoke `icloud` successfully.
 82. Checksums and release metadata cover every native artifact; package contents include required man/completion/docs assets.
-83. The docs site contains setup, app-specific-password safety, compact-default/full-text/HTML/raw/JSON/JSONL output guidance, command reference, agent usage, JSON schemas, sync semantics, troubleshooting, privacy/storage, and changelog content matching the shipped CLI.
-84. No production code, command, persisted schema, help text, or documentation refers to AMA, AMAOS, cases, immigration, document requests, or Gmail.
-85. No permanent copy of the hand-written AMAOS IMAP path, JSON whole-state store, template `hello` command, or dual `icloud-cli` executable remains after cutover.
-86. iCloud Contacts, Calendar, Drive, Notes, Photos, Find My, and a hosted mail service are explicitly outside this implementation track.
+83. Every substantial user-visible slice or new command/workflow subset updates or adds an appropriate page under `src/content/docs` before that slice is marked complete; internal-only commits may record documentation as not applicable with a concrete reason.
+84. Progressive guides are self-contained for first-time humans and agents: they explain the user goal, prerequisites, safe setup, normal commands, representative compact output, relevant expansion flags, common errors, and next actions without assuming repository knowledge.
+85. Narrative documentation stays user-facing and avoids unnecessary implementation details such as package layout, database tables, migration phases, internal types, test infrastructure, planning history, or AMAOS ancestry.
+86. Documentation describes only behavior validated on the current branch, uses sanitized examples, passes the docs validation/build scope, and records the pages and evidence in `gg/progress.md`.
+87. The completed docs site contains setup, app-specific-password safety, compact-default/full-text/HTML/raw/JSON/JSONL output guidance, command reference, agent usage, JSON schemas, sync semantics, troubleshooting, privacy/storage, and changelog content matching the shipped CLI.
+88. No production code, command, persisted schema, help text, or documentation refers to AMA, AMAOS, cases, immigration, document requests, or Gmail.
+89. No permanent copy of the hand-written AMAOS IMAP path, JSON whole-state store, template `hello` command, or dual `icloud-cli` executable remains after cutover.
+90. iCloud Contacts, Calendar, Drive, Notes, Photos, Find My, and a hosted mail service are explicitly outside this implementation track.
 
 ## Plan Phases
 
@@ -675,10 +690,12 @@ An independent reviewer can mark this track complete only when all applicable it
 2. Read only the phase-scoped sweep sections and source regions listed below; do not reload the entire reference repository by habit.
 3. Use the existing Zodex checkout `/tmp/icloud-cli-recon/gg-ama` and keep `gg-ama` read-only. Port behavior and tests deliberately; do not copy AMA storage/contracts/case/event dependencies.
 4. Every phase that introduces or changes a command must define and test its compact plain-text default, including field omission, page/excerpt bounds, byte/line budget, and absence of implicit JSON/JSONL/HTML/raw/verbose content; it must also preserve every applicable explicit expansion mode.
-5. A phase is complete only when its positive evidence exists, the relevant regression scope passes, help/docs for commands added in that phase are updated, and the branch is usable at the boundary.
-6. Update `gg/progress.md` in the same commit or final commit for the phase. Record current SHA, files, validation evidence, decisions, risks, and the exact next handoff.
-7. If evidence invalidates this plan, append an entry under Amendments immediately and identify every affected later phase. Do not silently reinterpret an acceptance criterion.
-8. Push coherent commits directly to `main`; never leave generated secrets, mailbox fixtures containing private mail, local databases, or blob data tracked.
+5. At each substantial user-visible slice or completed command/workflow subset, create or update a self-contained user-facing page under `src/content/docs`. Do not wait for Phase 24. Internal-only or partial commits may skip the site, but the progress entry must say why documentation was not applicable.
+6. Documentation explains how to use the validated public behavior—goal, prerequisites, safe setup, commands, compact output, expansion flags, errors, and next actions—without unnecessary implementation internals or unshipped promises. Run the relevant docs validation/build scope for every documentation checkpoint.
+7. A phase is complete only when its positive evidence exists, the relevant regression scope passes, command-local help and the applicable progressive docs are current, and the branch is usable at the boundary.
+8. Update `gg/progress.md` in the same commit or final commit for the phase. Record current SHA, files, validation evidence, documentation pages/evidence, decisions, risks, and the exact next handoff.
+9. If evidence invalidates this plan, append an entry under Amendments immediately and identify every affected later phase. Do not silently reinterpret an acceptance criterion.
+10. Push coherent commits directly to `main`; never leave generated secrets, mailbox fixtures containing private mail, local databases, or blob data tracked.
 
 Future-phase reading entries marked **phase output** name files that an earlier phase is required to create. They do not exist at the planning SHA; the implementation agent must verify their current path and public contract on the live branch before proceeding. A rename is acceptable only when recorded in `gg/progress.md` or Amendments so later agents can resolve it.
 
@@ -1767,7 +1784,7 @@ Regression scope includes every existing human command, dry-run/safety/idempoten
 
 ---
 
-### Phase 24 — Generate complete docs, man/completion assets, and release packaging
+### Phase 24 — Consolidate progressive docs, generate reference assets, and finalize release packaging
 
 #### Files to read before starting
 
@@ -1781,7 +1798,7 @@ Regression scope includes every existing human command, dry-run/safety/idempoten
 
 #### What to do
 
-Replace all template product copy and build a complete public documentation set:
+Audit and consolidate the documentation that earlier phases maintained progressively. Phase 24 is not the first documentation pass: it closes navigation, coverage, consistency, generated-reference, and packaging gaps across the already-shipped command surface. Remove any remaining template product copy and ensure the complete public documentation set covers:
 
 - installation and first account setup;
 - Apple app-specific-password and keyring safety;
@@ -1794,15 +1811,15 @@ Replace all template product copy and build a complete public documentation set:
 - local privacy/data paths, backup, cache/blob, removal, and credential rotation;
 - troubleshooting and `doctor` interpretation;
 - command reference generated from Cobra;
-- current changelog and release process.
+- current changelog and supported installation, update, and version-check workflows.
 
 Generate and package man pages and completion assets deterministically. Update npm `bin`, `man`, `files`, keywords, description, wrapper names, postinstall logic, release assets, and installer tests for `icloud`. Add release checksums and machine-readable release metadata without changing the native asset name contract selected in Phase 1. Keep `scripts/should-build-docs.mjs` aligned with every generated or narrative docs path so Vercel does not skip a real docs change or rebuild for unrelated Go-only work.
 
-Docs checks must detect command/help/schema drift. Generated references are build outputs with a documented regeneration path; narrative guides remain hand-authored.
+Docs checks must detect command/help/schema drift. Generated references are build outputs with a documented regeneration path; narrative guides remain hand-authored. Reorganize or merge progressive pages only when it improves the user journey, preserving useful links or adding redirects where the site supports them. No page should read like a phase report, implementation diary, or code-architecture note.
 
 #### Validation strategy
 
-Positive evidence must install the packed npm tarball on supported runner classes, invoke `icloud`, open a man page, generate/use each completion, verify release asset/checksum names, build/check the docs site serially, compare generated command reference/schema to the live command tree, verify the docs explain compact defaults and every retained full-text/HTML/raw/headers/verbose/JSON/JSONL expansion, and find no template/AMA wording.
+Positive evidence must install the packed npm tarball on supported runner classes, invoke `icloud`, open a man page, generate/use each completion, verify release asset/checksum names, build/check the docs site serially, compare generated command reference/schema to the live command tree, verify every completed command family has a discoverable user-oriented workflow page, verify the docs explain compact defaults and every retained full-text/HTML/raw/headers/verbose/JSON/JSONL expansion, and find no template/AMA, phase-report, or unnecessary implementation-internal wording.
 
 Regression scope includes the full Go check suite, CGO-disabled cross builds, version injection, postinstall fallback, tag-driven publishing, and links/raw Markdown endpoints in the docs site.
 
@@ -1811,6 +1828,7 @@ Regression scope includes the full Go check suite, CGO-disabled cross builds, ve
 - The npm package and GitHub release must install the same versioned native binary.
 - Generated docs must never contain real credentials, mailbox content, or local absolute paths from tests.
 - Narrative docs must not promise unsupported Apple APIs or other iCloud services.
+- Phase 24 must not replace progressively useful user guides with a code-centric architecture manual or a generated-reference-only site.
 
 ---
 

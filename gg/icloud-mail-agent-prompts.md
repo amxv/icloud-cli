@@ -63,7 +63,9 @@ During implementation:
 - add golden default-output tests with bounded bytes/lines and reject repeated labels, duplicated request/body payloads, decorative tables/ANSI, unbounded excerpts, or implicit JSON/HTML/raw output;
 - keep the branch working at the phase boundary;
 - add positive tests whose result changes because of Phase 1, plus the regression scope named in the plan;
-- update command-local help and any documentation directly affected by the phase;
+- update command-local help and create or revise the appropriate page under `src/content/docs` when Phase 1 establishes a substantial public command subset; do not defer the user-facing site until Phase 24;
+- write docs for a first-time CLI user or agent: explain the goal, prerequisites, safe setup, shortest normal workflow, representative compact output, expansion flags, common errors, and next actions; omit package/schema/migration/planning details that are not needed to use the CLI;
+- run the relevant docs check/build scope for every documentation checkpoint and record the pages/evidence in `gg/progress.md`;
 - do not begin Phase 2 until every Phase 1 outcome and validation item is complete.
 
 You may continue into later contiguous phases only when the current phase is fully complete, pushed, and recorded, and you still have enough context to execute the next phase without compressing or skipping its research/validation. Prefer one thoroughly completed phase over several partial phases.
@@ -73,11 +75,11 @@ You may continue into later contiguous phases only when the current phase is ful
 For every phase or coherent partial slice:
 
 - use coherent commits with descriptive messages;
-- update the phase table, Current handoff, and append a full entry in `gg/progress.md`;
+- update the phase table, Current handoff, and append a full entry in `gg/progress.md`, including documentation pages and docs validation evidence or a concrete `not applicable` reason;
 - if reality invalidates the plan, append an Amendment to the implementation plan immediately and identify affected later phases;
 - never mark a phase complete without phase-specific positive evidence;
 - push the code and progress update to `main`;
-- finish with the pushed commit SHAs, validation evidence, any amendment, known risks, and the exact next phase/boundary.
+- finish with the pushed commit SHAs, code and docs validation evidence, user-facing pages changed, any amendment, known risks, and the exact next phase/boundary.
 
 ## Safety and privacy
 
@@ -139,18 +141,21 @@ Implement as many contiguous complete phases as context safely permits, but neve
 - Maintain bounded pages, streaming blobs, transaction boundaries, locks, cancellation, secret/BCC/body redaction, and non-TTY safety.
 - Preserve compact plain text as the universal default for every command, including redirected/non-TTY agent use. Lists/sync/status must be bounded summaries; message/thread reads must use essential fields plus bounded decoded-text excerpts; writes must return outcome and stable IDs without echoing submitted payloads; watch/bulk must use concise text unless `--jsonl` is explicitly requested.
 - Do not remove or weaken `--json`, `--jsonl`, complete decoded text, HTML, raw MIME, headers, body-only, verbose, or export modes. They are explicit expansions. Add or maintain golden compact-output byte/line budgets so later phases cannot bloat default context.
+- Treat the docs site as a progressive product surface. After a substantial user-visible slice or completed command/workflow subset, add or update an appropriate page under `src/content/docs`; not every internal commit requires docs, but a phase cannot complete with a meaningful new workflow undocumented.
+- Write narrative docs for first-time humans and agents who do not know the repository: focus on goals, prerequisites, safe setup, commands, compact output, explicit richer modes, errors, and next actions. Do not expose package layout, database tables, migrations, internal types, test fixtures, planning history, or AMAOS ancestry unless strictly necessary for user troubleshooting.
+- Describe only behavior that exists and is validated on the current branch, use sanitized examples, keep navigation discoverable, run the docs check/build scope, and record changed pages or a concrete `not applicable` reason in `gg/progress.md`.
 
 ## Progress, amendments, commits, and push
 
 After every coherent implementation session:
 
 - update the phase table and Current handoff in `gg/progress.md`;
-- append the required detailed progress entry with starting/ending SHAs, outcome, files, positive/regression evidence, decisions, risks, and next boundary;
+- append the required detailed progress entry with starting/ending SHAs, outcome, files, positive/regression evidence, documentation pages and docs validation (or a concrete `not applicable` reason), decisions, risks, and next boundary;
 - append a dated plan Amendment immediately if an assumption, path, dependency, or approach changed in a way later agents must know;
 - commit the progress/amendment with the code it describes;
 - push to `main` and verify the remote contains the commits.
 
-Never mark a phase complete without its full observable outcome, positive evidence, regressions, command help/docs, and push.
+Never mark a phase complete without its full observable outcome, positive evidence, regressions, command help, applicable progressive user-facing docs, docs validation evidence, and push.
 
 ## Safety and privacy
 
