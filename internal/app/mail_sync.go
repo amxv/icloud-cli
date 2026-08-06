@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/amxv/icloud-cli/internal/account"
@@ -265,9 +266,17 @@ func (commands accountCommands) syncMailbox(
 		_, _ = state.Mail().RecordFailure(ctx, checkpointID, accountValue.ID, folderValue.ID, checkpoint.UIDValidity, "transaction", attemptedAt)
 		return maildomain.SyncSummary{}, "", cli.WrapAppError(cli.ErrorInternal, "cannot atomically commit the folder page", true, err)
 	}
+	if commit.Created+commit.Updated != len(records) {
+		return maildomain.SyncSummary{}, "", cli.WrapAppError(
+			cli.ErrorInternal,
+			"mail synchronization committed an inconsistent message count",
+			false,
+			fmt.Errorf("records=%d created=%d updated=%d", len(records), commit.Created, commit.Updated),
+		)
+	}
 	return maildomain.SyncSummary{
 		AccountID: accountValue.ID, FolderID: folderValue.ID, FolderName: folderValue.Name,
-		Fetched: len(page.Messages), Created: commit.Created, Updated: commit.Updated,
+		Fetched: len(records), Created: commit.Created, Updated: commit.Updated,
 		Reconciled: commit.Reconciled, StateChanges: commit.StateChanges,
 		IdentityMerges: commit.IdentityMerges, DedupeConflicts: commit.DedupeConflicts,
 		LastUID: commit.Checkpoint.LastCommittedUID, MoreAvailable: commit.Checkpoint.MoreAvailable,

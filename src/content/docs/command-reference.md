@@ -235,6 +235,39 @@ Reads a bounded page from local state without contacting iCloud. The command def
 
 JSON adds complete locally stored preview metadata, every provider location, identity provenance, and open dedupe conflicts while omitting credentials, BCC, raw storage paths/hashes, and full message bodies. An unseen Sent location does not make an outbound message unread.
 
+## `icloud mail latest`
+
+```bash
+icloud mail latest
+icloud mail latest --limit 50
+icloud mail latest --json
+```
+
+Lists the newest locally reconstructed conversations without contacting Apple. The default returns 20 threads and the maximum is 100. Compact output reports stable thread ID, canonical subject, logical message count, unread count, normalized non-BCC participants, current folder IDs, attachment count, latest message time, and `reconstruction=local_rfc_graph`.
+
+Thread identity is local. The CLI uses ordered normalized `References`, then `In-Reply-To`, and only a conservative subject-and-participant fallback when RFC relationship headers are absent. It does not claim an Apple-native thread ID.
+
+## `icloud mail thread show`
+
+```bash
+icloud mail thread show thr_…
+icloud mail thread show msg_…
+icloud mail thread show thr_… --limit 50
+icloud mail thread show thr_… --full
+icloud mail thread show thr_… --format html
+icloud mail thread show thr_… --headers
+icloud mail thread show thr_… --metadata-only --verbose --json
+icloud mail thread show thr_… --format raw --json
+```
+
+Resolves a canonical thread ID, retired alias, or stable message ID and returns a bounded chronological page. Compact output prints the aggregate once, then one bounded message record per logical message. `--full` expands complete decoded text for every selected message; HTML, decoded public headers, MIME metadata, and JSON remain explicit choices.
+
+Plain multi-message raw output is rejected because concatenated RFC822 streams are ambiguous. Use raw JSON for bounded per-message payloads or `mail message raw <message-id>` for exact streaming.
+
+`--metadata-only --verbose --json` includes bounded edge evidence with child message, relationship source, ordered reference position, token, resolved parent, and status such as `resolved`, `unresolved`, `malformed`, `self`, `cycle`, `grouped`, or `isolated`. Metadata-only removes thread and message excerpts. BCC and private blob coordinates remain excluded.
+
+Late roots or bridge messages may merge provisional threads transactionally. One existing ID remains canonical and retired IDs become durable aliases. Message, location, MIME-part, attachment, and blob IDs are never rewritten by thread reconstruction.
+
 ## `icloud mail mark-read` / `mark-unread`
 
 ```bash
@@ -394,7 +427,7 @@ Compact output:
 capabilities
 command=icloud
 version=0.1.0
-schema=8
+schema=9
 account_mode=validated_lifecycle
 credentials=keyring,env,file
 network_validation=true
@@ -449,6 +482,6 @@ Help goes to stdout. Usage failures go to stderr and exit `2`.
 
 ## Output availability
 
-Every account and credential lifecycle command above, `account test`, every folder command, enabled-folder sync/read/status/checkpoints, message read and state commands, attachment list/save/save-all, `doctor`, `version`, and `capabilities` supports `--json` where a native byte stream is not requested. Validation, doctor, folder reads/status, and message reads support bounded `--verbose` detail where advertised. `mail message raw`, `message export --output -`, and `attachments save --output - --binary` retain native bytes; completion and man generation retain their native formats. Local folder lists stay preview-only, while stable-ID message reads provide explicit full-text, HTML, raw, headers, body-only, metadata-only, verbose, and JSON modes.
+Every account and credential lifecycle command above, `account test`, every folder command, enabled-folder sync/read/status/checkpoints, latest/thread reads, message read and state commands, attachment list/save/save-all, `doctor`, `version`, and `capabilities` supports `--json` where a native byte stream is not requested. Validation, doctor, folder reads/status, thread reads, and message reads support bounded `--verbose` detail where advertised. `mail message raw`, `message export --output -`, and `attachments save --output - --binary` retain native bytes; completion and man generation retain their native formats. Local folder and thread lists stay preview-only, while stable-ID thread/message reads provide explicit full-text, HTML, raw, headers, metadata-only, verbose, and JSON modes.
 
 Compact output uses vertical blocks: result type first, stable identity plus the first field next when present, then one remaining field per line. A blank line separates consecutive records or a final summary. Errors use the same block shape on stderr.

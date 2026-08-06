@@ -42,7 +42,7 @@ func TestOpenCreatesAndReopensVersionedPrivateState(t *testing.T) {
 	if state.SchemaVersion() != SchemaVersion {
 		t.Fatalf("schema version = %d", state.SchemaVersion())
 	}
-	for _, table := range []string{"app_metadata", "accounts", "credential_refs", "folders", "raw_blobs", "messages", "message_recipients", "message_references", "message_locations", "message_content", "message_parts", "attachments", "sync_checkpoints", "goose_db_version"} {
+	for _, table := range []string{"app_metadata", "accounts", "credential_refs", "folders", "raw_blobs", "messages", "message_recipients", "message_references", "message_locations", "message_content", "message_parts", "attachments", "sync_checkpoints", "message_identity_evidence", "message_dedupe_conflicts", "threads", "thread_messages", "thread_aliases", "thread_edges", "goose_db_version"} {
 		var count int
 		if err := state.db.QueryRowContext(context.Background(),
 			"SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?", table,
@@ -1072,7 +1072,7 @@ func TestOpenUpgradesPhaseNineMailStateAndAddsIdentityTelemetry(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer state.Close()
-	if state.SchemaVersion() != 8 {
+	if state.SchemaVersion() != 9 {
 		t.Fatalf("schema version = %d", state.SchemaVersion())
 	}
 	message, err := state.Mail().Message(context.Background(), accountID, messageID)
@@ -1095,5 +1095,104 @@ func TestOpenUpgradesPhaseNineMailStateAndAddsIdentityTelemetry(t *testing.T) {
 	}
 	if len(message.Identity) != 1 || message.Identity[0].Kind != maildomain.IdentityGeneratedMessageID || message.Identity[0].Value != generated {
 		t.Fatalf("identity telemetry after upgrade = %+v", message.Identity)
+	}
+}
+
+func TestOpenUpgradesSchemaEightMessagesIntoRFCThreadsWithoutChangingIDs(t *testing.T) {
+	t.Parallel()
+	paths := testPaths(t, filepath.Join(t.TempDir(), "state"))
+	if err := config.EnsureAppPaths(paths); err != nil {
+		t.Fatal(err)
+	}
+	database, err := sql.Open("sqlite", paths.Database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := configureSQLite(context.Background(), database); err != nil {
+		t.Fatal(err)
+	}
+	migrationFS, err := fs.Sub(migrations, "migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider, err := goose.NewProvider(goose.DialectSQLite3, database, migrationFS, goose.WithLogger(goose.NopLogger()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.UpTo(context.Background(), 8); err != nil {
+		t.Fatal(err)
+	}
+	base := time.Date(2026, 8, 6, 9, 10, 0, 0, time.UTC)
+	rootAt := base.Format(time.RFC3339Nano)
+	replyAt := base.Add(time.Minute).Format(time.RFC3339Nano)
+	accountID := "acct_0198d704-6c00-7000-8000-000000000971"
+	rootID := "msg_0198d704-6c00-7000-8000-000000000972"
+	replyID := "msg_0198d704-6c00-7000-8000-000000000973"
+	if _, err := database.Exec(`
+INSERT INTO accounts (
+    account_id, friendly_name, email_address, imap_username,
+    status, is_default, created_at, updated_at
+) VALUES (?, 'Thread migration', 'thread-migration@icloud.com',
+          'thread-migration', 'connected', 1, ?, ?)`, accountID, rootAt, rootAt); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(`
+INSERT INTO messages (
+    message_id, account_id, rfc_message_id, in_reply_to, direction,
+    from_email, subject, snippet, attachment_count,
+    internal_date, sort_at, date_source, created_at, updated_at
+) VALUES
+    (?, ?, 'migration-root@example.test', '', 'inbound',
+     'alice@example.test', 'Migration thread', 'Root', 0,
+     ?, ?, 'internal_date', ?, ?),
+    (?, ?, 'migration-reply@example.test', 'migration-root@example.test', 'inbound',
+     'thread-migration@icloud.com', 'Re: Migration thread', 'Reply', 0,
+     ?, ?, 'internal_date', ?, ?)`,
+		rootID, accountID, rootAt, rootAt, rootAt, rootAt,
+		replyID, accountID, replyAt, replyAt, replyAt, replyAt,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(`
+INSERT INTO message_references (message_id, ordinal, reference)
+VALUES (?, 0, 'migration-root@example.test')`, replyID); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	state, err := Open(context.Background(), paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	if state.SchemaVersion() != 9 {
+		t.Fatalf("schema version = %d", state.SchemaVersion())
+	}
+	page, err := state.Threads().Show(context.Background(), accountID, replyID, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Thread.ID != provisionalThreadID(rootID) || page.Thread.MessageCount != 2 ||
+		page.Thread.RootRFCMessageID != "migration-root@example.test" ||
+		!reflect.DeepEqual(messageIDs(page.Thread.Messages), []string{rootID, replyID}) {
+		t.Fatalf("migrated thread = %+v", page.Thread)
+	}
+	var backfill string
+	if err := state.db.QueryRow(`SELECT value FROM app_metadata WHERE key = 'thread_graph_backfill_v1'`).Scan(&backfill); err != nil {
+		t.Fatal(err)
+	}
+	if backfill != "complete" {
+		t.Fatalf("thread graph backfill state = %q", backfill)
+	}
+	for _, messageID := range []string{rootID, replyID} {
+		var storedID string
+		if err := state.db.QueryRow(`SELECT message_id FROM messages WHERE message_id = ?`, messageID).Scan(&storedID); err != nil {
+			t.Fatal(err)
+		}
+		if storedID != messageID {
+			t.Fatalf("message ID changed: got %q want %q", storedID, messageID)
+		}
 	}
 }

@@ -47,6 +47,8 @@ func newMailCommand(state *executionState) *cobra.Command {
 	command.AddCommand(newMailSyncCommand(state))
 	command.AddCommand(newMailInboxCommand(state))
 	command.AddCommand(newMailMessageCommand(state))
+	command.AddCommand(newMailThreadCommand(state))
+	command.AddCommand(newMailLatestCommand(state))
 	command.AddCommand(newMailAttachmentsCommand(state))
 	command.AddCommand(newMailFlagMutationCommand(state, "mark-read", "Mark one selected message location as read", maildomain.FlagMutationMarkRead))
 	command.AddCommand(newMailFlagMutationCommand(state, "mark-unread", "Mark one selected message location as unread", maildomain.FlagMutationMarkUnread))

@@ -450,14 +450,14 @@ func TestCapabilitiesCompactGoldenBudget(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("exit code = %d, stderr = %q", exitCode, stderr)
 	}
-	const want = "capabilities\ncommand=icloud\nversion=dev\nschema=8\naccount_mode=validated_lifecycle\ncredentials=keyring,env,file\nnetwork_validation=true\ndiagnostics=true\nmail_folders=true\nmail_sync=true\nmail_content=true\nmail_attachments=true\nmail_flags=true\ndefault_output=compact\njson=true\ncompletion=bash,zsh,fish,powershell\nman=true\n"
+	const want = "capabilities\ncommand=icloud\nversion=dev\nschema=9\naccount_mode=validated_lifecycle\ncredentials=keyring,env,file\nnetwork_validation=true\ndiagnostics=true\nmail_folders=true\nmail_sync=true\nmail_content=true\nmail_attachments=true\nmail_flags=true\nmail_threads=true\ndefault_output=compact\njson=true\ncompletion=bash,zsh,fish,powershell\nman=true\n"
 	if stdout != want {
 		t.Fatalf("stdout mismatch\nwant: %q\n got: %q", want, stdout)
 	}
-	if lines := strings.Count(stdout, "\n"); lines > 17 {
+	if lines := strings.Count(stdout, "\n"); lines > 18 {
 		t.Fatalf("line budget exceeded: %d", lines)
 	}
-	if len(stdout) > 340 {
+	if len(stdout) > 370 {
 		t.Fatalf("byte budget exceeded: %d", len(stdout))
 	}
 	for _, unwanted := range []string{"{", "}", "\x1b[", "│", "Command:", "Version:"} {
@@ -480,7 +480,7 @@ func TestCapabilitiesJSONEnvelope(t *testing.T) {
 		t.Fatalf("ok = %#v", envelope["ok"])
 	}
 	data, ok := envelope["data"].(map[string]any)
-	if !ok || data["data_schema_version"] != float64(8) || data["network_validation"] != true || data["diagnostics"] != true || data["mail_folders"] != true || data["mail_sync"] != true || data["mail_content"] != true || data["mail_attachments"] != true || data["mail_flags"] != true {
+	if !ok || data["data_schema_version"] != float64(9) || data["network_validation"] != true || data["diagnostics"] != true || data["mail_folders"] != true || data["mail_sync"] != true || data["mail_content"] != true || data["mail_attachments"] != true || data["mail_flags"] != true || data["mail_threads"] != true {
 		t.Fatalf("data = %#v", envelope["data"])
 	}
 	if strings.Contains(stdout, "\x1b[") {
@@ -603,7 +603,7 @@ func TestAccountListCreatesAndReopensPrivateZeroState(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &envelope); err != nil {
 		t.Fatalf("invalid JSON: %v\n%s", err, stdout)
 	}
-	if !envelope.OK || envelope.Data.Count != 0 || len(envelope.Data.Accounts) != 0 || envelope.Data.SchemaVersion != 8 {
+	if !envelope.OK || envelope.Data.Count != 0 || len(envelope.Data.Accounts) != 0 || envelope.Data.SchemaVersion != 9 {
 		t.Fatalf("unexpected envelope: %+v", envelope)
 	}
 	if envelope.Meta.RequestID != "req_accounts" {
@@ -731,7 +731,7 @@ func TestAccountListAndShowReadStoredAccountCompactly(t *testing.T) {
 		t.Fatalf("invalid JSON: %v\n%s", err, stdout)
 	}
 	if !envelope.OK || envelope.Data.Account.ID != "acct_0198d704-6c00-7000-8000-000000000001" ||
-		envelope.Data.Account.CredentialScheme != "env" || envelope.Data.SchemaVersion != 8 {
+		envelope.Data.Account.CredentialScheme != "env" || envelope.Data.SchemaVersion != 9 {
 		t.Fatalf("unexpected envelope: %+v", envelope)
 	}
 }
@@ -1704,6 +1704,130 @@ func TestMailSyncIncrementalWorkflowAndCompactBudgets(t *testing.T) {
 	}
 }
 
+func TestMailThreadReconstructionWorkflowAndCompactBudgets(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "state")
+	t.Setenv("ICLOUD_MAIL_THREAD_PASSWORD", "synthetic-mail-thread-secret")
+	commands, _ := newTestAccountCommands()
+	commands.folders = &fakeFolderClient{results: map[string][]transport.FolderDiscoveryResult{
+		"owner@icloud.com": {{Folders: []transport.RemoteFolder{{
+			Name: "INBOX", WireName: "INBOX", Kind: "inbox", KindSource: "inbox",
+			Selectable: true, Subscription: "subscribed",
+			Status: &transport.MailboxStatus{Mailbox: "INBOX", Messages: 2, Unseen: 1, UIDNext: 203, UIDValidity: 100},
+		}}}},
+	}}
+	rootRaw := syntheticThreadMailFixture(
+		201, "phase11-root@example.test", "Phase 11 thread", "Root chronological body",
+		"Fixture Sender <sender@example.test>", "owner@icloud.com", nil, "", "",
+		time.Date(2026, 8, 6, 9, 20, 0, 0, time.UTC),
+	)
+	replyRaw := syntheticThreadMailFixture(
+		202, "phase11-reply@example.test", "Re: Phase 11 thread", "Reply chronological body",
+		"owner@icloud.com", "Fixture Sender <sender@example.test>", []string{"phase11-root@example.test"},
+		"phase11-root@example.test", "hidden-thread-bcc@example.test",
+		time.Date(2026, 8, 6, 9, 21, 0, 0, time.UTC),
+	)
+	commands.mail = &fakeInboxClient{results: []fakeInboxPageResult{{
+		page: transport.InboxPage{
+			Mailbox: "INBOX", UIDValidity: 100, LastCommittedUID: 202, LastScannedUID: 202,
+			Bootstrap: true, Messages: []transport.FetchedMessage{
+				{UID: 201, InternalDate: time.Date(2026, 8, 6, 9, 20, 0, 0, time.UTC)},
+				{UID: 202, Flags: []string{`\Seen`}, InternalDate: time.Date(2026, 8, 6, 9, 21, 0, 0, time.UTC)},
+			},
+		},
+		raw: map[uint32]string{201: rootRaw, 202: replyRaw},
+	}}}
+
+	addAndDiscoverInbox(t, commands, home, "ICLOUD_MAIL_THREAD_PASSWORD")
+	code, stdout, stderr := runWithAccountCommands(t, commands, "", "--home", home, "mail", "sync", "--folder", "inbox")
+	if code != 0 || stderr != "" || !compactContainsAll(stdout, "fetched=2", "created=2") {
+		t.Fatalf("thread fixture sync code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "latest")
+	if code != 0 || stderr != "" || compactBlockCount(stdout, "thread") != 1 ||
+		!compactContainsAll(stdout, `subject="Phase 11 thread"`, "messages=2", "unread=1", "reconstruction=local_rfc_graph", "threads\n", "count=1", "more=false") {
+		t.Fatalf("latest compact code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	if strings.Contains(stdout, "hidden-thread-bcc") || strings.Count(stdout, "\n") > 20 || len(stdout) > 1100 {
+		t.Fatalf("latest compact privacy/budget failure: %q", stdout)
+	}
+
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "latest", "--json")
+	if code != 0 || stderr != "" {
+		t.Fatalf("latest JSON code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	var latestEnvelope struct {
+		Data struct {
+			Threads []struct {
+				ID               string `json:"id"`
+				MessageCount     int    `json:"message_count"`
+				UnreadCount      int    `json:"unread_count"`
+				Reconstruction   string `json:"reconstruction"`
+				RootRFCMessageID string `json:"root_rfc_message_id"`
+			} `json:"threads"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &latestEnvelope); err != nil || len(latestEnvelope.Data.Threads) != 1 {
+		t.Fatalf("decode latest JSON err=%v envelope=%+v", err, latestEnvelope)
+	}
+	thread := latestEnvelope.Data.Threads[0]
+	if !strings.HasPrefix(thread.ID, "thr_") || thread.MessageCount != 2 || thread.UnreadCount != 1 ||
+		thread.Reconstruction != "local_rfc_graph" || thread.RootRFCMessageID != "phase11-root@example.test" {
+		t.Fatalf("latest thread = %+v", thread)
+	}
+
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "thread", "show", thread.ID)
+	if code != 0 || stderr != "" || compactBlockCount(stdout, "thread") != 1 || compactBlockCount(stdout, "message") != 2 ||
+		!compactContainsAll(stdout, "Root chronological body uid=201", "Reply chronological body uid=202", "thread-page\n", "count=2", "more=false") {
+		t.Fatalf("thread compact code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	if strings.Contains(stdout, "hidden-thread-bcc") || strings.Contains(stdout, "raw_storage_key") || strings.Count(stdout, "\n") > 32 || len(stdout) > 2100 {
+		t.Fatalf("thread compact privacy/budget failure: %q", stdout)
+	}
+
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "thread", "show", thread.ID, "--full")
+	if code != 0 || stderr != "" || !strings.Contains(stdout, "Root chronological body uid=201") ||
+		!strings.Contains(stdout, "Reply chronological body uid=202") || strings.Index(stdout, "Root chronological body") > strings.Index(stdout, "Reply chronological body") {
+		t.Fatalf("thread full code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "thread", "show", thread.ID, "--metadata-only", "--verbose", "--json")
+	if code != 0 || stderr != "" || strings.Count(stdout, `"status":"resolved"`) != 2 ||
+		!strings.Contains(stdout, `"root_rfc_message_id":"phase11-root@example.test"`) ||
+		!strings.Contains(stdout, `"message_count":2`) || !strings.Contains(stdout, `"count":2`) {
+		t.Fatalf("thread metadata JSON code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	for _, forbidden := range []string{"synthetic-mail-thread-secret", "hidden-thread-bcc@example.test", `"bcc"`, "raw_storage_key", "raw_content_hash", "Root chronological body", "Reply chronological body"} {
+		if strings.Contains(stdout, forbidden) {
+			t.Fatalf("thread metadata JSON exposed %q: %s", forbidden, stdout)
+		}
+	}
+
+	var threadEnvelope struct {
+		Data struct {
+			Thread struct {
+				Messages []struct {
+					Message struct {
+						ID string `json:"id"`
+					} `json:"message"`
+				} `json:"messages"`
+			} `json:"thread"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &threadEnvelope); err != nil || len(threadEnvelope.Data.Thread.Messages) != 2 {
+		t.Fatalf("decode thread metadata JSON err=%v envelope=%+v", err, threadEnvelope)
+	}
+	rootMessageID := threadEnvelope.Data.Thread.Messages[0].Message.ID
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "thread", "show", rootMessageID, "--metadata-only")
+	if code != 0 || stderr != "" || !strings.Contains(stdout, thread.ID) || compactBlockCount(stdout, "message") != 2 {
+		t.Fatalf("message selector code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	code, _, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "thread", "show", thread.ID, "--format", "raw")
+	if code != cli.ExitUsage || !strings.Contains(stderr, "plain multi-message raw output is ambiguous") {
+		t.Fatalf("thread raw guard code=%d stderr=%q", code, stderr)
+	}
+}
+
 func TestMailSentTailBootstrapAndNewObservationMerge(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "state")
 	t.Setenv("ICLOUD_MAIL_SENT_PASSWORD", "synthetic-mail-sent-secret")
@@ -2367,6 +2491,32 @@ func syntheticMailFixture(uid uint32, messageID, subject, body, bcc string) stri
 		"Message-ID: <" + messageID + ">",
 		fmt.Sprintf("Subject: %s", subject),
 		"Content-Type: text/plain; charset=utf-8",
+	}
+	if bcc != "" {
+		lines = append(lines, "Bcc: "+bcc)
+	}
+	lines = append(lines, "", body+fmt.Sprintf(" uid=%d", uid))
+	return strings.Join(lines, "\r\n")
+}
+
+func syntheticThreadMailFixture(uid uint32, messageID, subject, body, from, to string, references []string, inReplyTo, bcc string, date time.Time) string {
+	lines := []string{
+		"From: " + from,
+		"To: " + to,
+		"Date: " + date.UTC().Format(time.RFC1123Z),
+		"Message-ID: <" + messageID + ">",
+		fmt.Sprintf("Subject: %s", subject),
+		"Content-Type: text/plain; charset=utf-8",
+	}
+	if len(references) > 0 {
+		values := make([]string, 0, len(references))
+		for _, reference := range references {
+			values = append(values, "<"+reference+">")
+		}
+		lines = append(lines, "References: "+strings.Join(values, " "))
+	}
+	if inReplyTo != "" {
+		lines = append(lines, "In-Reply-To: <"+inReplyTo+">")
 	}
 	if bcc != "" {
 		lines = append(lines, "Bcc: "+bcc)

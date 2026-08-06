@@ -17,7 +17,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const SchemaVersion int64 = 8
+const SchemaVersion int64 = 9
 
 var ErrMigrationLock = errors.New("migration lock unavailable")
 
@@ -68,6 +68,9 @@ func Open(ctx context.Context, paths config.AppPaths) (*Store, error) {
 	}
 	if version != SchemaVersion {
 		return closeWithError(fmt.Errorf("unexpected schema version %d", version))
+	}
+	if err := ensureThreadGraphBackfill(ctx, db); err != nil {
+		return closeWithError(err)
 	}
 	if err := os.Chmod(paths.Database, 0o600); err != nil {
 		return closeWithError(fmt.Errorf("secure SQLite database: %w", err))
@@ -166,6 +169,10 @@ func (s *Store) Folders() *FolderRepository {
 
 func (s *Store) Mail() *MailRepository {
 	return &MailRepository{db: s.db}
+}
+
+func (s *Store) Threads() *ThreadRepository {
+	return &ThreadRepository{db: s.db}
 }
 
 // WithTx runs fn in one SQLite transaction and rolls it back on every error.

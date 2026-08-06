@@ -106,7 +106,7 @@ icloud --request-id inventory-01 account list --json
 ```
 
 ```json
-{"ok":true,"data":{"accounts":[],"count":0,"schema_version":8},"meta":{"request_id":"inventory-01"}}
+{"ok":true,"data":{"accounts":[],"count":0,"schema_version":9},"meta":{"request_id":"inventory-01"}}
 ```
 
 JSON remains explicit. Redirection and non-TTY execution do not change the output mode. Structured account and credential output applies the same reference/value redaction as compact text.

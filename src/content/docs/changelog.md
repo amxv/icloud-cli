@@ -8,6 +8,10 @@ summary: Public command, output, installation, and documentation changes.
 
 ## Unreleased
 
+- Added schema version 9 local RFC conversation reconstruction with stable `thr_…` IDs, immutable message membership, durable redirect aliases, ordered edge evidence, bounded aggregates, and one-time schema-8 backfill.
+- Added offline `icloud mail latest` and `icloud mail thread show <thread-id|message-id>` with compact chronological previews, explicit full text/HTML/headers/raw JSON, metadata-only graph evidence, and multi-message raw-stream protection.
+- Added transactional late-root and bridge merges, conservative subject-and-participant fallback only without RFC evidence, visible unresolved/malformed/self/cycle states, and aggregate refresh after sync or location-state changes.
+- Added the Reconstructed conversations guide and updated Quickstart, output, troubleshooting, command reference, README, capabilities, and landing journeys for local RFC threads and aliases.
 - Added schema version 8 identity provenance and dedupe conflict records for logical messages observed in several provider locations.
 - Added bounded synchronization for every enabled folder, `--folder sent` and stable-folder selectors across sync, status, and local listing, plus one compact or JSON result per selected folder.
 - Added history-free Sent setup: the first run records the current Sent tail without downloading old messages, while later runs ingest only newer Sent copies.

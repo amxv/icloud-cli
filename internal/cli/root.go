@@ -104,6 +104,7 @@ type capabilitiesData struct {
 	MailContent       bool             `json:"mail_content"`
 	MailAttachments   bool             `json:"mail_attachments"`
 	MailFlags         bool             `json:"mail_flags"`
+	MailThreads       bool             `json:"mail_threads"`
 	Output            capabilityOutput `json:"output"`
 	Completion        []string         `json:"completion"`
 	Man               bool             `json:"man"`
@@ -315,6 +316,7 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				MailContent:       true,
 				MailAttachments:   true,
 				MailFlags:         true,
+				MailThreads:       true,
 				Output: capabilityOutput{
 					Default: "compact",
 					JSON:    true,
@@ -343,6 +345,7 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				Field("mail_content", data.MailContent),
 				Field("mail_attachments", data.MailAttachments),
 				Field("mail_flags", data.MailFlags),
+				Field("mail_threads", data.MailThreads),
 				Field("default_output", data.Output.Default),
 				Field("json", data.Output.JSON),
 				Field("completion", data.Completion),

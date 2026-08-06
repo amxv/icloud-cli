@@ -18,6 +18,8 @@ type MailService interface {
 	MailSyncStatus(context.Context, string, string, string) (account.Account, folder.Folder, maildomain.Checkpoint, int64, error)
 	MailSyncCheckpoints(context.Context, string, string, int) (account.Account, []maildomain.Checkpoint, bool, int64, error)
 	MailMessage(context.Context, string, string, string) (account.Account, maildomain.Message, maildomain.ContentSource, int64, error)
+	MailLatest(context.Context, string, string, int) (account.Account, []maildomain.Thread, bool, int64, error)
+	MailThread(context.Context, string, string, string, int) (account.Account, maildomain.ThreadPage, []maildomain.ContentSource, int64, error)
 	MailAttachments(context.Context, string, string, string, int) (account.Account, maildomain.Message, []maildomain.Attachment, bool, int64, error)
 	MailAttachment(context.Context, string, string, string) (account.Account, maildomain.Attachment, maildomain.AttachmentSource, int64, error)
 	MailUpdateFlag(context.Context, string, string, string, string, maildomain.FlagMutation) (account.Account, folder.Folder, maildomain.Message, maildomain.Location, int64, error)
@@ -354,6 +356,12 @@ func (unavailableMailService) MailSyncCheckpoints(context.Context, string, strin
 }
 func (unavailableMailService) MailMessage(context.Context, string, string, string) (account.Account, maildomain.Message, maildomain.ContentSource, int64, error) {
 	return account.Account{}, maildomain.Message{}, nil, 0, NewAppError(ErrorConfiguration, "local message content is unavailable", false)
+}
+func (unavailableMailService) MailLatest(context.Context, string, string, int) (account.Account, []maildomain.Thread, bool, int64, error) {
+	return account.Account{}, nil, false, 0, NewAppError(ErrorConfiguration, "local mail threads are unavailable", false)
+}
+func (unavailableMailService) MailThread(context.Context, string, string, string, int) (account.Account, maildomain.ThreadPage, []maildomain.ContentSource, int64, error) {
+	return account.Account{}, maildomain.ThreadPage{}, nil, 0, NewAppError(ErrorConfiguration, "local mail threads are unavailable", false)
 }
 func (unavailableMailService) MailAttachments(context.Context, string, string, string, int) (account.Account, maildomain.Message, []maildomain.Attachment, bool, int64, error) {
 	return account.Account{}, maildomain.Message{}, nil, false, 0, NewAppError(ErrorConfiguration, "local attachments are unavailable", false)

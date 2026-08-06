@@ -30,7 +30,7 @@ version
 capabilities
 command=icloud
 version=0.1.0
-schema=8
+schema=9
 account_mode=validated_lifecycle
 credentials=keyring,env,file
 network_validation=true
@@ -210,6 +210,32 @@ icloud mail inbox --folder sent
 
 The same logical `msg_…` record may contain separate Inbox and Sent locations. Each location retains its own UID and flags; an unseen Sent copy does not make outbound mail unread.
 
+## Browse reconstructed conversations
+
+List the newest local conversations without contacting Apple:
+
+```bash
+icloud mail latest
+```
+
+Open one by stable thread ID, or start from any message ID:
+
+```bash
+icloud mail thread show thr_…
+icloud mail thread show msg_…
+```
+
+Threads are reconstructed locally from ordered RFC `References`, then `In-Reply-To`, with a narrow subject-and-participant fallback only when relationship headers are absent. Late roots can merge provisional conversations while retired thread IDs remain usable aliases. The compact default shows one aggregate plus chronological bounded message excerpts.
+
+Expand content only when needed:
+
+```bash
+icloud mail thread show thr_… --full
+icloud mail thread show thr_… --metadata-only --verbose --json
+```
+
+Read [Reconstructed conversations](/docs/read-reconstructed-conversations) for graph evidence, aliases, cycles, fallback boundaries, and multi-message content modes.
+
 ## Read one complete message explicitly
 
 Copy a stable `msg_…` ID from `mail inbox`, then inspect a bounded message block:
@@ -295,6 +321,7 @@ JSON is opt-in. Redirecting stdout does not change the compact default. Password
 - Credential or validation trouble: [Account validation and doctor](/docs/account-validation-and-doctor)
 - Empty or unexpected folder inventory: [Folder discovery and sync policy](/docs/folder-discovery-and-sync-policy)
 - Interrupted Inbox, Sent, or other enabled-folder sync: [Sync and read mail](/docs/sync-and-read-inbox)
+- Unexpected conversation grouping or a retired thread ID: [Reconstructed conversations](/docs/read-reconstructed-conversations)
 - Attachment listing, export, or collision handling: [Save mail attachments](/docs/save-mail-attachments)
 - Stable stdout, stderr, JSON, and exits: [Output and automation](/docs/output-and-automation)
 - Every command and flag: [Command reference](/docs/command-reference)

@@ -31,6 +31,7 @@ const workflows = [
   "Validate direct-TLS IMAP and mandatory-STARTTLS SMTP safely, then inspect stored health with icloud doctor.",
   "Discover nested and Unicode mailboxes, then synchronize bounded pages from enabled folders into private local state.",
   "Read compact sender, subject, state, attachment-count, and decoded-text previews offline without marking mail read.",
+  "Browse stable locally reconstructed RFC conversations and follow durable aliases after late evidence merges provisional threads.",
   "Open one stable message ID for complete text, HTML, decoded headers, MIME details, or verified raw RFC822 export.",
   "Inspect supported behavior with icloud capabilities before an agent chooses an output mode.",
   "Generate completions for Bash, Zsh, Fish, or PowerShell directly from the installed command tree.",
@@ -54,8 +55,8 @@ const workflows = [
       </p>
       <p class="hero__annotation">
         The current build validates both iCloud Mail protocols, discovers every folder, synchronizes
-        bounded enabled-folder pages, starts Sent without crawling history, reads complete local messages explicitly,
-        and never sends or mutates mail.
+        bounded enabled-folder pages, starts Sent without crawling history, reconstructs RFC conversations locally,
+        reads complete local messages explicitly, and never sends or mutates mail.
       </p>
       <div class="hero__actions">
         <a class="button button--solid" href="/docs/quickstart">Start with the quickstart</a>
@@ -72,7 +73,7 @@ const workflows = [
         <span>capabilities</span>
         <span>command=icloud</span>
         <span>version=0.1.0</span>
-        <span>schema=8 …</span>
+        <span>schema=9 …</span>
         <span>$ icloud account add --name Personal --email owner@icloud.com</span>
         <span>App-specific password:</span>
         <span>account-added</span>
@@ -98,6 +99,11 @@ const workflows = [
         <span>message</span>
         <span>msg_… from=sender@example.com</span>
         <span>subject="Project update"</span>
+        <span>$ icloud mail latest</span>
+        <span>thread</span>
+        <span>thr_… subject="Project update"</span>
+        <span>messages=3</span>
+        <span>reconstruction=local_rfc_graph</span>
         <span>$ icloud mail message show msg_… --full</span>
         <span>body</span>
         <span>Complete decoded text…</span>

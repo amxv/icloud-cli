@@ -368,6 +368,34 @@ That is expected. `fetched=0` means the selected folder's new-message frontier d
 
 The CLI requires strong identity or a uniquely safe local fallback before it joins locations under one `msg_…` ID. Matching subject, body, attachments, and time are not enough to collapse two provider-backed messages. Inspect `mail inbox --folder <folder> --json` or `mail message show <id> --metadata-only --json`; unresolved identity conflicts remain visible instead of deleting one record.
 
+## A conversation is missing its root
+
+The reply may have arrived before the root, or the root may be in another folder that has not been synchronized. Inspect local RFC graph evidence:
+
+```bash
+icloud mail thread show msg_… --metadata-only --verbose --json
+```
+
+An `unresolved` token is preserved. Synchronize the likely folder and retry. If the matching root arrives later, it joins the existing conversation without changing message, location, part, attachment, or blob IDs.
+
+## An old thread ID redirects
+
+Late RFC evidence can bridge provisional conversations. One existing thread ID remains canonical and retired IDs become durable aliases:
+
+```bash
+icloud mail thread show thr_old…
+```
+
+The resolved result reports `redirected_from`. Store the canonical ID for new work, but existing references to the alias remain valid.
+
+## Similar subjects stayed in separate conversations
+
+That is intentionally conservative. Subject-and-participant fallback is used only when RFC relationship headers are absent, normalized participants match, a reply-like subject exists, and the messages are close enough in time. Duplicate subjects alone do not establish a conversation.
+
+## Thread evidence reports malformed or cycle
+
+The CLI keeps the messages readable and records the relationship as `malformed`, `self`, or `cycle`. It does not invent a parent or rewrite RFC headers. Use `mail thread show <id> --metadata-only --verbose --json` to inspect the evidence and keep local state intact for the later repair workflow.
+
 ## Raw message content is missing or corrupt
 
 `mail message raw`, raw format, and export verify the local blob's recorded size and SHA-256 address before returning bytes. An unavailable/corrupt error means the metadata remains present but the exact local RFC822 bytes cannot be trusted.

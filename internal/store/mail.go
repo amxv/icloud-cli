@@ -150,6 +150,9 @@ func (repository *MailRepository) CommitInboxPage(ctx context.Context, page mail
 			stateChanges++
 		}
 	}
+	if err := rebuildAccountThreadGraph(ctx, tx, page.AccountID, page.AttemptedAt); err != nil {
+		return maildomain.CommitResult{}, err
+	}
 
 	checkpointID := page.CheckpointID
 	createdAt := timestamp
@@ -404,6 +407,9 @@ WHERE account_id = ? AND location_id = ?`,
 	}
 	value, err := scanLocation(tx.QueryRowContext(ctx, locationColumns+` WHERE location_id = ?`, locationID))
 	if err != nil {
+		return maildomain.Location{}, err
+	}
+	if err := rebuildAccountThreadGraph(ctx, tx, accountID, now); err != nil {
 		return maildomain.Location{}, err
 	}
 	if err := tx.Commit(); err != nil {
