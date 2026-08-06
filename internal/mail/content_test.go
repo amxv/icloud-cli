@@ -11,6 +11,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestParseNormalizedHandlesCharsetsAlternativesInlineAndEmbeddedMessages(t *testing.T) {
@@ -71,6 +72,9 @@ Nested body.
 	}
 	if len(content.TextPaths) != 1 || len(content.HTMLPaths) != 1 {
 		t.Fatalf("body paths text=%v html=%v", content.TextPaths, content.HTMLPaths)
+	}
+	if !strings.Contains(content.SearchText, "Olá, café") || strings.Contains(content.SearchText, "Nested body") || content.SearchTextTruncated {
+		t.Fatalf("search text = %q truncated=%v", content.SearchText, content.SearchTextTruncated)
 	}
 	var inline, embedded bool
 	for _, part := range content.Parts {
@@ -271,5 +275,20 @@ func TestParseNormalizedHonorsCancellation(t *testing.T) {
 	_, err := ParseNormalizedContext(ctx, strings.NewReader("Message-ID: <cancel@example.test>\r\n\r\nbody"))
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled parse = %v", err)
+	}
+}
+
+func TestParseNormalizedBoundsIndexedBodyWithoutBreakingUTF8(t *testing.T) {
+	body := strings.Repeat("é", maxIndexedBodyBytes)
+	raw := "Message-ID: <large-search@example.test>\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n" + body
+	content, err := ParseNormalized(strings.NewReader(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !content.SearchTextTruncated {
+		t.Fatal("large indexed body was not marked truncated")
+	}
+	if len(content.SearchText) <= maxPreviewPartBytes || len(content.SearchText) > maxIndexedBodyBytes || !utf8.ValidString(content.SearchText) {
+		t.Fatalf("indexed body bytes=%d valid=%v", len(content.SearchText), utf8.ValidString(content.SearchText))
 	}
 }

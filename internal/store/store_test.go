@@ -42,7 +42,7 @@ func TestOpenCreatesAndReopensVersionedPrivateState(t *testing.T) {
 	if state.SchemaVersion() != SchemaVersion {
 		t.Fatalf("schema version = %d", state.SchemaVersion())
 	}
-	for _, table := range []string{"app_metadata", "accounts", "credential_refs", "folders", "raw_blobs", "messages", "message_recipients", "message_references", "message_locations", "message_content", "message_parts", "attachments", "sync_checkpoints", "message_identity_evidence", "message_dedupe_conflicts", "threads", "thread_messages", "thread_aliases", "thread_edges", "goose_db_version"} {
+	for _, table := range []string{"app_metadata", "accounts", "credential_refs", "folders", "raw_blobs", "messages", "message_recipients", "message_references", "message_locations", "message_content", "message_parts", "attachments", "sync_checkpoints", "message_identity_evidence", "message_dedupe_conflicts", "threads", "thread_messages", "thread_aliases", "thread_edges", "message_search_documents", "message_search_fts", "goose_db_version"} {
 		var count int
 		if err := state.db.QueryRowContext(context.Background(),
 			"SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?", table,
@@ -1072,7 +1072,7 @@ func TestOpenUpgradesPhaseNineMailStateAndAddsIdentityTelemetry(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer state.Close()
-	if state.SchemaVersion() != 9 {
+	if state.SchemaVersion() != SchemaVersion {
 		t.Fatalf("schema version = %d", state.SchemaVersion())
 	}
 	message, err := state.Mail().Message(context.Background(), accountID, messageID)
@@ -1084,6 +1084,24 @@ func TestOpenUpgradesPhaseNineMailStateAndAddsIdentityTelemetry(t *testing.T) {
 		!message.Locations[0].Flags.Flagged || !reflect.DeepEqual(message.Locations[0].Flags.Unknown, []string{"$PhaseNine"}) ||
 		message.Content == nil || message.ContentLocationID != locationID {
 		t.Fatalf("upgraded Phase Nine message = %+v", message)
+	}
+	var searchMessageID, bodyState string
+	if err := state.db.QueryRow(`
+SELECT message_id, body_state FROM message_search_documents WHERE message_id = ?`, messageID).Scan(&searchMessageID, &bodyState); err != nil {
+		t.Fatal(err)
+	}
+	if searchMessageID != messageID || bodyState != "pending" {
+		t.Fatalf("migrated search document id=%q state=%q", searchMessageID, bodyState)
+	}
+	searchPage, err := state.Search().Search(context.Background(), accountID, maildomain.SearchOptions{
+		Query: "Phase Nine fixture", ResultKind: maildomain.SearchMessages, Limit: 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(searchPage.Hits) != 1 || searchPage.Hits[0].Message.ID != messageID ||
+		searchPage.Hits[0].MatchedField != "subject" || searchPage.Query.IndexState != "pending" {
+		t.Fatalf("migrated search page = %+v", searchPage)
 	}
 	generated := "phase-nine-generated@example.test"
 	if err := state.Mail().RegisterGeneratedMessageID(context.Background(), accountID, messageID, generated, time.Date(2026, 8, 6, 7, 31, 0, 0, time.UTC)); err != nil {
@@ -1167,7 +1185,7 @@ VALUES (?, 0, 'migration-root@example.test')`, replyID); err != nil {
 		t.Fatal(err)
 	}
 	defer state.Close()
-	if state.SchemaVersion() != 9 {
+	if state.SchemaVersion() != SchemaVersion {
 		t.Fatalf("schema version = %d", state.SchemaVersion())
 	}
 	page, err := state.Threads().Show(context.Background(), accountID, replyID, "", 20)

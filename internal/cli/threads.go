@@ -10,11 +10,13 @@ import (
 )
 
 type mailLatestData struct {
-	AccountID     string              `json:"account_id"`
-	Threads       []maildomain.Thread `json:"threads"`
-	Count         int                 `json:"count"`
-	More          bool                `json:"more,omitempty"`
-	SchemaVersion int64               `json:"schema_version"`
+	AccountID     string                     `json:"account_id"`
+	Threads       []maildomain.Thread        `json:"threads"`
+	Count         int                        `json:"count"`
+	More          bool                       `json:"more,omitempty"`
+	NextCursor    string                     `json:"next_cursor,omitempty"`
+	Query         maildomain.SearchQueryMeta `json:"query"`
+	SchemaVersion int64                      `json:"schema_version"`
 }
 
 type publicThread struct {
@@ -63,35 +65,54 @@ type mailThreadData struct {
 func newMailLatestCommand(state *executionState) *cobra.Command {
 	var jsonOutput bool
 	var limit int
+	var filters mailSearchFlags
 	command := &cobra.Command{
 		Use:     "latest",
-		Short:   "List the newest locally reconstructed conversations",
+		Short:   "List and filter the newest reconstructed conversations",
 		Args:    cobra.NoArgs,
-		Example: "  icloud mail latest\n  icloud mail latest --limit 50\n  icloud mail latest --json",
+		Example: "  icloud mail latest\n  icloud mail latest --query launch --unread\n  icloud mail latest --participant teammate@example.com\n  icloud mail latest --cursor cur_… --json",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if limit < 1 || limit > MaximumPageSize {
 				return NewAppError(ErrorUsage, fmt.Sprintf("--limit must be between 1 and %d", MaximumPageSize), false)
 			}
-			accountValue, threads, more, schemaVersion, err := state.mail.MailLatest(cmd.Context(), state.global.Home, state.global.Account, limit)
+			options, err := filters.options(filters.Query, maildomain.SearchThreads, limit)
 			if err != nil {
 				return err
 			}
+			accountValue, _, page, schemaVersion, err := state.mail.MailSearch(cmd.Context(), state.global.Home, state.global.Account, filters.Folder, options)
+			if err != nil {
+				return err
+			}
+			threads := make([]maildomain.Thread, 0, len(page.Hits))
+			for _, hit := range page.Hits {
+				if hit.Thread != nil {
+					threads = append(threads, *hit.Thread)
+				}
+			}
 			if jsonOutput {
 				return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: mailLatestData{
-					AccountID: accountValue.ID, Threads: threads, Count: len(threads), More: more, SchemaVersion: schemaVersion,
+					AccountID: accountValue.ID, Threads: threads, Count: len(threads), More: page.More, NextCursor: page.NextCursor, Query: page.Query, SchemaVersion: schemaVersion,
 				}, Meta: EnvelopeMeta{RequestID: state.requestID}})
 			}
 			renderer := NewCompactTextRenderer(state.stdout)
-			for _, thread := range threads {
-				if err := renderThreadSummary(renderer, thread); err != nil {
-					return err
+			filtered := mailSearchFlagsActive(filters)
+			for index, thread := range threads {
+				var renderErr error
+				if filtered {
+					renderErr = renderSearchHit(renderer, page.Hits[index])
+				} else {
+					renderErr = renderThreadSummary(renderer, thread)
+				}
+				if renderErr != nil {
+					return renderErr
 				}
 			}
-			return renderer.Summary("threads", Field("account", accountValue.ID), Field("count", len(threads)), Field("more", fmt.Sprintf("%t", more)))
+			return renderer.Summary("threads", Field("account", accountValue.ID), Field("count", len(threads)), Field("more", fmt.Sprintf("%t", page.More)), Field("next_cursor", page.NextCursor))
 		},
 	}
 	command.Flags().IntVar(&limit, "limit", DefaultPageSize, fmt.Sprintf("Maximum reconstructed conversations to return (1-%d)", MaximumPageSize))
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
+	addMailSearchFlags(command, &filters, true, true)
 	return command
 }
 

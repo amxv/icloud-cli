@@ -84,6 +84,15 @@ icloud mail inbox --folder sent
 icloud mail inbox --folder fld_…
 ```
 
+Filter the local folder without contacting iCloud:
+
+```bash
+icloud mail inbox --query invoice --unread
+icloud mail inbox --from billing@example.com --after 2026-08-01
+```
+
+The same indexed filters are available through `icloud mail search` across synchronized folders. See [Search synchronized mail](/docs/search-synchronized-mail) for message or thread results, attachment filters, and cursors.
+
 Each compact record contains a stable message ID, sender, subject, best available date, true unread or flagged state, nonzero attachment count, and a bounded decoded-text preview:
 
 ```text
@@ -304,4 +313,4 @@ icloud mail mark-read msg_… --folder INBOX
 
 The CLI does not guess which copy should change.
 
-Continue with [Save mail attachments](/docs/save-mail-attachments), [Output and automation](/docs/output-and-automation) for stable stream rules, or the [command reference](/docs/command-reference) for exact flags.
+Continue with [Search synchronized mail](/docs/search-synchronized-mail), [Save mail attachments](/docs/save-mail-attachments), [Output and automation](/docs/output-and-automation) for stable stream rules, or the [command reference](/docs/command-reference) for exact flags.

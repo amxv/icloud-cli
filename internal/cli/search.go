@@ -1,0 +1,326 @@
+package cli
+
+import (
+	"fmt"
+	"strings"
+	"time"
+
+	maildomain "github.com/amxv/icloud-cli/internal/mail"
+	"github.com/spf13/cobra"
+)
+
+type mailSearchFlags struct {
+	Query              string
+	Folder             string
+	Sender             string
+	Participant        string
+	Subject            string
+	RFCMessageID       string
+	AttachmentFilename string
+	AttachmentType     string
+	After              string
+	Before             string
+	Cursor             string
+	Unread             bool
+	Read               bool
+	Flagged            bool
+	Unflagged          bool
+}
+
+type publicSearchHit struct {
+	Kind             maildomain.SearchResultKind `json:"kind"`
+	Message          *publicMessage              `json:"message,omitempty"`
+	Thread           *maildomain.Thread          `json:"thread,omitempty"`
+	MatchedMessageID string                      `json:"matched_message_id,omitempty"`
+	MatchedField     string                      `json:"matched_field,omitempty"`
+	Excerpt          string                      `json:"excerpt,omitempty"`
+	Rank             float64                     `json:"rank"`
+}
+
+type mailSearchData struct {
+	AccountID     string                     `json:"account_id"`
+	Hits          []publicSearchHit          `json:"hits"`
+	Count         int                        `json:"count"`
+	More          bool                       `json:"more,omitempty"`
+	NextCursor    string                     `json:"next_cursor,omitempty"`
+	Query         maildomain.SearchQueryMeta `json:"query"`
+	SchemaVersion int64                      `json:"schema_version"`
+}
+
+type mailSearchRepairData struct {
+	Summary       maildomain.SearchRepairSummary `json:"summary"`
+	SchemaVersion int64                          `json:"schema_version"`
+}
+
+func newMailSearchCommand(state *executionState) *cobra.Command {
+	var flags mailSearchFlags
+	var jsonOutput bool
+	var resultKind string
+	var limit int
+	command := &cobra.Command{
+		Use:   "search [query]",
+		Short: "Search locally synchronized mail with indexed text and filters",
+		Args:  cobra.MaximumNArgs(1),
+		Example: "  icloud mail search invoice\n" +
+			"  icloud mail search --from billing@example.com --unread\n" +
+			"  icloud mail search launch --result threads --limit 20\n" +
+			"  icloud mail search --attachment-type application/pdf --json",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput}, OutputSupport{JSON: true}); err != nil {
+				return err
+			}
+			if limit < 1 || limit > MaximumPageSize {
+				return NewAppError(ErrorUsage, fmt.Sprintf("--limit must be between 1 and %d", MaximumPageSize), false)
+			}
+			kind := maildomain.SearchResultKind(strings.ToLower(strings.TrimSpace(resultKind)))
+			if kind != maildomain.SearchMessages && kind != maildomain.SearchThreads {
+				return NewAppError(ErrorUsage, "--result must be messages or threads", false)
+			}
+			query := ""
+			if len(args) == 1 {
+				query = args[0]
+			}
+			options, err := flags.options(query, kind, limit)
+			if err != nil {
+				return err
+			}
+			accountValue, _, page, schemaVersion, err := state.mail.MailSearch(
+				cmd.Context(), state.global.Home, state.global.Account, flags.Folder, options,
+			)
+			if err != nil {
+				return err
+			}
+			if jsonOutput {
+				hits := make([]publicSearchHit, 0, len(page.Hits))
+				for _, hit := range page.Hits {
+					hits = append(hits, sanitizeSearchHit(hit))
+				}
+				return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: mailSearchData{
+					AccountID: accountValue.ID, Hits: hits, Count: len(hits), More: page.More,
+					NextCursor: page.NextCursor, Query: page.Query, SchemaVersion: schemaVersion,
+				}, Meta: EnvelopeMeta{RequestID: state.requestID}})
+			}
+			renderer := NewCompactTextRenderer(state.stdout)
+			for _, hit := range page.Hits {
+				if err := renderSearchHit(renderer, hit); err != nil {
+					return err
+				}
+			}
+			return renderSearchSummary(renderer, accountValue.ID, page)
+		},
+	}
+	addMailSearchFlags(command, &flags, true, false)
+	command.Flags().StringVar(&resultKind, "result", string(maildomain.SearchMessages), "Result kind: messages or threads")
+	command.Flags().IntVar(&limit, "limit", DefaultPageSize, fmt.Sprintf("Maximum local hits to return (1-%d)", MaximumPageSize))
+	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
+	command.AddCommand(newMailSearchRepairCommand(state))
+	return command
+}
+
+func newMailSearchRepairCommand(state *executionState) *cobra.Command {
+	var jsonOutput bool
+	var limit int
+	command := &cobra.Command{
+		Use:     "repair",
+		Short:   "Rebuild a bounded batch of incomplete local body-search entries",
+		Args:    cobra.NoArgs,
+		Example: "  icloud mail search repair\n  icloud mail search repair --limit 100 --json",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput}, OutputSupport{JSON: true}); err != nil {
+				return err
+			}
+			if limit < 1 || limit > MaximumPageSize {
+				return NewAppError(ErrorUsage, fmt.Sprintf("--limit must be between 1 and %d", MaximumPageSize), false)
+			}
+			accountValue, summary, schemaVersion, err := state.mail.MailSearchRepair(
+				cmd.Context(), state.global.Home, state.global.Account, limit,
+			)
+			if err != nil {
+				return err
+			}
+			if jsonOutput {
+				return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: mailSearchRepairData{
+					Summary: summary, SchemaVersion: schemaVersion,
+				}, Meta: EnvelopeMeta{RequestID: state.requestID}})
+			}
+			return NewCompactTextRenderer(state.stdout).Record("search-repair", accountValue.ID,
+				Field("selected", fmt.Sprintf("%d", summary.Selected)),
+				Field("repaired", fmt.Sprintf("%d", summary.Repaired)),
+				Field("failed", fmt.Sprintf("%d", summary.Failed)),
+				Field("remaining", fmt.Sprintf("%d", summary.Remaining)),
+				Field("errors", fmt.Sprintf("%d", summary.Errors)),
+			)
+		},
+	}
+	command.Flags().IntVar(&limit, "limit", DefaultPageSize, fmt.Sprintf("Maximum incomplete messages to repair (1-%d)", MaximumPageSize))
+	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
+	return command
+}
+
+func addMailSearchFlags(command *cobra.Command, flags *mailSearchFlags, includeFolder, includeQuery bool) {
+	if includeQuery {
+		command.Flags().StringVar(&flags.Query, "query", "", "Match indexed subject, sender, participants, decoded text, attachments, or RFC Message-ID")
+	}
+	if includeFolder {
+		command.Flags().StringVar(&flags.Folder, "folder", "", "Restrict matches to one folder kind, ID, name, or wire name")
+	}
+	command.Flags().StringVar(&flags.Sender, "from", "", "Restrict sender or Reply-To text")
+	command.Flags().StringVar(&flags.Participant, "participant", "", "Restrict sender, Reply-To, To, or Cc participant text")
+	command.Flags().StringVar(&flags.Subject, "subject", "", "Restrict subject text")
+	command.Flags().StringVar(&flags.RFCMessageID, "rfc-id", "", "Match one RFC Message-ID")
+	command.Flags().StringVar(&flags.AttachmentFilename, "attachment-name", "", "Restrict attachment filename text")
+	command.Flags().StringVar(&flags.AttachmentType, "attachment-type", "", "Restrict attachment media type")
+	command.Flags().StringVar(&flags.After, "after", "", "Include messages at or after an RFC3339 timestamp or YYYY-MM-DD UTC date")
+	command.Flags().StringVar(&flags.Before, "before", "", "Include messages before an RFC3339 timestamp or YYYY-MM-DD UTC date")
+	command.Flags().StringVar(&flags.Cursor, "cursor", "", "Continue from a next_cursor returned by the same query")
+	command.Flags().BoolVar(&flags.Unread, "unread", false, "Include only messages with an unread eligible location")
+	command.Flags().BoolVar(&flags.Read, "read", false, "Include only messages without an unread eligible location")
+	command.Flags().BoolVar(&flags.Flagged, "flagged", false, "Include only messages with a flagged eligible location")
+	command.Flags().BoolVar(&flags.Unflagged, "unflagged", false, "Include only messages without a flagged eligible location")
+	command.MarkFlagsMutuallyExclusive("unread", "read")
+	command.MarkFlagsMutuallyExclusive("flagged", "unflagged")
+}
+
+func (flags mailSearchFlags) options(query string, kind maildomain.SearchResultKind, limit int) (maildomain.SearchOptions, error) {
+	after, err := parseSearchBoundary(flags.After)
+	if err != nil {
+		return maildomain.SearchOptions{}, NewAppError(ErrorUsage, "--after must be RFC3339 or YYYY-MM-DD", false)
+	}
+	before, err := parseSearchBoundary(flags.Before)
+	if err != nil {
+		return maildomain.SearchOptions{}, NewAppError(ErrorUsage, "--before must be RFC3339 or YYYY-MM-DD", false)
+	}
+	if after != nil && before != nil && !after.Before(*before) {
+		return maildomain.SearchOptions{}, NewAppError(ErrorUsage, "--after must precede --before", false)
+	}
+	var unread, flagged *bool
+	if flags.Unread || flags.Read {
+		value := flags.Unread
+		unread = &value
+	}
+	if flags.Flagged || flags.Unflagged {
+		value := flags.Flagged
+		flagged = &value
+	}
+	return maildomain.SearchOptions{
+		Query: strings.TrimSpace(query), Unread: unread, Flagged: flagged,
+		Sender: flags.Sender, Participant: flags.Participant, Subject: flags.Subject,
+		RFCMessageID: flags.RFCMessageID, AttachmentFilename: flags.AttachmentFilename,
+		AttachmentType: flags.AttachmentType, After: after, Before: before,
+		ResultKind: kind, Cursor: flags.Cursor, Limit: limit,
+	}, nil
+}
+
+func parseSearchBoundary(value string) (*time.Time, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil, nil
+	}
+	if parsed, err := time.Parse(time.RFC3339, value); err == nil {
+		parsed = parsed.UTC()
+		return &parsed, nil
+	}
+	parsed, err := time.Parse("2006-01-02", value)
+	if err != nil {
+		return nil, err
+	}
+	parsed = parsed.UTC()
+	return &parsed, nil
+}
+
+func sanitizeSearchHit(hit maildomain.SearchHit) publicSearchHit {
+	result := publicSearchHit{
+		Kind: hit.Kind, MatchedMessageID: hit.MatchedMessageID,
+		MatchedField: hit.MatchedField, Excerpt: hit.Excerpt, Rank: hit.Rank,
+	}
+	if hit.Message != nil {
+		message := sanitizeMessage(*hit.Message)
+		result.Message = &message
+	}
+	if hit.Thread != nil {
+		thread := *hit.Thread
+		thread.Messages = nil
+		thread.Edges = nil
+		result.Thread = &thread
+	}
+	return result
+}
+
+func renderSearchHit(renderer *CompactTextRenderer, hit maildomain.SearchHit) error {
+	if hit.Message != nil {
+		message := *hit.Message
+		return renderer.Record("search-hit", message.ID,
+			Field("kind", "message"),
+			Field("from", formatAddress(message.From)),
+			Field("participants", searchMessageParticipants(message)),
+			Field("subject", message.Subject),
+			Field("at", message.SortAt),
+			Field("state", messageReadState(message)),
+			Field("flagged", message.Flagged),
+			Field("match", hit.MatchedField),
+			Field("excerpt", Excerpt(hit.Excerpt, DefaultExcerptRunes)),
+		)
+	}
+	if hit.Thread != nil {
+		thread := *hit.Thread
+		return renderer.Record("search-hit", thread.ID,
+			Field("kind", "thread"),
+			Field("participants", thread.Participants),
+			Field("subject", thread.CanonicalSubject),
+			Field("last", thread.LastMessageAt),
+			Field("messages", thread.MessageCount),
+			Field("unread", thread.UnreadCount),
+			Field("match", hit.MatchedField),
+			Field("matched_message", hit.MatchedMessageID),
+			Field("excerpt", Excerpt(hit.Excerpt, DefaultExcerptRunes)),
+		)
+	}
+	return nil
+}
+
+func renderSearchSummary(renderer *CompactTextRenderer, accountID string, page maildomain.SearchPage) error {
+	return renderer.Summary("search-results",
+		Field("account", accountID),
+		Field("kind", page.Query.ResultKind),
+		Field("count", len(page.Hits)),
+		Field("more", fmt.Sprintf("%t", page.More)),
+		Field("next_cursor", page.NextCursor),
+		Field("sort", page.Query.Sort),
+		Field("index", page.Query.IndexState),
+		Field("pending", page.Query.PendingCount),
+		Field("errors", page.Query.ErrorCount),
+	)
+}
+
+func searchMessageParticipants(message maildomain.Message) []string {
+	seen := map[string]struct{}{}
+	values := []string{}
+	appendAddress := func(address maildomain.Address) {
+		email := strings.ToLower(strings.TrimSpace(address.Email))
+		if email == "" {
+			return
+		}
+		if _, ok := seen[email]; ok {
+			return
+		}
+		seen[email] = struct{}{}
+		values = append(values, email)
+	}
+	appendAddress(message.From)
+	appendAddress(message.ReplyTo)
+	for _, address := range message.To {
+		appendAddress(address)
+	}
+	for _, address := range message.CC {
+		appendAddress(address)
+	}
+	return values
+}
+
+func mailSearchFlagsActive(flags mailSearchFlags) bool {
+	return strings.TrimSpace(flags.Query) != "" || strings.TrimSpace(flags.Sender) != "" ||
+		strings.TrimSpace(flags.Participant) != "" || strings.TrimSpace(flags.Subject) != "" ||
+		strings.TrimSpace(flags.RFCMessageID) != "" || strings.TrimSpace(flags.AttachmentFilename) != "" ||
+		strings.TrimSpace(flags.AttachmentType) != "" || strings.TrimSpace(flags.After) != "" ||
+		strings.TrimSpace(flags.Before) != "" || flags.Unread || flags.Read || flags.Flagged || flags.Unflagged
+}

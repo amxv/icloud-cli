@@ -1238,24 +1238,32 @@ LIMIT 500`, arguments...)
 	return values, nil
 }
 
-const threadColumns = `
-SELECT thread_id, account_id, root_rfc_message_id, canonical_subject, snippet,
+const threadColumnList = `thread_id, account_id, root_rfc_message_id, canonical_subject, snippet,
        participants_json, folder_ids_json, message_count, unread_count,
        attachment_count, first_message_at, last_message_at, status,
-       reconstruction, created_at, updated_at
+       reconstruction, created_at, updated_at`
+
+const threadColumns = `
+SELECT ` + threadColumnList + `
 FROM threads`
 
 func scanThread(scanner interface{ Scan(...any) error }) (maildomain.Thread, error) {
+	return scanThreadWithExtra(scanner)
+}
+
+func scanThreadWithExtra(scanner interface{ Scan(...any) error }, extra ...any) (maildomain.Thread, error) {
 	var value maildomain.Thread
 	var participantsJSON, foldersJSON string
 	var firstMessageAt, lastMessageAt sql.NullString
 	var createdAt, updatedAt string
-	if err := scanner.Scan(
+	targets := []any{
 		&value.ID, &value.AccountID, &value.RootRFCMessageID, &value.CanonicalSubject,
 		&value.Snippet, &participantsJSON, &foldersJSON, &value.MessageCount,
 		&value.UnreadCount, &value.AttachmentCount, &firstMessageAt, &lastMessageAt,
 		&value.Status, &value.Reconstruction, &createdAt, &updatedAt,
-	); err != nil {
+	}
+	targets = append(targets, extra...)
+	if err := scanner.Scan(targets...); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return maildomain.Thread{}, maildomain.ErrThreadNotFound
 		}

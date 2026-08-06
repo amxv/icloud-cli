@@ -1948,6 +1948,14 @@ Regression scope is the entire repository: Go formatting/vet/test/race/fuzz wher
 
 ## Amendments
 
+### 2026-08-06 — Bound local decoded-body indexing and repair legacy rows from saved raw mail
+
+- **Trigger:** schema 9 stores bounded previews and MIME selection metadata, but it does not persist a complete decoded-text projection that schema 10 can backfill transactionally without reopening the saved raw message. Search also needs an explicit memory/disk bound independent of the smaller default display preview.
+- **Change:** Phase 12 indexes at most 1 MiB of normalized decoded non-attachment text per message, while retaining the existing 256 KiB per-part display preview bound. Schema-10 migration rows immediately index safe metadata plus the existing bounded snippet and report body state as `pending`; `icloud mail search repair` reparses a bounded batch from verified local raw blobs and records `complete` or visible `error` state. Newly ingested or explicitly reparsed content updates the search document in the same SQLite transaction as the canonical message/content/attachment/thread/checkpoint mutation.
+- **Consistency boundary:** search body text changes only when the representative canonical content row changes. A strongly deduplicated second provider location with different MIME content may update logical metadata under the existing identity rules, but it cannot silently replace indexed body or attachment text while the canonical content source remains unchanged.
+- **Privacy and network boundary:** the index excludes BCC and private blob coordinates. Repair is local-only, bounded to 100 records per invocation, verifies saved bytes before parsing, does not contact iCloud, and preserves every stable message/location/content/part/attachment/thread ID.
+- **Affected phases:** Phase 12 local search and repair, Phase 13 explicit remote hydration status, Phase 24 documentation/reference consolidation, and Phase 25 migration/repair/scale acceptance.
+
 ### 2026-08-06 — Prefer the authorized disposable live mail loop for all remaining phases
 
 - **Trigger:** the user provisioned `amxv_agents@icloud.com` and `amxv@agentmail.to`, completed a synthetic round-trip corpus, stored the app-specific password securely on Zodex, connected AgentMail tools in ChatGPT, and explicitly authorized full live testing on both disposable accounts.

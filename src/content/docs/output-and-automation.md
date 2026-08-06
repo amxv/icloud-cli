@@ -1,7 +1,7 @@
 ---
 title: Output and automation
 description: Understand compact defaults, JSON envelopes, stdin credential safety, stderr, request IDs, timeouts, and stable exit classes.
-order: 8
+order: 9
 category: Guides
 summary: The agent-facing contract for bounded text, explicit JSON, safe input, and stable failures.
 ---
@@ -35,7 +35,7 @@ checked_at=2026-08-06T03:00:00Z
 
 Each compact result is a small vertical block. The first line names the result, the next line carries its stable identity plus the first field when present, and every remaining field appears on its own line. A blank line separates consecutive blocks. Default output still omits empty values, ANSI color, box-drawing tables, JSON punctuation, and repeated prose. Successful output goes to stdout.
 
-`account list`, `mail inbox`, `mail latest`, `mail thread show`, attachment lists, and checkpoint lists return 20 records by default, accept `--limit` through 100, and report `more=true` when truncated. Thread pages also return `next_cursor`; pass it through `--cursor` to continue chronologically without repeating earlier messages. Sync applies its bound separately to each selected enabled folder and reconciles at most 100 least-recently checked current locations per folder per run. Mutation and export commands return an outcome and stable IDs rather than echoing submitted names, email addresses, subjects, paths, or passwords.
+`account list`, `mail inbox`, `mail search`, `mail latest`, `mail thread show`, attachment lists, and checkpoint lists return 20 records by default, accept `--limit` through 100, and report `more=true` when truncated. Search and thread pages also return `next_cursor`; pass it through `--cursor` to continue without repeating earlier records. Search cursors are bound to the complete account, query, filters, and result kind. Sync applies its bound separately to each selected enabled folder and reconciles at most 100 least-recently checked current locations per folder per run. Mutation and export commands return an outcome and stable IDs rather than echoing submitted names, email addresses, subjects, paths, or passwords.
 
 ## JSON is explicit
 
@@ -46,10 +46,10 @@ icloud --request-id account-01 account show --json
 ```
 
 ```json
-{"ok":true,"data":{"account":{"id":"acct_…","name":"Personal","email":"owner@icloud.com","imap_username":"owner","status":"connected","default":true,"credential_scheme":"keyring","imap_capabilities":["IDLE","IMAP4REV1"],"smtp_capabilities":["AUTH"],"last_healthy_at":"2026-08-06T03:00:00Z","last_tested_at":"2026-08-06T03:00:00Z","created_at":"2026-08-06T02:30:00Z","updated_at":"2026-08-06T03:00:00Z"},"schema_version":9},"meta":{"request_id":"account-01"}}
+{"ok":true,"data":{"account":{"id":"acct_…","name":"Personal","email":"owner@icloud.com","imap_username":"owner","status":"connected","default":true,"credential_scheme":"keyring","imap_capabilities":["IDLE","IMAP4REV1"],"smtp_capabilities":["AUTH"],"last_healthy_at":"2026-08-06T03:00:00Z","last_tested_at":"2026-08-06T03:00:00Z","created_at":"2026-08-06T02:30:00Z","updated_at":"2026-08-06T03:00:00Z"},"schema_version":10},"meta":{"request_id":"account-01"}}
 ```
 
-Account lifecycle, credential, validation, doctor, folder discovery/policy, enabled-folder sync and local folder reads, latest/thread reads, message reads and state mutations, attachment list/save/save-all, account reads, `version`, and `capabilities` support JSON when stdout is not carrying native bytes. Folder list/show/status and thread reads also support bounded `--verbose` evidence. Completion and man generation intentionally return native text formats.
+Account lifecycle, credential, validation, doctor, folder discovery/policy, enabled-folder sync, local folder and indexed search reads, latest/thread reads, message reads and state mutations, attachment list/save/save-all, account reads, `version`, and `capabilities` support JSON when stdout is not carrying native bytes. Folder list/show/status and thread reads also support bounded `--verbose` evidence. Completion and man generation intentionally return native text formats.
 
 Thread JSON remains local reconstruction data. `mail latest --json` returns aggregates only. `mail thread show --metadata-only --verbose --json` returns chronological messages and bounded RFC graph evidence without excerpts, BCC, raw-storage coordinates, bodies, or internal edge IDs. `--format raw --json` is explicit and bounded; plain multi-message raw output is rejected.
 
@@ -119,7 +119,7 @@ Help remains on stdout. A failed command never writes a success payload to stdou
 --request-id <id>     correlate structured output
 ```
 
-Version, capabilities, completion, man, and help remain disk-free. Account reads, `mail inbox` with any folder selector, `mail latest`, `mail thread show`, `mail message`, attachment reads, sync status, checkpoint reads, and local `doctor` never prompt or contact Apple. Compact thread reads and plain `--metadata-only` use stored summaries without opening raw message files. Explicit content, header expansion, or verbose MIME detail may complete missing local metadata from already synchronized raw bytes, but it never performs remote hydration. Sync, read/flag mutations, and live validation contact Apple and use the same global timeout; streaming message and attachment reads also honor the command timeout.
+Version, capabilities, completion, man, and help remain disk-free. Account reads, `mail inbox` with any folder selector, `mail search`, `mail search repair`, `mail latest`, `mail thread show`, `mail message`, attachment reads, sync status, checkpoint reads, and local `doctor` never prompt or contact Apple. Compact thread reads and plain `--metadata-only` use stored summaries without opening raw message files. Search repair may verify and parse already synchronized raw bytes, but it never performs remote hydration. Sync, read/flag mutations, and live validation contact Apple and use the same global timeout; streaming message and attachment reads also honor the command timeout.
 
 ## Message content is explicit
 

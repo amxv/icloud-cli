@@ -23,6 +23,8 @@ type MailService interface {
 	MailAttachments(context.Context, string, string, string, int) (account.Account, maildomain.Message, []maildomain.Attachment, bool, int64, error)
 	MailAttachment(context.Context, string, string, string) (account.Account, maildomain.Attachment, maildomain.AttachmentSource, int64, error)
 	MailUpdateFlag(context.Context, string, string, string, string, maildomain.FlagMutation) (account.Account, folder.Folder, maildomain.Message, maildomain.Location, int64, error)
+	MailSearch(context.Context, string, string, string, maildomain.SearchOptions) (account.Account, folder.Folder, maildomain.SearchPage, int64, error)
+	MailSearchRepair(context.Context, string, string, int) (account.Account, maildomain.SearchRepairSummary, int64, error)
 }
 
 type mailSyncData struct {
@@ -34,12 +36,14 @@ type mailSyncData struct {
 }
 
 type mailInboxData struct {
-	AccountID     string          `json:"account_id"`
-	FolderID      string          `json:"folder_id"`
-	Messages      []publicMessage `json:"messages"`
-	Count         int             `json:"count"`
-	More          bool            `json:"more,omitempty"`
-	SchemaVersion int64           `json:"schema_version"`
+	AccountID     string                     `json:"account_id"`
+	FolderID      string                     `json:"folder_id"`
+	Messages      []publicMessage            `json:"messages"`
+	Count         int                        `json:"count"`
+	More          bool                       `json:"more,omitempty"`
+	NextCursor    string                     `json:"next_cursor,omitempty"`
+	Query         maildomain.SearchQueryMeta `json:"query"`
+	SchemaVersion int64                      `json:"schema_version"`
 }
 
 type mailSyncStatusData struct {
@@ -162,11 +166,12 @@ func newMailInboxCommand(state *executionState) *cobra.Command {
 	var jsonOutput bool
 	var limit int
 	var folderSelector string
+	var filters mailSearchFlags
 	command := &cobra.Command{
 		Use:     "inbox",
-		Short:   "Read a bounded page from a locally synchronized mail folder",
+		Short:   "Read and filter a bounded page from a synchronized mail folder",
 		Args:    cobra.NoArgs,
-		Example: "  icloud mail inbox\n  icloud mail inbox --folder sent\n  icloud mail inbox --folder fld_… --json",
+		Example: "  icloud mail inbox\n  icloud mail inbox --unread --from billing@example.com\n  icloud mail inbox --query invoice --cursor cur_…\n  icloud mail inbox --folder sent --json",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput}, OutputSupport{JSON: true}); err != nil {
 				return err
@@ -174,33 +179,51 @@ func newMailInboxCommand(state *executionState) *cobra.Command {
 			if limit < 1 || limit > MaximumPageSize {
 				return NewAppError(ErrorUsage, fmt.Sprintf("--limit must be between 1 and %d", MaximumPageSize), false)
 			}
-			accountValue, folderValue, messages, more, schemaVersion, err := state.mail.MailInbox(cmd.Context(), state.global.Home, state.global.Account, folderSelector, limit)
+			options, err := filters.options(filters.Query, maildomain.SearchMessages, limit)
 			if err != nil {
 				return err
+			}
+			accountValue, folderValue, page, schemaVersion, err := state.mail.MailSearch(cmd.Context(), state.global.Home, state.global.Account, folderSelector, options)
+			if err != nil {
+				return err
+			}
+			messages := make([]maildomain.Message, 0, len(page.Hits))
+			for _, hit := range page.Hits {
+				if hit.Message != nil {
+					messages = append(messages, *hit.Message)
+				}
 			}
 			if jsonOutput {
 				public := make([]publicMessage, 0, len(messages))
 				for _, message := range messages {
 					public = append(public, sanitizeMessage(message))
 				}
-				return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: mailInboxData{AccountID: accountValue.ID, FolderID: folderValue.ID, Messages: public, Count: len(public), More: more, SchemaVersion: schemaVersion}, Meta: EnvelopeMeta{RequestID: state.requestID}})
+				return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: mailInboxData{AccountID: accountValue.ID, FolderID: folderValue.ID, Messages: public, Count: len(public), More: page.More, NextCursor: page.NextCursor, Query: page.Query, SchemaVersion: schemaVersion}, Meta: EnvelopeMeta{RequestID: state.requestID}})
 			}
 			renderer := NewCompactTextRenderer(state.stdout)
-			for _, message := range messages {
-				if err := renderInboxMessage(renderer, message); err != nil {
-					return err
+			filtered := mailSearchFlagsActive(filters)
+			for index, message := range messages {
+				var renderErr error
+				if filtered {
+					renderErr = renderSearchHit(renderer, page.Hits[index])
+				} else {
+					renderErr = renderInboxMessage(renderer, message)
+				}
+				if renderErr != nil {
+					return renderErr
 				}
 			}
 			summaryKind := "mailbox"
 			if folderValue.Kind == folder.KindInbox {
-				return renderer.Summary("inbox", Field("account", accountValue.ID), Field("count", fmt.Sprintf("%d", len(messages))), Field("more", fmt.Sprintf("%t", more)))
+				return renderer.Summary("inbox", Field("account", accountValue.ID), Field("count", fmt.Sprintf("%d", len(messages))), Field("more", fmt.Sprintf("%t", page.More)), Field("next_cursor", page.NextCursor))
 			}
-			return renderer.Summary(summaryKind, Field("account", accountValue.ID), Field("folder", folderValue.Name), Field("folder_id", folderValue.ID), Field("count", fmt.Sprintf("%d", len(messages))), Field("more", fmt.Sprintf("%t", more)))
+			return renderer.Summary(summaryKind, Field("account", accountValue.ID), Field("folder", folderValue.Name), Field("folder_id", folderValue.ID), Field("count", fmt.Sprintf("%d", len(messages))), Field("more", fmt.Sprintf("%t", page.More)), Field("next_cursor", page.NextCursor))
 		},
 	}
 	command.Flags().StringVar(&folderSelector, "folder", string(folder.KindInbox), "Folder kind, ID, name, or wire name")
 	command.Flags().IntVar(&limit, "limit", DefaultPageSize, fmt.Sprintf("Maximum local folder messages to return (1-%d)", MaximumPageSize))
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
+	addMailSearchFlags(command, &filters, false, true)
 	return command
 }
 
@@ -371,4 +394,10 @@ func (unavailableMailService) MailAttachment(context.Context, string, string, st
 }
 func (unavailableMailService) MailUpdateFlag(context.Context, string, string, string, string, maildomain.FlagMutation) (account.Account, folder.Folder, maildomain.Message, maildomain.Location, int64, error) {
 	return account.Account{}, folder.Folder{}, maildomain.Message{}, maildomain.Location{}, 0, NewAppError(ErrorConfiguration, "message-state mutation is unavailable", false)
+}
+func (unavailableMailService) MailSearch(context.Context, string, string, string, maildomain.SearchOptions) (account.Account, folder.Folder, maildomain.SearchPage, int64, error) {
+	return account.Account{}, folder.Folder{}, maildomain.SearchPage{}, 0, NewAppError(ErrorConfiguration, "local mail search is unavailable", false)
+}
+func (unavailableMailService) MailSearchRepair(context.Context, string, string, int) (account.Account, maildomain.SearchRepairSummary, int64, error) {
+	return account.Account{}, maildomain.SearchRepairSummary{}, 0, NewAppError(ErrorConfiguration, "local mail search repair is unavailable", false)
 }

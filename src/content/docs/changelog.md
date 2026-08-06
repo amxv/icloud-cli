@@ -8,6 +8,10 @@ summary: Public command, output, installation, and documentation changes.
 
 ## Unreleased
 
+- Added schema version 10 indexed local mail search across subject, sender, To/CC participants, decoded text, attachment metadata, and RFC Message-ID, with BCC excluded.
+- Added `icloud mail search`, filterable `mail inbox` and `mail latest`, message or thread results, bounded relevance/newest paging, and cursors bound to the complete account and query.
+- Added transactional search updates during sync, content reparse, rethreading, and deletion, plus bounded `mail search repair` for incomplete legacy or interrupted local body indexing.
+- Added the Search synchronized mail guide and updated Quickstart, sync, conversations, output, troubleshooting, command reference, README, capabilities, and landing journeys.
 - Added schema version 9 local RFC conversation reconstruction with stable `thr_…` IDs, immutable message membership, durable redirect aliases, ordered edge evidence, bounded aggregates, and one-time schema-8 backfill.
 - Added offline `icloud mail latest` and `icloud mail thread show <thread-id|message-id>` with compact chronological previews, explicit full text/HTML/headers/raw JSON, metadata-only graph evidence, and multi-message raw-stream protection.
 - Added transactional late-root and bridge merges, conservative subject-and-participant fallback only without RFC evidence, visible unresolved/malformed/self/cycle states, and aggregate refresh after sync or location-state changes.

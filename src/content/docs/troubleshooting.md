@@ -1,7 +1,7 @@
 ---
 title: Troubleshooting
 description: Resolve installation, account setup, credential, IMAP/SMTP validation, state, message and attachment output, completion, and man-generation problems.
-order: 9
+order: 10
 category: Guides
 summary: Common errors, privacy-safe diagnosis, and the next command to run.
 ---
@@ -259,6 +259,45 @@ After a new Sent copy is created, run `icloud mail sync --folder sent` again. On
 That is intentional. `icloud mail inbox` reads the latest locally committed page. Run `icloud mail sync` first when new remote mail is expected.
 
 Use `icloud mail inbox --folder sent` to read locally synchronized Sent copies. It also stays offline.
+
+## Search does not show a new remote message
+
+Search reads synchronized local state only. Synchronize the relevant folder, then repeat the same query:
+
+```bash
+icloud mail sync --folder inbox
+icloud mail search invoice
+```
+
+Use `--folder sent` or another confirmed folder selector when the expected copy is not in Inbox.
+
+## Search reports a pending or error index
+
+Metadata and previews remain searchable while some decoded bodies are incomplete. Rebuild a bounded local batch:
+
+```bash
+icloud mail search repair
+icloud mail search repair --limit 100 --json
+```
+
+The repair command uses already synchronized local message bytes and does not contact iCloud. Repeat while `remaining` is nonzero. When `errors` remains nonzero, inspect local message availability and the relevant sync frontier before attempting manual cleanup:
+
+```bash
+icloud mail sync status --folder inbox
+icloud mail message show msg_… --metadata-only --verbose --json
+```
+
+Keep the state directory intact so stable IDs and repair evidence remain available.
+
+## A search cursor is rejected
+
+A cursor belongs to the exact account, text, filters, result kind, and sort of the page that returned it. Repeat the original command unchanged:
+
+```bash
+icloud mail search invoice --limit 50 --cursor cur_…
+```
+
+Changing `--folder`, `--result`, dates, state filters, or the selected account requires a fresh first page.
 
 ## Message show returns not found
 

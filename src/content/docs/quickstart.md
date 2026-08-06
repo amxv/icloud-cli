@@ -1,9 +1,9 @@
 ---
 title: Quickstart
-description: Install icloud, configure an app-specific password safely, validate the account, discover folders, synchronize Inbox and Sent safely, read or save content, and update message state explicitly.
+description: Install icloud, configure an app-specific password safely, validate the account, discover and synchronize mail, search or read it offline, save content, and update message state explicitly.
 order: 1
 category: Start
-summary: The shortest safe path from installation to a validated account, locally readable Inbox and new Sent copies, explicit content access, safe attachment export, and location-aware read or flag updates.
+summary: The shortest safe path from installation to a validated account, synchronized Inbox and new Sent copies, indexed offline search, explicit content access, safe attachment export, and location-aware state updates.
 ---
 
 ## Install and inspect the binary
@@ -30,7 +30,7 @@ version
 capabilities
 command=icloud
 version=0.1.0
-schema=9
+schema=10
 account_mode=validated_lifecycle
 credentials=keyring,env,file
 network_validation=true
@@ -40,6 +40,8 @@ mail_sync=true
 mail_content=true
 mail_attachments=true
 mail_flags=true
+mail_threads=true
+mail_search=true
 default_output=compact
 json=true
 completion=bash,zsh,fish,powershell
@@ -209,6 +211,23 @@ icloud mail inbox --folder sent
 ```
 
 The same logical `msg_…` record may contain separate Inbox and Sent locations. Each location retains its own UID and flags; an unseen Sent copy does not make outbound mail unread.
+
+## Search the synchronized copy
+
+Find text in locally synchronized subject, sender, participants, decoded message text, attachment metadata, or RFC Message-ID:
+
+```bash
+icloud mail search invoice
+icloud mail search --from billing@example.com --unread
+```
+
+Search is offline, bounded, and does not mark mail read. Use `--result threads` when you want one hit per reconstructed conversation:
+
+```bash
+icloud mail search launch --result threads
+```
+
+When `more=true`, continue with the returned `next_cursor` and the same search. See [Search synchronized mail](/docs/search-synchronized-mail) for filters, JSON, cursor rules, and local index repair.
 
 ## Browse reconstructed conversations
 

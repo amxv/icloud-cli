@@ -37,6 +37,15 @@ more=false
 
 The default returns 20 conversations and accepts `--limit` through 100. `more=true` means additional local threads were not printed.
 
+Filter conversations with the same local index used by message search:
+
+```bash
+icloud mail latest --query launch --unread
+icloud mail latest --participant teammate@example.com --folder sent
+```
+
+When a filtered page reports `more=true`, continue with its query-bound `next_cursor`. Use `icloud mail search <text> --result threads` for the same conversation result shape with an explicit search command. See [Search synchronized mail](/docs/search-synchronized-mail).
+
 ## These are local RFC threads
 
 The CLI does not use or claim an Apple-native thread identifier. It reconstructs conversations from synchronized RFC mail evidence:
@@ -194,4 +203,4 @@ That is the conservative default. Subject-and-participant fallback is used only 
 
 The CLI records the evidence and keeps the messages readable. It does not invent a parent, delete a message, or replace RFC headers. Keep local state intact for the later repair workflow.
 
-Continue with [Sync and read mail](/docs/sync-and-read-inbox) for acquisition and state, [Output and automation](/docs/output-and-automation) for stream contracts, or the [command reference](/docs/command-reference) for exact flags.
+Continue with [Sync and read mail](/docs/sync-and-read-inbox) for acquisition and state, [Search synchronized mail](/docs/search-synchronized-mail) for indexed filters, [Output and automation](/docs/output-and-automation) for stream contracts, or the [command reference](/docs/command-reference) for exact flags.

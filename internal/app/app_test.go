@@ -450,14 +450,14 @@ func TestCapabilitiesCompactGoldenBudget(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("exit code = %d, stderr = %q", exitCode, stderr)
 	}
-	const want = "capabilities\ncommand=icloud\nversion=dev\nschema=9\naccount_mode=validated_lifecycle\ncredentials=keyring,env,file\nnetwork_validation=true\ndiagnostics=true\nmail_folders=true\nmail_sync=true\nmail_content=true\nmail_attachments=true\nmail_flags=true\nmail_threads=true\ndefault_output=compact\njson=true\ncompletion=bash,zsh,fish,powershell\nman=true\n"
+	const want = "capabilities\ncommand=icloud\nversion=dev\nschema=10\naccount_mode=validated_lifecycle\ncredentials=keyring,env,file\nnetwork_validation=true\ndiagnostics=true\nmail_folders=true\nmail_sync=true\nmail_content=true\nmail_attachments=true\nmail_flags=true\nmail_threads=true\nmail_search=true\ndefault_output=compact\njson=true\ncompletion=bash,zsh,fish,powershell\nman=true\n"
 	if stdout != want {
 		t.Fatalf("stdout mismatch\nwant: %q\n got: %q", want, stdout)
 	}
-	if lines := strings.Count(stdout, "\n"); lines > 18 {
+	if lines := strings.Count(stdout, "\n"); lines > 19 {
 		t.Fatalf("line budget exceeded: %d", lines)
 	}
-	if len(stdout) > 370 {
+	if len(stdout) > 400 {
 		t.Fatalf("byte budget exceeded: %d", len(stdout))
 	}
 	for _, unwanted := range []string{"{", "}", "\x1b[", "│", "Command:", "Version:"} {
@@ -480,7 +480,7 @@ func TestCapabilitiesJSONEnvelope(t *testing.T) {
 		t.Fatalf("ok = %#v", envelope["ok"])
 	}
 	data, ok := envelope["data"].(map[string]any)
-	if !ok || data["data_schema_version"] != float64(9) || data["network_validation"] != true || data["diagnostics"] != true || data["mail_folders"] != true || data["mail_sync"] != true || data["mail_content"] != true || data["mail_attachments"] != true || data["mail_flags"] != true || data["mail_threads"] != true {
+	if !ok || data["data_schema_version"] != float64(store.SchemaVersion) || data["network_validation"] != true || data["diagnostics"] != true || data["mail_folders"] != true || data["mail_sync"] != true || data["mail_content"] != true || data["mail_attachments"] != true || data["mail_flags"] != true || data["mail_threads"] != true || data["mail_search"] != true {
 		t.Fatalf("data = %#v", envelope["data"])
 	}
 	if strings.Contains(stdout, "\x1b[") {
@@ -603,7 +603,7 @@ func TestAccountListCreatesAndReopensPrivateZeroState(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &envelope); err != nil {
 		t.Fatalf("invalid JSON: %v\n%s", err, stdout)
 	}
-	if !envelope.OK || envelope.Data.Count != 0 || len(envelope.Data.Accounts) != 0 || envelope.Data.SchemaVersion != 9 {
+	if !envelope.OK || envelope.Data.Count != 0 || len(envelope.Data.Accounts) != 0 || envelope.Data.SchemaVersion != store.SchemaVersion {
 		t.Fatalf("unexpected envelope: %+v", envelope)
 	}
 	if envelope.Meta.RequestID != "req_accounts" {
@@ -731,7 +731,7 @@ func TestAccountListAndShowReadStoredAccountCompactly(t *testing.T) {
 		t.Fatalf("invalid JSON: %v\n%s", err, stdout)
 	}
 	if !envelope.OK || envelope.Data.Account.ID != "acct_0198d704-6c00-7000-8000-000000000001" ||
-		envelope.Data.Account.CredentialScheme != "env" || envelope.Data.SchemaVersion != 9 {
+		envelope.Data.Account.CredentialScheme != "env" || envelope.Data.SchemaVersion != store.SchemaVersion {
 		t.Fatalf("unexpected envelope: %+v", envelope)
 	}
 }
@@ -1701,6 +1701,161 @@ func TestMailSyncIncrementalWorkflowAndCompactBudgets(t *testing.T) {
 	}
 	if !strings.Contains(stdout, `"unknown":["$RemoteKeyword"]`) || !strings.Contains(stdout, `"mod_sequence":31`) {
 		t.Fatalf("reconciled structured flags missing: %s", stdout)
+	}
+}
+
+func TestMailSearchWorkflowFiltersCursorsAndRepair(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "state")
+	t.Setenv("ICLOUD_MAIL_SEARCH_PASSWORD", "synthetic-mail-search-secret")
+	commands, _ := newTestAccountCommands()
+	commands.folders = &fakeFolderClient{results: map[string][]transport.FolderDiscoveryResult{
+		"owner@icloud.com": {{Folders: []transport.RemoteFolder{{
+			Name: "INBOX", WireName: "INBOX", Kind: "inbox", KindSource: "inbox",
+			Selectable: true, Subscription: "subscribed",
+			Status: &transport.MailboxStatus{Mailbox: "INBOX", Messages: 3, Unseen: 2, UIDNext: 304, UIDValidity: 100},
+		}}}},
+	}}
+	firstRaw := syntheticMailFixture(301, "search-301@example.test", "Résumé invoice", "Alpha needle body", "hidden-search-bcc@example.test")
+	secondRaw := syntheticMailFixture(302, "search-302@example.test", "Launch note", "Beta needle body", "")
+	thirdRaw := syntheticMailFixture(303, "search-303@example.test", "Ordinary note", "Gamma body", "")
+	commands.mail = &fakeInboxClient{results: []fakeInboxPageResult{{
+		page: transport.InboxPage{
+			Mailbox: "INBOX", UIDValidity: 100, LastCommittedUID: 303, LastScannedUID: 303,
+			Bootstrap: true, Messages: []transport.FetchedMessage{
+				{UID: 301, Flags: []string{`\Flagged`}, InternalDate: time.Date(2026, 8, 6, 10, 1, 0, 0, time.UTC)},
+				{UID: 302, Flags: []string{`\Seen`}, InternalDate: time.Date(2026, 8, 6, 10, 2, 0, 0, time.UTC)},
+				{UID: 303, InternalDate: time.Date(2026, 8, 6, 10, 3, 0, 0, time.UTC)},
+			},
+		}, raw: map[uint32]string{301: firstRaw, 302: secondRaw, 303: thirdRaw},
+	}}}
+	addAndDiscoverInbox(t, commands, home, "ICLOUD_MAIL_SEARCH_PASSWORD")
+	if code, stdout, stderr := runWithAccountCommands(t, commands, "", "--home", home, "mail", "sync"); code != 0 || stderr != "" {
+		t.Fatalf("sync code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+
+	code, stdout, stderr := runWithAccountCommands(t, commands, "", "--home", home, "mail", "search", "needle", "--limit", "1")
+	if code != 0 || stderr != "" || compactBlockCount(stdout, "search-hit") != 1 ||
+		!compactContainsAll(stdout, "kind=message", "match=body", "search-results\n", "count=1", "more=true", "next_cursor=cur_", "index=complete") {
+		t.Fatalf("compact search code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	if strings.Contains(stdout, "query=") || strings.Contains(stdout, "hidden-search-bcc") || strings.Contains(stdout, "synthetic-mail-search-secret") ||
+		strings.Count(stdout, "\n") > 18 || len(stdout) > 1100 {
+		t.Fatalf("compact search privacy/budget failure: %q", stdout)
+	}
+
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "search", "needle", "--limit", "1", "--json")
+	if code != 0 || stderr != "" {
+		t.Fatalf("first JSON search code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	var firstPage struct {
+		Data struct {
+			Hits []struct {
+				Message struct {
+					ID string `json:"id"`
+				} `json:"message"`
+				MatchedField string `json:"matched_field"`
+			} `json:"hits"`
+			More       bool   `json:"more"`
+			NextCursor string `json:"next_cursor"`
+			Query      struct {
+				HasText    bool   `json:"has_text"`
+				ResultKind string `json:"result_kind"`
+				IndexState string `json:"index_state"`
+			} `json:"query"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &firstPage); err != nil || len(firstPage.Data.Hits) != 1 || !firstPage.Data.More ||
+		firstPage.Data.NextCursor == "" || !firstPage.Data.Query.HasText || firstPage.Data.Query.ResultKind != "messages" ||
+		firstPage.Data.Query.IndexState != "complete" || firstPage.Data.Hits[0].MatchedField != "body" {
+		t.Fatalf("first JSON search err=%v page=%+v", err, firstPage)
+	}
+	if strings.Contains(stdout, "hidden-search-bcc") || strings.Contains(stdout, `"bcc"`) || strings.Contains(stdout, "raw_storage_key") {
+		t.Fatalf("JSON search exposed private storage/header data: %s", stdout)
+	}
+	firstMessageID := firstPage.Data.Hits[0].Message.ID
+
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "search", "needle", "--limit", "1", "--cursor", firstPage.Data.NextCursor, "--json")
+	if code != 0 || stderr != "" {
+		t.Fatalf("second JSON search code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	var secondPage struct {
+		Data struct {
+			Hits []struct {
+				Message struct {
+					ID string `json:"id"`
+				} `json:"message"`
+			} `json:"hits"`
+			More       bool   `json:"more"`
+			NextCursor string `json:"next_cursor"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &secondPage); err != nil || len(secondPage.Data.Hits) != 1 || secondPage.Data.More ||
+		secondPage.Data.NextCursor != "" || secondPage.Data.Hits[0].Message.ID == firstMessageID {
+		t.Fatalf("second JSON search err=%v page=%+v", err, secondPage)
+	}
+	code, _, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "search", "different", "--limit", "1", "--cursor", firstPage.Data.NextCursor)
+	if code != cli.ExitUsage || !strings.Contains(stderr, "belongs to another query") {
+		t.Fatalf("query-bound cursor code=%d stderr=%q", code, stderr)
+	}
+
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "inbox", "--query", "alpha", "--unread", "--flagged")
+	if code != 0 || stderr != "" || compactBlockCount(stdout, "search-hit") != 1 ||
+		!compactContainsAll(stdout, `subject="Résumé invoice"`, "match=body", "inbox\n", "count=1", "more=false") {
+		t.Fatalf("filtered inbox code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	if strings.Count(stdout, "\n") > 18 || len(stdout) > 1100 {
+		t.Fatalf("filtered inbox compact budget: lines=%d bytes=%d output=%q", strings.Count(stdout, "\n"), len(stdout), stdout)
+	}
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "latest", "--query", "beta")
+	if code != 0 || stderr != "" || compactBlockCount(stdout, "search-hit") != 1 ||
+		!compactContainsAll(stdout, "kind=thread", `subject="Launch note"`, "match=body", "threads\n", "count=1") {
+		t.Fatalf("filtered latest code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	if strings.Count(stdout, "\n") > 18 || len(stdout) > 1100 {
+		t.Fatalf("filtered latest compact budget: lines=%d bytes=%d output=%q", strings.Count(stdout, "\n"), len(stdout), stdout)
+	}
+
+	database, err := sql.Open("sqlite", filepath.Join(home, "mail.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "search", "alpha", "--json")
+	if code != 0 || stderr != "" {
+		database.Close()
+		t.Fatalf("target search code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	var targetPage struct {
+		Data struct {
+			Hits []struct {
+				Message struct {
+					ID string `json:"id"`
+				} `json:"message"`
+			} `json:"hits"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &targetPage); err != nil || len(targetPage.Data.Hits) != 1 {
+		database.Close()
+		t.Fatalf("target search err=%v page=%+v", err, targetPage)
+	}
+	repairMessageID := targetPage.Data.Hits[0].Message.ID
+	if _, err := database.Exec(`UPDATE message_search_documents SET body = 'preview only', body_state = 'pending' WHERE message_id = ?`, repairMessageID); err != nil {
+		database.Close()
+		t.Fatal(err)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "search", "alpha", "--json")
+	if code != 0 || stderr != "" || !strings.Contains(stdout, `"index_state":"pending"`) || !strings.Contains(stdout, `"count":0`) {
+		t.Fatalf("pending search code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "search", "repair", "--limit", "1")
+	if code != 0 || stderr != "" || !compactContainsAll(stdout, "search-repair\n", "selected=1", "repaired=1", "failed=0", "remaining=0", "errors=0") {
+		t.Fatalf("search repair code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "search", "alpha", "--json")
+	if code != 0 || stderr != "" || !strings.Contains(stdout, `"index_state":"complete"`) || !strings.Contains(stdout, repairMessageID) {
+		t.Fatalf("repaired search code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 }
 

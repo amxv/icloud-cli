@@ -7,13 +7,17 @@ import (
 	"html"
 	"io"
 	"strings"
+	"unicode/utf8"
 
 	message "github.com/emersion/go-message"
 	_ "github.com/emersion/go-message/charset"
 	gomail "github.com/emersion/go-message/mail"
 )
 
-const maxMIMEParts = 2048
+const (
+	maxMIMEParts        = 2048
+	maxIndexedBodyBytes = 1 << 20
+)
 
 var (
 	ErrContentCorrupt     = errors.New("message content is corrupt")
@@ -91,14 +95,16 @@ func (err attachmentSinkError) Error() string { return "store decoded attachment
 func (err attachmentSinkError) Unwrap() error { return errors.Join(ErrAttachmentStorage, err.err) }
 
 type NormalizedContent struct {
-	Preview            ParsedMessage     `json:"preview"`
-	Headers            []HeaderField     `json:"headers"`
-	Parts              []MIMEPart        `json:"parts"`
-	Attachments        []Attachment      `json:"attachments,omitempty"`
-	AttachmentsIndexed bool              `json:"attachments_indexed"`
-	Diagnostics        []ParseDiagnostic `json:"diagnostics,omitempty"`
-	TextPaths          []string          `json:"text_paths,omitempty"`
-	HTMLPaths          []string          `json:"html_paths,omitempty"`
+	Preview             ParsedMessage     `json:"preview"`
+	Headers             []HeaderField     `json:"headers"`
+	Parts               []MIMEPart        `json:"parts"`
+	Attachments         []Attachment      `json:"attachments,omitempty"`
+	AttachmentsIndexed  bool              `json:"attachments_indexed"`
+	Diagnostics         []ParseDiagnostic `json:"diagnostics,omitempty"`
+	TextPaths           []string          `json:"text_paths,omitempty"`
+	HTMLPaths           []string          `json:"html_paths,omitempty"`
+	SearchText          string            `json:"-"`
+	SearchTextTruncated bool              `json:"-"`
 }
 
 type ContentFormat string
@@ -198,7 +204,17 @@ func ParseNormalizedWithAttachmentsContext(ctx context.Context, reader io.Reader
 			recordAttachment(part, blob, "")
 			return nil
 		}
-		preview, size, readErr := readPreviewAndCount(body)
+		indexLimit := 0
+		if !part.Attachment && !part.EmbeddedMessage && (part.MediaType == "text/plain" || part.MediaType == "text/html" || part.MediaType == "") {
+			indexLimit = maxIndexedBodyBytes - len(result.SearchText)
+			if result.SearchText != "" {
+				indexLimit--
+			}
+			if indexLimit < 0 {
+				indexLimit = 0
+			}
+		}
+		preview, indexed, size, readErr := readPreviewIndexAndCount(body, indexLimit)
 		part.DecodedSize = size
 		recordPart(part)
 		if part.Attachment {
@@ -217,11 +233,13 @@ func ParseNormalizedWithAttachmentsContext(ctx context.Context, reader io.Reader
 		switch part.MediaType {
 		case "text/plain", "":
 			result.TextPaths = append(result.TextPaths, part.Path)
+			appendIndexedBody(&result, indexed, size > int64(len(indexed)))
 			if textPreview == "" {
 				textPreview = preview
 			}
 		case "text/html":
 			result.HTMLPaths = append(result.HTMLPaths, part.Path)
+			appendIndexedBody(&result, stripHTML(indexed), size > int64(len(indexed)))
 			if htmlPreview == "" {
 				htmlPreview = preview
 			}
@@ -268,6 +286,34 @@ func ParseNormalizedWithAttachmentsContext(ctx context.Context, reader io.Reader
 	}
 	result.Preview.Snippet = excerpt(cleanText(strings.ToValidUTF8(preview, "�")), maxStoredSnippetRunes)
 	return result, nil
+}
+
+func appendIndexedBody(content *NormalizedContent, value string, truncated bool) {
+	value = cleanText(strings.ToValidUTF8(value, "�"))
+	if value == "" {
+		content.SearchTextTruncated = content.SearchTextTruncated || truncated
+		return
+	}
+	remaining := maxIndexedBodyBytes - len(content.SearchText)
+	if content.SearchText != "" {
+		remaining--
+	}
+	if remaining <= 0 {
+		content.SearchTextTruncated = true
+		return
+	}
+	if len(value) > remaining {
+		value = value[:remaining]
+		for !utf8.ValidString(value) && len(value) > 0 {
+			value = value[:len(value)-1]
+		}
+		truncated = true
+	}
+	if content.SearchText != "" && value != "" {
+		content.SearchText += "\n"
+	}
+	content.SearchText += value
+	content.SearchTextTruncated = content.SearchTextTruncated || truncated
 }
 
 func attachmentFromPart(part MIMEPart, blob AttachmentBlob, errorCode string) Attachment {
@@ -474,8 +520,12 @@ func diagnosticCode(err error) string {
 	}
 }
 
-func readPreviewAndCount(reader io.Reader) (string, int64, error) {
+func readPreviewIndexAndCount(reader io.Reader, indexLimit int) (string, string, int64, error) {
 	var preview strings.Builder
+	var indexed strings.Builder
+	if indexLimit < 0 {
+		indexLimit = 0
+	}
 	buffer := make([]byte, 32<<10)
 	var total int64
 	for {
@@ -489,15 +539,22 @@ func readPreviewAndCount(reader io.Reader) (string, int64, error) {
 				}
 				preview.Write(buffer[:remaining])
 			}
+			if indexed.Len() < indexLimit {
+				remaining := indexLimit - indexed.Len()
+				if remaining > n {
+					remaining = n
+				}
+				indexed.Write(buffer[:remaining])
+			}
 		}
 		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
-			return strings.ToValidUTF8(preview.String(), "�"), total, err
+			return strings.ToValidUTF8(preview.String(), "�"), strings.ToValidUTF8(indexed.String(), "�"), total, err
 		}
 	}
-	return strings.ToValidUTF8(preview.String(), "�"), total, nil
+	return strings.ToValidUTF8(preview.String(), "�"), strings.ToValidUTF8(indexed.String(), "�"), total, nil
 }
 
 // WriteSelectedBody reparses the raw message through the same MIME walker and

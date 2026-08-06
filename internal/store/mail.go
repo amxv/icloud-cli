@@ -26,13 +26,15 @@ SELECT checkpoint_id, account_id, folder_id, uid_validity, last_committed_uid,
        more_available, last_attempt_at, last_success_at, created_at, updated_at
 FROM sync_checkpoints`
 
-const messageColumns = `
-SELECT m.message_id, m.account_id, m.rfc_message_id, m.in_reply_to,
+const messageColumnList = `m.message_id, m.account_id, m.rfc_message_id, m.in_reply_to,
        m.direction, m.from_name, m.from_email, m.reply_to_name,
        m.reply_to_email, m.subject, m.snippet, m.header_date,
        m.internal_date, m.sort_at, m.date_source, m.attachment_count,
        COALESCE((SELECT source_location_id FROM message_content WHERE message_content.message_id = m.message_id), ''),
-       m.created_at, m.updated_at
+       m.created_at, m.updated_at`
+
+const messageColumns = `
+SELECT ` + messageColumnList + `
 FROM messages AS m`
 
 const attachmentColumns = `
@@ -503,6 +505,10 @@ WHERE account_id = ? AND message_id = ? AND location_id = ?`,
 	if err := upsertMessageContent(ctx, tx, messageID, sourceLocationID, content, now.UTC().Format(time.RFC3339Nano)); err != nil {
 		return err
 	}
+	timestamp := now.UTC().Format(time.RFC3339Nano)
+	if err := refreshMessageSearchDocument(ctx, tx, messageID, &content.SearchText, &content.SearchTextTruncated, "complete", "", timestamp); err != nil {
+		return err
+	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit message content save: %w", err)
 	}
@@ -661,6 +667,7 @@ WHERE account_id = ? AND folder_id = ? AND uid_validity = ? AND uid = ?`,
 	if err := persistRecordIdentity(ctx, tx, record, actualLocationID, resolution, timestamp); err != nil {
 		return false, false, 0, err
 	}
+	contentReplaced := false
 	if record.Content != nil && len(resolution.Conflicts) == 0 {
 		shouldReplaceContent := !resolution.PreserveLogical
 		if !shouldReplaceContent {
@@ -674,7 +681,17 @@ WHERE account_id = ? AND folder_id = ? AND uid_validity = ? AND uid = ?`,
 			if err := upsertMessageContent(ctx, tx, record.MessageID, actualLocationID, *record.Content, timestamp); err != nil {
 				return false, false, 0, err
 			}
+			contentReplaced = true
 		}
+	}
+	var searchBody *string
+	var searchTruncated *bool
+	if contentReplaced {
+		searchBody = &record.Content.SearchText
+		searchTruncated = &record.Content.SearchTextTruncated
+	}
+	if err := refreshMessageSearchDocument(ctx, tx, record.MessageID, searchBody, searchTruncated, "", "", timestamp); err != nil {
+		return false, false, 0, err
 	}
 	return resolution.Created, resolution.Merged, len(resolution.Conflicts), nil
 }
@@ -1360,19 +1377,25 @@ func scanCheckpoint(row rowScanner) (maildomain.Checkpoint, error) {
 }
 
 func scanMessage(row rowScanner) (maildomain.Message, error) {
+	return scanMessageWithExtra(row)
+}
+
+func scanMessageWithExtra(row rowScanner, extra ...any) (maildomain.Message, error) {
 	var (
 		value                            maildomain.Message
 		direction, dateSource            string
 		headerDate, internalDate, sortAt sql.NullString
 		createdAt, updatedAt             string
 	)
-	if err := row.Scan(
+	targets := []any{
 		&value.ID, &value.AccountID, &value.RFCMessageID, &value.InReplyTo,
 		&direction, &value.From.DisplayName, &value.From.Email,
 		&value.ReplyTo.DisplayName, &value.ReplyTo.Email, &value.Subject,
 		&value.Snippet, &headerDate, &internalDate, &sortAt, &dateSource,
 		&value.AttachmentCount, &value.ContentLocationID, &createdAt, &updatedAt,
-	); err != nil {
+	}
+	targets = append(targets, extra...)
+	if err := row.Scan(targets...); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return maildomain.Message{}, maildomain.ErrMessageNotFound
 		}

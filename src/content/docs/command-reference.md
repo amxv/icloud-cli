@@ -1,9 +1,9 @@
 ---
 title: Command reference
-description: A complete reference for account lifecycle, iCloud validation, folder discovery, enabled-folder synchronization, message and attachment reads, doctor diagnostics, global controls, output modes, completion, and man generation.
-order: 10
+description: A complete reference for account lifecycle, iCloud validation, folder discovery, enabled-folder synchronization, local search, message and attachment reads, doctor diagnostics, global controls, output modes, completion, and man generation.
+order: 11
 category: Reference
-summary: Every account, credential, validation, folder, enabled-folder sync/read, message, attachment, doctor, capability, completion, man, help, and global control available now.
+summary: Every account, credential, validation, folder, enabled-folder sync/read/search, message, attachment, doctor, capability, completion, man, help, and global control available now.
 ---
 
 ## Root command
@@ -227,23 +227,76 @@ Compact success prints one block per selected folder with fetched/created/update
 icloud mail inbox
 icloud mail inbox --folder sent
 icloud mail inbox --folder fld_…
+icloud mail inbox --query invoice --unread
+icloud mail inbox --cursor cur_…
 icloud mail inbox --limit 50
 icloud mail inbox --json
 ```
 
-Reads a bounded page from local state without contacting iCloud. The command defaults to Inbox; `--folder` accepts the same selectors as sync. Compact records include stable ID, sender, subject, best available date, true unread/flagged states, nonzero attachment count, and a bounded decoded-text preview.
+Reads a bounded page from local state without contacting iCloud. The command defaults to Inbox; `--folder` accepts the same selectors as sync. Without filters, compact records include stable ID, sender, subject, best available date, true unread/flagged states, nonzero attachment count, and a bounded decoded-text preview.
 
-JSON adds complete locally stored preview metadata, every provider location, identity provenance, and open dedupe conflicts while omitting credentials, BCC, raw storage paths/hashes, and full message bodies. An unseen Sent location does not make an outbound message unread.
+`--query`, sender/participant/subject/RFC ID, attachment, date, read, and flag filters use the same indexed local path as `mail search`. Filtered compact records identify the matched field and bounded excerpt. `--cursor` continues only the exact same account, folder, text, and filters. JSON adds `next_cursor` and query/index metadata while preserving the existing sanitized message objects. An unseen Sent location does not make an outbound message unread.
+
+## `icloud mail search`
+
+```bash
+icloud mail search invoice
+icloud mail search --from billing@example.com --unread
+icloud mail search launch --result threads
+icloud mail search --attachment-type application/pdf --after 2026-08-01
+icloud mail search invoice --limit 50 --cursor cur_…
+icloud mail search invoice --json
+```
+
+Searches synchronized local mail without contacting iCloud or changing read state. A positional query matches subject, From and Reply-To, To and CC participants, decoded message text, attachment filenames and media types, and RFC Message-ID. BCC is excluded. Plain query terms are combined with AND.
+
+`--result messages|threads` selects individual message hits or one aggregate per reconstructed conversation. Text search sorts by local relevance, then newest stable message or thread identity; filter-only search sorts newest first. Compact output includes the matched field and a bounded excerpt. The default limit is 20 and the maximum is 100.
+
+Common filters:
+
+| Flag | Behavior |
+| --- | --- |
+| `--folder <selector>` | Require a current synchronized location in one folder. |
+| `--from <text>` | Match From or Reply-To name/address. |
+| `--participant <text>` | Match From, Reply-To, To, or CC name/address. |
+| `--subject <text>` | Match subject text. |
+| `--rfc-id <id>` | Match one RFC Message-ID, with or without angle brackets. |
+| `--attachment-name <text>` | Match attachment filename text. |
+| `--attachment-type <text>` | Match attachment media type text. |
+| `--unread` / `--read` | Select logical unread or read state. |
+| `--flagged` / `--unflagged` | Select logical flagged or unflagged state. |
+| `--after <time>` | Include messages at or after RFC3339 or a UTC `YYYY-MM-DD` date. |
+| `--before <time>` | Include messages before RFC3339 or a UTC `YYYY-MM-DD` date. |
+| `--cursor <cursor>` | Continue the exact account, query, filters, and result kind. |
+
+Free text and structured filters combine with AND. A cursor used with a changed query, filter, account, or result kind exits with usage rather than silently changing the result boundary.
+
+JSON returns sanitized message or thread hits, rank, matched field, bounded excerpt, page metadata, and index status. It omits credentials, BCC, private raw-storage coordinates, complete bodies, HTML, raw MIME, and attachment bytes.
+
+## `icloud mail search repair`
+
+```bash
+icloud mail search repair
+icloud mail search repair --limit 100
+icloud mail search repair --json
+```
+
+Rebuilds a bounded batch of incomplete decoded-body search entries from already synchronized local raw messages. It does not contact iCloud, redownload a mailbox, or change stable message, location, attachment, or thread IDs. The default limit is 20 and the maximum is 100. Compact and JSON results report selected, repaired, failed, remaining pending, and error counts.
 
 ## `icloud mail latest`
 
 ```bash
 icloud mail latest
+icloud mail latest --query launch --unread
+icloud mail latest --participant teammate@example.com --folder sent
+icloud mail latest --cursor cur_…
 icloud mail latest --limit 50
 icloud mail latest --json
 ```
 
-Lists the newest locally reconstructed conversations without contacting Apple. The default returns 20 threads and the maximum is 100. Compact output reports stable thread ID, canonical subject, logical message count, unread count, normalized non-BCC participants, current folder IDs, attachment count, latest message time, and `reconstruction=local_rfc_graph`.
+Lists the newest locally reconstructed conversations without contacting Apple. The default returns 20 threads and the maximum is 100. Without filters, compact output reports stable thread ID, canonical subject, logical message count, unread count, normalized non-BCC participants, current folder IDs, attachment count, latest message time, and `reconstruction=local_rfc_graph`.
+
+`--query` and the same structured flags as `mail search` restrict threads by matching member messages. Each conversation appears once with its best matched message, field, and bounded excerpt. `--cursor` is bound to the exact account and filters. JSON preserves aggregate thread objects and adds cursor and query/index metadata.
 
 Thread identity is local. The CLI uses ordered normalized `References`, then `In-Reply-To`, and only a conservative subject-and-participant fallback when RFC relationship headers are absent. It does not claim an Apple-native thread ID.
 
@@ -431,7 +484,7 @@ Compact output:
 capabilities
 command=icloud
 version=0.1.0
-schema=9
+schema=10
 account_mode=validated_lifecycle
 credentials=keyring,env,file
 network_validation=true
@@ -441,6 +494,8 @@ mail_sync=true
 mail_content=true
 mail_attachments=true
 mail_flags=true
+mail_threads=true
+mail_search=true
 default_output=compact
 json=true
 completion=bash,zsh,fish,powershell
@@ -486,6 +541,6 @@ Help goes to stdout. Usage failures go to stderr and exit `2`.
 
 ## Output availability
 
-Every account and credential lifecycle command above, `account test`, every folder command, enabled-folder sync/read/status/checkpoints, latest/thread reads, message read and state commands, attachment list/save/save-all, `doctor`, `version`, and `capabilities` supports `--json` where a native byte stream is not requested. Validation, doctor, folder reads/status, thread reads, and message reads support bounded `--verbose` detail where advertised. `mail message raw`, `message export --output -`, and `attachments save --output - --binary` retain native bytes; completion and man generation retain their native formats. Local folder and thread lists stay preview-only, while stable-ID thread/message reads provide explicit full-text, HTML, raw, headers, metadata-only, verbose, and JSON modes.
+Every account and credential lifecycle command above, `account test`, every folder command, enabled-folder sync/read/search/status/checkpoints, latest/thread reads, message read and state commands, attachment list/save/save-all, `doctor`, `version`, and `capabilities` supports `--json` where a native byte stream is not requested. Validation, doctor, folder reads/status, thread reads, and message reads support bounded `--verbose` detail where advertised. `mail message raw`, `message export --output -`, and `attachments save --output - --binary` retain native bytes; completion and man generation retain their native formats. Local folder, search, and thread lists stay preview-only, while stable-ID thread/message reads provide explicit full-text, HTML, raw, headers, metadata-only, verbose, and JSON modes.
 
 Compact output uses vertical blocks: result type first, stable identity plus the first field next when present, then one remaining field per line. A blank line separates consecutive records or a final summary. Errors use the same block shape on stderr.
