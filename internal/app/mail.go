@@ -101,13 +101,19 @@ func (commands accountCommands) MailSync(ctx context.Context, home, accountSelec
 			_, _ = state.Mail().RecordFailure(ctx, checkpointID, accountValue.ID, inbox.ID, checkpoint.UIDValidity, "blob_open", attemptedAt)
 			return account.Account{}, folder.Folder{}, maildomain.SyncSummary{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot read a staged Inbox message", false, openErr)
 		}
-		parsed, parseErr := maildomain.ParsePreview(reader)
+		normalized, parseErr := maildomain.ParseNormalizedContext(ctx, reader)
 		closeErr := reader.Close()
 		if parseErr == nil {
 			parseErr = closeErr
 		}
 		if parseErr != nil {
 			_, _ = state.Mail().RecordFailure(ctx, checkpointID, accountValue.ID, inbox.ID, checkpoint.UIDValidity, "message_parse", attemptedAt)
+			if errors.Is(parseErr, context.DeadlineExceeded) {
+				return account.Account{}, folder.Folder{}, maildomain.SyncSummary{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorUnavailable, "Inbox message parsing timed out", true, parseErr)
+			}
+			if errors.Is(parseErr, context.Canceled) {
+				return account.Account{}, folder.Folder{}, maildomain.SyncSummary{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorUnavailable, "Inbox message parsing was canceled", false, parseErr)
+			}
 			return account.Account{}, folder.Folder{}, maildomain.SyncSummary{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorUnavailable, "cannot safely normalize an Inbox message", false, parseErr)
 		}
 		messageID, idErr := commands.generateID("msg")
@@ -118,11 +124,20 @@ func (commands accountCommands) MailSync(ctx context.Context, home, accountSelec
 		if idErr != nil {
 			return account.Account{}, folder.Folder{}, maildomain.SyncSummary{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot allocate a message-location ID", false, idErr)
 		}
-		records = append(records, maildomain.BuildIngestRecord(
+		for index := range normalized.Parts {
+			partID, partIDErr := commands.generateID("prt")
+			if partIDErr != nil {
+				return account.Account{}, folder.Folder{}, maildomain.SyncSummary{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot allocate a MIME-part ID", false, partIDErr)
+			}
+			normalized.Parts[index].ID = partID
+		}
+		record := maildomain.BuildIngestRecord(
 			messageID, locationID, accountValue.ID, inbox.ID, page.UIDValidity, fetched.UID,
 			fetched.Flags, fetched.InternalDate, fetched.RFC822Size,
-			fetched.Raw.ContentHash, fetched.Raw.StorageKey, fetched.Raw.ByteSize, parsed,
-		))
+			fetched.Raw.ContentHash, fetched.Raw.StorageKey, fetched.Raw.ByteSize, normalized.Preview,
+		)
+		record.Content = &normalized
+		records = append(records, record)
 	}
 	for _, fetched := range page.Messages {
 		if err := fetched.Raw.Commit(); err != nil {

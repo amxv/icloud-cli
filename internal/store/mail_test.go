@@ -131,6 +131,71 @@ func TestMailUIDValidityMismatchRequiresVisibleRepairWithoutCursorReset(t *testi
 	}
 }
 
+func TestMailContentMetadataAndPartIDsPersistAcrossRetry(t *testing.T) {
+	state, accountID, folderID := newMailStoreFixture(t)
+	defer state.Close()
+	now := time.Date(2026, 8, 6, 5, 5, 0, 0, time.UTC)
+	record := mailRecordFixture(accountID, folderID, 100, 51, "content-51@example.test")
+	record.Content = &maildomain.NormalizedContent{
+		Preview:   record.Parsed,
+		Headers:   []maildomain.HeaderField{{Key: "Message-Id", Value: "<content-51@example.test>"}, {Key: "Subject", Value: "Fixture message"}},
+		TextPaths: []string{"1"},
+		HTMLPaths: []string{"2"},
+		Parts: []maildomain.MIMEPart{
+			{ID: "prt_0198d704-6c00-7000-8000-000000000551", Ordinal: 0, Path: "0", MediaType: "multipart/alternative"},
+			{ID: "prt_0198d704-6c00-7000-8000-000000000552", Ordinal: 1, Path: "1", ParentPath: "0", MediaType: "text/plain", Charset: "utf-8", DecodedSize: 14},
+			{ID: "prt_0198d704-6c00-7000-8000-000000000553", Ordinal: 2, Path: "2", ParentPath: "0", MediaType: "text/html", Charset: "utf-8", DecodedSize: 21},
+		},
+	}
+	if _, err := state.Mail().CommitInboxPage(context.Background(), maildomain.CommitPage{
+		CheckpointID: "chk_0198d704-6c00-7000-8000-000000000504",
+		AccountID:    accountID, FolderID: folderID, UIDValidity: 100, Bootstrap: true,
+		LastCommittedUID: 51, LastScannedUID: 51, AttemptedAt: now, Records: []maildomain.IngestRecord{record},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	message, err := state.Mail().Message(context.Background(), accountID, record.MessageID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if message.Content == nil || len(message.Content.Headers) != 2 || len(message.Content.Parts) != 3 ||
+		strings.Join(message.Content.TextPaths, ",") != "1" || strings.Join(message.Content.HTMLPaths, ",") != "2" {
+		t.Fatalf("content = %+v", message.Content)
+	}
+	originalPartIDs := []string{message.Content.Parts[0].ID, message.Content.Parts[1].ID, message.Content.Parts[2].ID}
+
+	retry := record
+	retry.Content = &maildomain.NormalizedContent{
+		Preview:   record.Parsed,
+		Headers:   record.Content.Headers,
+		TextPaths: []string{"1"}, HTMLPaths: []string{"2"},
+		Parts: []maildomain.MIMEPart{
+			{ID: "prt_0198d704-6c00-7000-8000-000000009551", Ordinal: 0, Path: "0", MediaType: "multipart/alternative"},
+			{ID: "prt_0198d704-6c00-7000-8000-000000009552", Ordinal: 1, Path: "1", ParentPath: "0", MediaType: "text/plain", Charset: "utf-8", DecodedSize: 15},
+			{ID: "prt_0198d704-6c00-7000-8000-000000009553", Ordinal: 2, Path: "2", ParentPath: "0", MediaType: "text/html", Charset: "utf-8", DecodedSize: 22},
+		},
+	}
+	if _, err := state.Mail().CommitInboxPage(context.Background(), maildomain.CommitPage{
+		CheckpointID: "chk_0198d704-6c00-7000-8000-000000000504",
+		AccountID:    accountID, FolderID: folderID, UIDValidity: 100,
+		LastCommittedUID: 51, LastScannedUID: 60, AttemptedAt: now.Add(time.Minute), Records: []maildomain.IngestRecord{retry},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	message, err = state.Mail().Message(context.Background(), accountID, record.MessageID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index, part := range message.Content.Parts {
+		if part.ID != originalPartIDs[index] {
+			t.Fatalf("part %s changed ID: got %s want %s", part.Path, part.ID, originalPartIDs[index])
+		}
+	}
+	if message.Content.Parts[1].DecodedSize != 15 || message.Content.Parts[2].DecodedSize != 22 {
+		t.Fatalf("part metadata was not refreshed: %+v", message.Content.Parts)
+	}
+}
+
 func newMailStoreFixture(t *testing.T) (*Store, string, string) {
 	t.Helper()
 	state, err := Open(context.Background(), testPaths(t, t.TempDir()))

@@ -2,10 +2,8 @@ package mail
 
 import (
 	"errors"
-	"fmt"
 	"html"
 	"io"
-	"mime"
 	"regexp"
 	"sort"
 	"strings"
@@ -13,7 +11,6 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	message "github.com/emersion/go-message"
 	_ "github.com/emersion/go-message/charset"
 	gomail "github.com/emersion/go-message/mail"
 )
@@ -83,29 +80,30 @@ type ParsedMessage struct {
 }
 
 type Message struct {
-	ID              string     `json:"id"`
-	AccountID       string     `json:"account_id"`
-	RFCMessageID    string     `json:"rfc_message_id,omitempty"`
-	InReplyTo       string     `json:"in_reply_to,omitempty"`
-	References      []string   `json:"references,omitempty"`
-	Direction       Direction  `json:"direction"`
-	From            Address    `json:"from"`
-	ReplyTo         Address    `json:"reply_to,omitempty"`
-	To              []Address  `json:"to,omitempty"`
-	CC              []Address  `json:"cc,omitempty"`
-	BCC             []Address  `json:"bcc,omitempty"`
-	Subject         string     `json:"subject,omitempty"`
-	Snippet         string     `json:"snippet,omitempty"`
-	HeaderDate      *time.Time `json:"header_date,omitempty"`
-	InternalDate    *time.Time `json:"internal_date,omitempty"`
-	SortAt          *time.Time `json:"sort_at,omitempty"`
-	DateSource      DateSource `json:"date_source"`
-	AttachmentCount int        `json:"attachment_count,omitempty"`
-	Unread          bool       `json:"unread"`
-	Flagged         bool       `json:"flagged"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
-	Locations       []Location `json:"locations,omitempty"`
+	ID              string             `json:"id"`
+	AccountID       string             `json:"account_id"`
+	RFCMessageID    string             `json:"rfc_message_id,omitempty"`
+	InReplyTo       string             `json:"in_reply_to,omitempty"`
+	References      []string           `json:"references,omitempty"`
+	Direction       Direction          `json:"direction"`
+	From            Address            `json:"from"`
+	ReplyTo         Address            `json:"reply_to,omitempty"`
+	To              []Address          `json:"to,omitempty"`
+	CC              []Address          `json:"cc,omitempty"`
+	BCC             []Address          `json:"bcc,omitempty"`
+	Subject         string             `json:"subject,omitempty"`
+	Snippet         string             `json:"snippet,omitempty"`
+	HeaderDate      *time.Time         `json:"header_date,omitempty"`
+	InternalDate    *time.Time         `json:"internal_date,omitempty"`
+	SortAt          *time.Time         `json:"sort_at,omitempty"`
+	DateSource      DateSource         `json:"date_source"`
+	AttachmentCount int                `json:"attachment_count,omitempty"`
+	Unread          bool               `json:"unread"`
+	Flagged         bool               `json:"flagged"`
+	CreatedAt       time.Time          `json:"created_at"`
+	UpdatedAt       time.Time          `json:"updated_at"`
+	Locations       []Location         `json:"locations,omitempty"`
+	Content         *NormalizedContent `json:"content,omitempty"`
 }
 
 type Location struct {
@@ -157,6 +155,7 @@ type IngestRecord struct {
 	RawStorageKey  string
 	RawByteSize    int64
 	Parsed         ParsedMessage
+	Content        *NormalizedContent
 }
 
 type CommitPage struct {
@@ -193,88 +192,8 @@ type SyncSummary struct {
 }
 
 func ParsePreview(reader io.Reader) (ParsedMessage, error) {
-	if reader == nil {
-		return ParsedMessage{}, fmt.Errorf("%w: raw message is missing", ErrInvalidMessage)
-	}
-	mailReader, err := gomail.CreateReader(reader)
-	if mailReader == nil {
-		return ParsedMessage{}, fmt.Errorf("%w: read RFC822 message: %v", ErrInvalidMessage, err)
-	}
-	if err != nil && !message.IsUnknownCharset(err) {
-		return ParsedMessage{}, fmt.Errorf("%w: read RFC822 message: %v", ErrInvalidMessage, err)
-	}
-	defer mailReader.Close()
-
-	parsed := ParsedMessage{}
-	parsed.RFCMessageID, _ = mailReader.Header.MessageID()
-	parsed.RFCMessageID = normalizeMessageID(parsed.RFCMessageID)
-	if values, listErr := mailReader.Header.MsgIDList("In-Reply-To"); listErr == nil && len(values) > 0 {
-		parsed.InReplyTo = normalizeMessageID(values[len(values)-1])
-	}
-	if values, listErr := mailReader.Header.MsgIDList("References"); listErr == nil {
-		parsed.References = normalizeReferences(values)
-	}
-	parsed.From = firstHeaderAddress(&mailReader.Header, "From")
-	parsed.ReplyTo = firstHeaderAddress(&mailReader.Header, "Reply-To")
-	parsed.To = headerAddresses(&mailReader.Header, "To")
-	parsed.CC = headerAddresses(&mailReader.Header, "Cc")
-	parsed.BCC = headerAddresses(&mailReader.Header, "Bcc")
-	if subject, subjectErr := mailReader.Header.Subject(); subjectErr == nil {
-		parsed.Subject = cleanHeaderText(subject)
-	} else {
-		parsed.Subject = cleanHeaderText(mailReader.Header.Get("Subject"))
-	}
-	if value, dateErr := mailReader.Header.Date(); dateErr == nil && !value.IsZero() {
-		value = value.UTC()
-		parsed.HeaderDate = &value
-	}
-
-	var textPreview, htmlPreview string
-	for {
-		part, partErr := mailReader.NextPart()
-		if errors.Is(partErr, io.EOF) {
-			break
-		}
-		if part == nil {
-			if partErr != nil {
-				return ParsedMessage{}, fmt.Errorf("%w: read MIME part: %v", ErrInvalidMessage, partErr)
-			}
-			continue
-		}
-		mediaType, _, _ := mime.ParseMediaType(part.Header.Get("Content-Type"))
-		mediaType = strings.ToLower(strings.TrimSpace(mediaType))
-		_, attachment := part.Header.(*gomail.AttachmentHeader)
-		if attachment || (!strings.HasPrefix(mediaType, "text/") && mediaType != "") {
-			parsed.AttachmentCount++
-			if _, copyErr := io.Copy(io.Discard, part.Body); copyErr != nil {
-				return ParsedMessage{}, fmt.Errorf("%w: skip attachment body: %v", ErrInvalidMessage, copyErr)
-			}
-			continue
-		}
-		content, readErr := readPreviewPart(part.Body)
-		if readErr != nil {
-			return ParsedMessage{}, fmt.Errorf("%w: read preview body: %v", ErrInvalidMessage, readErr)
-		}
-		switch mediaType {
-		case "text/plain", "":
-			if textPreview == "" {
-				textPreview = content
-			}
-		case "text/html":
-			if htmlPreview == "" {
-				htmlPreview = content
-			}
-		}
-		if partErr != nil && !message.IsUnknownCharset(partErr) {
-			return ParsedMessage{}, fmt.Errorf("%w: decode MIME part: %v", ErrInvalidMessage, partErr)
-		}
-	}
-	preview := textPreview
-	if strings.TrimSpace(preview) == "" {
-		preview = stripHTML(htmlPreview)
-	}
-	parsed.Snippet = excerpt(cleanText(preview), maxStoredSnippetRunes)
-	return parsed, nil
+	normalized, err := ParseNormalized(reader)
+	return normalized.Preview, err
 }
 
 func BuildIngestRecord(messageID, locationID, accountID, folderID string, uidValidity, uid uint32, flags []string, internalDate time.Time, rfc822Size int64, rawHash, rawKey string, rawSize int64, parsed ParsedMessage) IngestRecord {

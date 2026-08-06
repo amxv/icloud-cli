@@ -247,3 +247,52 @@ icloud mail sync status
 ## The Inbox command does not contact iCloud
 
 That is intentional. `icloud mail inbox` reads the latest locally committed page. Run `icloud mail sync` first when new remote mail is expected.
+
+## Message show returns not found
+
+Use a stable ID from the same selected account:
+
+```bash
+icloud mail inbox
+icloud --account Personal mail message show msg_…
+```
+
+Message IDs are account-scoped. The CLI does not search another account or contact iCloud when an ID is missing.
+
+## Complete text or HTML is unavailable
+
+Inspect the bounded metadata and MIME-part view:
+
+```bash
+icloud mail message show msg_…
+icloud mail message show msg_… --verbose
+```
+
+Some messages contain only text or only HTML. `--format text` falls back to readable text derived from HTML; `--format html` requires a stored HTML body. Attachments and embedded messages are not treated as the parent message body.
+
+## Raw message content is missing or corrupt
+
+`mail message raw`, raw format, and export verify the local blob's recorded size and SHA-256 address before returning bytes. An unavailable/corrupt error means the metadata remains present but the exact local RFC822 bytes cannot be trusted.
+
+Do not replace the blob manually or resynchronize the whole mailbox blindly. Keep the state directory intact, inspect `icloud mail sync status`, and wait for the targeted repair workflow. Stable message and location IDs remain unchanged.
+
+## Export refuses an existing file
+
+This is the safe default:
+
+```bash
+icloud mail message export msg_… --output message.eml --force
+```
+
+`--force` is required to replace an existing regular file. Directories and special files are rejected. The command writes a private temporary file first and does not echo the destination path in normal output.
+
+## Raw JSON is too large
+
+Body/raw content in JSON is deliberately bounded. Use a streaming mode instead:
+
+```bash
+icloud mail message raw msg_… > message.eml
+icloud mail message show msg_… --full > message.txt
+```
+
+Default message JSON remains available regardless of body size because it contains availability and bounded metadata rather than the payload.

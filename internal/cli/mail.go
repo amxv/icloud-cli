@@ -17,6 +17,7 @@ type MailService interface {
 	MailInbox(context.Context, string, string, int) (account.Account, folder.Folder, []maildomain.Message, bool, int64, error)
 	MailSyncStatus(context.Context, string, string) (account.Account, folder.Folder, maildomain.Checkpoint, int64, error)
 	MailSyncCheckpoints(context.Context, string, string, int) (account.Account, []maildomain.Checkpoint, bool, int64, error)
+	MailMessage(context.Context, string, string, string) (account.Account, maildomain.Message, maildomain.ContentSource, int64, error)
 }
 
 type mailSyncData struct {
@@ -308,4 +309,7 @@ func (unavailableMailService) MailSyncStatus(context.Context, string, string) (a
 }
 func (unavailableMailService) MailSyncCheckpoints(context.Context, string, string, int) (account.Account, []maildomain.Checkpoint, bool, int64, error) {
 	return account.Account{}, nil, false, 0, NewAppError(ErrorConfiguration, "mail synchronization checkpoints are unavailable", false)
+}
+func (unavailableMailService) MailMessage(context.Context, string, string, string) (account.Account, maildomain.Message, maildomain.ContentSource, int64, error) {
+	return account.Account{}, maildomain.Message{}, nil, 0, NewAppError(ErrorConfiguration, "local message content is unavailable", false)
 }

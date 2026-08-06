@@ -262,6 +262,51 @@ LIMIT ?`, accountID, accountID, folderID, limit+1)
 	return values, more, nil
 }
 
+func (repository *MailRepository) Message(ctx context.Context, accountID, messageID string) (maildomain.Message, error) {
+	value, err := scanMessage(repository.db.QueryRowContext(ctx, messageColumns+`
+WHERE m.account_id = ? AND m.message_id = ?`, strings.TrimSpace(accountID), strings.TrimSpace(messageID)))
+	if err != nil {
+		return maildomain.Message{}, err
+	}
+	if err := repository.loadMessageDetails(ctx, &value); err != nil {
+		return maildomain.Message{}, err
+	}
+	if err := repository.loadMessageContent(ctx, &value); err != nil {
+		return maildomain.Message{}, err
+	}
+	return value, nil
+}
+
+func (repository *MailRepository) SaveMessageContent(ctx context.Context, accountID, messageID string, content maildomain.NormalizedContent, now time.Time) error {
+	tx, err := repository.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin message content save: %w", err)
+	}
+	defer tx.Rollback()
+	var exists int
+	if err := tx.QueryRowContext(ctx, `
+SELECT count(*) FROM messages WHERE account_id = ? AND message_id = ?`,
+		strings.TrimSpace(accountID), strings.TrimSpace(messageID),
+	).Scan(&exists); err != nil {
+		return fmt.Errorf("resolve message for content save: %w", err)
+	}
+	if exists == 0 {
+		return maildomain.ErrMessageNotFound
+	}
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM message_content WHERE message_id = ?`, messageID).Scan(&exists); err != nil {
+		return fmt.Errorf("inspect existing message content: %w", err)
+	}
+	if exists == 0 {
+		if err := upsertMessageContent(ctx, tx, messageID, content, now.UTC().Format(time.RFC3339Nano)); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit message content save: %w", err)
+	}
+	return nil
+}
+
 func validateIngestRecord(page maildomain.CommitPage, record maildomain.IngestRecord) error {
 	if record.AccountID != page.AccountID || record.FolderID != page.FolderID || record.UIDValidity != page.UIDValidity {
 		return errors.New("commit inbox page: record scope does not match page")
@@ -274,6 +319,29 @@ func validateIngestRecord(page maildomain.CommitPage, record maildomain.IngestRe
 	}
 	if len(record.RawContentHash) != 64 || strings.TrimSpace(record.RawStorageKey) == "" || record.RawByteSize < 0 {
 		return errors.New("commit inbox page: raw blob metadata is invalid")
+	}
+	if record.Content != nil {
+		paths := make(map[string]struct{}, len(record.Content.Parts))
+		ordinals := make(map[int]struct{}, len(record.Content.Parts))
+		for _, part := range record.Content.Parts {
+			if strings.TrimSpace(part.Path) == "" {
+				return errors.New("commit inbox page: MIME part path is required")
+			}
+			if _, exists := paths[part.Path]; exists {
+				return errors.New("commit inbox page: duplicate MIME part path")
+			}
+			paths[part.Path] = struct{}{}
+			if part.Ordinal < 0 {
+				return errors.New("commit inbox page: MIME part ordinal cannot be negative")
+			}
+			if _, exists := ordinals[part.Ordinal]; exists {
+				return errors.New("commit inbox page: duplicate MIME part ordinal")
+			}
+			ordinals[part.Ordinal] = struct{}{}
+			if strings.TrimSpace(part.ID) == "" {
+				return errors.New("commit inbox page: MIME part ID is required")
+			}
+		}
 	}
 	return nil
 }
@@ -362,6 +430,11 @@ VALUES (?, ?, ?, ?, ?)`, record.MessageID, group.kind, index, address.DisplayNam
 			return false, fmt.Errorf("persist message reference: %w", err)
 		}
 	}
+	if record.Content != nil {
+		if err := upsertMessageContent(ctx, tx, record.MessageID, *record.Content, timestamp); err != nil {
+			return false, err
+		}
+	}
 	flagsJSON, err := json.Marshal(maildomain.NormalizeFlags(record.Flags))
 	if err != nil {
 		return false, fmt.Errorf("encode message flags: %w", err)
@@ -390,6 +463,88 @@ ON CONFLICT(account_id, folder_id, uid_validity, uid) DO UPDATE SET
 		return false, fmt.Errorf("persist message location: %w", err)
 	}
 	return created, nil
+}
+
+func upsertMessageContent(ctx context.Context, tx *sql.Tx, messageID string, content maildomain.NormalizedContent, timestamp string) error {
+	headersJSON, err := json.Marshal(content.Headers)
+	if err != nil {
+		return fmt.Errorf("encode message headers: %w", err)
+	}
+	diagnosticsJSON, err := json.Marshal(content.Diagnostics)
+	if err != nil {
+		return fmt.Errorf("encode message diagnostics: %w", err)
+	}
+	textPathsJSON, err := json.Marshal(content.TextPaths)
+	if err != nil {
+		return fmt.Errorf("encode message text paths: %w", err)
+	}
+	htmlPathsJSON, err := json.Marshal(content.HTMLPaths)
+	if err != nil {
+		return fmt.Errorf("encode message HTML paths: %w", err)
+	}
+	parsedComplete := len(content.Diagnostics) == 0
+	if _, err := tx.ExecContext(ctx, `
+INSERT INTO message_content (
+    message_id, headers_json, diagnostics_json, text_paths_json,
+    html_paths_json, parsed_complete, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(message_id) DO UPDATE SET
+    headers_json = excluded.headers_json,
+    diagnostics_json = excluded.diagnostics_json,
+    text_paths_json = excluded.text_paths_json,
+    html_paths_json = excluded.html_paths_json,
+    parsed_complete = excluded.parsed_complete,
+    updated_at = excluded.updated_at`,
+		messageID, string(headersJSON), string(diagnosticsJSON), string(textPathsJSON),
+		string(htmlPathsJSON), boolInt(parsedComplete), timestamp, timestamp,
+	); err != nil {
+		return fmt.Errorf("persist message content metadata: %w", err)
+	}
+
+	existing := map[string]string{}
+	rows, err := tx.QueryContext(ctx, `SELECT path, part_id FROM message_parts WHERE message_id = ?`, messageID)
+	if err != nil {
+		return fmt.Errorf("read existing MIME part IDs: %w", err)
+	}
+	for rows.Next() {
+		var path, partID string
+		if err := rows.Scan(&path, &partID); err != nil {
+			rows.Close()
+			return fmt.Errorf("read existing MIME part ID: %w", err)
+		}
+		existing[path] = partID
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("close existing MIME part IDs: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM message_parts WHERE message_id = ?`, messageID); err != nil {
+		return fmt.Errorf("replace MIME parts: %w", err)
+	}
+	for _, part := range content.Parts {
+		partID := strings.TrimSpace(part.ID)
+		if stableID := existing[part.Path]; stableID != "" {
+			partID = stableID
+		}
+		partDiagnostics, err := json.Marshal(part.Diagnostics)
+		if err != nil {
+			return fmt.Errorf("encode MIME part diagnostics: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `
+INSERT INTO message_parts (
+    part_id, message_id, ordinal, path, parent_path, media_type, charset,
+    transfer_encoding, disposition, filename, content_id, inline,
+    attachment, embedded_message, decoded_size, diagnostics_json,
+    created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			partID, messageID, part.Ordinal, part.Path, part.ParentPath, part.MediaType, part.Charset,
+			part.TransferEncoding, part.Disposition, part.Filename, part.ContentID,
+			boolInt(part.Inline), boolInt(part.Attachment), boolInt(part.EmbeddedMessage),
+			part.DecodedSize, string(partDiagnostics), timestamp, timestamp,
+		); err != nil {
+			return fmt.Errorf("persist MIME part: %w", err)
+		}
+	}
+	return nil
 }
 
 func resolveMessageIdentity(ctx context.Context, tx *sql.Tx, record maildomain.IngestRecord) (string, bool, error) {
@@ -586,6 +741,77 @@ ORDER BY present DESC, folder_id, uid`, value.ID)
 	if err := locationRows.Close(); err != nil {
 		return fmt.Errorf("close message locations: %w", err)
 	}
+	return nil
+}
+
+func (repository *MailRepository) loadMessageContent(ctx context.Context, value *maildomain.Message) error {
+	var (
+		headersJSON, diagnosticsJSON string
+		textPathsJSON, htmlPathsJSON string
+		parsedComplete               int
+	)
+	err := repository.db.QueryRowContext(ctx, `
+SELECT headers_json, diagnostics_json, text_paths_json, html_paths_json, parsed_complete
+FROM message_content WHERE message_id = ?`, value.ID).Scan(
+		&headersJSON, &diagnosticsJSON, &textPathsJSON, &htmlPathsJSON, &parsedComplete,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read message content metadata: %w", err)
+	}
+	content := maildomain.NormalizedContent{}
+	if err := json.Unmarshal([]byte(headersJSON), &content.Headers); err != nil {
+		return fmt.Errorf("parse message headers: %w", err)
+	}
+	if err := json.Unmarshal([]byte(diagnosticsJSON), &content.Diagnostics); err != nil {
+		return fmt.Errorf("parse message diagnostics: %w", err)
+	}
+	if err := json.Unmarshal([]byte(textPathsJSON), &content.TextPaths); err != nil {
+		return fmt.Errorf("parse message text paths: %w", err)
+	}
+	if err := json.Unmarshal([]byte(htmlPathsJSON), &content.HTMLPaths); err != nil {
+		return fmt.Errorf("parse message HTML paths: %w", err)
+	}
+	partRows, err := repository.db.QueryContext(ctx, `
+SELECT part_id, ordinal, path, parent_path, media_type, charset, transfer_encoding,
+       disposition, filename, content_id, inline, attachment,
+       embedded_message, decoded_size, diagnostics_json
+FROM message_parts WHERE message_id = ? ORDER BY ordinal`, value.ID)
+	if err != nil {
+		return fmt.Errorf("read MIME parts: %w", err)
+	}
+	for partRows.Next() {
+		var (
+			part                         maildomain.MIMEPart
+			inline, attachment, embedded int
+			partDiagnosticsJSON          string
+		)
+		if err := partRows.Scan(
+			&part.ID, &part.Ordinal, &part.Path, &part.ParentPath, &part.MediaType, &part.Charset,
+			&part.TransferEncoding, &part.Disposition, &part.Filename, &part.ContentID,
+			&inline, &attachment, &embedded, &part.DecodedSize, &partDiagnosticsJSON,
+		); err != nil {
+			partRows.Close()
+			return fmt.Errorf("read MIME part: %w", err)
+		}
+		part.Inline = inline == 1
+		part.Attachment = attachment == 1
+		part.EmbeddedMessage = embedded == 1
+		if err := json.Unmarshal([]byte(partDiagnosticsJSON), &part.Diagnostics); err != nil {
+			partRows.Close()
+			return fmt.Errorf("parse MIME part diagnostics: %w", err)
+		}
+		content.Parts = append(content.Parts, part)
+	}
+	if err := partRows.Close(); err != nil {
+		return fmt.Errorf("close MIME parts: %w", err)
+	}
+	if parsedComplete == 0 && len(content.Diagnostics) == 0 {
+		content.Diagnostics = append(content.Diagnostics, maildomain.ParseDiagnostic{Code: "partial"})
+	}
+	value.Content = &content
 	return nil
 }
 

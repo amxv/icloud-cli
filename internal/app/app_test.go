@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -198,6 +199,32 @@ func TestRootHelpUsesICloudIdentityAndGroups(t *testing.T) {
 	}
 	if stderr != "" {
 		t.Fatalf("help wrote stderr: %q", stderr)
+	}
+}
+
+func TestMailMessageHelpAdvertisesEveryExplicitContentModeWithoutCreatingState(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "absent")
+	for _, test := range []struct {
+		args []string
+		want []string
+	}{
+		{[]string{"--home", home, "mail", "message", "--help"}, []string{"show", "raw", "export"}},
+		{[]string{"--home", home, "mail", "message", "show", "--help"}, []string{"--full", "--format", "--headers", "--body-only", "--metadata-only", "--verbose", "--json"}},
+		{[]string{"--home", home, "mail", "message", "raw", "--help"}, []string{"exact locally stored RFC822"}},
+		{[]string{"--home", home, "mail", "message", "export", "--help"}, []string{"--output", "--force", "atomically"}},
+	} {
+		code, stdout, stderr := run(t, test.args...)
+		if code != 0 || stderr != "" {
+			t.Fatalf("help %v code=%d stdout=%q stderr=%q", test.args, code, stdout, stderr)
+		}
+		for _, want := range test.want {
+			if !strings.Contains(stdout, want) {
+				t.Fatalf("help %v missing %q:\n%s", test.args, want, stdout)
+			}
+		}
+	}
+	if _, err := os.Stat(home); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("message help created state: %v", err)
 	}
 }
 
@@ -420,14 +447,14 @@ func TestCapabilitiesCompactGoldenBudget(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("exit code = %d, stderr = %q", exitCode, stderr)
 	}
-	const want = "capabilities\ncommand=icloud\nversion=dev\nschema=4\naccount_mode=validated_lifecycle\ncredentials=keyring,env,file\nnetwork_validation=true\ndiagnostics=true\nmail_folders=true\nmail_sync=true\ndefault_output=compact\njson=true\ncompletion=bash,zsh,fish,powershell\nman=true\n"
+	const want = "capabilities\ncommand=icloud\nversion=dev\nschema=5\naccount_mode=validated_lifecycle\ncredentials=keyring,env,file\nnetwork_validation=true\ndiagnostics=true\nmail_folders=true\nmail_sync=true\nmail_content=true\ndefault_output=compact\njson=true\ncompletion=bash,zsh,fish,powershell\nman=true\n"
 	if stdout != want {
 		t.Fatalf("stdout mismatch\nwant: %q\n got: %q", want, stdout)
 	}
-	if lines := strings.Count(stdout, "\n"); lines > 14 {
+	if lines := strings.Count(stdout, "\n"); lines > 15 {
 		t.Fatalf("line budget exceeded: %d", lines)
 	}
-	if len(stdout) > 280 {
+	if len(stdout) > 320 {
 		t.Fatalf("byte budget exceeded: %d", len(stdout))
 	}
 	for _, unwanted := range []string{"{", "}", "\x1b[", "│", "Command:", "Version:"} {
@@ -450,7 +477,7 @@ func TestCapabilitiesJSONEnvelope(t *testing.T) {
 		t.Fatalf("ok = %#v", envelope["ok"])
 	}
 	data, ok := envelope["data"].(map[string]any)
-	if !ok || data["data_schema_version"] != float64(4) || data["network_validation"] != true || data["diagnostics"] != true || data["mail_folders"] != true || data["mail_sync"] != true {
+	if !ok || data["data_schema_version"] != float64(5) || data["network_validation"] != true || data["diagnostics"] != true || data["mail_folders"] != true || data["mail_sync"] != true || data["mail_content"] != true {
 		t.Fatalf("data = %#v", envelope["data"])
 	}
 	if strings.Contains(stdout, "\x1b[") {
@@ -573,7 +600,7 @@ func TestAccountListCreatesAndReopensPrivateZeroState(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &envelope); err != nil {
 		t.Fatalf("invalid JSON: %v\n%s", err, stdout)
 	}
-	if !envelope.OK || envelope.Data.Count != 0 || len(envelope.Data.Accounts) != 0 || envelope.Data.SchemaVersion != 4 {
+	if !envelope.OK || envelope.Data.Count != 0 || len(envelope.Data.Accounts) != 0 || envelope.Data.SchemaVersion != 5 {
 		t.Fatalf("unexpected envelope: %+v", envelope)
 	}
 	if envelope.Meta.RequestID != "req_accounts" {
@@ -701,7 +728,7 @@ func TestAccountListAndShowReadStoredAccountCompactly(t *testing.T) {
 		t.Fatalf("invalid JSON: %v\n%s", err, stdout)
 	}
 	if !envelope.OK || envelope.Data.Account.ID != "acct_0198d704-6c00-7000-8000-000000000001" ||
-		envelope.Data.Account.CredentialScheme != "env" || envelope.Data.SchemaVersion != 4 {
+		envelope.Data.Account.CredentialScheme != "env" || envelope.Data.SchemaVersion != 5 {
 		t.Fatalf("unexpected envelope: %+v", envelope)
 	}
 }
@@ -1720,6 +1747,236 @@ func TestMailSyncParseBlobAndUIDValidityFailuresPreserveFrontier(t *testing.T) {
 	}
 }
 
+func TestMailMessageContentWorkflowRawRoundTripAndPrivacy(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "state")
+	t.Setenv("ICLOUD_MAIL_CONTENT_PASSWORD", "synthetic-content-secret")
+	commands, _ := newTestAccountCommands()
+	commands.folders = oneInboxFolderClient()
+	raw, plainBody, htmlBody := multipartMessageFixture()
+	commands.mail = &fakeInboxClient{results: []fakeInboxPageResult{{
+		page: transport.InboxPage{
+			Mailbox: "INBOX", UIDValidity: 100, LastCommittedUID: 61, LastScannedUID: 61, Bootstrap: true,
+			Messages: []transport.FetchedMessage{{UID: 61, Flags: []string{`\Flagged`}, InternalDate: time.Date(2026, 8, 6, 5, 31, 0, 0, time.UTC)}},
+		},
+		raw: map[uint32]string{61: raw},
+	}}}
+	addAndDiscoverInbox(t, commands, home, "ICLOUD_MAIL_CONTENT_PASSWORD")
+	if code, stdout, stderr := runWithAccountCommands(t, commands, "", "--home", home, "mail", "sync"); code != 0 || stderr != "" {
+		t.Fatalf("sync code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+
+	code, stdout, stderr := runWithAccountCommands(t, commands, "", "--home", home, "mail", "inbox", "--json")
+	if code != 0 || stderr != "" {
+		t.Fatalf("inbox JSON code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	var inboxEnvelope struct {
+		OK   bool `json:"ok"`
+		Data struct {
+			Messages []struct {
+				ID string `json:"id"`
+			} `json:"messages"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &inboxEnvelope); err != nil || !inboxEnvelope.OK || len(inboxEnvelope.Data.Messages) != 1 {
+		t.Fatalf("inbox envelope=%+v err=%v", inboxEnvelope, err)
+	}
+	messageID := inboxEnvelope.Data.Messages[0].ID
+
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "message", "show", messageID)
+	if code != 0 || stderr != "" {
+		t.Fatalf("show code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	for _, want := range []string{
+		"message\n", messageID + " account=acct_", `from="Fixture Sender <sender@example.test>"`,
+		"to=owner@icloud.com", `subject="Phase 7 content fixture"`, "flagged=true",
+		"attachments=1", "content=text,html", "raw=true", "parts=5", "excerpt=",
+		"hint=\"use --full, --format html, --headers, or message raw\"",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("default show missing %q:\n%s", want, stdout)
+		}
+	}
+	for _, forbidden := range []string{plainBody, htmlBody, "hidden-bcc@example.test", "raw/sha256", `"text_body"`} {
+		if strings.Contains(stdout, forbidden) {
+			t.Fatalf("default show exposed %q: %s", forbidden, stdout)
+		}
+	}
+	if lines, size := strings.Count(stdout, "\n"), len(stdout); lines > 22 || size > 1600 {
+		t.Fatalf("default show budget lines=%d bytes=%d\n%s", lines, size, stdout)
+	}
+
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "message", "show", messageID, "--metadata-only")
+	if code != 0 || stderr != "" || strings.Contains(stdout, "excerpt=") || strings.Contains(stdout, "hint=") {
+		t.Fatalf("metadata-only code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "message", "show", messageID, "--full")
+	if code != 0 || stderr != "" || !strings.Contains(stdout, "body\n"+plainBody) || strings.Contains(stdout, htmlBody) {
+		t.Fatalf("full text code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "message", "show", messageID, "--format", "text", "--body-only")
+	if code != 0 || stderr != "" || stdout != plainBody {
+		t.Fatalf("text body-only code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "message", "show", messageID, "--format", "html", "--body-only")
+	if code != 0 || stderr != "" || stdout != htmlBody {
+		t.Fatalf("HTML body-only code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "message", "show", messageID, "--headers")
+	if code != 0 || stderr != "" || !strings.Contains(stdout, "headers\n") || !strings.Contains(stdout, "Message-Id: <phase7-content@example.test>") || strings.Contains(strings.ToLower(stdout), "bcc:") {
+		t.Fatalf("headers code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "message", "show", messageID, "--verbose")
+	if code != 0 || stderr != "" || compactBlockCount(stdout, "part") != 5 || !strings.Contains(stdout, "filename=fixture.txt") || !strings.Contains(stdout, "attachment=true") {
+		t.Fatalf("verbose code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "message", "show", messageID, "--json")
+	if code != 0 || stderr != "" || !strings.Contains(stdout, `"text_available":true`) || !strings.Contains(stdout, `"html_available":true`) || !strings.Contains(stdout, `"raw_available":true`) || strings.Contains(stdout, `"text_body"`) || strings.Contains(stdout, `"raw_base64"`) || strings.Contains(stdout, `"headers":[{`) || strings.Contains(stdout, "hidden-bcc") {
+		t.Fatalf("default JSON code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "message", "show", messageID, "--full", "--headers", "--json")
+	if code != 0 || stderr != "" || !strings.Contains(stdout, `"text_body":`) || !strings.Contains(stdout, `"headers":[{`) || strings.Contains(stdout, "hidden-bcc") {
+		t.Fatalf("content JSON code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	var contentEnvelope struct {
+		Data struct {
+			Content struct {
+				TextBody string `json:"text_body"`
+				Headers  []struct {
+					Key string `json:"key"`
+				} `json:"headers"`
+			} `json:"content"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &contentEnvelope); err != nil || contentEnvelope.Data.Content.TextBody != plainBody || len(contentEnvelope.Data.Content.Headers) == 0 {
+		t.Fatalf("content envelope=%+v err=%v", contentEnvelope, err)
+	}
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "message", "show", messageID, "--format", "raw", "--json")
+	if code != 0 || stderr != "" {
+		t.Fatalf("raw JSON code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	var rawEnvelope struct {
+		Data struct {
+			Content struct {
+				RawBase64 string `json:"raw_base64"`
+			} `json:"content"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &rawEnvelope); err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(rawEnvelope.Data.Content.RawBase64)
+	if err != nil || string(decoded) != raw {
+		t.Fatalf("raw JSON round trip err=%v len=%d", err, len(decoded))
+	}
+
+	for _, args := range [][]string{
+		{"mail", "message", "raw", messageID},
+		{"mail", "message", "show", messageID, "--format", "raw"},
+		{"mail", "message", "export", messageID, "--output", "-"},
+	} {
+		commandArgs := append([]string{"--home", home}, args...)
+		code, stdout, stderr = runWithAccountCommands(t, commands, "", commandArgs...)
+		if code != 0 || stderr != "" || stdout != raw {
+			t.Fatalf("raw command %v code=%d bytes=%d stderr=%q", args, code, len(stdout), stderr)
+		}
+	}
+
+	exportPath := filepath.Join(t.TempDir(), "message.eml")
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "message", "export", messageID, "--output", exportPath)
+	if code != 0 || stderr != "" || !compactContainsAll(stdout, "message-export\n", messageID+" bytes=") {
+		t.Fatalf("export code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	exported, err := os.ReadFile(exportPath)
+	if err != nil || string(exported) != raw {
+		t.Fatalf("exported err=%v len=%d", err, len(exported))
+	}
+	info, err := os.Stat(exportPath)
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("export mode info=%v err=%v", info, err)
+	}
+	code, _, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "message", "export", messageID, "--output", exportPath)
+	if code != cli.ExitConflict || !strings.Contains(stderr, "already exists") {
+		t.Fatalf("export conflict code=%d stderr=%q", code, stderr)
+	}
+	if err := os.WriteFile(exportPath, []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, _, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "message", "export", messageID, "--output", exportPath, "--force")
+	if code != 0 || stderr != "" {
+		t.Fatalf("force export code=%d stderr=%q", code, stderr)
+	}
+	exported, err = os.ReadFile(exportPath)
+	if err != nil || string(exported) != raw {
+		t.Fatalf("forced export err=%v len=%d", err, len(exported))
+	}
+
+	code, _, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "message", "show", "msg_0198d704-6c00-7000-8000-000000999999")
+	if code != cli.ExitNotFound || !strings.Contains(stderr, "message not found") {
+		t.Fatalf("missing message code=%d stderr=%q", code, stderr)
+	}
+	code, _, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "message", "show", messageID, "--headers", "--body-only")
+	if code != cli.ExitUsage || !strings.Contains(stderr, "cannot be used together") {
+		t.Fatalf("invalid output combination code=%d stderr=%q", code, stderr)
+	}
+
+	legacyDB, err := sql.Open("sqlite", filepath.Join(home, "mail.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := legacyDB.Exec(`DELETE FROM message_content WHERE message_id = ?`, messageID); err != nil {
+		legacyDB.Close()
+		t.Fatal(err)
+	}
+	if err := legacyDB.Close(); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "message", "show", messageID, "--verbose")
+	if code != 0 || stderr != "" || compactBlockCount(stdout, "part") != 5 || !strings.Contains(stdout, "content=text,html") || !strings.Contains(stdout, "part\nprt_") {
+		t.Fatalf("legacy lazy content code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	legacyDB, err = sql.Open("sqlite", filepath.Join(home, "mail.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var persistedParts int
+	if err := legacyDB.QueryRow(`SELECT count(*) FROM message_parts WHERE message_id = ? AND part_id LIKE 'prt_%'`, messageID).Scan(&persistedParts); err != nil {
+		legacyDB.Close()
+		t.Fatal(err)
+	}
+	if err := legacyDB.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if persistedParts != 5 {
+		t.Fatalf("lazy UUIDv7 MIME parts = %d", persistedParts)
+	}
+
+	var rawPath string
+	err = filepath.WalkDir(filepath.Join(home, "blobs", "raw"), func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if !entry.IsDir() && strings.HasSuffix(path, ".eml") {
+			rawPath = path
+		}
+		return nil
+	})
+	if err != nil || rawPath == "" {
+		t.Fatalf("raw path=%q err=%v", rawPath, err)
+	}
+	corrupt := []byte(raw)
+	corrupt[len(corrupt)-1] ^= 0x7f
+	if err := os.WriteFile(rawPath, corrupt, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "message", "raw", messageID)
+	if code != cli.ExitUnavailable || stdout != "" || !strings.Contains(stderr, "local raw message content is corrupt") {
+		t.Fatalf("corrupt raw code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+}
+
 func addAndDiscoverInbox(t *testing.T, commands accountCommands, home, envName string) {
 	t.Helper()
 	exitCode, stdout, stderr := runWithAccountCommands(t, commands, "", "--home", home,
@@ -1756,4 +2013,40 @@ func syntheticMailFixture(uid uint32, messageID, subject, body, bcc string) stri
 	}
 	lines = append(lines, "", body+fmt.Sprintf(" uid=%d", uid))
 	return strings.Join(lines, "\r\n")
+}
+
+func multipartMessageFixture() (raw, plainBody, htmlBody string) {
+	plainBody = "Complete plain text body.\r\nSecond line for explicit full output."
+	htmlBody = "<p>Complete <strong>HTML</strong> body.</p>"
+	lines := []string{
+		"From: Fixture Sender <sender@example.test>",
+		"To: owner@icloud.com",
+		"Cc: copy@example.test",
+		"Bcc: hidden-bcc@example.test",
+		"Date: Thu, 06 Aug 2026 05:30:00 +0000",
+		"Message-ID: <phase7-content@example.test>",
+		"Subject: Phase 7 content fixture",
+		"Content-Type: multipart/mixed; boundary=mixed",
+		"",
+		"--mixed",
+		"Content-Type: multipart/alternative; boundary=alternative",
+		"",
+		"--alternative",
+		"Content-Type: text/plain; charset=utf-8",
+		"",
+		plainBody,
+		"--alternative",
+		"Content-Type: text/html; charset=utf-8",
+		"",
+		htmlBody,
+		"--alternative--",
+		"--mixed",
+		"Content-Type: text/plain; charset=utf-8; name=fixture.txt",
+		"Content-Disposition: attachment; filename=fixture.txt",
+		"",
+		"attachment bytes",
+		"--mixed--",
+		"",
+	}
+	return strings.Join(lines, "\r\n"), plainBody, htmlBody
 }

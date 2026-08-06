@@ -113,6 +113,76 @@ func (store *Store) Stage(ctx context.Context, reader io.Reader, expectedSize in
 	}, nil
 }
 
+// OpenVerified opens one canonical blob only after validating its path, size,
+// and SHA-256 content address. Callers may then stream the returned file
+// without retaining it in memory.
+func (store *Store) OpenVerified(storageKey, contentHash string, expectedSize int64) (io.ReadCloser, error) {
+	return store.OpenVerifiedContext(context.Background(), storageKey, contentHash, expectedSize)
+}
+
+func (store *Store) OpenVerifiedContext(ctx context.Context, storageKey, contentHash string, expectedSize int64) (io.ReadCloser, error) {
+	if store == nil || strings.TrimSpace(store.root) == "" {
+		return nil, errors.New("blob store root is required")
+	}
+	contentHash = strings.ToLower(strings.TrimSpace(contentHash))
+	if len(contentHash) != 64 {
+		return nil, ErrCorrupt
+	}
+	path, err := store.canonicalPath(storageKey)
+	if err != nil {
+		return nil, err
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open canonical blob: %w", err)
+	}
+	cleanup := func(err error) (io.ReadCloser, error) {
+		_ = file.Close()
+		return nil, err
+	}
+	info, err := file.Stat()
+	if err != nil {
+		return cleanup(fmt.Errorf("inspect canonical blob: %w", err))
+	}
+	if expectedSize >= 0 && info.Size() != expectedSize {
+		return cleanup(ErrCorrupt)
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	hash := sha256.New()
+	if _, err := io.Copy(hash, &contextReader{ctx: ctx, reader: file}); err != nil {
+		return cleanup(fmt.Errorf("verify canonical blob: %w", err))
+	}
+	if hex.EncodeToString(hash.Sum(nil)) != contentHash {
+		return cleanup(ErrCorrupt)
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return cleanup(fmt.Errorf("rewind canonical blob: %w", err))
+	}
+	return file, nil
+}
+
+func (store *Store) canonicalPath(storageKey string) (string, error) {
+	storageKey = filepath.ToSlash(strings.TrimSpace(storageKey))
+	if storageKey == "" || strings.HasPrefix(storageKey, "/") {
+		return "", errors.New("invalid blob storage key")
+	}
+	cleanKey := filepath.Clean(filepath.FromSlash(storageKey))
+	if cleanKey == "." || cleanKey == ".." || strings.HasPrefix(cleanKey, ".."+string(filepath.Separator)) {
+		return "", errors.New("invalid blob storage key")
+	}
+	root, err := filepath.Abs(store.root)
+	if err != nil {
+		return "", errors.New("invalid blob root")
+	}
+	path, err := filepath.Abs(filepath.Join(root, cleanKey))
+	if err != nil || (path != root && !strings.HasPrefix(path, root+string(filepath.Separator))) {
+		return "", errors.New("invalid blob storage key")
+	}
+	return path, nil
+}
+
 func (staged *Staged) Open() (io.ReadCloser, error) {
 	if staged == nil {
 		return nil, errors.New("staged blob is nil")

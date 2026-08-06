@@ -46,7 +46,7 @@ icloud --request-id account-01 account show --json
 ```
 
 ```json
-{"ok":true,"data":{"account":{"id":"acct_…","name":"Personal","email":"owner@icloud.com","imap_username":"owner","status":"connected","default":true,"credential_scheme":"keyring","imap_capabilities":["IDLE","IMAP4REV1"],"smtp_capabilities":["AUTH"],"last_healthy_at":"2026-08-06T03:00:00Z","last_tested_at":"2026-08-06T03:00:00Z","created_at":"2026-08-06T02:30:00Z","updated_at":"2026-08-06T03:00:00Z"},"schema_version":4},"meta":{"request_id":"account-01"}}
+{"ok":true,"data":{"account":{"id":"acct_…","name":"Personal","email":"owner@icloud.com","imap_username":"owner","status":"connected","default":true,"credential_scheme":"keyring","imap_capabilities":["IDLE","IMAP4REV1"],"smtp_capabilities":["AUTH"],"last_healthy_at":"2026-08-06T03:00:00Z","last_tested_at":"2026-08-06T03:00:00Z","created_at":"2026-08-06T02:30:00Z","updated_at":"2026-08-06T03:00:00Z"},"schema_version":5},"meta":{"request_id":"account-01"}}
 ```
 
 Account lifecycle, credential, validation, doctor, folder discovery/policy, Inbox sync and reads, account reads, `version`, and `capabilities` support JSON. Folder list/show/status also support bounded `--verbose` provider metadata. Completion and man generation intentionally return native text formats.
@@ -117,8 +117,22 @@ Help remains on stdout. A failed command never writes a success payload to stdou
 --request-id <id>     correlate structured output
 ```
 
-Version, capabilities, completion, man, and help remain disk-free. Account reads, `mail inbox`, sync status, checkpoint reads, and local `doctor` never prompt or contact Apple. Mutations and live validation use the same global timeout; transport stages also apply deadlines after a connection is established.
+Version, capabilities, completion, man, and help remain disk-free. Account reads, `mail inbox`, `mail message`, sync status, checkpoint reads, and local `doctor` never prompt or contact Apple. Mutations and live validation use the same global timeout; streaming message reads also honor the command timeout.
 
-## Unsupported expansions fail visibly
+## Message content is explicit
 
-The current Inbox command exposes bounded preview metadata only. It does not yet advertise JSONL, full decoded bodies, HTML, raw MIME, headers, or body-only views. Unknown output flags produce usage errors rather than being silently ignored.
+`mail inbox` stays preview-only. `mail message show <id>` adds orthogonal content choices:
+
+```text
+--full
+--format compact|text|html|raw
+--headers
+--body-only
+--metadata-only
+--verbose
+--json
+```
+
+Default message JSON reports whether text, HTML, headers, raw MIME, and parts are locally available, but omits their content. Body-bearing JSON requires `--full` or `--format text|html`; raw-bearing JSON requires `--format raw` and is capped at 8 MiB. Larger bodies and raw messages remain available through plain streaming output. BCC is excluded from compact output, message JSON, and decoded-header output; exact raw MIME includes it only because raw was explicitly requested.
+
+Unsupported or contradictory combinations fail visibly. For example, `--headers --body-only`, content flags with `--metadata-only`, and plain `--format raw --verbose` return usage errors rather than guessing.

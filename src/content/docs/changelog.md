@@ -8,6 +8,9 @@ summary: Public command, output, installation, and documentation changes.
 
 ## Unreleased
 
+- Added `icloud mail message show/raw/export` for bounded message metadata, complete decoded text, HTML, decoded headers, metadata-only and MIME-part views, exact raw RFC822 streaming, and private atomic export.
+- Added charset-aware nested MIME normalization, ordered headers and parts, inline and embedded-message metadata, partial parse diagnostics, stable UUIDv7 MIME-part identities, malformed-Date stability, and schema-5 upgrades from existing synchronized mail.
+- Kept message JSON preview-only by default; complete text/HTML/raw requires an explicit content mode, raw JSON is bounded to 8 MiB, and BCC/raw storage coordinates remain excluded from ordinary output.
 - Changed compact text to readable vertical blocks: result type first, stable identity plus the first field next when present, one remaining field per line, and a blank line between blocks.
 - Added bounded `icloud mail sync` for current-tail Inbox bootstrap and incremental UID paging, with streamed raw-message staging and atomic page/checkpoint commits.
 - Added local bounded `icloud mail inbox`, compact decoded-text previews, explicit JSON metadata, and stable message/location/checkpoint identities without exposing BCC or raw storage paths.

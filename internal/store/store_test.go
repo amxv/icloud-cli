@@ -40,7 +40,7 @@ func TestOpenCreatesAndReopensVersionedPrivateState(t *testing.T) {
 	if state.SchemaVersion() != SchemaVersion {
 		t.Fatalf("schema version = %d", state.SchemaVersion())
 	}
-	for _, table := range []string{"app_metadata", "accounts", "credential_refs", "folders", "raw_blobs", "messages", "message_recipients", "message_references", "message_locations", "sync_checkpoints", "goose_db_version"} {
+	for _, table := range []string{"app_metadata", "accounts", "credential_refs", "folders", "raw_blobs", "messages", "message_recipients", "message_references", "message_locations", "message_content", "message_parts", "sync_checkpoints", "goose_db_version"} {
 		var count int
 		if err := state.db.QueryRowContext(context.Background(),
 			"SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?", table,
@@ -735,5 +735,110 @@ INSERT INTO credential_refs (
 	folders, more, err := state.Folders().List(context.Background(), value.ID, 20, true)
 	if err != nil || more || len(folders) != 0 {
 		t.Fatalf("folder defaults len=%d more=%v err=%v", len(folders), more, err)
+	}
+}
+
+func TestOpenUpgradesPhaseSixDatabaseWithoutChangingMessagesOrLocations(t *testing.T) {
+	t.Parallel()
+	paths := testPaths(t, filepath.Join(t.TempDir(), "state"))
+	if err := config.EnsureAppPaths(paths); err != nil {
+		t.Fatal(err)
+	}
+	database, err := sql.Open("sqlite", paths.Database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := configureSQLite(context.Background(), database); err != nil {
+		t.Fatal(err)
+	}
+	migrationFS, err := fs.Sub(migrations, "migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider, err := goose.NewProvider(goose.DialectSQLite3, database, migrationFS, goose.WithLogger(goose.NopLogger()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.UpTo(context.Background(), 4); err != nil {
+		t.Fatal(err)
+	}
+	timestamp := time.Date(2026, 8, 6, 5, 20, 0, 0, time.UTC).Format(time.RFC3339Nano)
+	accountID := "acct_0198d704-6c00-7000-8000-000000000601"
+	folderID := "fld_0198d704-6c00-7000-8000-000000000602"
+	messageID := "msg_0198d704-6c00-7000-8000-000000000603"
+	locationID := "loc_0198d704-6c00-7000-8000-000000000604"
+	hash := strings.Repeat("a", 64)
+	if _, err := database.Exec(`
+INSERT INTO accounts (
+    account_id, friendly_name, email_address, imap_username, status,
+    is_default, created_at, updated_at
+) VALUES (?, 'Phase Six', 'phase-six@icloud.com', 'phase-six', 'connected', 1, ?, ?)`, accountID, timestamp, timestamp); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(`
+INSERT INTO credential_refs (
+    credential_ref_id, account_id, scheme, reference, created_at, updated_at
+) VALUES ('cred_0198d704-6c00-7000-8000-000000000605', ?, 'env', 'env:PHASE_SIX_PASSWORD', ?, ?)`, accountID, timestamp, timestamp); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(`
+INSERT INTO folders (
+    folder_id, account_id, name, wire_name, kind, kind_source, selectable,
+    subscription, present, stale, sync_enabled, uid_validity,
+    discovered_at, status_at, created_at, updated_at
+) VALUES (?, ?, 'INBOX', 'INBOX', 'inbox', 'inbox', 1,
+          'unknown', 1, 0, 1, 100, ?, ?, ?, ?)`, folderID, accountID, timestamp, timestamp, timestamp, timestamp); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(`INSERT INTO raw_blobs (content_hash, storage_key, byte_size, created_at)
+VALUES (?, ?, 128, ?)`, hash, "raw/sha256/aa/"+hash+".eml", timestamp); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(`
+INSERT INTO messages (
+    message_id, account_id, rfc_message_id, direction, from_email,
+    subject, snippet, internal_date, sort_at, date_source,
+    created_at, updated_at
+) VALUES (?, ?, 'phase-six@example.test', 'inbound', 'sender@example.test',
+          'Phase Six fixture', 'Legacy preview', ?, ?, 'internal_date', ?, ?)`, messageID, accountID, timestamp, timestamp, timestamp, timestamp); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(`
+INSERT INTO message_locations (
+    location_id, message_id, account_id, folder_id, uid_validity, uid,
+    internal_date, rfc822_size, raw_content_hash, raw_storage_key,
+    raw_byte_size, present, created_at, updated_at
+) VALUES (?, ?, ?, ?, 100, 42, ?, 128, ?, ?, 128, 1, ?, ?)`,
+		locationID, messageID, accountID, folderID, timestamp, hash, "raw/sha256/aa/"+hash+".eml", timestamp, timestamp); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	state, err := Open(context.Background(), paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	if state.SchemaVersion() != SchemaVersion {
+		t.Fatalf("schema version = %d", state.SchemaVersion())
+	}
+	message, err := state.Mail().Message(context.Background(), accountID, messageID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if message.ID != messageID || len(message.Locations) != 1 || message.Locations[0].ID != locationID ||
+		message.Locations[0].RawContentHash != hash || message.Content != nil {
+		t.Fatalf("phase-six message changed: %+v", message)
+	}
+	var contentTables int
+	if err := state.db.QueryRowContext(context.Background(), `
+SELECT count(*) FROM sqlite_master
+WHERE type = 'table' AND name IN ('message_content', 'message_parts')`).Scan(&contentTables); err != nil {
+		t.Fatal(err)
+	}
+	if contentTables != 2 {
+		t.Fatalf("content tables = %d", contentTables)
 	}
 }

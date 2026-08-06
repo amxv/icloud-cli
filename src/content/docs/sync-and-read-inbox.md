@@ -1,9 +1,9 @@
 ---
 title: Sync and read the Inbox
-description: Download a bounded iCloud Inbox page into private local state, read compact previews offline, inspect progress, and recover safely from interrupted syncs.
+description: Download a bounded iCloud Inbox page into private local state, read compact previews or complete messages offline, inspect progress, and recover safely from interrupted syncs.
 order: 6
 category: Guides
-summary: Bounded Inbox sync, compact local reading, incremental checkpoints, safe retries, and identity-change recovery.
+summary: Bounded Inbox sync, compact previews, explicit full-message reads, incremental checkpoints, safe retries, and recovery.
 ---
 
 ## Sync the current Inbox
@@ -66,7 +66,45 @@ count=1
 more=false
 ```
 
-`mail inbox` reads only local state. It works offline and never marks a message read. Full bodies, HTML, raw MIME, headers, and attachment downloads arrive through later explicit commands; the compact Inbox intentionally stays small.
+`mail inbox` reads only local state. It works offline and never marks a message read. The compact Inbox intentionally stays small; use its stable ID for explicit content access.
+
+## Read one message by stable ID
+
+```bash
+icloud mail message show msg_…
+```
+
+Default output is still bounded. It shows the message and account IDs, From/To/CC when present, subject and best timestamp, state and folder locations, attachment count, available content kinds, raw availability, MIME-part count, a decoded-text excerpt, and the next content flags. It excludes BCC, raw storage coordinates, complete bodies, HTML, headers, and MIME bytes.
+
+Return complete decoded text:
+
+```bash
+icloud mail message show msg_… --full
+icloud mail message show msg_… --format text --body-only
+```
+
+Choose HTML or decoded headers explicitly:
+
+```bash
+icloud mail message show msg_… --format html
+icloud mail message show msg_… --format html --body-only
+icloud mail message show msg_… --headers
+icloud mail message show msg_… --verbose
+icloud mail message show msg_… --metadata-only
+```
+
+`--verbose` adds ordered MIME-part blocks with type, charset, encoding, disposition, filename, inline/attachment state, decoded size, and partial-parse diagnostics. It does not extract attachment bytes; attachment saving is a separate workflow.
+
+## Stream or export exact raw MIME
+
+```bash
+icloud mail message raw msg_… > message.eml
+icloud mail message export msg_… --output message.eml
+icloud mail message export msg_… --output message.eml --force
+icloud mail message export msg_… --output - > message.eml
+```
+
+Raw output is byte-for-byte the synchronized RFC822 message. The CLI verifies the stored size and SHA-256 content address before streaming. File export uses a private temporary file, mode `0600`, and refuses to replace an existing regular file unless `--force` is supplied. A missing or corrupt blob fails visibly rather than returning partial content.
 
 ## Understand incremental sync
 
@@ -135,9 +173,13 @@ Inbox is the only message checkpoint in this build, but the command is already a
 icloud --request-id inbox-01 mail sync --json
 icloud --request-id inbox-02 mail inbox --json
 icloud mail sync status --json
+icloud mail message show msg_… --json
+icloud mail message show msg_… --full --json
 ```
 
-JSON returns stable message, location, and checkpoint identifiers plus the complete locally stored preview metadata. It does not expose credential references, raw storage paths, raw content hashes, BCC recipients, or full message bodies.
+Inbox JSON returns stable message, location, and checkpoint identifiers plus locally stored preview metadata. Default message JSON adds content-availability and parse-status fields without including headers, MIME parts, complete bodies, or raw bytes. Use the same explicit flags to include text, HTML, headers, MIME-part metadata, or base64 raw MIME. Raw JSON is limited to 8 MiB; plain raw/export streaming remains available up to the synchronized message-size limit.
+
+Credential references, raw storage paths, raw content hashes, and BCC recipients remain excluded from JSON. Exact raw MIME can contain a BCC header only when raw output was explicitly requested.
 
 ## Recover from common problems
 
@@ -173,5 +215,9 @@ A failed run leaves `committed` unchanged.
 ### The Inbox looks older than expected
 
 The first run intentionally starts from the newest bounded page. Repeat `mail sync` while `more=true`. New messages arriving afterward are picked up incrementally.
+
+### A message body is unavailable or corrupt
+
+`mail message` never contacts iCloud to repair local content implicitly. Run `mail sync status` first. A missing or corrupt raw blob returns an unavailable error and leaves message/location IDs untouched. Keep the state directory intact for the later repair workflow; do not replace a blob manually.
 
 Continue with [Output and automation](/docs/output-and-automation) for stable stream rules or the [command reference](/docs/command-reference) for exact flags.

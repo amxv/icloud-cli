@@ -62,6 +62,7 @@ func TestValidateOutputOptionsRejectsUnsupportedAndAmbiguousModes(t *testing.T) 
 		{Format: "html"},
 		{Headers: true, BodyOnly: true},
 		{Format: "raw", Headers: true},
+		{MetadataOnly: true},
 	}
 	for _, options := range tests {
 		if err := ValidateOutputOptions(options, OutputSupport{JSON: true}); err == nil {
@@ -73,6 +74,18 @@ func TestValidateOutputOptionsRejectsUnsupportedAndAmbiguousModes(t *testing.T) 
 		OutputSupport{JSON: true, Full: true, Text: true},
 	); err != nil {
 		t.Fatalf("valid orthogonal modes rejected: %v", err)
+	}
+	if err := ValidateOutputOptions(
+		OutputOptions{JSON: true, MetadataOnly: true},
+		OutputSupport{JSON: true, MetadataOnly: true},
+	); err != nil {
+		t.Fatalf("valid metadata-only mode rejected: %v", err)
+	}
+	if err := ValidateOutputOptions(
+		OutputOptions{MetadataOnly: true, Headers: true},
+		OutputSupport{MetadataOnly: true, Headers: true},
+	); err == nil {
+		t.Fatal("metadata-only accepted a content expansion")
 	}
 }
 

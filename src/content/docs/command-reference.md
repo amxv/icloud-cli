@@ -227,6 +227,57 @@ Reads a bounded page from local state without contacting iCloud. Compact records
 
 JSON adds complete locally stored preview metadata and provider location IDs while omitting credentials, BCC, raw storage paths/hashes, and full message bodies.
 
+## `icloud mail message show`
+
+```bash
+icloud mail message show msg_…
+icloud mail message show msg_… --full
+icloud mail message show msg_… --format text --body-only
+icloud mail message show msg_… --format html
+icloud mail message show msg_… --headers
+icloud mail message show msg_… --metadata-only
+icloud mail message show msg_… --verbose
+icloud mail message show msg_… --json
+```
+
+Reads one locally synchronized message by stable ID without contacting iCloud or changing read state. The compact default is a bounded vertical block with account/message identity, From/To/CC when present, subject, best time and date source, current state/locations, attachment count, available content kinds, raw/part availability, a decoded-text excerpt, and an expansion hint.
+
+Content is opt-in:
+
+| Option | Result |
+| --- | --- |
+| `--full` | Complete decoded text, equivalent to explicit text content plus metadata. |
+| `--format text` | Complete decoded text. HTML-only messages are converted to readable text. |
+| `--format html` | Complete decoded HTML when available. |
+| `--format raw` | Exact RFC822 bytes; plain output contains no compact wrapper. |
+| `--headers` | Ordered decoded headers after the metadata block; BCC is omitted. |
+| `--body-only` | Only the selected text or HTML body, suitable for redirection. |
+| `--metadata-only` | Metadata without excerpt or content; conflicts with content flags. |
+| `--verbose` | Ordered MIME-part metadata and parse diagnostics. |
+| `--json` | One envelope; content appears only when the corresponding content flag is also present. |
+
+Default JSON reports text/HTML/raw/header/part availability, part count, and whether parsing was complete. `--full --json` adds decoded text; `--format html --json` adds HTML; `--headers --json` adds headers; `--verbose --json` adds MIME parts; `--format raw --json` adds base64 raw MIME up to 8 MiB. Use plain streaming modes for larger content.
+
+Contradictory combinations return usage errors rather than choosing silently. Examples include `--headers --body-only`, content flags with `--metadata-only`, `--full --format html`, and plain `--format raw --verbose`.
+
+## `icloud mail message raw`
+
+```bash
+icloud mail message raw msg_… > message.eml
+```
+
+Streams the exact synchronized RFC822 bytes to stdout after verifying the stored size and SHA-256 content address. The command emits no compact status block because stdout is the requested binary/native payload.
+
+## `icloud mail message export`
+
+```bash
+icloud mail message export msg_… --output message.eml
+icloud mail message export msg_… --output message.eml --force
+icloud mail message export msg_… --output - > message.eml
+```
+
+Exports exact RFC822 bytes. File output uses a private temporary file and mode `0600`, refuses existing destinations unless `--force` is supplied, and installs the completed file only after verified streaming succeeds. `--output -` writes raw bytes to stdout and emits no compact wrapper. Successful file output reports the message ID and byte count without echoing the destination path.
+
 ## `icloud mail sync status`
 
 ```bash
@@ -273,13 +324,14 @@ Compact output:
 capabilities
 command=icloud
 version=0.1.0
-schema=4
+schema=5
 account_mode=validated_lifecycle
 credentials=keyring,env,file
 network_validation=true
 diagnostics=true
 mail_folders=true
 mail_sync=true
+mail_content=true
 default_output=compact
 json=true
 completion=bash,zsh,fish,powershell
@@ -325,6 +377,6 @@ Help goes to stdout. Usage failures go to stderr and exit `2`.
 
 ## Output availability
 
-Every account and credential lifecycle command above, `account test`, every folder command, Inbox sync/read/status/checkpoints, `doctor`, `version`, and `capabilities` supports `--json`. Validation, doctor, and folder reads/status support bounded `--verbose` detail where advertised. Completion and man generation retain native text. No command silently accepts unsupported JSONL, full-body, HTML, raw, header, or body-only modes. The current Inbox read is intentionally preview-only.
+Every account and credential lifecycle command above, `account test`, every folder command, Inbox sync/read/status/checkpoints, `mail message show`, `doctor`, `version`, and `capabilities` supports `--json`. Validation, doctor, folder reads/status, and message reads support bounded `--verbose` detail where advertised. `mail message raw` and `message export --output -` retain native RFC822 bytes; completion and man generation retain their native formats. Inbox stays preview-only, while stable-ID message reads provide explicit full-text, HTML, raw, headers, body-only, metadata-only, verbose, and JSON modes.
 
 Compact output uses vertical blocks: result type first, stable identity plus the first field next when present, then one remaining field per line. A blank line separates consecutive records or a final summary. Errors use the same block shape on stderr.

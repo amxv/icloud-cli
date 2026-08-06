@@ -101,6 +101,7 @@ type capabilitiesData struct {
 	Diagnostics       bool             `json:"diagnostics"`
 	MailFolders       bool             `json:"mail_folders"`
 	MailSync          bool             `json:"mail_sync"`
+	MailContent       bool             `json:"mail_content"`
 	Output            capabilityOutput `json:"output"`
 	Completion        []string         `json:"completion"`
 	Man               bool             `json:"man"`
@@ -199,8 +200,8 @@ func newRootCommand(state *executionState) *cobra.Command {
 	root := &cobra.Command{
 		Use:           commandName,
 		Short:         "Control iCloud services from the command line",
-		Long:          "icloud controls iCloud services from the command line. This build provides secure account setup, live read-only IMAP and SMTP validation, durable folder discovery and sync policy, account health diagnostics, version and capability reporting, shell completions, and man-page generation.",
-		Example:       "  icloud account add --name Personal --email owner@icloud.com --password-stdin\n  icloud account test\n  icloud mail folders status\n  icloud doctor",
+		Long:          "icloud controls iCloud services from the command line. This build provides secure account setup, live read-only IMAP and SMTP validation, durable folder discovery, bounded Inbox synchronization, complete local message reads, account health diagnostics, version and capability reporting, shell completions, and man-page generation.",
+		Example:       "  icloud account add --name Personal --email owner@icloud.com --password-stdin\n  icloud account test\n  icloud mail sync\n  icloud mail message show msg_…\n  icloud doctor",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		Args:          cobra.NoArgs,
@@ -309,6 +310,7 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				Diagnostics:       true,
 				MailFolders:       true,
 				MailSync:          true,
+				MailContent:       true,
 				Output: capabilityOutput{
 					Default: "compact",
 					JSON:    true,
@@ -334,6 +336,7 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				Field("diagnostics", data.Diagnostics),
 				Field("mail_folders", data.MailFolders),
 				Field("mail_sync", data.MailSync),
+				Field("mail_content", data.MailContent),
 				Field("default_output", data.Output.Default),
 				Field("json", data.Output.JSON),
 				Field("completion", data.Completion),

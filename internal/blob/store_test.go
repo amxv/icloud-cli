@@ -102,3 +102,60 @@ func TestCommitRejectsCorruptExistingCanonicalBlob(t *testing.T) {
 		t.Fatalf("commit error = %v", err)
 	}
 }
+
+func TestOpenVerifiedStreamsExactContentAndRejectsCorruptionAndUnsafeKeys(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "blobs")
+	store := NewWithLimit(root, 1024)
+	content := []byte("Message-ID: <verified@example.test>\r\n\r\nExact raw bytes.\r\n")
+	staged, err := store.Stage(context.Background(), bytes.NewReader(content), int64(len(content)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := staged.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	reader, err := store.OpenVerified(staged.StorageKey, staged.ContentHash, staged.ByteSize)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := io.ReadAll(reader)
+	if closeErr := reader.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil || !bytes.Equal(got, content) {
+		t.Fatalf("verified content=%q err=%v", got, err)
+	}
+	if _, err := store.OpenVerified(staged.StorageKey, staged.ContentHash, staged.ByteSize+1); !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("size mismatch = %v", err)
+	}
+	if _, err := store.OpenVerified("../../outside", staged.ContentHash, staged.ByteSize); err == nil {
+		t.Fatal("unsafe storage key was accepted")
+	}
+	path := filepath.Join(root, filepath.FromSlash(staged.StorageKey))
+	corrupt := append([]byte(nil), content...)
+	corrupt[len(corrupt)-3] ^= 0x7f
+	if err := os.WriteFile(path, corrupt, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.OpenVerified(staged.StorageKey, staged.ContentHash, staged.ByteSize); !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("hash mismatch = %v", err)
+	}
+}
+
+func TestOpenVerifiedHonorsCancellationBeforeHashing(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "blobs")
+	store := NewWithLimit(root, 1024)
+	content := []byte("Message-ID: <cancel@example.test>\r\n\r\nbody")
+	staged, err := store.Stage(context.Background(), bytes.NewReader(content), int64(len(content)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := staged.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := store.OpenVerifiedContext(ctx, staged.StorageKey, staged.ContentHash, staged.ByteSize); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled verification = %v", err)
+	}
+}

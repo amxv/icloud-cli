@@ -1,9 +1,9 @@
 ---
 title: Quickstart
-description: Install icloud, configure an app-specific password safely, validate the account, discover folders, synchronize the Inbox, and read compact local previews.
+description: Install icloud, configure an app-specific password safely, validate the account, discover folders, synchronize the Inbox, and read complete local messages explicitly.
 order: 1
 category: Start
-summary: The shortest safe path from installation to a validated account and locally readable iCloud Inbox.
+summary: The shortest safe path from installation to a validated account, locally readable Inbox, and explicit full-message access.
 ---
 
 ## Install and inspect the binary
@@ -30,13 +30,14 @@ version
 capabilities
 command=icloud
 version=0.1.0
-schema=4
+schema=5
 account_mode=validated_lifecycle
 credentials=keyring,env,file
 network_validation=true
 diagnostics=true
 mail_folders=true
 mail_sync=true
+mail_content=true
 default_output=compact
 json=true
 completion=bash,zsh,fish,powershell
@@ -187,7 +188,29 @@ count=1
 more=false
 ```
 
-The command reads local state only and never marks messages read. Full bodies, HTML, raw MIME, headers, and attachment download are explicit later capabilities rather than part of the universal compact default.
+The command reads local state only and never marks messages read. It intentionally returns only bounded previews.
+
+## Read one complete message explicitly
+
+Copy a stable `msg_…` ID from `mail inbox`, then inspect a bounded message block:
+
+```bash
+icloud mail message show msg_…
+```
+
+The default includes routing, time, state, locations, attachment count, available content kinds, a bounded excerpt, and a hint for explicit expansion. It never dumps a complete body or raw MIME accidentally.
+
+Choose the content you need:
+
+```bash
+icloud mail message show msg_… --full
+icloud mail message show msg_… --format html --body-only
+icloud mail message show msg_… --headers
+icloud mail message raw msg_… > message.eml
+icloud mail message export msg_… --output message.eml
+```
+
+`--full` and `--format text` stream complete decoded text. HTML, headers, metadata-only, MIME-part detail, and raw RFC822 are separate opt-ins. Raw and exported bytes are verified against the local content address before they are returned.
 
 Inspect progress:
 
@@ -213,7 +236,7 @@ Without a selector, commands use the default account, then a sole account. The C
 icloud --request-id inbox-01 mail inbox --json
 ```
 
-JSON is opt-in. Redirecting stdout does not change the compact default. Passwords, credential references, BCC recipients, raw storage paths, and full bodies stay out of Inbox JSON.
+JSON is opt-in. Redirecting stdout does not change the compact default. Passwords, credential references, BCC recipients, raw storage paths, and full bodies stay out of Inbox and default message JSON. A message body or raw payload appears in JSON only when the same explicit content mode is requested.
 
 ## Common next actions
 

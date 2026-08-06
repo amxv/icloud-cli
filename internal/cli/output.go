@@ -20,25 +20,27 @@ const (
 )
 
 type OutputOptions struct {
-	JSON     bool
-	JSONL    bool
-	Full     bool
-	Verbose  bool
-	Format   string
-	Headers  bool
-	BodyOnly bool
+	JSON         bool
+	JSONL        bool
+	Full         bool
+	Verbose      bool
+	Format       string
+	Headers      bool
+	BodyOnly     bool
+	MetadataOnly bool
 }
 
 type OutputSupport struct {
-	JSON     bool
-	JSONL    bool
-	Full     bool
-	Verbose  bool
-	Text     bool
-	HTML     bool
-	Raw      bool
-	Headers  bool
-	BodyOnly bool
+	JSON         bool
+	JSONL        bool
+	Full         bool
+	Verbose      bool
+	Text         bool
+	HTML         bool
+	Raw          bool
+	Headers      bool
+	BodyOnly     bool
+	MetadataOnly bool
 }
 
 func ValidateOutputOptions(options OutputOptions, support OutputSupport) *AppError {
@@ -63,8 +65,14 @@ func ValidateOutputOptions(options OutputOptions, support OutputSupport) *AppErr
 	if options.BodyOnly && !support.BodyOnly {
 		return NewAppError(ErrorUsage, "--body-only is not supported by this command", false)
 	}
+	if options.MetadataOnly && !support.MetadataOnly {
+		return NewAppError(ErrorUsage, "--metadata-only is not supported by this command", false)
+	}
 	if options.Headers && options.BodyOnly {
 		return NewAppError(ErrorUsage, "--headers and --body-only cannot be used together", false)
+	}
+	if options.MetadataOnly && (options.Full || options.Headers || options.BodyOnly || (strings.TrimSpace(options.Format) != "" && !strings.EqualFold(strings.TrimSpace(options.Format), "compact"))) {
+		return NewAppError(ErrorUsage, "--metadata-only cannot be combined with content output flags", false)
 	}
 
 	format := strings.ToLower(strings.TrimSpace(options.Format))
