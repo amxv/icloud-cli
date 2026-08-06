@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/amxv/icloud-cli/internal/account"
+	"github.com/amxv/icloud-cli/internal/blob"
 	"github.com/amxv/icloud-cli/internal/cli"
 	"github.com/amxv/icloud-cli/internal/config"
 	"github.com/amxv/icloud-cli/internal/store"
@@ -399,7 +401,7 @@ func TestCapabilitiesCompactGoldenBudget(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("exit code = %d, stderr = %q", exitCode, stderr)
 	}
-	const want = "capabilities command=icloud version=dev schema=3 account_mode=validated_lifecycle credentials=keyring,env,file network_validation=true diagnostics=true mail_folders=true default_output=compact json=true completion=bash,zsh,fish,powershell man=true\n"
+	const want = "capabilities command=icloud version=dev schema=4 account_mode=validated_lifecycle credentials=keyring,env,file network_validation=true diagnostics=true mail_folders=true mail_sync=true default_output=compact json=true completion=bash,zsh,fish,powershell man=true\n"
 	if stdout != want {
 		t.Fatalf("stdout mismatch\nwant: %q\n got: %q", want, stdout)
 	}
@@ -429,7 +431,7 @@ func TestCapabilitiesJSONEnvelope(t *testing.T) {
 		t.Fatalf("ok = %#v", envelope["ok"])
 	}
 	data, ok := envelope["data"].(map[string]any)
-	if !ok || data["data_schema_version"] != float64(3) || data["network_validation"] != true || data["diagnostics"] != true || data["mail_folders"] != true {
+	if !ok || data["data_schema_version"] != float64(4) || data["network_validation"] != true || data["diagnostics"] != true || data["mail_folders"] != true || data["mail_sync"] != true {
 		t.Fatalf("data = %#v", envelope["data"])
 	}
 	if strings.Contains(stdout, "\x1b[") {
@@ -552,7 +554,7 @@ func TestAccountListCreatesAndReopensPrivateZeroState(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &envelope); err != nil {
 		t.Fatalf("invalid JSON: %v\n%s", err, stdout)
 	}
-	if !envelope.OK || envelope.Data.Count != 0 || len(envelope.Data.Accounts) != 0 || envelope.Data.SchemaVersion != 3 {
+	if !envelope.OK || envelope.Data.Count != 0 || len(envelope.Data.Accounts) != 0 || envelope.Data.SchemaVersion != 4 {
 		t.Fatalf("unexpected envelope: %+v", envelope)
 	}
 	if envelope.Meta.RequestID != "req_accounts" {
@@ -680,7 +682,7 @@ func TestAccountListAndShowReadStoredAccountCompactly(t *testing.T) {
 		t.Fatalf("invalid JSON: %v\n%s", err, stdout)
 	}
 	if !envelope.OK || envelope.Data.Account.ID != "acct_0198d704-6c00-7000-8000-000000000001" ||
-		envelope.Data.Account.CredentialScheme != "env" || envelope.Data.SchemaVersion != 3 {
+		envelope.Data.Account.CredentialScheme != "env" || envelope.Data.SchemaVersion != 4 {
 		t.Fatalf("unexpected envelope: %+v", envelope)
 	}
 }
@@ -1488,4 +1490,251 @@ INSERT INTO accounts (
 	}); err != nil {
 		t.Fatal(err)
 	}
+}
+
+type fakeInboxPageResult struct {
+	page transport.InboxPage
+	raw  map[uint32]string
+	err  error
+}
+
+type fakeInboxClient struct {
+	results  []fakeInboxPageResult
+	requests []transport.InboxFetchRequest
+	calls    int
+}
+
+func (client *fakeInboxClient) FetchInboxPage(ctx context.Context, _ transport.AuthRequest, request transport.InboxFetchRequest, stager blob.Stager) (transport.InboxPage, error) {
+	client.requests = append(client.requests, request)
+	client.calls++
+	if len(client.results) == 0 {
+		return transport.InboxPage{}, errors.New("unexpected Inbox fetch")
+	}
+	result := client.results[0]
+	client.results = client.results[1:]
+	if result.err != nil {
+		return transport.InboxPage{}, result.err
+	}
+	page := result.page
+	for index := range page.Messages {
+		if page.Messages[index].Raw != nil {
+			continue
+		}
+		raw := result.raw[page.Messages[index].UID]
+		staged, err := stager.Stage(ctx, strings.NewReader(raw), int64(len(raw)))
+		if err != nil {
+			return transport.InboxPage{}, err
+		}
+		page.Messages[index].Raw = staged
+		if page.Messages[index].RFC822Size == 0 {
+			page.Messages[index].RFC822Size = int64(len(raw))
+		}
+	}
+	return page, nil
+}
+
+type failingBlobStager struct{ err error }
+
+func (stager failingBlobStager) Stage(context.Context, io.Reader, int64) (*blob.Staged, error) {
+	return nil, stager.err
+}
+
+func TestMailSyncIncrementalWorkflowAndCompactBudgets(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "state")
+	t.Setenv("ICLOUD_MAIL_SYNC_PASSWORD", "synthetic-mail-sync-secret")
+	commands, _ := newTestAccountCommands()
+	commands.folders = &fakeFolderClient{results: map[string][]transport.FolderDiscoveryResult{
+		"owner@icloud.com": {{Folders: []transport.RemoteFolder{{
+			Name: "INBOX", WireName: "INBOX", Kind: "inbox", KindSource: "inbox",
+			Selectable: true, Subscription: "subscribed",
+			Status: &transport.MailboxStatus{Mailbox: "INBOX", Messages: 3, Unseen: 2, UIDNext: 24, UIDValidity: 100},
+		}}}},
+	}}
+	fixture21 := syntheticMailFixture(21, "fixture-21@example.test", "First fixture", "First compact preview", "")
+	fixture22 := syntheticMailFixture(22, "fixture-22@example.test", "Second fixture", "Second compact preview", "")
+	fixture23 := syntheticMailFixture(23, "fixture-23@example.test", "Third fixture", "Third compact preview", "hidden-bcc@example.test")
+	mailClient := &fakeInboxClient{results: []fakeInboxPageResult{
+		{page: transport.InboxPage{Mailbox: "INBOX", UIDValidity: 100, LastCommittedUID: 22, LastScannedUID: 22, MoreAvailable: true, Bootstrap: true, Messages: []transport.FetchedMessage{
+			{UID: 21, Flags: []string{`\Flagged`}, InternalDate: time.Date(2026, 8, 6, 4, 21, 0, 0, time.UTC)},
+			{UID: 22, Flags: []string{`\Seen`}, InternalDate: time.Date(2026, 8, 6, 4, 22, 0, 0, time.UTC)},
+		}}, raw: map[uint32]string{21: fixture21, 22: fixture22}},
+		{page: transport.InboxPage{Mailbox: "INBOX", UIDValidity: 100, LastCommittedUID: 23, LastScannedUID: 23, Bootstrap: false, Messages: []transport.FetchedMessage{
+			{UID: 23, InternalDate: time.Date(2026, 8, 6, 4, 23, 0, 0, time.UTC)},
+		}}, raw: map[uint32]string{23: fixture23}},
+	}}
+	commands.mail = mailClient
+
+	addAndDiscoverInbox(t, commands, home, "ICLOUD_MAIL_SYNC_PASSWORD")
+	exitCode, stdout, stderr := runWithAccountCommands(t, commands, "", "--home", home, "mail", "sync", "--limit", "2")
+	if exitCode != 0 || stderr != "" {
+		t.Fatalf("first sync code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
+	}
+	for _, want := range []string{"fetched=2", "created=2", "last_uid=22", "more=true", "bootstrap=true"} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("first sync missing %q: %s", want, stdout)
+		}
+	}
+	if strings.Count(stdout, "\n") != 1 || len(stdout) > 420 {
+		t.Fatalf("sync budget lines=%d bytes=%d output=%q", strings.Count(stdout, "\n"), len(stdout), stdout)
+	}
+
+	exitCode, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "inbox", "--limit", "2")
+	if exitCode != 0 || stderr != "" || strings.Count(stdout, "message msg_") != 2 || !strings.Contains(stdout, "count=2 more=false") {
+		t.Fatalf("inbox code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "unread=true flagged=true") || strings.Contains(stdout, "hidden-bcc") || strings.Count(stdout, "\n") != 3 || len(stdout) > 1400 {
+		t.Fatalf("inbox compact privacy/budget failure: %q", stdout)
+	}
+
+	exitCode, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "sync", "status")
+	if exitCode != 0 || stderr != "" || !strings.Contains(stdout, "state=idle") || !strings.Contains(stdout, "committed=22 scanned=22") || !strings.Contains(stdout, "more=true") {
+		t.Fatalf("status code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
+	}
+
+	exitCode, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "sync", "--limit", "2")
+	if exitCode != 0 || stderr != "" || !strings.Contains(stdout, "fetched=1") || !strings.Contains(stdout, "created=1") || !strings.Contains(stdout, "last_uid=23") || strings.Contains(stdout, "more=true") {
+		t.Fatalf("second sync code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
+	}
+	if len(mailClient.requests) != 2 || !mailClient.requests[0].Bootstrap || mailClient.requests[0].ExpectedUIDValidity != 0 || mailClient.requests[1].Bootstrap || mailClient.requests[1].ExpectedUIDValidity != 100 || mailClient.requests[1].LastCommittedUID != 22 {
+		t.Fatalf("sync requests = %+v", mailClient.requests)
+	}
+
+	exitCode, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "inbox", "--limit", "20", "--json")
+	if exitCode != 0 || stderr != "" || strings.Count(stdout, `"id":"msg_`) != 3 || !strings.Contains(stdout, `"count":3`) {
+		t.Fatalf("JSON inbox code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
+	}
+	for _, forbidden := range []string{"raw/sha256", "raw_storage_key", "raw_content_hash", "hidden-bcc@example.test", `"bcc"`} {
+		if strings.Contains(stdout, forbidden) {
+			t.Fatalf("JSON Inbox exposed %q: %s", forbidden, stdout)
+		}
+	}
+}
+
+func TestMailSyncFailuresNeverAdvanceAndRetryIsIdempotent(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "state")
+	t.Setenv("ICLOUD_MAIL_FAILURE_PASSWORD", "synthetic-mail-failure-secret")
+	commands, _ := newTestAccountCommands()
+	commands.folders = oneInboxFolderClient()
+	mailClient := &fakeInboxClient{results: []fakeInboxPageResult{
+		{err: transport.NewFailure(transport.StageIMAPFetch, transport.FailureUnavailable, true, errors.New("synthetic fetch interruption"))},
+		{page: transport.InboxPage{Mailbox: "INBOX", UIDValidity: 100, LastCommittedUID: 24, LastScannedUID: 24, Bootstrap: true, Messages: []transport.FetchedMessage{{UID: 24, InternalDate: time.Date(2026, 8, 6, 4, 24, 0, 0, time.UTC)}}}, raw: map[uint32]string{24: syntheticMailFixture(24, "fixture-24@example.test", "Retry fixture", "Retry compact preview", "")}},
+	}}
+	commands.mail = mailClient
+	addAndDiscoverInbox(t, commands, home, "ICLOUD_MAIL_FAILURE_PASSWORD")
+
+	exitCode, stdout, stderr := runWithAccountCommands(t, commands, "", "--home", home, "mail", "sync")
+	if exitCode != cli.ExitUnavailable || stdout != "" || !strings.Contains(stderr, "imap_fetch") {
+		t.Fatalf("failure code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
+	}
+	exitCode, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "sync", "status")
+	if exitCode != 0 || stderr != "" || !strings.Contains(stdout, "state=failed") || !strings.Contains(stdout, "committed=0 scanned=0") || !strings.Contains(stdout, "last_error=imap_fetch") {
+		t.Fatalf("failed status code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
+	}
+	exitCode, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "sync")
+	if exitCode != 0 || stderr != "" || !strings.Contains(stdout, "created=1") || !strings.Contains(stdout, "last_uid=24") {
+		t.Fatalf("retry code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
+	}
+	if len(mailClient.requests) != 2 || !mailClient.requests[1].Bootstrap || mailClient.requests[1].LastCommittedUID != 0 {
+		t.Fatalf("retry request = %+v", mailClient.requests)
+	}
+}
+
+func TestMailSyncParseBlobAndUIDValidityFailuresPreserveFrontier(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		configure func(*accountCommands, *fakeInboxClient)
+		result    fakeInboxPageResult
+		wantCode  int
+		wantState string
+		wantError string
+	}{
+		{name: "parse", result: fakeInboxPageResult{page: transport.InboxPage{Mailbox: "INBOX", UIDValidity: 100, LastCommittedUID: 30, LastScannedUID: 30, Bootstrap: true, Messages: []transport.FetchedMessage{{UID: 30}}}, raw: map[uint32]string{30: "\x00"}}, wantCode: cli.ExitUnavailable, wantState: "failed", wantError: "message_parse"},
+		{name: "blob", configure: func(commands *accountCommands, _ *fakeInboxClient) {
+			commands.blobs = func(config.AppPaths) blob.Stager { return failingBlobStager{err: errors.New("synthetic blob failure")} }
+		}, result: fakeInboxPageResult{page: transport.InboxPage{Mailbox: "INBOX", UIDValidity: 100, LastCommittedUID: 31, LastScannedUID: 31, Bootstrap: true, Messages: []transport.FetchedMessage{{UID: 31}}}, raw: map[uint32]string{31: syntheticMailFixture(31, "fixture-31@example.test", "Blob fixture", "Blob preview", "")}}, wantCode: cli.ExitUnavailable, wantState: "failed", wantError: "imap_fetch"},
+		{name: "uid-validity", result: fakeInboxPageResult{err: &transport.UIDValidityError{Expected: 100, Observed: 200}}, wantCode: cli.ExitConflict, wantState: "repair_required", wantError: "uid_validity_changed"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			home := filepath.Join(t.TempDir(), "state")
+			envName := "ICLOUD_MAIL_" + strings.ToUpper(strings.ReplaceAll(test.name, "-", "_")) + "_PASSWORD"
+			t.Setenv(envName, "synthetic-secret")
+			commands, _ := newTestAccountCommands()
+			commands.folders = oneInboxFolderClient()
+			client := &fakeInboxClient{}
+			if test.name == "uid-validity" {
+				client.results = []fakeInboxPageResult{{page: transport.InboxPage{Mailbox: "INBOX", UIDValidity: 100, LastCommittedUID: 20, LastScannedUID: 20, Bootstrap: true}}, test.result}
+			} else {
+				client.results = []fakeInboxPageResult{test.result}
+			}
+			commands.mail = client
+			if test.configure != nil {
+				test.configure(&commands, client)
+			}
+			addAndDiscoverInbox(t, commands, home, envName)
+			if test.name == "uid-validity" {
+				exitCode, _, stderr := runWithAccountCommands(t, commands, "", "--home", home, "mail", "sync")
+				if exitCode != 0 || stderr != "" {
+					t.Fatalf("baseline sync code=%d stderr=%q", exitCode, stderr)
+				}
+			}
+			exitCode, stdout, stderr := runWithAccountCommands(t, commands, "", "--home", home, "mail", "sync")
+			if exitCode != test.wantCode || stdout != "" || stderr == "" {
+				t.Fatalf("failure code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
+			}
+			exitCode, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "sync", "status")
+			if exitCode != 0 || stderr != "" || !strings.Contains(stdout, "state="+test.wantState) || !strings.Contains(stdout, "last_error="+test.wantError) {
+				t.Fatalf("status code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
+			}
+			if test.name == "uid-validity" {
+				if !strings.Contains(stdout, "committed=20 scanned=20") || !strings.Contains(stdout, "uid_validity=200") {
+					t.Fatalf("repair frontier changed: %q", stdout)
+				}
+				priorCalls := client.calls
+				exitCode, _, _ = runWithAccountCommands(t, commands, "", "--home", home, "mail", "sync")
+				if exitCode != cli.ExitConflict || client.calls != priorCalls {
+					t.Fatalf("repair guard code=%d calls=%d prior=%d", exitCode, client.calls, priorCalls)
+				}
+			} else if !strings.Contains(stdout, "committed=0 scanned=0") {
+				t.Fatalf("failure advanced frontier: %q", stdout)
+			}
+		})
+	}
+}
+
+func addAndDiscoverInbox(t *testing.T, commands accountCommands, home, envName string) {
+	t.Helper()
+	exitCode, stdout, stderr := runWithAccountCommands(t, commands, "", "--home", home,
+		"account", "add", "--name", "Personal", "--email", "owner@icloud.com", "--credential-env", envName)
+	if exitCode != 0 || stderr != "" || !strings.Contains(stdout, "pending_validation") {
+		t.Fatalf("add code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
+	}
+	exitCode, _, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "folders", "status")
+	if exitCode != 0 || stderr != "" {
+		t.Fatalf("folder status code=%d stderr=%q", exitCode, stderr)
+	}
+}
+
+func oneInboxFolderClient() *fakeFolderClient {
+	return &fakeFolderClient{results: map[string][]transport.FolderDiscoveryResult{
+		"owner@icloud.com": {{Folders: []transport.RemoteFolder{{
+			Name: "INBOX", WireName: "INBOX", Kind: "inbox", KindSource: "inbox", Selectable: true,
+			Subscription: "subscribed", Status: &transport.MailboxStatus{Mailbox: "INBOX", Messages: 1, UIDNext: 21, UIDValidity: 100},
+		}}}},
+	}}
+}
+
+func syntheticMailFixture(uid uint32, messageID, subject, body, bcc string) string {
+	lines := []string{
+		"From: Fixture Sender <sender@example.test>",
+		"To: owner@icloud.com",
+		"Date: Wed, 05 Aug 2026 20:00:00 +0000",
+		"Message-ID: <" + messageID + ">",
+		fmt.Sprintf("Subject: %s", subject),
+		"Content-Type: text/plain; charset=utf-8",
+	}
+	if bcc != "" {
+		lines = append(lines, "Bcc: "+bcc)
+	}
+	lines = append(lines, "", body+fmt.Sprintf(" uid=%d", uid))
+	return strings.Join(lines, "\r\n")
 }

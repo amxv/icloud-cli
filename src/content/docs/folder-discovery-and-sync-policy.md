@@ -1,31 +1,20 @@
 ---
 title: Folder discovery and sync policy
-description: Discover every iCloud Mail folder, inspect remote counts and provider metadata, understand system-folder classification, and choose which folders later synchronization may read.
+description: Discover iCloud Mail folders, understand their roles and names, inspect counts, and choose which folders are eligible for synchronization.
 order: 5
 category: Guides
-summary: Live folder discovery, decoded and wire names, special-use roles, status counts, stale folders, and explicit sync enablement.
+summary: Live folder discovery, Unicode and nested names, system roles, missing folders, and explicit sync eligibility.
 ---
 
-## Discover the current mailbox tree
+## Discover the mailbox tree
 
-Run a live, read-only folder refresh after the account passes validation:
+Run a live, read-only refresh after the account passes validation:
 
 ```bash
 icloud mail folders status
-icloud mail folders status --limit 50
 ```
 
-The command:
-
-1. resolves the selected account and app-specific password;
-2. connects through direct-TLS IMAP;
-3. authenticates with the proven full/short username fallback;
-4. issues `LIST "" "*"` once;
-5. issues `STATUS` for every selectable mailbox;
-6. logs out;
-7. transactionally reconciles the observations into local state.
-
-It does **not** select folders, search for UIDs, fetch headers or bodies, download attachments, change flags, move messages, or send mail.
+The command lists every mailbox iCloud currently exposes and reads counts for selectable folders. It does not download messages or change mail.
 
 Use the global account selector when several profiles exist:
 
@@ -33,9 +22,7 @@ Use the global account selector when several profiles exist:
 icloud --account Personal mail folders status
 ```
 
-## Read compact folder results
-
-A compact record has this shape:
+Compact output is bounded to 20 records by default:
 
 ```text
 folder fld_… name=INBOX kind=inbox selectable=yes subscription=unknown present=yes sync=enabled messages=15 unseen=2
@@ -43,108 +30,89 @@ folder fld_… name=Projects/Alpha kind=other parent=Projects selectable=yes sub
 folder-status account=acct_… count=8 present=8 stale=0 enabled=2
 ```
 
-The default record includes the decoded display name, logical kind, parent, selectable state, subscription knowledge, provider presence, local sync policy, and current message/unseen counts when STATUS succeeded.
-
-The refresh always reconciles every discovered folder. Output is independently bounded to 20 records by default and 100 with `--limit`; the summary reports `total` and `more=true` when additional persisted records were not printed.
-
-Request provider-level detail explicitly:
+Increase the display bound without changing what gets discovered:
 
 ```bash
-icloud mail folders status --verbose
+icloud mail folders status --limit 50
 ```
 
-Verbose output adds the canonical modified UTF-7 wire name, delimiter, LIST attributes, classification source, UIDNEXT, UIDVALIDITY, discovery time, status time, and missing-since time.
+## Read the saved inventory offline
 
-## Understand decoded names and wire names
+```bash
+icloud mail folders list
+icloud mail folders show INBOX
+icloud mail folders show 'Unicode-日本語'
+```
 
-IMAP4rev1 encodes non-ASCII mailbox names using modified UTF-7. The CLI stores both forms:
+These commands use local state only. A selector may be a stable folder ID, decoded name, exact provider wire name, or an unambiguous role such as `inbox`. Ambiguous matches fail instead of guessing.
+
+Use `--verbose` only when troubleshooting provider identity:
+
+```bash
+icloud mail folders show 'Unicode-日本語' --verbose
+```
+
+It adds details such as the wire name, delimiter, provider attributes, UID metadata, and discovery timestamps.
+
+## Unicode and nested names work normally
+
+Use decoded names in ordinary commands:
 
 ```text
 name=Unicode-日本語
-wire_name=Unicode-&ZeVnLIqe-
+name=Projects/Alpha parent=Projects
 ```
 
-Use the decoded `name` for normal display and selection. The `wire_name` is provider identity data used for reconciliation; it is not a filesystem path and the CLI never joins it to a local directory.
+The provider wire form shown by `--verbose` is identity metadata, not a local path.
 
-Nested mailboxes retain their provider delimiter and parent:
+## Understand folder roles
 
-```text
-name=Projects/Alpha parent=Projects delimiter=/
-```
+`INBOX` is always recognized. Other system roles are taken from provider metadata when available, including Sent, Drafts, Archive, Trash, and Junk.
 
-## How system-folder kinds are assigned
+When iCloud exposes no Sent role, the CLI can use a conservative compatibility fallback for common Sent names. It does not guess Archive, Drafts, Trash, or Junk merely from an English display name. A folder without trustworthy role metadata remains `kind=other` and can still be selected by name or stable ID.
 
-Folder names are provider data. The CLI does not label a mailbox as Archive, Drafts, Trash, or Junk merely because its visible English name resembles one.
-
-Classification rules are:
-
-- `INBOX` is intrinsically `kind=inbox` under IMAP rules.
-- `\Sent`, `\Drafts`, `\Archive`, `\Trash`, `\Junk`, `\All`, `\Flagged`, and `\Important` LIST attributes map to their corresponding kinds.
-- When **no** mailbox carries `\Sent`, the common names `Sent`, `Sent Messages`, and `Sent Mail` are considered in that order as a compatibility fallback.
-- No name-only fallback is used for Drafts, Archive, Trash, or Junk.
-- Everything else is `kind=other`.
-
-Use `--verbose` to see `kind_source=attribute`, `kind_source=fallback`, or the intrinsic Inbox source.
-
-## Subscription can be unknown
-
-iCloud currently rejects the LIST-EXTENDED subscribed query used by the selected IMAP library and does not include `\Subscribed` on ordinary LIST responses. The CLI therefore reports:
+## Subscription may be unknown
 
 ```text
 subscription=unknown
 ```
 
-It reports `subscribed` only when the provider actually supplies that attribute. Unknown is not equivalent to unsubscribed.
+This means iCloud did not provide subscription metadata in the accepted folder response. It does not mean unsubscribed and does not prevent the folder from being used.
 
-## Inspect locally without contacting Apple
+## Choose synchronization eligibility
 
-After one live refresh, read the persisted inventory locally:
-
-```bash
-icloud mail folders list
-icloud mail folders list --limit 50
-icloud mail folders show INBOX
-icloud mail folders show 'Unicode-日本語' --verbose
-```
-
-`list` and `show` do not resolve credentials or make network requests. A folder selector may be a stable folder ID, decoded name, exact wire name, or an unambiguous kind. Duplicate display names return a conflict rather than guessing.
-
-## Choose future synchronization policy
-
-Discovery and synchronization are separate decisions. Newly discovered Inbox and Sent folders default to enabled; every other folder defaults to disabled:
+Inbox and Sent start enabled. Other folders start disabled:
 
 ```bash
 icloud mail folders enable Receipts
 icloud mail folders disable Receipts
 ```
 
-These commands update local policy only. They do not fetch or mutate messages. A policy choice survives later status refreshes, renames, disappearance, and reappearance.
+These commands change local policy only. They do not immediately fetch, move, or modify mail. Non-selectable container folders cannot be enabled.
 
-Non-selectable container mailboxes cannot be enabled because they cannot contain selectable message state. Disable remains safe for any retained folder.
+The current message sync command reads Inbox only:
 
-Phase 6 uses this policy when message synchronization begins. Enabling a folder now grants only future eligibility; it does not trigger sync in this build.
-
-## Renamed and missing folders remain truthful
-
-Rediscovery preserves a stable local folder ID when identity can be reconciled through:
-
-- an exact wire name;
-- provider `OLDNAME` metadata;
-- a unique special-use role such as the sole Sent mailbox.
-
-A previously known folder that is absent from a successful refresh is retained as:
-
-```text
-present=no stale=true missing_since=...
+```bash
+icloud mail sync
 ```
 
-Live `status` includes these stale records so disappearance is explicit. Normal local `list` shows current folders only; opt into retained records with:
+Enabling another folder preserves the choice for later phases; it does not cause the current Inbox command to broaden its scope. See [Sync and read the Inbox](/docs/sync-and-read-inbox) for the active workflow.
+
+## Missing folders remain visible
+
+If a previously known mailbox disappears from a successful refresh, the CLI retains it as missing rather than silently deleting its identity and policy:
+
+```text
+present=no stale=true
+```
+
+Normal local lists hide missing entries. Inspect them explicitly with:
 
 ```bash
 icloud mail folders list --include-missing
 ```
 
-If the same provider folder reappears, its stable ID and sync policy are restored.
+When the same folder returns and can be matched safely, its stable ID and sync choice are restored.
 
 ## Request JSON
 
@@ -153,8 +121,6 @@ icloud --request-id folders-01 mail folders status --json
 icloud mail folders list --include-missing --json
 ```
 
-JSON includes the complete folder record and schema version. It never includes the credential reference or value. Redirecting output does not turn JSON on automatically.
+JSON includes the complete folder record and local schema version. Credential references and values remain private.
 
-## What is still intentionally absent
-
-The current folder commands do not synchronize messages, expose a local Inbox, create/rename/delete remote mailboxes, or change provider subscription state. Continue with the [command reference](/docs/command-reference) for exact flags and [Output and automation](/docs/output-and-automation) for error and envelope contracts.
+Continue with [Sync and read the Inbox](/docs/sync-and-read-inbox) after discovery, or use the [command reference](/docs/command-reference) for exact flags.

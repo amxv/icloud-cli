@@ -5,6 +5,9 @@ import (
 	"errors"
 	"sort"
 	"strings"
+	"time"
+
+	"github.com/amxv/icloud-cli/internal/blob"
 )
 
 type Stage string
@@ -19,6 +22,9 @@ const (
 	StageIMAPAuth       Stage = "imap_auth"
 	StageIMAPList       Stage = "imap_list"
 	StageIMAPStatus     Stage = "imap_status"
+	StageIMAPSelect     Stage = "imap_select"
+	StageIMAPSearch     Stage = "imap_search"
+	StageIMAPFetch      Stage = "imap_fetch"
 	StageIMAPLogout     Stage = "imap_logout"
 	StageSMTPGreeting   Stage = "smtp_greeting"
 	StageSMTPStartTLS   Stage = "smtp_starttls"
@@ -117,6 +123,62 @@ type SMTPResult struct {
 
 type IMAPValidator interface {
 	ValidateIMAP(context.Context, AuthRequest) (IMAPResult, error)
+}
+
+type InboxFetchRequest struct {
+	Mailbox             string
+	ExpectedUIDValidity uint32
+	LastCommittedUID    uint32
+	LastScannedUID      uint32
+	Bootstrap           bool
+	Limit               int
+}
+
+type EnvelopeAddress struct {
+	Name  string `json:"name,omitempty"`
+	Email string `json:"email,omitempty"`
+}
+
+type MessageEnvelope struct {
+	Date      time.Time         `json:"date,omitempty"`
+	Subject   string            `json:"subject,omitempty"`
+	From      []EnvelopeAddress `json:"from,omitempty"`
+	ReplyTo   []EnvelopeAddress `json:"reply_to,omitempty"`
+	To        []EnvelopeAddress `json:"to,omitempty"`
+	CC        []EnvelopeAddress `json:"cc,omitempty"`
+	BCC       []EnvelopeAddress `json:"bcc,omitempty"`
+	InReplyTo []string          `json:"in_reply_to,omitempty"`
+	MessageID string            `json:"message_id,omitempty"`
+}
+
+type FetchedMessage struct {
+	UID          uint32          `json:"uid"`
+	Flags        []string        `json:"flags,omitempty"`
+	InternalDate time.Time       `json:"internal_date,omitempty"`
+	RFC822Size   int64           `json:"rfc822_size,omitempty"`
+	Envelope     MessageEnvelope `json:"envelope,omitempty"`
+	Raw          *blob.Staged    `json:"-"`
+}
+
+type InboxPage struct {
+	Mailbox          string           `json:"mailbox"`
+	UIDValidity      uint32           `json:"uid_validity"`
+	LastCommittedUID uint32           `json:"last_committed_uid"`
+	LastScannedUID   uint32           `json:"last_scanned_uid"`
+	MoreAvailable    bool             `json:"more_available"`
+	Bootstrap        bool             `json:"bootstrap"`
+	Messages         []FetchedMessage `json:"messages"`
+}
+
+type UIDValidityError struct {
+	Expected uint32
+	Observed uint32
+}
+
+func (err *UIDValidityError) Error() string { return "IMAP UID validity changed" }
+
+type IMAPInboxClient interface {
+	FetchInboxPage(context.Context, AuthRequest, InboxFetchRequest, blob.Stager) (InboxPage, error)
 }
 
 type IMAPFolderClient interface {

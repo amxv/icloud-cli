@@ -17,7 +17,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const SchemaVersion int64 = 3
+const SchemaVersion int64 = 4
 
 var ErrMigrationLock = errors.New("migration lock unavailable")
 
@@ -162,6 +162,10 @@ func (s *Store) Accounts() *AccountRepository {
 
 func (s *Store) Folders() *FolderRepository {
 	return &FolderRepository{db: s.db}
+}
+
+func (s *Store) Mail() *MailRepository {
+	return &MailRepository{db: s.db}
 }
 
 // WithTx runs fn in one SQLite transaction and rolls it back on every error.

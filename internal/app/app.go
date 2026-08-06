@@ -26,6 +26,7 @@ func RunWithInput(ctx context.Context, args []string, stdin io.Reader, stdout, s
 		imap:    protocolClient,
 		smtp:    protocolClient,
 		folders: protocolClient,
+		mail:    protocolClient,
 	})
 }
 
@@ -33,6 +34,10 @@ func runWithAccounts(ctx context.Context, args []string, stdin io.Reader, stdout
 	var folders cli.FolderService
 	if candidate, ok := accounts.(cli.FolderService); ok {
 		folders = candidate
+	}
+	var mailService cli.MailService
+	if candidate, ok := accounts.(cli.MailService); ok {
+		mailService = candidate
 	}
 	result := cli.Execute(ctx, args, cli.Config{
 		Version:       buildinfo.CurrentVersion(),
@@ -42,6 +47,7 @@ func runWithAccounts(ctx context.Context, args []string, stdin io.Reader, stdout
 		Stderr:        stderr,
 		Accounts:      accounts,
 		Folders:       folders,
+		Mail:          mailService,
 	})
 	return result.ExitCode
 }

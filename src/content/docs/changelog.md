@@ -8,6 +8,11 @@ summary: Public command, output, installation, and documentation changes.
 
 ## Unreleased
 
+- Added bounded `icloud mail sync` for current-tail Inbox bootstrap and incremental UID paging, with streamed raw-message staging and atomic page/checkpoint commits.
+- Added local bounded `icloud mail inbox`, compact decoded-text previews, explicit JSON metadata, and stable message/location/checkpoint identities without exposing BCC or raw storage paths.
+- Added `mail sync status` and `mail sync checkpoints`, visible failed/repair-required states, UIDVALIDITY mismatch protection, empty-gap scanning, and retry-safe frontier handling.
+- Added deterministic fetch/parse/blob/transaction failure coverage, malformed-Date stability, content-addressed blob limits, compact-output budgets, and live iCloud bootstrap plus exactly-once AgentMail incremental evidence.
+- Added the Sync and read the Inbox guide and simplified nearby folder, quickstart, automation, troubleshooting, command-reference, landing-page, and README journeys.
 - Added `icloud mail folders status` to discover every remote mailbox and read provider counts without fetching messages or mutating mail.
 - Added durable schema-version-3 folder records containing decoded and modified-UTF-7 wire names, delimiter, attributes, special-use classification, selectable/subscription knowledge, provider counts, UID metadata, and discovery/status timestamps.
 - Added local bounded `mail folders list/show`, explicit `enable/disable` future-sync policy, Inbox/Sent defaults, policy preservation across rediscovery, and retained missing/stale folders.

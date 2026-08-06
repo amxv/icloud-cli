@@ -2,7 +2,7 @@
 
 `icloud` is a local-first command-line client for iCloud services. The project is being built for agent workflows without making the normal terminal experience noisy: compact plain text is the default, and structured or expanded output is always explicit.
 
-The current implementation provides secure multi-account and credential lifecycle, read-only live iCloud compatibility testing, and durable all-folder discovery. It can validate direct-TLS IMAP and mandatory-STARTTLS SMTP authentication, persist the successful IMAP username and redacted account health, discover nested and Unicode mailboxes with provider counts, retain missing folders explicitly, and manage local future-sync policy. These workflows never fetch message bodies, send mail, or mutate a mailbox.
+The current implementation provides secure multi-account and credential lifecycle, read-only live iCloud compatibility testing, durable all-folder discovery, and bounded local Inbox synchronization. It can validate IMAP/SMTP authentication, discover nested and Unicode mailboxes, stream raw Inbox messages into private local state, expose compact decoded-text previews, and resume incrementally without silently skipping a failed UID. It does not send mail or mutate remote mailbox state.
 
 ## Install
 
@@ -38,6 +38,10 @@ icloud mail folders show <selector> [--verbose] [--json]
 icloud mail folders status [--verbose] [--json]
 icloud mail folders enable <selector> [--json]
 icloud mail folders disable <selector> [--json]
+icloud mail sync [--limit <n>] [--json]
+icloud mail inbox [--limit <n>] [--json]
+icloud mail sync status [--json]
+icloud mail sync checkpoints [--limit <n>] [--json]
 icloud doctor [selector] [--all] [--live] [--verbose] [--json]
 icloud version [--json]
 icloud capabilities [--json]
@@ -51,9 +55,11 @@ Representative default output:
 ```text
 account-test acct_… status=connected imap=ok smtp=ok imap_username=owner mailboxes=6 inbox_messages=42 inbox_unseen=3
 folder-status account=acct_… count=8 present=8 stale=0 enabled=2
+mail-sync fld_… account=acct_… folder=INBOX fetched=20 created=20 updated=0 last_uid=184 more=false bootstrap=true
+inbox account=acct_… count=20 more=false
 doctor accounts=1 status=healthy
 version 0.1.0
-capabilities command=icloud version=0.1.0 schema=3 account_mode=validated_lifecycle credentials=keyring,env,file network_validation=true diagnostics=true mail_folders=true default_output=compact json=true completion=bash,zsh,fish,powershell man=true
+capabilities command=icloud version=0.1.0 schema=4 account_mode=validated_lifecycle credentials=keyring,env,file network_validation=true diagnostics=true mail_folders=true mail_sync=true default_output=compact json=true completion=bash,zsh,fish,powershell man=true
 ```
 
 Redirected and non-interactive execution uses the same compact default. Use `--json` only on commands that advertise it. For isolated state, set `ICLOUD_HOME=./icloud-state` or pass `--home ./icloud-state`. Use an app-specific password, never the primary Apple Account password; pass it through a secure prompt or `--password-stdin`, not argv.

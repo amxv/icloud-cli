@@ -40,7 +40,7 @@ func TestOpenCreatesAndReopensVersionedPrivateState(t *testing.T) {
 	if state.SchemaVersion() != SchemaVersion {
 		t.Fatalf("schema version = %d", state.SchemaVersion())
 	}
-	for _, table := range []string{"app_metadata", "accounts", "credential_refs", "folders", "goose_db_version"} {
+	for _, table := range []string{"app_metadata", "accounts", "credential_refs", "folders", "raw_blobs", "messages", "message_recipients", "message_references", "message_locations", "sync_checkpoints", "goose_db_version"} {
 		var count int
 		if err := state.db.QueryRowContext(context.Background(),
 			"SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?", table,
@@ -638,7 +638,7 @@ INSERT INTO credential_refs (
 		t.Fatal(err)
 	}
 	defer state.Close()
-	if state.SchemaVersion() != 3 {
+	if state.SchemaVersion() != SchemaVersion {
 		t.Fatalf("schema version = %d", state.SchemaVersion())
 	}
 	value, credential, err := state.Accounts().Credential(context.Background(), "Legacy")
@@ -720,7 +720,7 @@ INSERT INTO credential_refs (
 		t.Fatal(err)
 	}
 	defer state.Close()
-	if state.SchemaVersion() != 3 {
+	if state.SchemaVersion() != SchemaVersion {
 		t.Fatalf("schema version = %d", state.SchemaVersion())
 	}
 	value, credential, err := state.Accounts().Credential(context.Background(), "Phase Four")

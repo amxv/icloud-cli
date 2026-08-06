@@ -1,9 +1,9 @@
 ---
 title: Command reference
-description: A complete reference for account lifecycle, read-only iCloud validation, folder discovery and sync policy, doctor diagnostics, global controls, output modes, completion, and man generation.
+description: A complete reference for account lifecycle, iCloud validation, folder discovery, Inbox synchronization and reading, doctor diagnostics, global controls, output modes, completion, and man generation.
 order: 9
 category: Reference
-summary: Every account, credential, validation, folder, doctor, capability, completion, man, help, and global control available now.
+summary: Every account, credential, validation, folder, Inbox sync/read, doctor, capability, completion, man, help, and global control available now.
 ---
 
 ## Root command
@@ -201,6 +201,51 @@ icloud mail folders disable Receipts
 
 Changes local future-sync policy only; no message is fetched or changed. Newly discovered selectable Inbox and Sent default enabled, while every other folder defaults disabled. Policy survives rediscovery, rename, missing state, and reappearance. Enabling a non-selectable container returns conflict.
 
+## `icloud mail sync`
+
+```bash
+icloud mail sync
+icloud mail sync --limit 50
+icloud --account Personal mail sync --json
+```
+
+Fetches and atomically commits one bounded Inbox page. The default page is 20 messages and the maximum is 100. The first run starts at the current Inbox tail; later runs fetch only newer UIDs. `more=true` means another bounded page is available.
+
+The command requires a previously discovered, present, selectable, sync-enabled Inbox. It never changes remote flags, reads Sent, moves mail, or sends a message. An interrupted fetch, parse, blob write, or local commit leaves the prior frontier unchanged.
+
+Compact success reports the account/folder IDs, fetched/created/updated counts, committed UID, `more`, and whether the page was the initial bootstrap. `--json` returns the same outcome plus the durable checkpoint.
+
+## `icloud mail inbox`
+
+```bash
+icloud mail inbox
+icloud mail inbox --limit 50
+icloud mail inbox --json
+```
+
+Reads a bounded page from local state without contacting iCloud. Compact records include stable ID, sender, subject, best available date, true unread/flagged states, nonzero attachment count, and a bounded decoded-text preview.
+
+JSON adds complete locally stored preview metadata and provider location IDs while omitting credentials, BCC, raw storage paths/hashes, and full message bodies.
+
+## `icloud mail sync status`
+
+```bash
+icloud mail sync status
+icloud mail sync status --json
+```
+
+Shows the selected Inbox checkpoint locally. `idle` means the latest page committed, `failed` means the frontier did not advance, and `repair_required` means iCloud reported a different mailbox identity and ordinary sync stopped.
+
+## `icloud mail sync checkpoints`
+
+```bash
+icloud mail sync checkpoints
+icloud mail sync checkpoints --limit 50
+icloud mail sync checkpoints --json
+```
+
+Lists bounded account-scoped checkpoints from local state. Inbox is the only message checkpoint in this build.
+
 ## `icloud version`
 
 ```bash
@@ -224,7 +269,7 @@ icloud capabilities --json
 Compact output:
 
 ```text
-capabilities command=icloud version=0.1.0 schema=3 account_mode=validated_lifecycle credentials=keyring,env,file network_validation=true diagnostics=true mail_folders=true default_output=compact json=true completion=bash,zsh,fish,powershell man=true
+capabilities command=icloud version=0.1.0 schema=4 account_mode=validated_lifecycle credentials=keyring,env,file network_validation=true diagnostics=true mail_folders=true mail_sync=true default_output=compact json=true completion=bash,zsh,fish,powershell man=true
 ```
 
 The schema field reports the installed local-state migration version without opening state.
@@ -265,4 +310,4 @@ Help goes to stdout. Usage failures go to stderr and exit `2`.
 
 ## Output availability
 
-Every account and credential lifecycle command above, `account test`, every folder command, `doctor`, `version`, and `capabilities` supports `--json`. Validation, doctor, and folder reads/status support bounded `--verbose` detail where advertised. Completion and man generation retain native text. No command silently accepts unsupported JSONL, full-body, HTML, raw, header, or body-only modes.
+Every account and credential lifecycle command above, `account test`, every folder command, Inbox sync/read/status/checkpoints, `doctor`, `version`, and `capabilities` supports `--json`. Validation, doctor, and folder reads/status support bounded `--verbose` detail where advertised. Completion and man generation retain native text. No command silently accepts unsupported JSONL, full-body, HTML, raw, header, or body-only modes. The current Inbox read is intentionally preview-only.

@@ -28,6 +28,7 @@ type Config struct {
 	RequestIDGen  func() string
 	Accounts      AccountService
 	Folders       FolderService
+	Mail          MailService
 }
 
 type FolderService interface {
@@ -75,6 +76,7 @@ type executionState struct {
 	global        globalOptions
 	accounts      AccountService
 	folders       FolderService
+	mail          MailService
 	cancel        context.CancelFunc
 }
 
@@ -98,6 +100,7 @@ type capabilitiesData struct {
 	NetworkValidation bool             `json:"network_validation"`
 	Diagnostics       bool             `json:"diagnostics"`
 	MailFolders       bool             `json:"mail_folders"`
+	MailSync          bool             `json:"mail_sync"`
 	Output            capabilityOutput `json:"output"`
 	Completion        []string         `json:"completion"`
 	Man               bool             `json:"man"`
@@ -134,6 +137,9 @@ func Execute(ctx context.Context, args []string, config Config) Result {
 	if config.Folders == nil {
 		config.Folders = unavailableFolderService{}
 	}
+	if config.Mail == nil {
+		config.Mail = unavailableMailService{}
+	}
 
 	requestID := requestedID(args)
 	if !validRequestID(requestID) {
@@ -148,6 +154,7 @@ func Execute(ctx context.Context, args []string, config Config) Result {
 		requestID:     requestID,
 		accounts:      config.Accounts,
 		folders:       config.Folders,
+		mail:          config.Mail,
 	}
 	if state.version == "" {
 		state.version = "dev"
@@ -301,6 +308,7 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				NetworkValidation: true,
 				Diagnostics:       true,
 				MailFolders:       true,
+				MailSync:          true,
 				Output: capabilityOutput{
 					Default: "compact",
 					JSON:    true,
@@ -325,6 +333,7 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				Field("network_validation", data.NetworkValidation),
 				Field("diagnostics", data.Diagnostics),
 				Field("mail_folders", data.MailFolders),
+				Field("mail_sync", data.MailSync),
 				Field("default_output", data.Output.Default),
 				Field("json", data.Output.JSON),
 				Field("completion", data.Completion),

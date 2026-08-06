@@ -37,12 +37,14 @@ func newMailCommand(state *executionState) *cobra.Command {
 		Short:   "Inspect and synchronize iCloud Mail data",
 		GroupID: "mail",
 		Args:    cobra.NoArgs,
-		Example: "  icloud mail folders status\n  icloud mail folders list",
+		Example: "  icloud mail sync\n  icloud mail inbox\n  icloud mail folders status",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
 		},
 	}
 	command.AddCommand(newMailFoldersCommand(state))
+	command.AddCommand(newMailSyncCommand(state))
+	command.AddCommand(newMailInboxCommand(state))
 	return command
 }
 

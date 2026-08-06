@@ -194,7 +194,7 @@ Generating completion output does not install it automatically.
 
 ## A local command is not contacting iCloud
 
-That is expected for `account add`, credential replacement, account reads, local folder `list`/`show`, folder policy changes, and `doctor` without `--live`. Use `icloud account test`, `icloud doctor --live`, or `icloud mail folders status` for explicit read-only network work. Message-content synchronization and sending are not implemented in the current build.
+That is expected for `account add`, credential replacement, account reads, local folder `list`/`show`, folder policy changes, and `doctor` without `--live`. Use `icloud account test`, `icloud doctor --live`, `icloud mail folders status`, or `icloud mail sync` for explicit network work. Inbox sync is read-only at iCloud; sending and mailbox mutation are not implemented in this build.
 
 ## Folder list is empty
 
@@ -217,3 +217,33 @@ The provider did not advertise a corresponding special-use attribute. The CLI de
 ## A removed folder still appears
 
 Live folder status retains absent provider folders as `present=no stale=true` so identity and policy are not silently lost. Normal `folders list` hides retained missing records; add `--include-missing` to inspect them.
+
+
+## Inbox sync says the folder is not discovered
+
+Run a folder refresh, then retry:
+
+```bash
+icloud mail folders status
+icloud mail sync
+```
+
+The CLI requires a confirmed, selectable Inbox identity before fetching messages.
+
+## Inbox sync failed without advancing
+
+Inspect the saved frontier:
+
+```bash
+icloud mail sync status
+```
+
+`state=failed` means the page was not committed and `committed` remains safe to retry. Use a larger `--timeout` only after checking the reported IMAP stage and connectivity.
+
+## Inbox sync requires repair
+
+`state=repair_required` means iCloud returned a different mailbox identity. Ordinary sync stops before resetting or combining message locations. Keep the state directory intact; a dedicated repair command is introduced in a later workflow.
+
+## The Inbox command does not contact iCloud
+
+That is intentional. `icloud mail inbox` reads the latest locally committed page. Run `icloud mail sync` first when new remote mail is expected.

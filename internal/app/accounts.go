@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/amxv/icloud-cli/internal/account"
+	"github.com/amxv/icloud-cli/internal/blob"
 	"github.com/amxv/icloud-cli/internal/cli"
 	"github.com/amxv/icloud-cli/internal/config"
 	"github.com/amxv/icloud-cli/internal/folder"
@@ -24,6 +25,8 @@ type accountCommands struct {
 	imap    transport.IMAPValidator
 	smtp    transport.SMTPValidator
 	folders transport.IMAPFolderClient
+	mail    transport.IMAPInboxClient
+	blobs   func(config.AppPaths) blob.Stager
 	now     func() time.Time
 	newID   func(string) (string, error)
 }
