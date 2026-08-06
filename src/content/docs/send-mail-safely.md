@@ -119,12 +119,14 @@ Every real send persists a pending attempt before the SMTP transaction. The fina
 
 | Status | Meaning | Next action |
 | --- | --- | --- |
-| `sent` | iCloud SMTP returned final acceptance, and the local message and attempt committed together. | Use the returned `msg_…` or `thr_…`; reuse the same idempotency key only to retrieve this result. |
+| `sent` | iCloud SMTP returned final acceptance. Normally the local message and attempt commit together and return `msg_…` and `thr_…`. | Use the returned IDs. When an error reports `error_code=local_completion`, iCloud still accepted the message but the local projection is incomplete; do not resend it. |
 | `failed` | The CLI proved the message was not accepted, such as authentication failure or an explicit SMTP rejection. | Fix the reported cause. A deliberate new attempt should use a new idempotency key. |
-| `unknown` | The connection failed after message data may have reached iCloud, or acceptance succeeded but local completion could not be confirmed. | Do not retry automatically. Verify delivery first. |
+| `unknown` | The connection failed after message data may have reached iCloud, so acceptance could not be proved either way. | Do not retry automatically. Verify delivery first. |
 | `pending` | An earlier process stopped before a final durable outcome was recorded. | Treat it as unresolved; do not create an automatic duplicate. |
 
 An `unknown` error is always reported as non-retryable even when the underlying network failure was temporary. Run the exact same command with the same idempotency key to retrieve the original attempt without resending, then check the receiving mailbox or iCloud Sent mailbox before deciding whether a new attempt is appropriate.
+
+A local-completion error is different: the final SMTP acceptance was proven, so the durable attempt remains `sent` and the same idempotency key cannot resubmit it. Preserve the attempt ID and let Sent reconciliation restore the missing local location/message evidence.
 
 ## Use JSON only when its privacy tradeoff is intentional
 
@@ -138,4 +140,5 @@ A dry-run `--json` response is different: it is an explicit review mode and ther
 - `mail body consumed stdin`: stdin cannot also answer an interactive prompt; rerun with `--yes` after review.
 - `idempotency key was already used`: keep the original request or choose a new key for an intentionally different message.
 - `mail send outcome is unknown`: preserve the attempt ID, do not auto-retry, and verify delivery externally.
+- `SMTP accepted the message but local completion is incomplete`: the provider accepted it; preserve the `send_…` ID and do not resend.
 - SMTP authentication or STARTTLS failure: run `icloud account test` and correct the account credential or network path before another deliberate attempt.

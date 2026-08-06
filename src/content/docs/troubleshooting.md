@@ -126,9 +126,15 @@ Run the original command unchanged to retrieve its attempt without another SMTP 
 
 ## Mail send outcome is unknown
 
-The CLI lost certainty after message data may have reached iCloud, or iCloud accepted the message but the local completion transaction could not be confirmed. This error is deliberately `retryable=false` even when the underlying network problem was temporary.
+The CLI lost certainty after message data may have reached iCloud, so it cannot prove whether iCloud accepted the message. This error is deliberately `retryable=false` even when the underlying network problem was temporary.
 
 Do not rerun with a new idempotency key immediately. Keep the returned `send_…` attempt ID, rerun the exact same command with the same key only to retrieve the original attempt, and verify the receiving mailbox or iCloud Sent mailbox before deciding whether another message is appropriate.
+
+## SMTP accepted the message but local completion is incomplete
+
+The provider returned final acceptance, but the CLI could not finish the local searchable message/thread transaction. The durable attempt remains `sent` with `error_code=local_completion` so an idempotent replay cannot submit it again.
+
+Do not resend. Preserve the `send_…` ID and use outbound Sent reconciliation when available to restore the missing local linkage.
 
 ## Mail send failed before acceptance
 
