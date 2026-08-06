@@ -30,6 +30,8 @@ type MailService interface {
 	MailHydrate(context.Context, string, string, []string) (account.Account, []maildomain.HydrateOutcome, int64, error)
 	MailSendPreview(context.Context, string, string, maildomain.SendRequest) (account.Account, maildomain.SendPreview, int64, error)
 	MailSend(context.Context, string, string, maildomain.SendRequest) (account.Account, maildomain.OutboundAttempt, bool, int64, error)
+	MailReplyPreview(context.Context, string, string, maildomain.ReplyRequest) (account.Account, maildomain.ReplyPreview, int64, error)
+	MailReply(context.Context, string, string, maildomain.ReplyRequest) (account.Account, maildomain.OutboundAttempt, bool, int64, error)
 	MailOutboundStatus(context.Context, string, string, int) (account.Account, []maildomain.OutboundAttempt, bool, int64, error)
 }
 
@@ -493,6 +495,12 @@ func (unavailableMailService) MailSendPreview(context.Context, string, string, m
 }
 func (unavailableMailService) MailSend(context.Context, string, string, maildomain.SendRequest) (account.Account, maildomain.OutboundAttempt, bool, int64, error) {
 	return account.Account{}, maildomain.OutboundAttempt{}, false, 0, NewAppError(ErrorConfiguration, "mail send is unavailable", false)
+}
+func (unavailableMailService) MailReplyPreview(context.Context, string, string, maildomain.ReplyRequest) (account.Account, maildomain.ReplyPreview, int64, error) {
+	return account.Account{}, maildomain.ReplyPreview{}, 0, NewAppError(ErrorConfiguration, "mail reply preview is unavailable", false)
+}
+func (unavailableMailService) MailReply(context.Context, string, string, maildomain.ReplyRequest) (account.Account, maildomain.OutboundAttempt, bool, int64, error) {
+	return account.Account{}, maildomain.OutboundAttempt{}, false, 0, NewAppError(ErrorConfiguration, "mail reply is unavailable", false)
 }
 func (unavailableMailService) MailOutboundStatus(context.Context, string, string, int) (account.Account, []maildomain.OutboundAttempt, bool, int64, error) {
 	return account.Account{}, nil, false, 0, NewAppError(ErrorConfiguration, "outbound mail status is unavailable", false)

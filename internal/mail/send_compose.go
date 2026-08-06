@@ -45,6 +45,12 @@ func ComposeOutboundMessage(writer io.Writer, request SendRequest, messageID str
 	header.SetSubject(request.Subject)
 	header.SetDate(sentAt.UTC())
 	header.SetMessageID(messageID)
+	if request.InReplyTo != "" {
+		header.SetMsgIDList("In-Reply-To", []string{request.InReplyTo})
+	}
+	if len(request.References) > 0 {
+		header.SetMsgIDList("References", request.References)
+	}
 	for _, field := range request.Headers {
 		header.Set(field.Key, field.Value)
 	}

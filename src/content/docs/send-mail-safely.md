@@ -1,9 +1,9 @@
 ---
 title: Send mail safely
-description: Preview and send a new iCloud Mail message with explicit confirmation, idempotency, BCC privacy, streamed attachments, and honest delivery outcomes.
+description: Preview, send, and reply through iCloud Mail with explicit message selection, confirmation, idempotency, BCC privacy, streamed attachments, and honest delivery outcomes.
 order: 8
 category: Guides
-summary: Dry-run review, confirmation, body and attachment inputs, recipient privacy, idempotency, Sent reconciliation, explicit retries, and unknown-outcome recovery.
+summary: Dry-run review, exact-message replies, reply-all recipient review, confirmation, attachments, privacy, idempotency, Sent reconciliation, and unknown-outcome recovery.
 ---
 
 ## Preview the exact request first
@@ -66,6 +66,51 @@ reused=false
 ```
 
 The submitted subject, body, recipients, BCC list, and custom headers are not echoed after a real send. The accepted message is immediately readable and searchable through its local `msg_…` and `thr_…` IDs.
+
+## Reply to the exact message you intend
+
+Replies always start from a stable local `msg_…` ID. The CLI never guesses that the newest message in a conversation is the one you meant:
+
+```bash
+icloud mail reply msg_… \
+  --body-file reply.txt \
+  --dry-run --headers
+```
+
+The preview identifies the exact parent and reconstructed thread, then separates recipients derived from the parent from addresses you added. A normal reply prefers the parent's `Reply-To` address and otherwise uses `From`. It normalizes the subject to one `Re:` prefix and adds RFC `In-Reply-To` and `References` headers when the parent has a usable Message-ID.
+
+After review, send with the same safety controls as a new message:
+
+```bash
+icloud mail reply msg_… \
+  --body-file reply.txt \
+  --idempotency-key client-reply-2026-08-06 \
+  --yes
+```
+
+The success result includes `kind=reply`, `parent_message_id=msg_…`, the accepted child `message_id`, and the reconstructed `thread_id`. Repeating the same normalized reply with the same idempotency key returns the original attempt without contacting SMTP again.
+
+Use `reply-all` only after inspecting the resolved participant lists:
+
+```bash
+icloud mail reply-all msg_… \
+  --body 'Thanks, everyone.' \
+  --dry-run
+```
+
+Reply-all starts with the parent's visible `To` and `Cc` participants, removes the selected account identity, deduplicates addresses, and keeps the primary reply address in `To`. It never resurrects BCC recipients from the parent. A new `--bcc` address is included only because you supplied it for this reply, and it remains envelope-only on the wire.
+
+`--to` and `--cc` add recipients to the derived lists. Use `--replace-to` or `--replace-cc` when you deliberately want the supplied list to replace the corresponding derived list:
+
+```bash
+icloud mail reply-all msg_… \
+  --to new-owner@example.com --replace-to \
+  --cc reviewer@example.com --replace-cc \
+  --body-file reply.txt \
+  --dry-run
+```
+
+If the parent's Message-ID is absent or malformed, the preview reports `threading=false` and sends without inventing relationship headers. The local child may then remain a separate reconstructed conversation; use the preview rather than assuming a thread merge.
 
 ## Choose one safe body source
 
@@ -146,7 +191,7 @@ icloud mail send \
   --dry-run --format raw > preview.eml
 ```
 
-Custom headers cannot replace routing, identity, MIME, or delivery headers. Header names and values containing control characters, duplicate names, `Bcc`, `Received`, `Resent-*`, or other reserved fields are rejected before any network connection.
+Custom headers cannot replace routing, identity, MIME, delivery, or reply-threading headers. Header names and values containing control characters, duplicate names, `Bcc`, `In-Reply-To`, `References`, `Received`, `Resent-*`, or other reserved fields are rejected before any network connection.
 
 ## Interpret the outcome before retrying
 
@@ -201,6 +246,9 @@ A dry-run `--json` response is different: it is an explicit review mode and ther
 ## Common recovery
 
 - `non-interactive mail send requires --yes`: review with `--dry-run`, then add `--yes` to the deliberate send.
+- `non-interactive mail reply requires --yes`: review the exact parent and resolved recipients with `--dry-run`, then add `--yes`.
+- `reply parent message not found`: synchronize or cache the intended message, then use its stable local `msg_…` ID.
+- `cannot construct a safe reply from the selected message`: inspect the exact parent. If every derived recipient is one of the selected account's own identities, supply a deliberate `--to` address or use `--replace-to --to ...`.
 - `mail body consumed stdin`: stdin cannot also answer an interactive prompt; rerun with `--yes` after review.
 - `idempotency key was already used`: keep the original request or choose a new key for an intentionally different message.
 - `mail send outcome is unknown`: preserve the attempt ID, run `mail sync --reconcile-outbound`, inspect `mail status --outbound`, and verify the recipient before considering `--retry-unknown`.

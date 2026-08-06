@@ -55,6 +55,14 @@ const (
 	ReconciliationUnknown   ReconciliationState = "unknown"
 )
 
+type OutboundKind string
+
+const (
+	OutboundKindSend     OutboundKind = "send"
+	OutboundKindReply    OutboundKind = "reply"
+	OutboundKindReplyAll OutboundKind = "reply_all"
+)
+
 type CustomHeader struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`
@@ -71,6 +79,8 @@ type OutboundAttachment struct {
 }
 
 type SendRequest struct {
+	Kind                  OutboundKind         `json:"kind,omitempty"`
+	ParentMessageID       string               `json:"parent_message_id,omitempty"`
 	From                  Address              `json:"from"`
 	To                    []Address            `json:"to"`
 	CC                    []Address            `json:"cc,omitempty"`
@@ -80,6 +90,8 @@ type SendRequest struct {
 	TextBody              string               `json:"text_body,omitempty"`
 	HTMLBody              string               `json:"html_body,omitempty"`
 	Headers               []CustomHeader       `json:"headers,omitempty"`
+	InReplyTo             string               `json:"in_reply_to,omitempty"`
+	References            []string             `json:"references,omitempty"`
 	Attachments           []OutboundAttachment `json:"attachments,omitempty"`
 	IdempotencyKey        string               `json:"-"`
 	RetryOfAttemptID      string               `json:"-"`
@@ -87,6 +99,8 @@ type SendRequest struct {
 }
 
 type SendPreview struct {
+	Kind            OutboundKind         `json:"kind,omitempty"`
+	ParentMessageID string               `json:"parent_message_id,omitempty"`
 	AccountID       string               `json:"account_id"`
 	From            Address              `json:"from"`
 	To              []Address            `json:"to"`
@@ -97,6 +111,8 @@ type SendPreview struct {
 	TextBody        string               `json:"text_body,omitempty"`
 	HTMLBody        string               `json:"html_body,omitempty"`
 	Headers         []CustomHeader       `json:"headers,omitempty"`
+	InReplyTo       string               `json:"in_reply_to,omitempty"`
+	References      []string             `json:"references,omitempty"`
 	Attachments     []OutboundAttachment `json:"attachments,omitempty"`
 	BodyParts       int                  `json:"body_parts"`
 	AttachmentCount int                  `json:"attachment_count"`
@@ -117,6 +133,8 @@ type OutboundAttempt struct {
 	BodyPartCount           int                 `json:"body_part_count"`
 	AttachmentCount         int                 `json:"attachment_count"`
 	AttachmentBytes         int64               `json:"attachment_bytes"`
+	Kind                    OutboundKind        `json:"kind"`
+	ParentMessageID         string              `json:"parent_message_id,omitempty"`
 	MessageID               string              `json:"message_id,omitempty"`
 	ThreadID                string              `json:"thread_id,omitempty"`
 	RetryOfAttemptID        string              `json:"retry_of_attempt_id,omitempty"`
@@ -149,6 +167,8 @@ type BeginOutboundAttempt struct {
 	BCCCount          int
 	BodyPartCount     int
 	Attachments       []OutboundAttachmentRecord
+	Kind              OutboundKind
+	ParentMessageID   string
 	RetryOfAttemptID  string
 	Now               time.Time
 }
@@ -184,6 +204,11 @@ type OutboundReconcileSummary struct {
 }
 
 func NormalizeSendRequest(value SendRequest) (SendRequest, error) {
+	value.Kind = normalizeOutboundKind(value.Kind)
+	value.ParentMessageID = strings.TrimSpace(value.ParentMessageID)
+	if err := validateOutboundThreading(&value); err != nil {
+		return SendRequest{}, err
+	}
 	var err error
 	value.From, err = normalizeOneAddress(value.From, true)
 	if err != nil {
@@ -260,6 +285,13 @@ func SendRequestHash(value SendRequest) (string, error) {
 	}
 	sum := sha256.Sum256(payload)
 	return hex.EncodeToString(sum[:]), nil
+}
+
+func (value SendRequest) Operation() OutboundKind {
+	if value.Kind == "" {
+		return OutboundKindSend
+	}
+	return value.Kind
 }
 
 func (value SendRequest) EnvelopeRecipients() []string {
@@ -388,7 +420,7 @@ func normalizeCustomHeaders(values []CustomHeader) ([]CustomHeader, error) {
 	}
 	reserved := map[string]struct{}{
 		"bcc": {}, "cc": {}, "content-transfer-encoding": {}, "content-type": {},
-		"date": {}, "from": {}, "message-id": {}, "mime-version": {}, "reply-to": {},
+		"date": {}, "from": {}, "in-reply-to": {}, "message-id": {}, "mime-version": {}, "references": {}, "reply-to": {},
 		"return-path": {}, "sender": {}, "subject": {}, "to": {},
 	}
 	result := make([]CustomHeader, 0, len(values))
@@ -414,6 +446,51 @@ func normalizeCustomHeaders(values []CustomHeader) ([]CustomHeader, error) {
 	}
 	sort.Slice(result, func(i, j int) bool { return strings.ToLower(result[i].Key) < strings.ToLower(result[j].Key) })
 	return result, nil
+}
+
+func normalizeOutboundKind(value OutboundKind) OutboundKind {
+	switch value {
+	case "", OutboundKindSend:
+		// Keep ordinary send as the zero value so request hashes created before
+		// reply support remain stable across the schema upgrade.
+		return ""
+	case OutboundKindReply, OutboundKindReplyAll:
+		return value
+	default:
+		return value
+	}
+}
+
+func validateOutboundThreading(value *SendRequest) error {
+	if value == nil {
+		return fmt.Errorf("%w: outbound request is missing", ErrInvalidSendRequest)
+	}
+	switch value.Kind {
+	case "":
+		if value.ParentMessageID != "" || strings.TrimSpace(value.InReplyTo) != "" || len(value.References) > 0 {
+			return fmt.Errorf("%w: reply metadata requires a reply operation", ErrInvalidSendRequest)
+		}
+	case OutboundKindReply, OutboundKindReplyAll:
+		if !strings.HasPrefix(value.ParentMessageID, "msg_") {
+			return fmt.Errorf("%w: reply parent message is required", ErrInvalidSendRequest)
+		}
+	default:
+		return fmt.Errorf("%w: unsupported outbound operation", ErrInvalidSendRequest)
+	}
+	if value.Kind == "" {
+		return nil
+	}
+	threadingID, ok := NormalizeRFCMessageID(value.InReplyTo)
+	if strings.TrimSpace(value.InReplyTo) != "" && !ok {
+		return fmt.Errorf("%w: invalid In-Reply-To message identifier", ErrInvalidSendRequest)
+	}
+	value.InReplyTo = threadingID
+	if value.InReplyTo == "" {
+		value.References = nil
+		return nil
+	}
+	value.References = NormalizeReferenceChain(value.References, value.InReplyTo)
+	return nil
 }
 
 func validHeaderKey(value string) bool {

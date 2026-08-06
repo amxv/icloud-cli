@@ -48,6 +48,8 @@ func newMailStatusCommand(state *executionState) *cobra.Command {
 			renderer := NewCompactTextRenderer(state.stdout)
 			for _, attempt := range attempts {
 				if err := renderer.Record("outbound", attempt.ID,
+					Field("kind", attempt.Kind),
+					Field("parent_message_id", attempt.ParentMessageID),
 					Field("status", attempt.Status),
 					Field("message_id", attempt.MessageID),
 					Field("thread_id", attempt.ThreadID),

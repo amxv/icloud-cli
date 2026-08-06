@@ -30,7 +30,7 @@ version
 capabilities
 command=icloud
 version=0.1.0
-schema=12
+schema=13
 account_mode=validated_lifecycle
 credentials=keyring,env,file
 network_validation=true
@@ -45,6 +45,7 @@ mail_search=true
 mail_remote_search=true
 mail_hydration=true
 mail_send=true
+mail_reply=true
 default_output=compact
 json=true
 completion=bash,zsh,fish,powershell

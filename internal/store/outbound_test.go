@@ -120,6 +120,82 @@ func TestOutboundAcceptedPersistsLocationlessSearchableMessageAtomically(t *test
 	}
 }
 
+func TestOutboundReplyPersistsExactParentAndJoinsExistingThread(t *testing.T) {
+	state, accountID, inboxID := newMailStoreFixture(t)
+	defer state.Close()
+	ctx := context.Background()
+	base := time.Date(2026, 8, 6, 14, 25, 0, 0, time.UTC)
+	parent := mailRecordFixture(accountID, inboxID, 100, 1, "reply-parent@example.test")
+	parent.Parsed.InReplyTo = ""
+	parent.Parsed.References = nil
+	parent.Parsed.Subject = "Reply persistence"
+	parent.Parsed.ReplyTo = maildomain.Address{Email: "reply-target@example.test"}
+	commitSentRecord(t, state, parent, "chk_0198d704-6c00-7000-8000-000000000611", base)
+	parentPage, err := state.Threads().Show(ctx, accountID, parent.MessageID, "", 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	request, err := maildomain.NormalizeSendRequest(maildomain.SendRequest{
+		Kind:            maildomain.OutboundKindReply,
+		ParentMessageID: parent.MessageID,
+		From:            maildomain.Address{DisplayName: "Mail Test", Email: "mail-test@icloud.com"},
+		To:              []maildomain.Address{{Email: "reply-target@example.test"}},
+		Subject:         "Re: Reply persistence",
+		TextBody:        "persisted reply body",
+		InReplyTo:       parent.Parsed.RFCMessageID,
+		References:      []string{parent.Parsed.RFCMessageID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw bytes.Buffer
+	if err := maildomain.ComposeOutboundMessage(&raw, request, "reply-child@example.test", base.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	content, err := maildomain.ParseNormalized(bytes.NewReader(raw.Bytes()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content.AttachmentsIndexed = true
+	for index := range content.Parts {
+		content.Parts[index].ID = fmt.Sprintf("prt_0198d704-6c00-7000-8000-%012d", index+750)
+	}
+	rawHash := strings.Repeat("9", 64)
+	attempt, existing, err := state.Outbound().Begin(ctx, maildomain.BeginOutboundAttempt{
+		AttemptID: "send_0198d704-6c00-7000-8000-000000000011",
+		AccountID: accountID, ProposedMessageID: "msg_0198d704-6c00-7000-8000-000000000611",
+		RequestHash: strings.Repeat("8", 64), IdempotencyKey: "reply-persistence-01",
+		RFCMessageID:   content.Preview.RFCMessageID,
+		RawContentHash: rawHash, RawStorageKey: "raw/sha256/99/" + rawHash + ".eml", RawByteSize: int64(raw.Len()),
+		ToCount: len(request.To), BodyPartCount: request.BodyPartCount(),
+		Kind: request.Operation(), ParentMessageID: request.ParentMessageID, Now: base.Add(time.Minute),
+	})
+	if err != nil || existing {
+		t.Fatalf("begin reply attempt=%+v existing=%v err=%v", attempt, existing, err)
+	}
+	accepted, err := state.Outbound().CompleteSent(ctx, maildomain.CompleteOutboundSend{
+		AttemptID: attempt.ID, Request: request, Content: content, AcceptedAt: base.Add(2 * time.Minute),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if accepted.Kind != maildomain.OutboundKindReply || accepted.ParentMessageID != parent.MessageID || accepted.ThreadID != parentPage.Thread.ID {
+		t.Fatalf("accepted reply metadata=%+v parent_thread=%s", accepted, parentPage.Thread.ID)
+	}
+	message, err := state.Mail().Message(ctx, accountID, accepted.MessageID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if message.InReplyTo != "reply-parent@example.test" || strings.Join(message.References, ",") != "reply-parent@example.test" {
+		t.Fatalf("stored reply threading=%+v", message)
+	}
+	threadPage, err := state.Threads().Show(ctx, accountID, parentPage.Thread.ID, "", 20)
+	if err != nil || threadPage.Thread.MessageCount != 2 || len(threadPage.Thread.Messages) != 2 {
+		t.Fatalf("reply thread page=%+v err=%v", threadPage, err)
+	}
+}
+
 func TestOutboundAcceptedTransactionRollbackLeavesPendingAttemptAndNoMessage(t *testing.T) {
 	state, accountID, _ := newMailStoreFixture(t)
 	defer state.Close()

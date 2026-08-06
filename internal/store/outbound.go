@@ -20,7 +20,8 @@ SELECT attempt_id, account_id, proposed_message_id, request_hash,
        idempotency_key, status, rfc_message_id,
        raw_content_hash, raw_storage_key, raw_byte_size,
        to_count, cc_count, bcc_count, body_part_count,
-       attachment_count, attachment_byte_size, message_id, thread_id,
+       attachment_count, attachment_byte_size, outbound_kind, parent_message_id,
+       message_id, thread_id,
        retry_of_attempt_id, reconciliation, reconciled_location_id,
        reconciliation_error_code, error_code,
        accepted_at, created_at, updated_at
@@ -51,6 +52,23 @@ func (repository *OutboundRepository) Begin(ctx context.Context, input maildomai
 		strings.TrimSpace(input.RFCMessageID) == "" || len(strings.TrimSpace(input.RawContentHash)) != 64 ||
 		strings.TrimSpace(input.RawStorageKey) == "" || input.RawByteSize < 0 {
 		return maildomain.OutboundAttempt{}, false, errors.New("begin outbound attempt: required identity or raw metadata is missing")
+	}
+	kind := input.Kind
+	if kind == "" {
+		kind = maildomain.OutboundKindSend
+	}
+	parentMessageID := strings.TrimSpace(input.ParentMessageID)
+	switch kind {
+	case maildomain.OutboundKindSend:
+		if parentMessageID != "" {
+			return maildomain.OutboundAttempt{}, false, errors.New("begin outbound attempt: send cannot name a reply parent")
+		}
+	case maildomain.OutboundKindReply, maildomain.OutboundKindReplyAll:
+		if !strings.HasPrefix(parentMessageID, "msg_") {
+			return maildomain.OutboundAttempt{}, false, errors.New("begin outbound attempt: reply parent message is required")
+		}
+	default:
+		return maildomain.OutboundAttempt{}, false, errors.New("begin outbound attempt: unsupported outbound kind")
 	}
 	var attachmentBytes int64
 	for index, attachment := range input.Attachments {
@@ -98,14 +116,16 @@ INSERT INTO outbound_attempts (
     attempt_id, account_id, proposed_message_id, request_hash, idempotency_key,
     status, rfc_message_id, raw_content_hash, raw_storage_key, raw_byte_size,
     to_count, cc_count, bcc_count, body_part_count,
-    attachment_count, attachment_byte_size, retry_of_attempt_id,
+    attachment_count, attachment_byte_size, outbound_kind, parent_message_id,
+    retry_of_attempt_id,
     reconciliation, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'none', ?, ?)`,
+) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'none', ?, ?)`,
 		input.AttemptID, input.AccountID, input.ProposedMessageID, input.RequestHash,
 		strings.TrimSpace(input.IdempotencyKey), input.RFCMessageID,
 		input.RawContentHash, input.RawStorageKey, input.RawByteSize,
 		input.ToCount, input.CCCount, input.BCCCount, input.BodyPartCount,
-		len(input.Attachments), attachmentBytes, strings.TrimSpace(input.RetryOfAttemptID),
+		len(input.Attachments), attachmentBytes, kind, parentMessageID,
+		strings.TrimSpace(input.RetryOfAttemptID),
 		timestamp, timestamp,
 	); err != nil {
 		return maildomain.OutboundAttempt{}, false, fmt.Errorf("persist pending outbound attempt: %w", err)
@@ -232,6 +252,9 @@ func (repository *OutboundRepository) CompleteSent(ctx context.Context, input ma
 	}
 	if err := verifyOutboundAttemptAttachments(ctx, tx, attempt.ID, input.Content.Attachments); err != nil {
 		return maildomain.OutboundAttempt{}, err
+	}
+	if attempt.Kind != input.Request.Operation() || attempt.ParentMessageID != strings.TrimSpace(input.Request.ParentMessageID) {
+		return maildomain.OutboundAttempt{}, errors.New("accepted outbound operation does not match the pending attempt")
 	}
 	timestamp := input.AcceptedAt.UTC().Format(time.RFC3339Nano)
 	parsed := input.Content.Preview
@@ -502,7 +525,8 @@ func scanOutboundAttempt(row rowScanner) (maildomain.OutboundAttempt, error) {
 		&value.IdempotencyKey, &status, &value.RFCMessageID,
 		&value.RawContentHash, &value.RawStorageKey, &value.RawByteSize,
 		&value.ToCount, &value.CCCount, &value.BCCCount, &value.BodyPartCount,
-		&value.AttachmentCount, &value.AttachmentBytes, &value.MessageID, &value.ThreadID,
+		&value.AttachmentCount, &value.AttachmentBytes, &value.Kind, &value.ParentMessageID,
+		&value.MessageID, &value.ThreadID,
 		&value.RetryOfAttemptID, &reconciliation, &value.ReconciledLocationID,
 		&value.ReconciliationErrorCode, &value.ErrorCode,
 		&acceptedAt, &createdAt, &updatedAt,

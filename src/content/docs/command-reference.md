@@ -1,9 +1,9 @@
 ---
 title: Command reference
-description: A complete reference for account lifecycle, iCloud validation, safe outbound mail, folder discovery, synchronization, search, message and attachment reads, diagnostics, output modes, completion, and man generation.
+description: A complete reference for account lifecycle, iCloud validation, safe send and reply workflows, folder discovery, synchronization, search, message and attachment reads, diagnostics, output modes, completion, and man generation.
 order: 11
 category: Reference
-summary: Every account, credential, validation, send, folder, sync/read/search, message, attachment, doctor, capability, completion, man, help, and global control available now.
+summary: Every account, credential, validation, send, reply, folder, sync/read/search, message, attachment, doctor, capability, completion, man, help, and global control available now.
 ---
 
 ## Root command
@@ -270,6 +270,49 @@ A pending attempt and all outbound attachment metadata are durable before SMTP. 
 
 Real compact/JSON success returns only stable account, attempt, message, and thread identity plus status, reconciliation, reuse state, and schema metadata. It omits recipients, BCC, subject, bodies, custom headers, idempotency key, and raw-storage coordinates. Dry-run JSON intentionally contains the full normalized review request and must be treated as private message content.
 
+## `icloud mail reply` / `reply-all`
+
+Reply to one exact locally synchronized message:
+
+```bash
+icloud mail reply msg_… --body-file reply.txt --dry-run --headers
+icloud mail reply msg_… --body 'Thanks' --idempotency-key reply-01 --yes
+icloud mail reply-all msg_… --body-file reply.txt --attach report.pdf --dry-run
+```
+
+The positional `msg_…` is mandatory and is always the exact reply parent. The command never selects the latest message in a thread implicitly. `reply` derives one primary recipient from `Reply-To`, then `From`. `reply-all` also derives visible original `To` and `Cc` participants, excludes the selected account identity, deduplicates addresses, and never infers prior BCC recipients.
+
+| Flag | Purpose |
+| --- | --- |
+| `--to <address>` / `--cc <address>` | Add recipients to the derived To or Cc list. Repeat or pass a comma-separated list. |
+| `--bcc <address>` | Add a new envelope-only Bcc recipient to this reply. The parent BCC list is never reused. |
+| `--replace-to` / `--replace-cc` | Replace the corresponding derived list with addresses explicitly supplied through `--to` or `--cc`. `--replace-to` requires at least one supplied To address. |
+| `--body`, `--body-file`, `--html-body`, `--html-body-file` | Supply the reply body using the same bounds and stdin rules as `mail send`. |
+| `--attach`, `--attach-name`, `--attach-type` | Attach reviewed regular files through the same streamed attachment path as `mail send`. |
+| `--header 'Name: Value'` | Add a safe custom header. `In-Reply-To` and `References` are reserved for the resolved parent. |
+| `--idempotency-key`, `--retry-of`, `--retry-unknown` | Use the same durable attempt and explicit retry controls as `mail send`. |
+| `--dry-run` / `--yes` | Review without SMTP, or authorize a real non-interactive reply. |
+| `--headers`, `--verbose`, `--format text|html|raw`, `--json` | Expand only a dry-run preview, except `--json`, which also supports sanitized real outcomes. |
+
+The compact dry run shows the exact parent `msg_…`, reconstructed `thr_…`, parent RFC Message-ID when usable, `threading=true|false`, derived versus added recipient lists, final To/Cc/Bcc lists, normalized subject, body/attachment counts, request hash, optional threading headers, and a no-network/no-attempt safety summary.
+
+Repeated `Re:` prefixes collapse to one. When the exact parent has a valid Message-ID, the composed reply uses it in `In-Reply-To` and appends it to a bounded, deduplicated `References` chain. Missing or malformed parent identity produces `threading=false`; the CLI sends no invented relationship headers and does not force the local child into the parent thread.
+
+A real compact outcome is payload-free:
+
+```text
+mail-reply
+send_… kind=reply
+parent_message_id=msg_…
+status=sent
+message_id=msg_…
+thread_id=thr_…
+reconciliation=pending
+reused=false
+```
+
+`kind` is `reply_all` for reply-all. The stored outbound attempt preserves the exact parent ID so status and audit output can distinguish a new send from a reply without exposing submitted content.
+
 ## `icloud mail status --outbound`
 
 ```bash
@@ -279,6 +322,8 @@ icloud mail status --outbound --json
 ```
 
 Lists the most recent bounded outbound attempts for the selected account without contacting iCloud. Compact records include stable attempt/message/thread IDs, status, attachment counts/bytes, reconciliation and error codes, retry linkage, update time, and one next action. JSON adds accepted/created timestamps and a reconciled location ID when known. Both forms omit submitted recipients, BCC, subject, bodies, custom headers, idempotency keys, attachment paths, hashes, and private blob coordinates.
+
+Each attempt also reports `kind=send|reply|reply_all`. Reply attempts include only the stable `parent_message_id`; they do not expose recipient or body payloads.
 
 Use `icloud mail sync --reconcile-outbound` to fetch current Sent evidence. Exact unique generated Message-ID evidence confirms a pending sent attempt or resolves an unknown attempt. Missing evidence stays unmatched; conflicting exact evidence stays unknown with `ambiguous_sent_evidence`. Failed attempts can be retried only with `--retry-of` and a new idempotency key. Unknown attempts additionally require `--retry-unknown --yes` after checking Sent and the recipient.
 
@@ -558,7 +603,7 @@ Compact output:
 capabilities
 command=icloud
 version=0.1.0
-schema=12
+schema=13
 account_mode=validated_lifecycle
 credentials=keyring,env,file
 network_validation=true
@@ -573,6 +618,7 @@ mail_search=true
 mail_remote_search=true
 mail_hydration=true
 mail_send=true
+mail_reply=true
 default_output=compact
 json=true
 completion=bash,zsh,fish,powershell

@@ -48,7 +48,10 @@ func TestAppendSentStreamsExactSeenMessageAndReturnsUIDEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 	client := New(Config{
-		IMAPHost: "127.0.0.1", IMAPPort: port, StageTimeout: 2 * time.Second,
+		// This test streams a multi-megabyte literal through an in-process TLS
+		// server. Keep the deadline generous enough for loaded and CGO-disabled
+		// builders; timeout classification is covered by dedicated tests.
+		IMAPHost: "127.0.0.1", IMAPPort: port, StageTimeout: 10 * time.Second,
 		TLSConfig: &tls.Config{RootCAs: certificate.pool, ServerName: "localhost", MinVersion: tls.VersionTLS12},
 	})
 	raw := bytes.Repeat([]byte("From: sender@example.test\r\nTo: recipient@example.test\r\nMessage-ID: <sent-append@example.test>\r\n\r\nstreamed-sent-token\r\n"), 12000)

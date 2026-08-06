@@ -56,6 +56,8 @@ type publicOutboundAttempt struct {
 	Reconciliation          maildomain.ReconciliationState `json:"reconciliation"`
 	AttachmentCount         int                            `json:"attachment_count"`
 	AttachmentBytes         int64                          `json:"attachment_bytes"`
+	Kind                    maildomain.OutboundKind        `json:"kind"`
+	ParentMessageID         string                         `json:"parent_message_id,omitempty"`
 	RetryOfAttemptID        string                         `json:"retry_of_attempt_id,omitempty"`
 	ReconciledLocationID    string                         `json:"reconciled_location_id,omitempty"`
 	ReconciliationErrorCode string                         `json:"reconciliation_error_code,omitempty"`
@@ -419,6 +421,16 @@ func sendPreviewHeaders(preview maildomain.SendPreview) []maildomain.CustomHeade
 	if value := optionalAddress(preview.ReplyTo); value != "" {
 		headers = append(headers, maildomain.CustomHeader{Key: "Reply-To", Value: value})
 	}
+	if preview.InReplyTo != "" {
+		headers = append(headers, maildomain.CustomHeader{Key: "In-Reply-To", Value: "<" + preview.InReplyTo + ">"})
+	}
+	if len(preview.References) > 0 {
+		values := make([]string, 0, len(preview.References))
+		for _, value := range preview.References {
+			values = append(values, "<"+value+">")
+		}
+		headers = append(headers, maildomain.CustomHeader{Key: "References", Value: strings.Join(values, " ")})
+	}
 	custom := append([]maildomain.CustomHeader(nil), preview.Headers...)
 	sort.Slice(custom, func(i, j int) bool {
 		return strings.ToLower(custom[i].Key) < strings.ToLower(custom[j].Key)
@@ -442,6 +454,7 @@ func sanitizeOutboundAttempt(value maildomain.OutboundAttempt) publicOutboundAtt
 		ID: value.ID, Status: value.Status, MessageID: value.MessageID,
 		ThreadID: value.ThreadID, Reconciliation: value.Reconciliation,
 		AttachmentCount: value.AttachmentCount, AttachmentBytes: value.AttachmentBytes,
+		Kind: value.Kind, ParentMessageID: value.ParentMessageID,
 		RetryOfAttemptID: value.RetryOfAttemptID, ReconciledLocationID: value.ReconciledLocationID,
 		ReconciliationErrorCode: value.ReconciliationErrorCode,
 		ErrorCode:               value.ErrorCode, AcceptedAt: value.AcceptedAt,
@@ -463,9 +476,11 @@ func confirmMailSend(reader io.Reader, stderr io.Writer) (bool, error) {
 
 func previewToRequest(preview maildomain.SendPreview) maildomain.SendRequest {
 	return maildomain.SendRequest{
+		Kind: preview.Kind, ParentMessageID: preview.ParentMessageID,
 		From: preview.From, To: preview.To, CC: preview.CC, BCC: preview.BCC,
 		ReplyTo: preview.ReplyTo, Subject: preview.Subject,
 		TextBody: preview.TextBody, HTMLBody: preview.HTMLBody, Headers: preview.Headers,
+		InReplyTo: preview.InReplyTo, References: preview.References,
 		Attachments: preview.Attachments,
 	}
 }

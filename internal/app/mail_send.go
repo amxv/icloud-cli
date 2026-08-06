@@ -42,11 +42,13 @@ func (commands accountCommands) MailSendPreview(
 		return account.Account{}, maildomain.SendPreview{}, state.SchemaVersion(), mapSendRequestError(err)
 	}
 	preview := maildomain.SendPreview{
+		Kind: normalized.Kind, ParentMessageID: normalized.ParentMessageID,
 		AccountID: accountValue.ID, From: normalized.From,
 		To: normalized.To, CC: normalized.CC, BCC: normalized.BCC,
 		ReplyTo: normalized.ReplyTo, Subject: normalized.Subject,
 		TextBody: normalized.TextBody, HTMLBody: normalized.HTMLBody,
-		Headers: normalized.Headers, Attachments: normalized.Attachments,
+		Headers: normalized.Headers, InReplyTo: normalized.InReplyTo,
+		References: normalized.References, Attachments: normalized.Attachments,
 		BodyParts: normalized.BodyPartCount(), AttachmentCount: len(normalized.Attachments),
 		AttachmentBytes: normalized.AttachmentByteSize(), RequestHash: hash,
 	}
@@ -138,6 +140,8 @@ func (commands accountCommands) MailSend(
 		ToCount: len(normalized.To), CCCount: len(normalized.CC), BCCCount: len(normalized.BCC),
 		BodyPartCount: normalized.BodyPartCount(), Now: composedAt,
 		Attachments:      outboundAttemptAttachmentRecords(content.Attachments),
+		Kind:             normalized.Operation(),
+		ParentMessageID:  normalized.ParentMessageID,
 		RetryOfAttemptID: normalized.RetryOfAttemptID,
 	})
 	if err != nil {

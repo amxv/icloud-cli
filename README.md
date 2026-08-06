@@ -2,7 +2,7 @@
 
 `icloud` is a local-first command-line client for iCloud services. The project is being built for agent workflows without making the normal terminal experience noisy: compact plain text is the default, and structured or expanded output is always explicit.
 
-The current implementation provides secure multi-account and credential lifecycle, read-only live iCloud compatibility testing, deliberate text/HTML and filesystem-attachment sending, durable all-folder discovery, bounded synchronization of enabled folders, indexed offline mail search, explicit bounded remote search and targeted hydration, local RFC conversation reconstruction, complete local message reads, safe attachment export, and explicit read/flag state updates. It can validate IMAP/SMTP authentication, preview an outbound request without network or durable side effects, require interactive confirmation or non-TTY `--yes`, stream standards-compliant MIME with display names, Reply-To, safe custom headers, envelope-only BCC, and bounded attachments, persist idempotent send attempts before SMTP, distinguish proven failure from indeterminate post-DATA outcomes, create the accepted local message atomically, append and reconcile its Sent copy, discover nested and Unicode mailboxes, stream raw messages into private local state, establish Sent at the current tail without crawling history, reconcile one logical message across independent folder locations, search synchronized headers, participants, decoded text, and attachment metadata, query current iCloud envelope/flag metadata without advancing sync, cache selected stale-safe remote references, browse stable reconstructed conversations offline, return complete text or HTML explicitly, inspect MIME metadata, export exact RFC822 bytes, save verified decoded attachments, and update one exact current message location. It does not reply, move, copy, archive, trash, or delete mail yet.
+The current implementation provides secure multi-account and credential lifecycle, read-only live iCloud compatibility testing, deliberate text/HTML and filesystem-attachment sending, exact-message reply and reply-all, durable all-folder discovery, bounded synchronization of enabled folders, indexed offline mail search, explicit bounded remote search and targeted hydration, local RFC conversation reconstruction, complete local message reads, safe attachment export, and explicit read/flag state updates. It can validate IMAP/SMTP authentication, preview an outbound request without network or durable side effects, require interactive confirmation or non-TTY `--yes`, stream standards-compliant MIME with display names, Reply-To, safe custom headers, envelope-only BCC, bounded attachments, and RFC reply-threading headers, persist idempotent outbound attempts before SMTP, distinguish proven failure from indeterminate post-DATA outcomes, create accepted local messages atomically, append and reconcile their Sent copies, derive reply-all recipients without resurrecting prior BCC, discover nested and Unicode mailboxes, stream raw messages into private local state, establish Sent at the current tail without crawling history, reconcile one logical message across independent folder locations, search synchronized headers, participants, decoded text, and attachment metadata, query current iCloud envelope/flag metadata without advancing sync, cache selected stale-safe remote references, browse stable reconstructed conversations offline, return complete text or HTML explicitly, inspect MIME metadata, export exact RFC822 bytes, save verified decoded attachments, and update one exact current message location. It does not forward, move, copy, archive, trash, or delete mail yet.
 
 ## Install
 
@@ -57,6 +57,8 @@ icloud mail attachments list <message-id> [--limit <n>] [--json]
 icloud mail attachments save <attachment-id> --output <path|-> [--binary] [--force] [--json]
 icloud mail attachments save-all <message-id> --dir <directory> [--force] [--json]
 icloud mail send --to <address> --subject <subject> [--body <text>|--body-file <path|->] [--html-body <html>|--html-body-file <path|->] [--cc <address>] [--bcc <address>] [--reply-to <address>] [--header 'Name: Value'] [--attach <path>] [--attach-name <path=filename>] [--attach-type <path=type/subtype>] [--idempotency-key <key>] [--retry-of <send-id>] [--retry-unknown] [--dry-run|--yes] [--json]
+icloud mail reply <message-id> [--to <address>] [--cc <address>] [--bcc <address>] [--replace-to] [--replace-cc] [--body <text>|--body-file <path|->] [--html-body <html>|--html-body-file <path|->] [--attach <path>] [--idempotency-key <key>] [--dry-run|--yes] [--json]
+icloud mail reply-all <message-id> [reply flags]
 icloud mail status --outbound [--limit <n>] [--json]
 icloud mail mark-read <message-id> [--folder <selector>] [--json]
 icloud mail mark-unread <message-id> [--folder <selector>] [--json]
@@ -141,13 +143,22 @@ thread_id=thr_…
 reconciliation=pending
 reused=false
 
+mail-reply
+send_… kind=reply
+parent_message_id=msg_…
+status=sent
+message_id=msg_…
+thread_id=thr_…
+reconciliation=pending
+reused=false
+
 version
 0.1.0
 
 capabilities
 command=icloud
 version=0.1.0
-schema=12
+schema=13
 account_mode=validated_lifecycle
 credentials=keyring,env,file
 network_validation=true
@@ -162,6 +173,7 @@ mail_search=true
 mail_remote_search=true
 mail_hydration=true
 mail_send=true
+mail_reply=true
 default_output=compact
 json=true
 completion=bash,zsh,fish,powershell

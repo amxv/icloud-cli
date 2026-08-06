@@ -180,6 +180,7 @@ INSERT INTO outbound_attempts (
 		t.Fatal(err)
 	}
 	if attempt.Status != maildomain.OutboundUnknown || attempt.RFCMessageID != "phase-fourteen@example.test" ||
+		attempt.Kind != maildomain.OutboundKindSend || attempt.ParentMessageID != "" ||
 		attempt.AttachmentCount != 0 || attempt.AttachmentBytes != 0 || attempt.RetryOfAttemptID != "" ||
 		attempt.ReconciledLocationID != "" || attempt.ReconciliationErrorCode != "" {
 		t.Fatalf("upgraded outbound attempt = %+v", attempt)
