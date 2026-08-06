@@ -17,23 +17,28 @@ import (
 )
 
 type sendFlags struct {
-	To             []string
-	CC             []string
-	BCC            []string
-	ReplyTo        string
-	Subject        string
-	Body           string
-	BodyFile       string
-	HTMLBody       string
-	HTMLBodyFile   string
-	Headers        []string
-	IdempotencyKey string
-	DryRun         bool
-	Yes            bool
-	JSON           bool
-	Verbose        bool
-	ShowHeaders    bool
-	Format         string
+	To              []string
+	CC              []string
+	BCC             []string
+	ReplyTo         string
+	Subject         string
+	Body            string
+	BodyFile        string
+	HTMLBody        string
+	HTMLBodyFile    string
+	Headers         []string
+	Attachments     []string
+	AttachmentNames []string
+	AttachmentTypes []string
+	IdempotencyKey  string
+	RetryOf         string
+	RetryUnknown    bool
+	DryRun          bool
+	Yes             bool
+	JSON            bool
+	Verbose         bool
+	ShowHeaders     bool
+	Format          string
 }
 
 type mailSendData struct {
@@ -44,13 +49,20 @@ type mailSendData struct {
 }
 
 type publicOutboundAttempt struct {
-	ID             string                         `json:"id"`
-	Status         maildomain.OutboundStatus      `json:"status"`
-	MessageID      string                         `json:"message_id,omitempty"`
-	ThreadID       string                         `json:"thread_id,omitempty"`
-	Reconciliation maildomain.ReconciliationState `json:"reconciliation"`
-	ErrorCode      string                         `json:"error_code,omitempty"`
-	AcceptedAt     *time.Time                     `json:"accepted_at,omitempty"`
+	ID                      string                         `json:"id"`
+	Status                  maildomain.OutboundStatus      `json:"status"`
+	MessageID               string                         `json:"message_id,omitempty"`
+	ThreadID                string                         `json:"thread_id,omitempty"`
+	Reconciliation          maildomain.ReconciliationState `json:"reconciliation"`
+	AttachmentCount         int                            `json:"attachment_count"`
+	AttachmentBytes         int64                          `json:"attachment_bytes"`
+	RetryOfAttemptID        string                         `json:"retry_of_attempt_id,omitempty"`
+	ReconciledLocationID    string                         `json:"reconciled_location_id,omitempty"`
+	ReconciliationErrorCode string                         `json:"reconciliation_error_code,omitempty"`
+	ErrorCode               string                         `json:"error_code,omitempty"`
+	AcceptedAt              *time.Time                     `json:"accepted_at,omitempty"`
+	CreatedAt               time.Time                      `json:"created_at"`
+	UpdatedAt               time.Time                      `json:"updated_at"`
 }
 
 type mailSendPreviewData struct {
@@ -64,14 +76,17 @@ func newMailSendCommand(state *executionState) *cobra.Command {
 	var flags sendFlags
 	command := &cobra.Command{
 		Use:   "send",
-		Short: "Preview or send a new text/HTML message safely and idempotently",
+		Short: "Preview or send text, HTML, and attachments safely and idempotently",
 		Args:  cobra.NoArgs,
 		Example: "  icloud mail send --to client@example.com --subject 'Update' --body-file message.txt --dry-run\n" +
-			"  icloud mail send --to 'Client <client@example.com>' --subject 'Update' --body 'Hello' --yes --idempotency-key send-01\n" +
+			"  icloud mail send --to 'Client <client@example.com>' --subject 'Update' --body 'Hello' --attach report.pdf --yes --idempotency-key send-01\n" +
 			"  icloud mail send --to client@example.com --subject 'Update' --body-file - --yes --json",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if flags.DryRun && flags.Yes {
 				return NewAppError(ErrorUsage, "--dry-run and --yes cannot be combined", false)
+			}
+			if flags.RetryUnknown && (strings.TrimSpace(flags.RetryOf) == "" || !flags.Yes || flags.DryRun) {
+				return NewAppError(ErrorSafety, "--retry-unknown requires --retry-of and --yes on a real send", false)
 			}
 			if !flags.DryRun && (flags.Verbose || flags.ShowHeaders || strings.TrimSpace(flags.Format) != "") {
 				return NewAppError(ErrorUsage, "--verbose, --headers, and --format are dry-run preview expansions", false)
@@ -109,6 +124,11 @@ func newMailSendCommand(state *executionState) *cobra.Command {
 				if !confirmed {
 					return NewAppError(ErrorSafety, "mail send canceled before contacting SMTP", false)
 				}
+				prepared := previewToRequest(preview)
+				prepared.IdempotencyKey = request.IdempotencyKey
+				prepared.RetryOfAttemptID = request.RetryOfAttemptID
+				prepared.AuthorizeUnknownRetry = request.AuthorizeUnknownRetry
+				request = prepared
 				_ = schemaVersion
 			}
 			accountValue, attempt, reused, schemaVersion, err := state.mail.MailSend(cmd.Context(), state.global.Home, state.global.Account, request)
@@ -133,7 +153,12 @@ func newMailSendCommand(state *executionState) *cobra.Command {
 	command.Flags().StringVar(&flags.HTMLBody, "html-body", "", "Inline HTML body")
 	command.Flags().StringVar(&flags.HTMLBodyFile, "html-body-file", "", "HTML body file path, or - for stdin")
 	command.Flags().StringArrayVar(&flags.Headers, "header", nil, "Safe custom header as Name: Value; repeat as needed")
+	command.Flags().StringArrayVar(&flags.Attachments, "attach", nil, "Regular file path to attach; repeat as needed")
+	command.Flags().StringArrayVar(&flags.AttachmentNames, "attach-name", nil, "Override one attachment filename as path=filename; repeat as needed")
+	command.Flags().StringArrayVar(&flags.AttachmentTypes, "attach-type", nil, "Override one attachment media type as path=type/subtype; repeat as needed")
 	command.Flags().StringVar(&flags.IdempotencyKey, "idempotency-key", "", "Return the original attempt when the same normalized request is repeated")
+	command.Flags().StringVar(&flags.RetryOf, "retry-of", "", "Link an explicit retry to one failed or unknown send_… attempt")
+	command.Flags().BoolVar(&flags.RetryUnknown, "retry-unknown", false, "Authorize one duplicate-risk retry of an unknown attempt; requires --retry-of and --yes")
 	command.Flags().BoolVar(&flags.DryRun, "dry-run", false, "Preview the normalized message without creating an attempt or contacting SMTP")
 	command.Flags().BoolVar(&flags.Yes, "yes", false, "Confirm an intentional non-interactive send")
 	command.Flags().BoolVar(&flags.JSON, "json", false, "Emit one stable JSON success envelope")
@@ -183,11 +208,67 @@ func sendRequestFromFlags(state *executionState, flags sendFlags) (maildomain.Se
 		}
 		headers = append(headers, maildomain.CustomHeader{Key: key, Value: body})
 	}
+	attachments, err := sendAttachmentsFromFlags(flags.Attachments, flags.AttachmentNames, flags.AttachmentTypes)
+	if err != nil {
+		return maildomain.SendRequest{}, false, err
+	}
 	return maildomain.SendRequest{
 		To: to, CC: cc, BCC: bcc, ReplyTo: replyTo,
 		Subject: flags.Subject, TextBody: text, HTMLBody: html,
-		Headers: headers, IdempotencyKey: flags.IdempotencyKey,
+		Headers: headers, Attachments: attachments, IdempotencyKey: flags.IdempotencyKey,
+		RetryOfAttemptID: flags.RetryOf, AuthorizeUnknownRetry: flags.RetryUnknown,
 	}, textStdin || htmlStdin, nil
+}
+
+func sendAttachmentsFromFlags(paths, nameValues, typeValues []string) ([]maildomain.OutboundAttachment, error) {
+	if len(paths) > maildomain.MaxSendAttachments {
+		return nil, NewAppError(ErrorSafety, fmt.Sprintf("attachment count exceeds %d", maildomain.MaxSendAttachments), false)
+	}
+	names, err := attachmentOverrideMap(nameValues, "--attach-name")
+	if err != nil {
+		return nil, err
+	}
+	types, err := attachmentOverrideMap(typeValues, "--attach-type")
+	if err != nil {
+		return nil, err
+	}
+	attached := make(map[string]struct{}, len(paths))
+	result := make([]maildomain.OutboundAttachment, 0, len(paths))
+	for _, value := range paths {
+		path := strings.TrimSpace(value)
+		if path == "" {
+			return nil, NewAppError(ErrorUsage, "--attach requires a file path", false)
+		}
+		attached[path] = struct{}{}
+		result = append(result, maildomain.OutboundAttachment{SourcePath: path, Filename: names[path], MediaType: types[path]})
+	}
+	for path := range names {
+		if _, ok := attached[path]; !ok {
+			return nil, NewAppError(ErrorUsage, "--attach-name references a path that was not attached", false)
+		}
+	}
+	for path := range types {
+		if _, ok := attached[path]; !ok {
+			return nil, NewAppError(ErrorUsage, "--attach-type references a path that was not attached", false)
+		}
+	}
+	return result, nil
+}
+
+func attachmentOverrideMap(values []string, flag string) (map[string]string, error) {
+	result := make(map[string]string, len(values))
+	for _, value := range values {
+		path, override, ok := strings.Cut(value, "=")
+		path, override = strings.TrimSpace(path), strings.TrimSpace(override)
+		if !ok || path == "" || override == "" {
+			return nil, NewAppError(ErrorUsage, flag+" must use path=value", false)
+		}
+		if _, duplicate := result[path]; duplicate {
+			return nil, NewAppError(ErrorUsage, flag+" repeats the same path", false)
+		}
+		result[path] = override
+	}
+	return result, nil
 }
 
 func parseSendAddresses(values []string) ([]maildomain.Address, error) {
@@ -304,6 +385,15 @@ func renderCompactSendPreview(writer io.Writer, preview maildomain.SendPreview, 
 			}
 		}
 	}
+	for _, attachment := range preview.Attachments {
+		if err := renderer.Record("attachment", attachment.Filename,
+			Field("media_type", attachment.MediaType),
+			Field("bytes", attachment.ByteSize),
+			Field("sha256", attachment.ContentHash),
+		); err != nil {
+			return err
+		}
+	}
 	if preview.TextBody != "" {
 		if _, err := fmt.Fprintf(writer, "\ntext-body\n%s\n", preview.TextBody); err != nil {
 			return err
@@ -351,7 +441,11 @@ func sanitizeOutboundAttempt(value maildomain.OutboundAttempt) publicOutboundAtt
 	return publicOutboundAttempt{
 		ID: value.ID, Status: value.Status, MessageID: value.MessageID,
 		ThreadID: value.ThreadID, Reconciliation: value.Reconciliation,
-		ErrorCode: value.ErrorCode, AcceptedAt: value.AcceptedAt,
+		AttachmentCount: value.AttachmentCount, AttachmentBytes: value.AttachmentBytes,
+		RetryOfAttemptID: value.RetryOfAttemptID, ReconciledLocationID: value.ReconciledLocationID,
+		ReconciliationErrorCode: value.ReconciliationErrorCode,
+		ErrorCode:               value.ErrorCode, AcceptedAt: value.AcceptedAt,
+		CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt,
 	}
 }
 
@@ -372,6 +466,7 @@ func previewToRequest(preview maildomain.SendPreview) maildomain.SendRequest {
 		From: preview.From, To: preview.To, CC: preview.CC, BCC: preview.BCC,
 		ReplyTo: preview.ReplyTo, Subject: preview.Subject,
 		TextBody: preview.TextBody, HTMLBody: preview.HTMLBody, Headers: preview.Headers,
+		Attachments: preview.Attachments,
 	}
 }
 

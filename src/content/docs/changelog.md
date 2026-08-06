@@ -8,6 +8,10 @@ summary: Public command, output, installation, and documentation changes.
 
 ## Unreleased
 
+- Added repeated filesystem `--attach` inputs with optional filename/media-type overrides, pre-confirmation SHA-256 review, changed-file detection, durable local attachment bytes, streamed multipart composition, and a 20 MiB composed-message guard before SMTP.
+- Added schema version 12 outbound attachment records, linked failed/unknown retries, bounded payload-free `mail status --outbound`, focused `mail sync --reconcile-outbound`, exact generated Message-ID confirmation, and ambiguity-preserving unknown outcomes.
+- Added streamed provider Sent-copy creation after SMTP acceptance, complete local attachment access before provider reconciliation, and live small/9 MiB two-way attachment round-trip evidence with one logical Inbox/Sent message.
+- Expanded the send, sync, output/automation, troubleshooting, command-reference, README, help, migration, privacy, and compact-output journeys for attachments, Sent reconciliation, and explicit duplicate-risk recovery.
 - Added `icloud mail send` for deliberate text/HTML messages with account display-name `From`, display-name recipients, Reply-To, safe custom headers, generated Message-ID, envelope-only BCC, and mandatory STARTTLS submission.
 - Added no-network/no-attempt dry runs, interactive confirmation, non-TTY `--yes`, bounded body/file/stdin input, explicit text/HTML/raw/header preview expansions, and payload-free compact/JSON success output.
 - Added schema version 11 pending/sent/failed/unknown outbound attempts, normalized-request idempotency, pre-SMTP durability, atomic accepted-message/search/thread creation, local raw-message authority, and non-retryable post-DATA ambiguity.

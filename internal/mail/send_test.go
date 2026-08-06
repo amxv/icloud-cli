@@ -2,7 +2,11 @@ package mail
 
 import (
 	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -65,6 +69,66 @@ func TestNormalizeSendRequestPreservesNamesAndDeduplicatesEnvelope(t *testing.T)
 	if len(firstHash) != 64 || firstHash != secondHash {
 		t.Fatalf("hashes first=%q second=%q", firstHash, secondHash)
 	}
+}
+
+func TestComposeOutboundMessageStreamsAttachmentAndPreservesMetadata(t *testing.T) {
+	payload := []byte(strings.Repeat("streamed-attachment-token\n", 90000))
+	sum := sha256.Sum256(payload)
+	reader := &boundedAttachmentReader{reader: bytes.NewReader(payload), maximumRead: 64 << 10}
+	request, err := NormalizeSendRequest(SendRequest{
+		From:    Address{Email: "owner@icloud.com"},
+		To:      []Address{{Email: "recipient@example.com"}},
+		BCC:     []Address{{Email: "hidden@example.com"}},
+		Subject: "Attachment stream", TextBody: "See attached.",
+		Attachments: []OutboundAttachment{{
+			Filename: "renamed-report.bin", MediaType: "application/octet-stream",
+			ContentHash: hex.EncodeToString(sum[:]), ByteSize: int64(len(payload)),
+			Open: func() (io.ReadCloser, error) { return io.NopCloser(reader), nil },
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw bytes.Buffer
+	if err := ComposeOutboundMessage(&raw, request, "attachment-stream@example.test", time.Date(2026, 8, 6, 16, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatal(err)
+	}
+	if reader.largestRead > reader.maximumRead {
+		t.Fatalf("attachment source read was not bounded: largest=%d", reader.largestRead)
+	}
+	text := raw.String()
+	if !strings.Contains(text, "multipart/mixed") || !strings.Contains(text, "renamed-report.bin") || strings.Contains(text, "hidden@example.com") {
+		t.Fatalf("raw attachment message metadata/privacy = %q", text[:min(len(text), 4096)])
+	}
+	content, err := ParseNormalizedWithAttachmentsContext(context.Background(), bytes.NewReader(raw.Bytes()), func(_ context.Context, _ MIMEPart, body io.Reader) (AttachmentBlob, error) {
+		hash := sha256.New()
+		size, err := io.Copy(hash, body)
+		return AttachmentBlob{ContentHash: hex.EncodeToString(hash.Sum(nil)), StorageKey: "attachments/test", ByteSize: size}, err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(content.Attachments) != 1 || content.Attachments[0].Filename != "renamed-report.bin" ||
+		content.Attachments[0].MediaType != "application/octet-stream" || content.Attachments[0].ContentHash != hex.EncodeToString(sum[:]) ||
+		content.Attachments[0].ByteSize != int64(len(payload)) || content.Preview.AttachmentCount != 1 {
+		t.Fatalf("parsed attachment = %+v", content.Attachments)
+	}
+}
+
+type boundedAttachmentReader struct {
+	reader      io.Reader
+	maximumRead int
+	largestRead int
+}
+
+func (reader *boundedAttachmentReader) Read(buffer []byte) (int, error) {
+	if len(buffer) > reader.largestRead {
+		reader.largestRead = len(buffer)
+	}
+	if len(buffer) > reader.maximumRead {
+		return 0, errors.New("attachment reader received an unbounded buffer")
+	}
+	return reader.reader.Read(buffer)
 }
 
 func TestNormalizeSendRequestRejectsUnsafeHeadersAndMissingContent(t *testing.T) {

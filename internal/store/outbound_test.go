@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/amxv/icloud-cli/internal/folder"
 	maildomain "github.com/amxv/icloud-cli/internal/mail"
 )
 
@@ -168,6 +169,185 @@ END;`); err != nil {
 		acceptedIncomplete.ErrorCode != "local_completion" ||
 		acceptedIncomplete.AcceptedAt == nil || acceptedIncomplete.MessageID != "" || acceptedIncomplete.ThreadID != "" {
 		t.Fatalf("accepted incomplete attempt = %+v", acceptedIncomplete)
+	}
+}
+
+func TestOutboundReconcileConfirmsSentLocationAndResolvesUnknownOnlyByExactMessageID(t *testing.T) {
+	state, accountID, _ := newMailStoreFixture(t)
+	defer state.Close()
+	ctx := context.Background()
+	base := time.Date(2026, 8, 6, 16, 30, 0, 0, time.UTC)
+	sentID := insertMailFolderFixture(t, state, accountID, folder.KindSent, "Sent Messages", 210, base)
+
+	request, content, raw := outboundStoreFixture(t, accountID, base)
+	accepted, _, err := state.Outbound().Begin(ctx, maildomain.BeginOutboundAttempt{
+		AttemptID: "send_0198d704-6c00-7000-8000-000000000030",
+		AccountID: accountID, ProposedMessageID: "msg_0198d704-6c00-7000-8000-000000000630",
+		RequestHash: strings.Repeat("3", 64), IdempotencyKey: "reconcile-sent-01",
+		RFCMessageID:   content.Preview.RFCMessageID,
+		RawContentHash: strings.Repeat("4", 64), RawStorageKey: "raw/sha256/44/" + strings.Repeat("4", 64) + ".eml", RawByteSize: int64(len(raw)),
+		ToCount: 1, BodyPartCount: 2, Now: base,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	accepted, err = state.Outbound().CompleteSent(ctx, maildomain.CompleteOutboundSend{
+		AttemptID: accepted.ID, Request: request, Content: content, AcceptedAt: base.Add(time.Minute),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	acceptedRecord := mailRecordFixture(accountID, sentID, 210, 31, content.Preview.RFCMessageID)
+	acceptedRecord.Direction = maildomain.DirectionOutbound
+	commitSentRecord(t, state, acceptedRecord, "chk_0198d704-6c00-7000-8000-000000000630", base.Add(2*time.Minute))
+
+	summary, err := state.Outbound().Reconcile(ctx, accountID, 100, base.Add(3*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Confirmed != 1 || summary.ResolvedUnknown != 0 || summary.Ambiguous != 0 || summary.Unmatched != 0 {
+		t.Fatalf("accepted reconciliation summary = %+v", summary)
+	}
+	confirmed, err := state.Outbound().Attempt(ctx, accepted.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if confirmed.Status != maildomain.OutboundSent || confirmed.Reconciliation != maildomain.ReconciliationConfirmed ||
+		confirmed.MessageID != accepted.MessageID || confirmed.ReconciledLocationID != acceptedRecord.LocationID || confirmed.ReconciliationErrorCode != "" {
+		t.Fatalf("confirmed accepted attempt = %+v", confirmed)
+	}
+
+	unknownID := "send_0198d704-6c00-7000-8000-000000000031"
+	unknownRFC := "unknown-reconcile@example.test"
+	unknown, _, err := state.Outbound().Begin(ctx, maildomain.BeginOutboundAttempt{
+		AttemptID: unknownID, AccountID: accountID,
+		ProposedMessageID: "msg_0198d704-6c00-7000-8000-000000000631",
+		RequestHash:       strings.Repeat("5", 64), IdempotencyKey: "reconcile-unknown-01",
+		RFCMessageID: unknownRFC, RawContentHash: strings.Repeat("6", 64),
+		RawStorageKey: "raw/sha256/66/" + strings.Repeat("6", 64) + ".eml", RawByteSize: 80,
+		ToCount: 1, BodyPartCount: 1, Now: base.Add(4 * time.Minute),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	unknown, err = state.Outbound().MarkOutcome(ctx, unknown.ID, maildomain.OutboundUnknown, "smtp_accept", base.Add(5*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	unknownRecord := mailRecordFixture(accountID, sentID, 210, 32, unknownRFC)
+	unknownRecord.Direction = maildomain.DirectionOutbound
+	commitSentRecord(t, state, unknownRecord, "chk_0198d704-6c00-7000-8000-000000000630", base.Add(6*time.Minute))
+
+	summary, err = state.Outbound().Reconcile(ctx, accountID, 100, base.Add(7*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.ResolvedUnknown != 1 || summary.Confirmed != 0 || summary.Ambiguous != 0 {
+		t.Fatalf("unknown reconciliation summary = %+v", summary)
+	}
+	resolved, err := state.Outbound().Attempt(ctx, unknown.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Status != maildomain.OutboundSent || resolved.Reconciliation != maildomain.ReconciliationConfirmed ||
+		resolved.MessageID != unknownRecord.MessageID || resolved.ReconciledLocationID != unknownRecord.LocationID || resolved.ErrorCode != "" {
+		t.Fatalf("resolved unknown attempt = %+v", resolved)
+	}
+}
+
+func TestOutboundReconcileKeepsAmbiguousAndSubjectOnlyEvidenceUnknown(t *testing.T) {
+	state, accountID, _ := newMailStoreFixture(t)
+	defer state.Close()
+	ctx := context.Background()
+	base := time.Date(2026, 8, 6, 17, 0, 0, 0, time.UTC)
+	sentOne := insertMailFolderFixture(t, state, accountID, folder.KindSent, "Sent Messages", 220, base)
+	sentTwo := insertMailFolderFixture(t, state, accountID, folder.KindSent, "Sent Archive", 221, base)
+
+	ambiguousRFC := "ambiguous-reconcile@example.test"
+	ambiguous, _, err := state.Outbound().Begin(ctx, maildomain.BeginOutboundAttempt{
+		AttemptID: "send_0198d704-6c00-7000-8000-000000000040", AccountID: accountID,
+		ProposedMessageID: "msg_0198d704-6c00-7000-8000-000000000640",
+		RequestHash:       strings.Repeat("7", 64), IdempotencyKey: "ambiguous-unknown-01",
+		RFCMessageID: ambiguousRFC, RawContentHash: strings.Repeat("8", 64),
+		RawStorageKey: "raw/sha256/88/" + strings.Repeat("8", 64) + ".eml", RawByteSize: 90,
+		ToCount: 1, BodyPartCount: 1, Now: base,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ambiguous, err = state.Outbound().MarkOutcome(ctx, ambiguous.ID, maildomain.OutboundUnknown, "smtp_accept", base.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := mailRecordFixture(accountID, sentOne, 220, 41, ambiguousRFC)
+	first.Direction = maildomain.DirectionOutbound
+	second := mailRecordFixture(accountID, sentTwo, 221, 42, ambiguousRFC)
+	second.Direction = maildomain.DirectionOutbound
+	commitSentRecord(t, state, first, "chk_0198d704-6c00-7000-8000-000000000640", base.Add(2*time.Minute))
+	commitSentRecord(t, state, second, "chk_0198d704-6c00-7000-8000-000000000641", base.Add(3*time.Minute))
+
+	summary, err := state.Outbound().Reconcile(ctx, accountID, 100, base.Add(4*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Ambiguous != 1 || summary.ResolvedUnknown != 0 {
+		t.Fatalf("ambiguous reconciliation summary = %+v", summary)
+	}
+	stored, err := state.Outbound().Attempt(ctx, ambiguous.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Status != maildomain.OutboundUnknown || stored.Reconciliation != maildomain.ReconciliationUnknown || stored.ReconciliationErrorCode != "ambiguous_sent_evidence" {
+		t.Fatalf("ambiguous attempt = %+v", stored)
+	}
+
+	unmatchedRFC := "unmatched-reconcile@example.test"
+	unmatched, _, err := state.Outbound().Begin(ctx, maildomain.BeginOutboundAttempt{
+		AttemptID: "send_0198d704-6c00-7000-8000-000000000041", AccountID: accountID,
+		ProposedMessageID: "msg_0198d704-6c00-7000-8000-000000000641",
+		RequestHash:       strings.Repeat("9", 64), IdempotencyKey: "unmatched-unknown-01",
+		RFCMessageID: unmatchedRFC, RawContentHash: strings.Repeat("a", 64),
+		RawStorageKey: "raw/sha256/aa/" + strings.Repeat("a", 64) + ".eml", RawByteSize: 100,
+		ToCount: 1, BodyPartCount: 1, Now: base.Add(5 * time.Minute),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	unmatched, err = state.Outbound().MarkOutcome(ctx, unmatched.ID, maildomain.OutboundUnknown, "smtp_accept", base.Add(6*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	subjectOnly := mailRecordFixture(accountID, sentOne, 220, 43, "different-message-id@example.test")
+	subjectOnly.Direction = maildomain.DirectionOutbound
+	subjectOnly.Parsed.Subject = "Fixture message"
+	subjectOnly.Parsed.Snippet = "Synthetic durable Inbox message."
+	commitSentRecord(t, state, subjectOnly, "chk_0198d704-6c00-7000-8000-000000000640", base.Add(7*time.Minute))
+
+	summary, err = state.Outbound().Reconcile(ctx, accountID, 100, base.Add(8*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Unmatched != 1 || summary.ResolvedUnknown != 0 {
+		t.Fatalf("subject-only reconciliation summary = %+v", summary)
+	}
+	stored, err = state.Outbound().Attempt(ctx, unmatched.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Status != maildomain.OutboundUnknown || stored.MessageID != "" || stored.ReconciledLocationID != "" {
+		t.Fatalf("subject-only attempt merged unexpectedly = %+v", stored)
+	}
+}
+
+func commitSentRecord(t *testing.T, state *Store, record maildomain.IngestRecord, checkpointID string, attemptedAt time.Time) {
+	t.Helper()
+	if _, err := state.Mail().CommitInboxPage(context.Background(), maildomain.CommitPage{
+		CheckpointID: checkpointID, AccountID: record.AccountID, FolderID: record.FolderID,
+		UIDValidity: record.UIDValidity, Bootstrap: true,
+		LastCommittedUID: record.UID, LastScannedUID: record.UID,
+		AttemptedAt: attemptedAt, Records: []maildomain.IngestRecord{record},
+	}); err != nil {
+		t.Fatal(err)
 	}
 }
 

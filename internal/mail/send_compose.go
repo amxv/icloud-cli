@@ -48,6 +48,52 @@ func ComposeOutboundMessage(writer io.Writer, request SendRequest, messageID str
 	for _, field := range request.Headers {
 		header.Set(field.Key, field.Value)
 	}
+	if len(request.Attachments) > 0 {
+		mixed, err := gomail.CreateWriter(writer, header)
+		if err != nil {
+			return err
+		}
+		if err := writeMixedBody(mixed, request); err != nil {
+			_ = mixed.Close()
+			return err
+		}
+		for _, attachment := range request.Attachments {
+			if attachment.Open == nil {
+				_ = mixed.Close()
+				return errors.New("outbound attachment source is unavailable")
+			}
+			var attachmentHeader gomail.AttachmentHeader
+			attachmentHeader.SetContentType(attachment.MediaType, map[string]string{"name": attachment.Filename})
+			attachmentHeader.SetFilename(attachment.Filename)
+			part, err := mixed.CreateAttachment(attachmentHeader)
+			if err != nil {
+				_ = mixed.Close()
+				return err
+			}
+			source, err := attachment.Open()
+			if err != nil {
+				_ = part.Close()
+				_ = mixed.Close()
+				return err
+			}
+			_, copyErr := io.Copy(part, source)
+			closeSourceErr := source.Close()
+			closePartErr := part.Close()
+			if copyErr != nil {
+				_ = mixed.Close()
+				return copyErr
+			}
+			if closeSourceErr != nil {
+				_ = mixed.Close()
+				return closeSourceErr
+			}
+			if closePartErr != nil {
+				_ = mixed.Close()
+				return closePartErr
+			}
+		}
+		return mixed.Close()
+	}
 	if request.HTMLBody == "" {
 		header.SetContentType("text/plain", map[string]string{"charset": "utf-8"})
 		part, err := gomail.CreateSingleInlineWriter(writer, header)
@@ -61,6 +107,63 @@ func ComposeOutboundMessage(writer io.Writer, request SendRequest, messageID str
 		return part.Close()
 	}
 	inline, err := gomail.CreateInlineWriter(writer, header)
+	if err != nil {
+		return err
+	}
+	textHeader := gomail.InlineHeader{}
+	textHeader.SetContentType("text/plain", map[string]string{"charset": "utf-8"})
+	textPart, err := inline.CreatePart(textHeader)
+	if err != nil {
+		_ = inline.Close()
+		return err
+	}
+	textBody := request.TextBody
+	if textBody == "" {
+		textBody = stripSendHTML(request.HTMLBody)
+	}
+	if _, err := io.WriteString(textPart, normalizeCRLFBody(textBody)); err != nil {
+		_ = textPart.Close()
+		_ = inline.Close()
+		return err
+	}
+	if err := textPart.Close(); err != nil {
+		_ = inline.Close()
+		return err
+	}
+	htmlHeader := gomail.InlineHeader{}
+	htmlHeader.SetContentType("text/html", map[string]string{"charset": "utf-8"})
+	htmlPart, err := inline.CreatePart(htmlHeader)
+	if err != nil {
+		_ = inline.Close()
+		return err
+	}
+	if _, err := io.WriteString(htmlPart, normalizeCRLFBody(request.HTMLBody)); err != nil {
+		_ = htmlPart.Close()
+		_ = inline.Close()
+		return err
+	}
+	if err := htmlPart.Close(); err != nil {
+		_ = inline.Close()
+		return err
+	}
+	return inline.Close()
+}
+
+func writeMixedBody(writer *gomail.Writer, request SendRequest) error {
+	if request.HTMLBody == "" {
+		header := gomail.InlineHeader{}
+		header.SetContentType("text/plain", map[string]string{"charset": "utf-8"})
+		part, err := writer.CreateSingleInline(header)
+		if err != nil {
+			return err
+		}
+		if _, err := io.WriteString(part, normalizeCRLFBody(request.TextBody)); err != nil {
+			_ = part.Close()
+			return err
+		}
+		return part.Close()
+	}
+	inline, err := writer.CreateInline()
 	if err != nil {
 		return err
 	}

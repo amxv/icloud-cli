@@ -15,7 +15,7 @@ export const siteConfig = {
     {
       title: "Current command set",
       text:
-        "Secure account lifecycle, read-only IMAP/SMTP validation, deliberate idempotent text/HTML sending, durable folder discovery, bounded enabled-folder sync with history-free Sent setup, multi-location identity reconciliation, indexed offline search, explicit bounded iCloud search with targeted hydration, RFC conversation reconstruction, location-aware read/flag updates, complete local message reads, raw and attachment export, persisted health diagnostics, shell completions, and man pages."
+        "Secure account lifecycle, read-only IMAP/SMTP validation, deliberate idempotent text/HTML and attachment sending, Sent/unknown reconciliation, durable folder discovery, bounded enabled-folder sync with history-free Sent setup, multi-location identity reconciliation, indexed offline search, explicit bounded iCloud search with targeted hydration, RFC conversation reconstruction, location-aware read/flag updates, complete local message reads, raw and attachment export, persisted health diagnostics, shell completions, and man pages."
     },
     {
       title: "Repository",

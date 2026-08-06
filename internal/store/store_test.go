@@ -42,7 +42,7 @@ func TestOpenCreatesAndReopensVersionedPrivateState(t *testing.T) {
 	if state.SchemaVersion() != SchemaVersion {
 		t.Fatalf("schema version = %d", state.SchemaVersion())
 	}
-	for _, table := range []string{"app_metadata", "accounts", "credential_refs", "folders", "raw_blobs", "messages", "message_recipients", "message_references", "message_locations", "message_content", "message_parts", "attachments", "sync_checkpoints", "message_identity_evidence", "message_dedupe_conflicts", "threads", "thread_messages", "thread_aliases", "thread_edges", "message_search_documents", "message_search_fts", "outbound_attempts", "idempotency_records", "local_message_sources", "goose_db_version"} {
+	for _, table := range []string{"app_metadata", "accounts", "credential_refs", "folders", "raw_blobs", "messages", "message_recipients", "message_references", "message_locations", "message_content", "message_parts", "attachments", "sync_checkpoints", "message_identity_evidence", "message_dedupe_conflicts", "threads", "thread_messages", "thread_aliases", "thread_edges", "message_search_documents", "message_search_fts", "outbound_attempts", "outbound_attempt_attachments", "idempotency_records", "local_message_sources", "goose_db_version"} {
 		var count int
 		if err := state.db.QueryRowContext(context.Background(),
 			"SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?", table,
@@ -102,6 +102,94 @@ func TestOpenCreatesAndReopensVersionedPrivateState(t *testing.T) {
 	defer reopened.Close()
 	if reopened.SchemaVersion() != SchemaVersion {
 		t.Fatalf("reopened schema version = %d", reopened.SchemaVersion())
+	}
+}
+
+func TestOpenUpgradesPhaseFourteenOutboundAttemptsWithEmptyAttachmentMetadata(t *testing.T) {
+	t.Parallel()
+	paths := testPaths(t, filepath.Join(t.TempDir(), "state"))
+	if err := config.EnsureAppPaths(paths); err != nil {
+		t.Fatal(err)
+	}
+	database, err := sql.Open("sqlite", paths.Database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := configureSQLite(context.Background(), database); err != nil {
+		t.Fatal(err)
+	}
+	migrationFS, err := fs.Sub(migrations, "migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider, err := goose.NewProvider(goose.DialectSQLite3, database, migrationFS, goose.WithLogger(goose.NopLogger()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.UpTo(context.Background(), 11); err != nil {
+		t.Fatal(err)
+	}
+	timestamp := time.Date(2026, 8, 6, 16, 0, 0, 0, time.UTC).Format(time.RFC3339Nano)
+	accountID := "acct_0198d704-6c00-7000-8000-000000001501"
+	credentialID := "cred_0198d704-6c00-7000-8000-000000001502"
+	attemptID := "send_0198d704-6c00-7000-8000-000000001503"
+	rawHash := strings.Repeat("b", 64)
+	if _, err := database.Exec(`
+INSERT INTO accounts (
+    account_id, friendly_name, email_address, imap_username,
+    status, is_default, created_at, updated_at
+) VALUES (?, 'Phase Fourteen', 'phase-fourteen@icloud.com',
+          'phase-fourteen', 'connected', 1, ?, ?)`, accountID, timestamp, timestamp); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(`
+INSERT INTO credential_refs (
+    credential_ref_id, account_id, scheme, reference, created_at, updated_at
+) VALUES (?, ?, 'env', 'env:PHASE_FOURTEEN_PASSWORD', ?, ?)`, credentialID, accountID, timestamp, timestamp); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(`
+INSERT INTO raw_blobs (content_hash, storage_key, byte_size, created_at)
+VALUES (?, ?, 123, ?)`, rawHash, "raw/sha256/bb/"+rawHash+".eml", timestamp); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(`
+INSERT INTO outbound_attempts (
+    attempt_id, account_id, proposed_message_id, request_hash, idempotency_key,
+    status, rfc_message_id, raw_content_hash, raw_storage_key, raw_byte_size,
+    to_count, cc_count, bcc_count, body_part_count,
+    reconciliation, created_at, updated_at
+) VALUES (?, ?, ?, ?, 'phase-fourteen-key', 'unknown', ?, ?, ?, 123,
+          1, 0, 0, 1, 'unknown', ?, ?)`,
+		attemptID, accountID, "msg_0198d704-6c00-7000-8000-000000001504", strings.Repeat("c", 64),
+		"phase-fourteen@example.test", rawHash, "raw/sha256/bb/"+rawHash+".eml", timestamp, timestamp,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	state, err := Open(context.Background(), paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	attempt, err := state.Outbound().Attempt(context.Background(), attemptID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attempt.Status != maildomain.OutboundUnknown || attempt.RFCMessageID != "phase-fourteen@example.test" ||
+		attempt.AttachmentCount != 0 || attempt.AttachmentBytes != 0 || attempt.RetryOfAttemptID != "" ||
+		attempt.ReconciledLocationID != "" || attempt.ReconciliationErrorCode != "" {
+		t.Fatalf("upgraded outbound attempt = %+v", attempt)
+	}
+	var attachmentRows int
+	if err := state.db.QueryRow(`SELECT count(*) FROM outbound_attempt_attachments`).Scan(&attachmentRows); err != nil {
+		t.Fatal(err)
+	}
+	if attachmentRows != 0 {
+		t.Fatalf("outbound attachment rows = %d", attachmentRows)
 	}
 }
 

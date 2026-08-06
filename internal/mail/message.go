@@ -363,21 +363,22 @@ type CommitResult struct {
 }
 
 type SyncSummary struct {
-	AccountID       string     `json:"account_id"`
-	FolderID        string     `json:"folder_id"`
-	FolderName      string     `json:"folder_name"`
-	Fetched         int        `json:"fetched"`
-	Created         int        `json:"created"`
-	Updated         int        `json:"updated"`
-	Reconciled      int        `json:"reconciled"`
-	StateChanges    int        `json:"state_changes"`
-	IdentityMerges  int        `json:"identity_merges"`
-	DedupeConflicts int        `json:"dedupe_conflicts"`
-	LastUID         uint32     `json:"last_uid,omitempty"`
-	MoreAvailable   bool       `json:"more_available"`
-	Bootstrap       bool       `json:"bootstrap"`
-	CompletedAt     time.Time  `json:"completed_at"`
-	Checkpoint      Checkpoint `json:"checkpoint"`
+	AccountID         string                    `json:"account_id"`
+	FolderID          string                    `json:"folder_id"`
+	FolderName        string                    `json:"folder_name"`
+	Fetched           int                       `json:"fetched"`
+	Created           int                       `json:"created"`
+	Updated           int                       `json:"updated"`
+	Reconciled        int                       `json:"reconciled"`
+	StateChanges      int                       `json:"state_changes"`
+	IdentityMerges    int                       `json:"identity_merges"`
+	DedupeConflicts   int                       `json:"dedupe_conflicts"`
+	LastUID           uint32                    `json:"last_uid,omitempty"`
+	MoreAvailable     bool                      `json:"more_available"`
+	Bootstrap         bool                      `json:"bootstrap"`
+	CompletedAt       time.Time                 `json:"completed_at"`
+	Checkpoint        Checkpoint                `json:"checkpoint"`
+	OutboundReconcile *OutboundReconcileSummary `json:"outbound_reconcile,omitempty"`
 }
 
 func ParsePreview(reader io.Reader) (ParsedMessage, error) {

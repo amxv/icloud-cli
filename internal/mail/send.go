@@ -6,8 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"mime"
 	"net/mail"
 	"net/textproto"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -16,11 +19,16 @@ import (
 )
 
 const (
-	MaxSendBodyBytes     = 8 << 20
-	MaxSendRecipients    = 100
-	MaxSendCustomHeaders = 32
-	MaxSendHeaderValue   = 8 << 10
-	MaxSendSubjectRunes  = 998
+	MaxSendBodyBytes               = 8 << 20
+	MaxSendMessageBytes            = 20 << 20
+	MaxSendRecipients              = 100
+	MaxSendCustomHeaders           = 32
+	MaxSendHeaderValue             = 8 << 10
+	MaxSendSubjectRunes            = 998
+	MaxSendAttachments             = 32
+	MaxSendAttachmentBytes         = 64 << 20
+	MaxSendAttachmentTotalBytes    = 128 << 20
+	MaxSendAttachmentFilenameBytes = 255
 )
 
 var (
@@ -52,53 +60,73 @@ type CustomHeader struct {
 	Value string `json:"value"`
 }
 
+type OutboundAttachment struct {
+	Filename    string `json:"filename"`
+	MediaType   string `json:"media_type"`
+	ContentHash string `json:"content_hash"`
+	ByteSize    int64  `json:"byte_size"`
+
+	SourcePath string                        `json:"-"`
+	Open       func() (io.ReadCloser, error) `json:"-"`
+}
+
 type SendRequest struct {
-	From           Address        `json:"from"`
-	To             []Address      `json:"to"`
-	CC             []Address      `json:"cc,omitempty"`
-	BCC            []Address      `json:"bcc,omitempty"`
-	ReplyTo        *Address       `json:"reply_to,omitempty"`
-	Subject        string         `json:"subject"`
-	TextBody       string         `json:"text_body,omitempty"`
-	HTMLBody       string         `json:"html_body,omitempty"`
-	Headers        []CustomHeader `json:"headers,omitempty"`
-	IdempotencyKey string         `json:"-"`
+	From                  Address              `json:"from"`
+	To                    []Address            `json:"to"`
+	CC                    []Address            `json:"cc,omitempty"`
+	BCC                   []Address            `json:"bcc,omitempty"`
+	ReplyTo               *Address             `json:"reply_to,omitempty"`
+	Subject               string               `json:"subject"`
+	TextBody              string               `json:"text_body,omitempty"`
+	HTMLBody              string               `json:"html_body,omitempty"`
+	Headers               []CustomHeader       `json:"headers,omitempty"`
+	Attachments           []OutboundAttachment `json:"attachments,omitempty"`
+	IdempotencyKey        string               `json:"-"`
+	RetryOfAttemptID      string               `json:"-"`
+	AuthorizeUnknownRetry bool                 `json:"-"`
 }
 
 type SendPreview struct {
-	AccountID       string         `json:"account_id"`
-	From            Address        `json:"from"`
-	To              []Address      `json:"to"`
-	CC              []Address      `json:"cc,omitempty"`
-	BCC             []Address      `json:"bcc,omitempty"`
-	ReplyTo         *Address       `json:"reply_to,omitempty"`
-	Subject         string         `json:"subject"`
-	TextBody        string         `json:"text_body,omitempty"`
-	HTMLBody        string         `json:"html_body,omitempty"`
-	Headers         []CustomHeader `json:"headers,omitempty"`
-	BodyParts       int            `json:"body_parts"`
-	AttachmentCount int            `json:"attachment_count"`
-	RequestHash     string         `json:"request_hash"`
+	AccountID       string               `json:"account_id"`
+	From            Address              `json:"from"`
+	To              []Address            `json:"to"`
+	CC              []Address            `json:"cc,omitempty"`
+	BCC             []Address            `json:"bcc,omitempty"`
+	ReplyTo         *Address             `json:"reply_to,omitempty"`
+	Subject         string               `json:"subject"`
+	TextBody        string               `json:"text_body,omitempty"`
+	HTMLBody        string               `json:"html_body,omitempty"`
+	Headers         []CustomHeader       `json:"headers,omitempty"`
+	Attachments     []OutboundAttachment `json:"attachments,omitempty"`
+	BodyParts       int                  `json:"body_parts"`
+	AttachmentCount int                  `json:"attachment_count"`
+	AttachmentBytes int64                `json:"attachment_bytes"`
+	RequestHash     string               `json:"request_hash"`
 }
 
 type OutboundAttempt struct {
-	ID                string              `json:"id"`
-	AccountID         string              `json:"account_id"`
-	ProposedMessageID string              `json:"proposed_message_id"`
-	RequestHash       string              `json:"request_hash"`
-	Status            OutboundStatus      `json:"status"`
-	RFCMessageID      string              `json:"rfc_message_id"`
-	ToCount           int                 `json:"to_count"`
-	CCCount           int                 `json:"cc_count"`
-	BCCCount          int                 `json:"bcc_count"`
-	BodyPartCount     int                 `json:"body_part_count"`
-	MessageID         string              `json:"message_id,omitempty"`
-	ThreadID          string              `json:"thread_id,omitempty"`
-	Reconciliation    ReconciliationState `json:"reconciliation"`
-	ErrorCode         string              `json:"error_code,omitempty"`
-	AcceptedAt        *time.Time          `json:"accepted_at,omitempty"`
-	CreatedAt         time.Time           `json:"created_at"`
-	UpdatedAt         time.Time           `json:"updated_at"`
+	ID                      string              `json:"id"`
+	AccountID               string              `json:"account_id"`
+	ProposedMessageID       string              `json:"proposed_message_id"`
+	RequestHash             string              `json:"request_hash"`
+	Status                  OutboundStatus      `json:"status"`
+	RFCMessageID            string              `json:"rfc_message_id"`
+	ToCount                 int                 `json:"to_count"`
+	CCCount                 int                 `json:"cc_count"`
+	BCCCount                int                 `json:"bcc_count"`
+	BodyPartCount           int                 `json:"body_part_count"`
+	AttachmentCount         int                 `json:"attachment_count"`
+	AttachmentBytes         int64               `json:"attachment_bytes"`
+	MessageID               string              `json:"message_id,omitempty"`
+	ThreadID                string              `json:"thread_id,omitempty"`
+	RetryOfAttemptID        string              `json:"retry_of_attempt_id,omitempty"`
+	Reconciliation          ReconciliationState `json:"reconciliation"`
+	ReconciledLocationID    string              `json:"reconciled_location_id,omitempty"`
+	ReconciliationErrorCode string              `json:"reconciliation_error_code,omitempty"`
+	ErrorCode               string              `json:"error_code,omitempty"`
+	AcceptedAt              *time.Time          `json:"accepted_at,omitempty"`
+	CreatedAt               time.Time           `json:"created_at"`
+	UpdatedAt               time.Time           `json:"updated_at"`
 
 	IdempotencyKey string `json:"-"`
 	RawContentHash string `json:"-"`
@@ -120,7 +148,18 @@ type BeginOutboundAttempt struct {
 	CCCount           int
 	BCCCount          int
 	BodyPartCount     int
+	Attachments       []OutboundAttachmentRecord
+	RetryOfAttemptID  string
 	Now               time.Time
+}
+
+type OutboundAttachmentRecord struct {
+	Ordinal     int
+	Filename    string
+	MediaType   string
+	ContentHash string
+	StorageKey  string
+	ByteSize    int64
 }
 
 type CompleteOutboundSend struct {
@@ -134,6 +173,14 @@ type LocalRawSource struct {
 	ContentHash string `json:"-"`
 	StorageKey  string `json:"-"`
 	ByteSize    int64  `json:"-"`
+}
+
+type OutboundReconcileSummary struct {
+	Scanned         int `json:"scanned"`
+	Confirmed       int `json:"confirmed"`
+	ResolvedUnknown int `json:"resolved_unknown"`
+	Ambiguous       int `json:"ambiguous"`
+	Unmatched       int `json:"unmatched"`
 }
 
 func NormalizeSendRequest(value SendRequest) (SendRequest, error) {
@@ -184,10 +231,15 @@ func NormalizeSendRequest(value SendRequest) (SendRequest, error) {
 	if err != nil {
 		return SendRequest{}, err
 	}
+	value.Attachments, err = normalizeOutboundAttachments(value.Attachments)
+	if err != nil {
+		return SendRequest{}, err
+	}
 	value.IdempotencyKey = strings.TrimSpace(value.IdempotencyKey)
 	if len(value.IdempotencyKey) > 256 || strings.ContainsFunc(value.IdempotencyKey, unicode.IsControl) {
 		return SendRequest{}, fmt.Errorf("%w: invalid idempotency key", ErrInvalidSendRequest)
 	}
+	value.RetryOfAttemptID = strings.TrimSpace(value.RetryOfAttemptID)
 	return value, nil
 }
 
@@ -229,6 +281,51 @@ func (value SendRequest) BodyPartCount() int {
 		count++
 	}
 	return count
+}
+
+func (value SendRequest) AttachmentByteSize() int64 {
+	var total int64
+	for _, attachment := range value.Attachments {
+		total += attachment.ByteSize
+	}
+	return total
+}
+
+func normalizeOutboundAttachments(values []OutboundAttachment) ([]OutboundAttachment, error) {
+	if len(values) > MaxSendAttachments {
+		return nil, fmt.Errorf("%w: attachment count exceeds %d", ErrInvalidSendRequest, MaxSendAttachments)
+	}
+	result := make([]OutboundAttachment, 0, len(values))
+	var total int64
+	for _, value := range values {
+		filename := strings.TrimSpace(value.Filename)
+		if filename == "" || filename == "." || filename == ".." || filepath.Base(filename) != filename || strings.ContainsAny(filename, `/\`) ||
+			len(filename) > MaxSendAttachmentFilenameBytes || strings.ContainsAny(filename, "\x00\r\n") || strings.ContainsFunc(filename, unicode.IsControl) {
+			return nil, fmt.Errorf("%w: invalid attachment filename", ErrInvalidSendRequest)
+		}
+		mediaType, _, err := mime.ParseMediaType(strings.TrimSpace(value.MediaType))
+		if err != nil || !strings.Contains(mediaType, "/") {
+			return nil, fmt.Errorf("%w: invalid attachment media type", ErrInvalidSendRequest)
+		}
+		mediaType = strings.ToLower(mediaType)
+		contentHash := strings.ToLower(strings.TrimSpace(value.ContentHash))
+		decoded, err := hex.DecodeString(contentHash)
+		if err != nil || len(decoded) != sha256.Size {
+			return nil, fmt.Errorf("%w: invalid attachment content hash", ErrInvalidSendRequest)
+		}
+		if value.ByteSize < 0 || value.ByteSize > MaxSendAttachmentBytes {
+			return nil, fmt.Errorf("%w: attachment exceeds %d bytes", ErrInvalidSendRequest, MaxSendAttachmentBytes)
+		}
+		total += value.ByteSize
+		if total > MaxSendAttachmentTotalBytes {
+			return nil, fmt.Errorf("%w: attachment total exceeds %d bytes", ErrInvalidSendRequest, MaxSendAttachmentTotalBytes)
+		}
+		value.Filename = filename
+		value.MediaType = mediaType
+		value.ContentHash = contentHash
+		result = append(result, value)
+	}
+	return result, nil
 }
 
 func normalizeOneAddress(value Address, required bool) (Address, error) {

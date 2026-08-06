@@ -76,7 +76,7 @@ const workflows = [
         <span>capabilities</span>
         <span>command=icloud</span>
         <span>version=0.1.0</span>
-        <span>schema=11 …</span>
+        <span>schema=12 …</span>
         <span>$ icloud account add --name Personal --email owner@icloud.com</span>
         <span>App-specific password:</span>
         <span>account-added</span>
@@ -88,11 +88,11 @@ const workflows = [
         <span>acct_… status=connected</span>
         <span>imap=ok</span>
         <span>smtp=ok …</span>
-        <span>$ icloud mail send --to client@example.com --subject Update --body-file message.txt --dry-run</span>
+        <span>$ icloud mail send --to client@example.com --subject Update --body-file message.txt --attach report.pdf --dry-run</span>
         <span>send-preview</span>
         <span>acct_… from="Personal &lt;owner@icloud.com&gt;"</span>
         <span>smtp_contacted=false</span>
-        <span>$ icloud mail send --to client@example.com --subject Update --body-file message.txt --idempotency-key update-01 --yes</span>
+        <span>$ icloud mail send --to client@example.com --subject Update --body-file message.txt --attach report.pdf --idempotency-key update-01 --yes</span>
         <span>mail-send</span>
         <span>send_… status=sent</span>
         <span>message_id=msg_…</span>

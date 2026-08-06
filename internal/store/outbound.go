@@ -20,7 +20,9 @@ SELECT attempt_id, account_id, proposed_message_id, request_hash,
        idempotency_key, status, rfc_message_id,
        raw_content_hash, raw_storage_key, raw_byte_size,
        to_count, cc_count, bcc_count, body_part_count,
-       message_id, thread_id, reconciliation, error_code,
+       attachment_count, attachment_byte_size, message_id, thread_id,
+       retry_of_attempt_id, reconciliation, reconciled_location_id,
+       reconciliation_error_code, error_code,
        accepted_at, created_at, updated_at
 FROM outbound_attempts`
 
@@ -49,6 +51,14 @@ func (repository *OutboundRepository) Begin(ctx context.Context, input maildomai
 		strings.TrimSpace(input.RFCMessageID) == "" || len(strings.TrimSpace(input.RawContentHash)) != 64 ||
 		strings.TrimSpace(input.RawStorageKey) == "" || input.RawByteSize < 0 {
 		return maildomain.OutboundAttempt{}, false, errors.New("begin outbound attempt: required identity or raw metadata is missing")
+	}
+	var attachmentBytes int64
+	for index, attachment := range input.Attachments {
+		if attachment.Ordinal != index || strings.TrimSpace(attachment.Filename) == "" || strings.TrimSpace(attachment.MediaType) == "" ||
+			len(strings.TrimSpace(attachment.ContentHash)) != 64 || strings.TrimSpace(attachment.StorageKey) == "" || attachment.ByteSize < 0 {
+			return maildomain.OutboundAttempt{}, false, errors.New("begin outbound attempt: attachment metadata is incomplete")
+		}
+		attachmentBytes += attachment.ByteSize
 	}
 	tx, err := repository.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -88,15 +98,28 @@ INSERT INTO outbound_attempts (
     attempt_id, account_id, proposed_message_id, request_hash, idempotency_key,
     status, rfc_message_id, raw_content_hash, raw_storage_key, raw_byte_size,
     to_count, cc_count, bcc_count, body_part_count,
+    attachment_count, attachment_byte_size, retry_of_attempt_id,
     reconciliation, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, 'none', ?, ?)`,
+) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'none', ?, ?)`,
 		input.AttemptID, input.AccountID, input.ProposedMessageID, input.RequestHash,
 		strings.TrimSpace(input.IdempotencyKey), input.RFCMessageID,
 		input.RawContentHash, input.RawStorageKey, input.RawByteSize,
 		input.ToCount, input.CCCount, input.BCCCount, input.BodyPartCount,
+		len(input.Attachments), attachmentBytes, strings.TrimSpace(input.RetryOfAttemptID),
 		timestamp, timestamp,
 	); err != nil {
 		return maildomain.OutboundAttempt{}, false, fmt.Errorf("persist pending outbound attempt: %w", err)
+	}
+	for _, attachment := range input.Attachments {
+		if _, err := tx.ExecContext(ctx, `
+INSERT INTO outbound_attempt_attachments (
+    attempt_id, ordinal, filename, media_type, content_hash, storage_key, byte_size
+) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			input.AttemptID, attachment.Ordinal, attachment.Filename, attachment.MediaType,
+			strings.ToLower(strings.TrimSpace(attachment.ContentHash)), attachment.StorageKey, attachment.ByteSize,
+		); err != nil {
+			return maildomain.OutboundAttempt{}, false, fmt.Errorf("persist outbound attempt attachment: %w", err)
+		}
 	}
 	if key := strings.TrimSpace(input.IdempotencyKey); key != "" {
 		if _, err := tx.ExecContext(ctx, `
@@ -167,6 +190,30 @@ WHERE attempt_id = ? AND status = 'pending'`,
 	return repository.Attempt(ctx, attemptID)
 }
 
+func (repository *OutboundRepository) MarkReconciliationIssue(ctx context.Context, attemptID, errorCode string, now time.Time) (maildomain.OutboundAttempt, error) {
+	attemptID = strings.TrimSpace(attemptID)
+	errorCode = strings.TrimSpace(errorCode)
+	if attemptID == "" || errorCode == "" {
+		return maildomain.OutboundAttempt{}, errors.New("mark outbound reconciliation issue: attempt and error code are required")
+	}
+	timestamp := now.UTC().Format(time.RFC3339Nano)
+	result, err := repository.db.ExecContext(ctx, `
+UPDATE outbound_attempts
+SET reconciliation = 'unknown', reconciliation_error_code = ?, updated_at = ?
+WHERE attempt_id = ? AND status = 'sent'`, errorCode, timestamp, attemptID)
+	if err != nil {
+		return maildomain.OutboundAttempt{}, fmt.Errorf("mark outbound reconciliation issue: %w", err)
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return maildomain.OutboundAttempt{}, fmt.Errorf("mark outbound reconciliation issue result: %w", err)
+	}
+	if changed != 1 {
+		return maildomain.OutboundAttempt{}, errors.New("mark outbound reconciliation issue: accepted attempt not found")
+	}
+	return repository.Attempt(ctx, attemptID)
+}
+
 func (repository *OutboundRepository) CompleteSent(ctx context.Context, input maildomain.CompleteOutboundSend) (maildomain.OutboundAttempt, error) {
 	tx, err := repository.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -182,6 +229,9 @@ func (repository *OutboundRepository) CompleteSent(ctx context.Context, input ma
 	}
 	if attempt.Status != maildomain.OutboundPending {
 		return maildomain.OutboundAttempt{}, errors.New("accepted outbound attempt is not pending")
+	}
+	if err := verifyOutboundAttemptAttachments(ctx, tx, attempt.ID, input.Content.Attachments); err != nil {
+		return maildomain.OutboundAttempt{}, err
 	}
 	timestamp := input.AcceptedAt.UTC().Format(time.RFC3339Nano)
 	parsed := input.Content.Preview
@@ -260,6 +310,186 @@ WHERE attempt_id = ? AND status = 'pending'`,
 	return value, nil
 }
 
+func (repository *OutboundRepository) List(ctx context.Context, accountID string, limit int) ([]maildomain.OutboundAttempt, bool, error) {
+	if strings.TrimSpace(accountID) == "" || limit < 1 {
+		return nil, false, errors.New("list outbound attempts: account and positive limit are required")
+	}
+	rows, err := repository.db.QueryContext(ctx, outboundAttemptColumns+`
+WHERE account_id = ?
+ORDER BY created_at DESC, attempt_id DESC
+LIMIT ?`, strings.TrimSpace(accountID), limit+1)
+	if err != nil {
+		return nil, false, fmt.Errorf("list outbound attempts: %w", err)
+	}
+	defer rows.Close()
+	values := make([]maildomain.OutboundAttempt, 0, limit+1)
+	for rows.Next() {
+		value, scanErr := scanOutboundAttempt(rows)
+		if scanErr != nil {
+			return nil, false, scanErr
+		}
+		values = append(values, value)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, fmt.Errorf("list outbound attempts: %w", err)
+	}
+	more := len(values) > limit
+	if more {
+		values = values[:limit]
+	}
+	return values, more, nil
+}
+
+func (repository *OutboundRepository) Reconcile(ctx context.Context, accountID string, limit int, now time.Time) (maildomain.OutboundReconcileSummary, error) {
+	if strings.TrimSpace(accountID) == "" || limit < 1 || limit > 1000 {
+		return maildomain.OutboundReconcileSummary{}, errors.New("reconcile outbound attempts: account and bounded limit are required")
+	}
+	tx, err := repository.db.BeginTx(ctx, nil)
+	if err != nil {
+		return maildomain.OutboundReconcileSummary{}, fmt.Errorf("begin outbound reconciliation: %w", err)
+	}
+	defer tx.Rollback()
+	rows, err := tx.QueryContext(ctx, outboundAttemptColumns+`
+WHERE account_id = ?
+  AND status IN ('sent', 'unknown')
+  AND reconciliation <> 'confirmed'
+ORDER BY updated_at, attempt_id
+LIMIT ?`, strings.TrimSpace(accountID), limit)
+	if err != nil {
+		return maildomain.OutboundReconcileSummary{}, fmt.Errorf("select outbound reconciliation candidates: %w", err)
+	}
+	attempts := make([]maildomain.OutboundAttempt, 0, limit)
+	for rows.Next() {
+		attempt, scanErr := scanOutboundAttempt(rows)
+		if scanErr != nil {
+			rows.Close()
+			return maildomain.OutboundReconcileSummary{}, scanErr
+		}
+		attempts = append(attempts, attempt)
+	}
+	if err := rows.Close(); err != nil {
+		return maildomain.OutboundReconcileSummary{}, fmt.Errorf("close outbound reconciliation candidates: %w", err)
+	}
+
+	summary := maildomain.OutboundReconcileSummary{Scanned: len(attempts)}
+	timestamp := now.UTC().Format(time.RFC3339Nano)
+	for _, attempt := range attempts {
+		candidates, candidateErr := sentEvidenceCandidates(ctx, tx, attempt.AccountID, attempt.RFCMessageID, 3)
+		if candidateErr != nil {
+			return maildomain.OutboundReconcileSummary{}, candidateErr
+		}
+		if len(candidates) == 0 {
+			summary.Unmatched++
+			continue
+		}
+		if len(candidates) != 1 || (attempt.MessageID != "" && attempt.MessageID != candidates[0].MessageID) {
+			summary.Ambiguous++
+			if _, err := tx.ExecContext(ctx, `
+UPDATE outbound_attempts
+SET reconciliation = 'unknown', reconciliation_error_code = ?, updated_at = ?
+WHERE attempt_id = ?`, "ambiguous_sent_evidence", timestamp, attempt.ID); err != nil {
+				return maildomain.OutboundReconcileSummary{}, fmt.Errorf("record ambiguous outbound reconciliation: %w", err)
+			}
+			continue
+		}
+		candidate := candidates[0]
+		acceptedAt := candidate.ObservedAt
+		if acceptedAt == "" && attempt.AcceptedAt != nil {
+			acceptedAt = attempt.AcceptedAt.UTC().Format(time.RFC3339Nano)
+		}
+		if _, err := tx.ExecContext(ctx, `
+UPDATE outbound_attempts
+SET status = 'sent', message_id = ?, thread_id = ?, reconciliation = 'confirmed',
+    reconciled_location_id = ?, reconciliation_error_code = '', error_code = '',
+    accepted_at = CASE WHEN accepted_at IS NULL OR accepted_at = '' THEN NULLIF(?, '') ELSE accepted_at END,
+    updated_at = ?
+WHERE attempt_id = ?`,
+			candidate.MessageID, candidate.ThreadID, candidate.LocationID, acceptedAt, timestamp, attempt.ID,
+		); err != nil {
+			return maildomain.OutboundReconcileSummary{}, fmt.Errorf("confirm outbound reconciliation: %w", err)
+		}
+		if attempt.Status == maildomain.OutboundUnknown {
+			summary.ResolvedUnknown++
+		} else {
+			summary.Confirmed++
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return maildomain.OutboundReconcileSummary{}, fmt.Errorf("commit outbound reconciliation: %w", err)
+	}
+	return summary, nil
+}
+
+type sentEvidenceCandidate struct {
+	MessageID  string
+	ThreadID   string
+	LocationID string
+	ObservedAt string
+}
+
+func sentEvidenceCandidates(ctx context.Context, tx *sql.Tx, accountID, rfcMessageID string, limit int) ([]sentEvidenceCandidate, error) {
+	rows, err := tx.QueryContext(ctx, `
+SELECT m.message_id,
+       COALESCE((SELECT thread_id FROM thread_messages WHERE message_id = m.message_id LIMIT 1), ''),
+       l.location_id,
+       COALESCE(l.internal_date, m.sort_at, '')
+FROM messages AS m
+JOIN message_locations AS l ON l.message_id = m.message_id AND l.present = 1
+JOIN folders AS f ON f.folder_id = l.folder_id AND f.kind = 'sent'
+WHERE m.account_id = ? AND lower(m.rfc_message_id) = ?
+ORDER BY m.message_id, l.location_id
+LIMIT ?`, strings.TrimSpace(accountID), maildomain.NormalizeMessageID(rfcMessageID), limit)
+	if err != nil {
+		return nil, fmt.Errorf("find Sent evidence for outbound attempt: %w", err)
+	}
+	defer rows.Close()
+	values := make([]sentEvidenceCandidate, 0, limit)
+	for rows.Next() {
+		var value sentEvidenceCandidate
+		if err := rows.Scan(&value.MessageID, &value.ThreadID, &value.LocationID, &value.ObservedAt); err != nil {
+			return nil, fmt.Errorf("read Sent evidence for outbound attempt: %w", err)
+		}
+		values = append(values, value)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("find Sent evidence for outbound attempt: %w", err)
+	}
+	return values, nil
+}
+
+func verifyOutboundAttemptAttachments(ctx context.Context, tx *sql.Tx, attemptID string, values []maildomain.Attachment) error {
+	rows, err := tx.QueryContext(ctx, `
+SELECT ordinal, filename, media_type, content_hash, storage_key, byte_size
+FROM outbound_attempt_attachments
+WHERE attempt_id = ?
+ORDER BY ordinal`, strings.TrimSpace(attemptID))
+	if err != nil {
+		return fmt.Errorf("read outbound attempt attachments: %w", err)
+	}
+	defer rows.Close()
+	stored := make([]maildomain.OutboundAttachmentRecord, 0, len(values))
+	for rows.Next() {
+		var value maildomain.OutboundAttachmentRecord
+		if err := rows.Scan(&value.Ordinal, &value.Filename, &value.MediaType, &value.ContentHash, &value.StorageKey, &value.ByteSize); err != nil {
+			return fmt.Errorf("read outbound attempt attachment: %w", err)
+		}
+		stored = append(stored, value)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("read outbound attempt attachments: %w", err)
+	}
+	if len(stored) != len(values) {
+		return errors.New("accepted outbound attachment count does not match the pending attempt")
+	}
+	for index := range stored {
+		if stored[index].Ordinal != index || stored[index].Filename != values[index].Filename || stored[index].MediaType != values[index].MediaType ||
+			stored[index].ContentHash != values[index].ContentHash || stored[index].StorageKey != values[index].StorageKey || stored[index].ByteSize != values[index].ByteSize {
+			return errors.New("accepted outbound attachment metadata does not match the pending attempt")
+		}
+	}
+	return nil
+}
+
 func (repository *OutboundRepository) Attempt(ctx context.Context, attemptID string) (maildomain.OutboundAttempt, error) {
 	return scanOutboundAttempt(repository.db.QueryRowContext(ctx, outboundAttemptColumns+` WHERE attempt_id = ?`, strings.TrimSpace(attemptID)))
 }
@@ -272,7 +502,9 @@ func scanOutboundAttempt(row rowScanner) (maildomain.OutboundAttempt, error) {
 		&value.IdempotencyKey, &status, &value.RFCMessageID,
 		&value.RawContentHash, &value.RawStorageKey, &value.RawByteSize,
 		&value.ToCount, &value.CCCount, &value.BCCCount, &value.BodyPartCount,
-		&value.MessageID, &value.ThreadID, &reconciliation, &value.ErrorCode,
+		&value.AttachmentCount, &value.AttachmentBytes, &value.MessageID, &value.ThreadID,
+		&value.RetryOfAttemptID, &reconciliation, &value.ReconciledLocationID,
+		&value.ReconciliationErrorCode, &value.ErrorCode,
 		&acceptedAt, &createdAt, &updatedAt,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

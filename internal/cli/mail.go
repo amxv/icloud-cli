@@ -30,6 +30,7 @@ type MailService interface {
 	MailHydrate(context.Context, string, string, []string) (account.Account, []maildomain.HydrateOutcome, int64, error)
 	MailSendPreview(context.Context, string, string, maildomain.SendRequest) (account.Account, maildomain.SendPreview, int64, error)
 	MailSend(context.Context, string, string, maildomain.SendRequest) (account.Account, maildomain.OutboundAttempt, bool, int64, error)
+	MailOutboundStatus(context.Context, string, string, int) (account.Account, []maildomain.OutboundAttempt, bool, int64, error)
 }
 
 type mailSyncData struct {
@@ -120,6 +121,7 @@ func newMailSyncCommand(state *executionState) *cobra.Command {
 	var limit int
 	var folderSelector string
 	var hydrate []string
+	var reconcileOutbound bool
 	command := &cobra.Command{
 		Use:     "sync",
 		Short:   "Fetch and atomically commit bounded pages from enabled mail folders",
@@ -131,6 +133,12 @@ func newMailSyncCommand(state *executionState) *cobra.Command {
 			}
 			if limit < 1 || limit > MaximumPageSize {
 				return NewAppError(ErrorUsage, fmt.Sprintf("--limit must be between 1 and %d", MaximumPageSize), false)
+			}
+			if reconcileOutbound {
+				if len(hydrate) > 0 || strings.TrimSpace(folderSelector) != "" {
+					return NewAppError(ErrorUsage, "--reconcile-outbound cannot be combined with --folder or --hydrate", false)
+				}
+				folderSelector = string(folder.KindSent)
 			}
 			if len(hydrate) > 0 {
 				if strings.TrimSpace(folderSelector) != "" {
@@ -193,6 +201,10 @@ func newMailSyncCommand(state *executionState) *cobra.Command {
 					Field("last_uid", summary.LastUID),
 					Field("more", fmt.Sprintf("%t", summary.MoreAvailable)),
 					Field("bootstrap", fmt.Sprintf("%t", summary.Bootstrap)),
+					Field("outbound_confirmed", outboundReconcileValue(summary.OutboundReconcile, "confirmed")),
+					Field("outbound_resolved_unknown", outboundReconcileValue(summary.OutboundReconcile, "resolved_unknown")),
+					Field("outbound_ambiguous", outboundReconcileValue(summary.OutboundReconcile, "ambiguous")),
+					Field("outbound_unmatched", outboundReconcileValue(summary.OutboundReconcile, "unmatched")),
 				); err != nil {
 					return err
 				}
@@ -202,11 +214,30 @@ func newMailSyncCommand(state *executionState) *cobra.Command {
 	}
 	command.Flags().StringVar(&folderSelector, "folder", "", "Sync one enabled folder by kind, ID, name, or wire name instead of all enabled folders")
 	command.Flags().StringSliceVar(&hydrate, "hydrate", nil, "Cache one or more comma-separated rem_… references without advancing folder checkpoints")
+	command.Flags().BoolVar(&reconcileOutbound, "reconcile-outbound", false, "Sync Sent and reconcile recent sent/unknown attempts by exact Message-ID evidence")
 	command.Flags().IntVar(&limit, "limit", DefaultPageSize, fmt.Sprintf("Maximum messages to fetch and commit per folder (1-%d)", MaximumPageSize))
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
 	command.AddCommand(newMailSyncStatusCommand(state))
 	command.AddCommand(newMailSyncCheckpointsCommand(state))
 	return command
+}
+
+func outboundReconcileValue(summary *maildomain.OutboundReconcileSummary, field string) any {
+	if summary == nil {
+		return nil
+	}
+	switch field {
+	case "confirmed":
+		return summary.Confirmed
+	case "resolved_unknown":
+		return summary.ResolvedUnknown
+	case "ambiguous":
+		return summary.Ambiguous
+	case "unmatched":
+		return summary.Unmatched
+	default:
+		return nil
+	}
 }
 
 func newMailInboxCommand(state *executionState) *cobra.Command {
@@ -462,4 +493,7 @@ func (unavailableMailService) MailSendPreview(context.Context, string, string, m
 }
 func (unavailableMailService) MailSend(context.Context, string, string, maildomain.SendRequest) (account.Account, maildomain.OutboundAttempt, bool, int64, error) {
 	return account.Account{}, maildomain.OutboundAttempt{}, false, 0, NewAppError(ErrorConfiguration, "mail send is unavailable", false)
+}
+func (unavailableMailService) MailOutboundStatus(context.Context, string, string, int) (account.Account, []maildomain.OutboundAttempt, bool, int64, error) {
+	return account.Account{}, nil, false, 0, NewAppError(ErrorConfiguration, "outbound mail status is unavailable", false)
 }

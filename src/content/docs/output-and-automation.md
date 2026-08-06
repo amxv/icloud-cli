@@ -46,20 +46,22 @@ icloud --request-id account-01 account show --json
 ```
 
 ```json
-{"ok":true,"data":{"account":{"id":"acct_…","name":"Personal","email":"owner@icloud.com","imap_username":"owner","status":"connected","default":true,"credential_scheme":"keyring","imap_capabilities":["IDLE","IMAP4REV1"],"smtp_capabilities":["AUTH"],"last_healthy_at":"2026-08-06T03:00:00Z","last_tested_at":"2026-08-06T03:00:00Z","created_at":"2026-08-06T02:30:00Z","updated_at":"2026-08-06T03:00:00Z"},"schema_version":11},"meta":{"request_id":"account-01"}}
+{"ok":true,"data":{"account":{"id":"acct_…","name":"Personal","email":"owner@icloud.com","imap_username":"owner","status":"connected","default":true,"credential_scheme":"keyring","imap_capabilities":["IDLE","IMAP4REV1"],"smtp_capabilities":["AUTH"],"last_healthy_at":"2026-08-06T03:00:00Z","last_tested_at":"2026-08-06T03:00:00Z","created_at":"2026-08-06T02:30:00Z","updated_at":"2026-08-06T03:00:00Z"},"schema_version":12},"meta":{"request_id":"account-01"}}
 ```
 
 Account lifecycle, credential, validation, doctor, folder discovery/policy, enabled-folder sync, local and explicit remote search, targeted hydration, local folder reads, latest/thread reads, message reads and state mutations, attachment list/save/save-all, send preview/outcome, account reads, `version`, and `capabilities` support JSON when stdout is not carrying native bytes. Folder list/show/status and thread reads also support bounded `--verbose` evidence. Completion and man generation intentionally return native text formats.
 
 Thread JSON remains local reconstruction data. `mail latest --json` returns aggregates only. `mail thread show --metadata-only --verbose --json` returns chronological messages and bounded RFC graph evidence without excerpts, BCC, raw-storage coordinates, bodies, or internal edge IDs. `--format raw --json` is explicit and bounded; plain multi-message raw output is rejected.
 
-Credential metadata JSON omits internal IDs, keyring references, environment names, file paths, and values. Error envelopes omit wrapped provider and storage causes.
+Credential metadata JSON omits internal IDs, keyring references, environment names, file paths, and values. Outbound status JSON omits recipients, BCC, subject, bodies, idempotency keys, attachment paths, and private blob coordinates. Error envelopes omit wrapped provider and storage causes.
 
 ## Outbound review and success have different privacy contracts
 
-`mail send --dry-run` is an explicit message-review mode. Its compact output includes the normalized recipient lists, including BCC, the subject, the text body once, body-part and attachment counts, and a safety summary proving that SMTP was not contacted and no attempt was created. `--headers`, `--verbose`, `--format text|html|raw`, and `--json` deliberately expand that review. Dry-run JSON contains normalized recipients, BCC, subject, bodies, Reply-To, and safe custom headers; treat it as private message content rather than routine telemetry.
+`mail send --dry-run` is an explicit message-review mode. Its compact output includes the normalized recipient lists, including BCC, the subject, the text body once, body-part and attachment counts, attachment filenames/media types/sizes/hashes, and a safety summary proving that SMTP was not contacted and no attempt was created. `--headers`, `--verbose`, `--format text|html|raw`, and `--json` deliberately expand that review. Dry-run JSON contains normalized recipients, BCC, subject, bodies, Reply-To, safe custom headers, and reviewed attachment metadata; treat it as private message content rather than routine telemetry.
 
-A real send behaves differently. Non-interactive execution requires `--yes`, and automation should supply a stable `--idempotency-key`. Compact or JSON success returns the account ID, stable attempt/message/thread IDs, status, reconciliation state, reuse state, schema version, and request ID. It does not echo recipients, BCC, subject, bodies, custom headers, the idempotency key, or raw-storage coordinates.
+A real send behaves differently. Non-interactive execution requires `--yes`, and automation should supply a stable `--idempotency-key`. Compact or JSON success returns the account ID, stable attempt/message/thread IDs, status, reconciliation state, attachment count/bytes, reuse state, schema version, and request ID. It does not echo recipients, BCC, subject, bodies, custom headers, attachment paths, attachment names, content hashes, the idempotency key, or raw-storage coordinates.
+
+`mail status --outbound` is the bounded operational view for recent attempts. Its compact records contain stable IDs, status, attachment counts/bytes, reconciliation/error codes, retry linkage, update time, and one next action. It never repeats submitted message payloads. `mail sync --reconcile-outbound` returns only bounded reconciliation counts in addition to the normal Sent sync summary.
 
 An indeterminate post-DATA result uses status `unknown`, returns the stable attempt ID on stderr, and is always `retryable=false`. The caller must not infer that a temporary network cause makes the send safe to repeat. Reusing the same normalized request and idempotency key retrieves the original attempt without another SMTP transaction.
 

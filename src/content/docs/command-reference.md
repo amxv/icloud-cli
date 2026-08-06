@@ -207,6 +207,7 @@ Changes local future-sync policy only; no message is fetched or changed. Newly d
 icloud mail sync
 icloud mail sync --folder sent
 icloud mail sync --folder fld_…
+icloud mail sync --reconcile-outbound
 icloud mail sync --hydrate rem_…
 icloud mail sync --hydrate rem_…,rem_… --json
 icloud mail sync --limit 50
@@ -225,6 +226,8 @@ Compact success prints one block per selected folder with fetched/created/update
 
 `--hydrate <rem_…,...>` switches to targeted remote caching and cannot be combined with `--folder`. It accepts 1-100 stale-safe remote references, deduplicates repeated arguments, verifies each account/folder/UIDVALIDITY/UID, and routes the fetched message through the same parser, blob, identity, attachment, search, and thread ingestion path. It does not create or advance a sync checkpoint. Compact output reports stable message/location IDs plus `created`, `updated`, or `cached`; JSON omits the submitted remote references.
 
+`--reconcile-outbound` selects Sent, synchronizes one bounded page, and then checks recent `sent` or `unknown` attempts against exact generated RFC Message-ID evidence. It cannot be combined with `--folder` or `--hydrate`. Unique evidence confirms the existing local message/location; missing or ambiguous evidence remains unresolved and never causes a resend.
+
 ## `icloud mail send`
 
 Preview or send one new text/HTML message through the selected iCloud account:
@@ -232,7 +235,7 @@ Preview or send one new text/HTML message through the selected iCloud account:
 ```bash
 icloud mail send --to client@example.com --subject Update --body 'Hello' --dry-run
 icloud mail send --to client@example.com --subject Update --body-file message.txt --dry-run --headers
-icloud mail send --to client@example.com --subject Update --body-file message.txt --idempotency-key update-01 --yes
+icloud mail send --to client@example.com --subject Update --body-file message.txt --attach report.pdf --idempotency-key update-01 --yes
 printf '%s\n' 'Hello' | icloud mail send --to client@example.com --subject Update --body-file - --yes --json
 ```
 
@@ -245,22 +248,39 @@ printf '%s\n' 'Hello' | icloud mail send --to client@example.com --subject Updat
 | `--body <text>` / `--body-file <path|->` | Inline, regular-file, or stdin text body. |
 | `--html-body <html>` / `--html-body-file <path|->` | Inline, regular-file, or stdin HTML body. |
 | `--header 'Name: Value'` | Repeatable safe custom header; routing, identity, MIME, delivery, `Received`, and `Resent-*` fields are reserved. |
+| `--attach <path>` | Attach one regular file; repeat up to the bounded count. |
+| `--attach-name <path=filename>` | Override the normalized filename for one attached path. |
+| `--attach-type <path=type/subtype>` | Override the normalized media type for one attached path. |
 | `--idempotency-key <key>` | Return the original attempt for the same normalized request; changed content with the same key conflicts. |
+| `--retry-of <send_…>` | Link one deliberate retry to a matching failed or unknown attempt; requires a new idempotency key. |
+| `--retry-unknown` | Accept duplicate-delivery risk for an unresolved unknown attempt; requires `--retry-of`, `--yes`, and a real send. |
 | `--dry-run` | Normalize and review without opening SMTP or creating an attempt. |
 | `--yes` | Authorize a real non-interactive send. It cannot be combined with `--dry-run`. |
 | `--headers` / `--verbose` | Expand a dry-run review with normalized safe header fields or HTML/custom-header detail. |
 | `--format text|html|raw` | Emit one explicit dry-run body or composed RFC message instead of compact review text. |
 | `--json` | Emit a dry-run review envelope or sanitized real-send outcome. |
 
-The configured account name and address become `From`. Text plus HTML produces multipart alternative; HTML-only input receives a simple plain-text alternative. Each body is bounded to 8 MiB. The command currently accepts no filesystem attachments, so the attachment count is always zero.
+The configured account name and address become `From`. Text plus HTML produces multipart alternative; HTML-only input receives a simple plain-text alternative. Each body is bounded to 8 MiB. Attachments are hashed and normalized before confirmation, cached before SMTP, and streamed through MIME composition. The complete composed message is capped at 20 MiB including encoding overhead; Mail Drop is not used.
 
 Dry-run compact output includes the normalized recipient lists, including BCC, subject, body counts, text body once, request hash, and a no-network/no-attempt safety summary. `--headers` never prints a `Bcc` header. `--format raw` composes a complete preview message with a generated preview Message-ID and date, but BCC remains absent because it is only an SMTP-envelope recipient.
 
 Without `--dry-run`, a terminal receives the same compact preview and a `Send this message? [y/N]` prompt unless `--yes` is supplied. Non-TTY execution and `--no-input` require `--yes`. When stdin supplied a body, interactive confirmation is unavailable; review first, then rerun with `--yes`.
 
-A pending attempt is durable before SMTP. Final status is `sent`, `failed`, or `unknown`; normal successful acceptance creates a searchable local `msg_…`, reconstructed `thr_…`, and reconciliation state in the same local transaction. `unknown` means acceptance could not be proved either way and is always non-retryable. If SMTP acceptance is proven but local completion fails, the attempt remains `sent` with `error_code=local_completion` and must not be resubmitted. Repeating the exact normalized request with its idempotency key returns the original attempt without another SMTP transaction.
+A pending attempt and all outbound attachment metadata are durable before SMTP. Final status is `sent`, `failed`, or `unknown`; normal successful acceptance creates a searchable local `msg_…`, reconstructed `thr_…`, complete local attachments, and reconciliation state in the same local transaction. `unknown` means acceptance could not be proved either way and is always non-retryable. If SMTP acceptance is proven but local completion or Sent-copy creation fails, the attempt remains `sent` and must not be resubmitted. Repeating the exact normalized request with its idempotency key returns the original attempt without another SMTP transaction.
 
 Real compact/JSON success returns only stable account, attempt, message, and thread identity plus status, reconciliation, reuse state, and schema metadata. It omits recipients, BCC, subject, bodies, custom headers, idempotency key, and raw-storage coordinates. Dry-run JSON intentionally contains the full normalized review request and must be treated as private message content.
+
+## `icloud mail status --outbound`
+
+```bash
+icloud mail status --outbound
+icloud mail status --outbound --limit 50
+icloud mail status --outbound --json
+```
+
+Lists the most recent bounded outbound attempts for the selected account without contacting iCloud. Compact records include stable attempt/message/thread IDs, status, attachment counts/bytes, reconciliation and error codes, retry linkage, update time, and one next action. JSON adds accepted/created timestamps and a reconciled location ID when known. Both forms omit submitted recipients, BCC, subject, bodies, custom headers, idempotency keys, attachment paths, hashes, and private blob coordinates.
+
+Use `icloud mail sync --reconcile-outbound` to fetch current Sent evidence. Exact unique generated Message-ID evidence confirms a pending sent attempt or resolves an unknown attempt. Missing evidence stays unmatched; conflicting exact evidence stays unknown with `ambiguous_sent_evidence`. Failed attempts can be retried only with `--retry-of` and a new idempotency key. Unknown attempts additionally require `--retry-unknown --yes` after checking Sent and the recipient.
 
 ## `icloud mail inbox`
 
@@ -538,7 +558,7 @@ Compact output:
 capabilities
 command=icloud
 version=0.1.0
-schema=11
+schema=12
 account_mode=validated_lifecycle
 credentials=keyring,env,file
 network_validation=true

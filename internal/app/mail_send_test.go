@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/amxv/icloud-cli/internal/cli"
+	"github.com/amxv/icloud-cli/internal/config"
+	"github.com/amxv/icloud-cli/internal/folder"
 	maildomain "github.com/amxv/icloud-cli/internal/mail"
 	"github.com/amxv/icloud-cli/internal/transport"
 )
@@ -23,6 +25,31 @@ type fakeSMTPSender struct {
 	requests []transport.SMTPSendRequest
 	messages [][]byte
 	err      error
+}
+
+type fakeSentAppender struct {
+	calls    int
+	auth     []transport.AuthRequest
+	requests []transport.SentAppendRequest
+	messages [][]byte
+	err      error
+}
+
+func (appender *fakeSentAppender) AppendSent(_ context.Context, auth transport.AuthRequest, request transport.SentAppendRequest) (transport.SentAppendResult, error) {
+	appender.calls++
+	appender.auth = append(appender.auth, transport.AuthRequest{Username: auth.Username})
+	appender.requests = append(appender.requests, transport.SentAppendRequest{
+		Mailbox: request.Mailbox, Size: request.Size, InternalDate: request.InternalDate,
+	})
+	content, err := io.ReadAll(request.Message)
+	if err != nil {
+		return transport.SentAppendResult{}, err
+	}
+	appender.messages = append(appender.messages, content)
+	if appender.err != nil {
+		return transport.SentAppendResult{}, appender.err
+	}
+	return transport.SentAppendResult{Mailbox: request.Mailbox, UIDValidity: 500, UID: uint32(appender.calls)}, nil
 }
 
 func (sender *fakeSMTPSender) SendSMTP(_ context.Context, _ transport.AuthRequest, request transport.SMTPSendRequest) (transport.SMTPSendResult, error) {
@@ -336,6 +363,92 @@ func TestMailSendUnknownOutcomeBlocksAutomaticRetry(t *testing.T) {
 	if code != 0 || searchErr != "" || !strings.Contains(searchOut, `"count":0`) {
 		t.Fatalf("unknown send local search code=%d stdout=%q stderr=%q", code, searchOut, searchErr)
 	}
+	state, err := openState(context.Background(), home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	accountValue, err := state.Accounts().ResolveSelected(context.Background(), "")
+	if err != nil {
+		state.Close()
+		t.Fatal(err)
+	}
+	attempts, _, err := state.Outbound().List(context.Background(), accountValue.ID, 10)
+	if err != nil || len(attempts) != 1 {
+		state.Close()
+		t.Fatalf("unknown attempts=%+v err=%v", attempts, err)
+	}
+	originalAttemptID := attempts[0].ID
+	if err := state.Close(); err != nil {
+		t.Fatal(err)
+	}
+	retryArgs := append([]string(nil), args...)
+	for index := range retryArgs {
+		if retryArgs[index] == "unknown-send-key" {
+			retryArgs[index] = "unknown-send-retry-key"
+		}
+	}
+	retryArgs = append(retryArgs, "--retry-of", originalAttemptID)
+	sender.err = nil
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", retryArgs...)
+	if code != cli.ExitSafety || stdout != "" || !strings.Contains(stderr, "retrying an unknown send") || sender.calls != 1 {
+		t.Fatalf("unknown unauthorized retry code=%d stdout=%q stderr=%q calls=%d", code, stdout, stderr, sender.calls)
+	}
+	retryArgs = append(retryArgs, "--retry-unknown")
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", retryArgs...)
+	if code != 0 || stderr != "" || sender.calls != 2 || !strings.Contains(stdout, `"status":"sent"`) || !strings.Contains(stdout, `"retry_of_attempt_id":"`+originalAttemptID+`"`) {
+		t.Fatalf("unknown authorized retry code=%d stdout=%q stderr=%q calls=%d", code, stdout, stderr, sender.calls)
+	}
+}
+
+func TestMailSendFailedAttemptAllowsExplicitLinkedRetry(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("ICLOUD_SEND_PASSWORD", "synthetic-send-secret")
+	commands, _ := newTestAccountCommands()
+	sender := &fakeSMTPSender{err: &transport.SMTPSendError{
+		Outcome: transport.SMTPSendFailed,
+		Failure: transport.NewFailure(transport.StageSMTPAccept, transport.FailureUnavailable, false, errors.New("synthetic final rejection")),
+	}}
+	commands.sender = sender
+	addSendAccount(t, commands, home)
+	args := []string{
+		"--home", home, "mail", "send", "--to", "primary@example.com",
+		"--subject", "Failed retry", "--body", "failed-retry-token",
+		"--idempotency-key", "failed-send-key", "--yes", "--json",
+	}
+	code, stdout, stderr := runWithAccountCommands(t, commands, "", args...)
+	if code != cli.ExitUnavailable || stdout != "" || sender.calls != 1 || !strings.Contains(stderr, `"status":"failed"`) {
+		t.Fatalf("failed send code=%d stdout=%q stderr=%q calls=%d", code, stdout, stderr, sender.calls)
+	}
+	state, err := openState(context.Background(), home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	accountValue, err := state.Accounts().ResolveSelected(context.Background(), "")
+	if err != nil {
+		state.Close()
+		t.Fatal(err)
+	}
+	attempts, _, err := state.Outbound().List(context.Background(), accountValue.ID, 10)
+	if err != nil || len(attempts) != 1 || attempts[0].Status != maildomain.OutboundFailed {
+		state.Close()
+		t.Fatalf("failed attempts=%+v err=%v", attempts, err)
+	}
+	originalAttemptID := attempts[0].ID
+	if err := state.Close(); err != nil {
+		t.Fatal(err)
+	}
+	sender.err = nil
+	retryArgs := append([]string(nil), args...)
+	for index := range retryArgs {
+		if retryArgs[index] == "failed-send-key" {
+			retryArgs[index] = "failed-send-retry-key"
+		}
+	}
+	retryArgs = append(retryArgs, "--retry-of", originalAttemptID)
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", retryArgs...)
+	if code != 0 || stderr != "" || sender.calls != 2 || !strings.Contains(stdout, `"status":"sent"`) || !strings.Contains(stdout, `"retry_of_attempt_id":"`+originalAttemptID+`"`) {
+		t.Fatalf("failed linked retry code=%d stdout=%q stderr=%q calls=%d", code, stdout, stderr, sender.calls)
+	}
 }
 
 type failingOutboundOutcomeWriter struct{}
@@ -403,6 +516,401 @@ func TestMailSendBodyFilesStdinAndRawDryRun(t *testing.T) {
 	if code != cli.ExitUsage || stdout != "" || !strings.Contains(stderr, "cannot both read from stdin") || sender.calls != 0 {
 		t.Fatalf("dual stdin code=%d stdout=%q stderr=%q calls=%d", code, stdout, stderr, sender.calls)
 	}
+}
+
+func TestMailSendAttachmentsPersistBytesMetadataAndIdempotency(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("ICLOUD_SEND_PASSWORD", "synthetic-send-secret")
+	commands, _ := newTestAccountCommands()
+	sender := &fakeSMTPSender{}
+	commands.sender = sender
+	addSendAccount(t, commands, home)
+
+	root := t.TempDir()
+	smallPath := filepath.Join(root, "small.txt")
+	largePath := filepath.Join(root, "large.bin")
+	small := []byte("small outbound attachment token\n")
+	large := bytes.Repeat([]byte("0123456789abcdef"), (9<<20)/16)
+	if err := os.WriteFile(smallPath, small, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(largePath, large, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	base := []string{
+		"--home", home, "mail", "send", "--to", "primary@example.com",
+		"--subject", "Attachment send", "--body", "See attached.",
+		"--attach", smallPath, "--attach", largePath,
+		"--attach-name", smallPath + "=renamed-note.txt",
+		"--attach-type", smallPath + "=text/custom",
+		"--idempotency-key", "attachment-send-key",
+	}
+	dry := append(append([]string(nil), base...), "--dry-run", "--json")
+	code, stdout, stderr := runWithAccountCommands(t, commands, "", dry...)
+	if code != 0 || stderr != "" || sender.calls != 0 || !strings.Contains(stdout, `"attachment_count":2`) ||
+		!strings.Contains(stdout, `"filename":"renamed-note.txt"`) || !strings.Contains(stdout, `"media_type":"text/custom"`) ||
+		strings.Contains(stdout, smallPath) || strings.Contains(stdout, largePath) {
+		t.Fatalf("attachment preview code=%d stdout=%q stderr=%q calls=%d", code, stdout, stderr, sender.calls)
+	}
+
+	send := append(append([]string(nil), base...), "--yes", "--json")
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", send...)
+	if code != 0 || stderr != "" || sender.calls != 1 {
+		t.Fatalf("attachment send code=%d stdout=%q stderr=%q calls=%d", code, stdout, stderr, sender.calls)
+	}
+	var sent struct {
+		Data struct {
+			Attempt maildomain.OutboundAttempt `json:"attempt"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &sent); err != nil {
+		t.Fatal(err)
+	}
+	if sent.Data.Attempt.AttachmentCount != 2 || sent.Data.Attempt.AttachmentBytes != int64(len(small)+len(large)) {
+		t.Fatalf("attachment attempt = %+v", sent.Data.Attempt)
+	}
+	if !strings.Contains(string(sender.messages[0]), "multipart/mixed") || strings.Contains(string(sender.messages[0]), smallPath) {
+		t.Fatalf("SMTP attachment MIME metadata = %q", string(sender.messages[0][:min(len(sender.messages[0]), 4096)]))
+	}
+
+	code, listOut, listErr := runWithAccountCommands(t, commands, "", "--home", home, "mail", "attachments", "list", sent.Data.Attempt.MessageID, "--json")
+	if code != 0 || listErr != "" {
+		t.Fatalf("attachment list code=%d stdout=%q stderr=%q", code, listOut, listErr)
+	}
+	var listed struct {
+		Data struct {
+			Attachments []struct {
+				ID           string                            `json:"id"`
+				Filename     string                            `json:"filename"`
+				MediaType    string                            `json:"media_type"`
+				ContentHash  string                            `json:"content_hash"`
+				ByteSize     int64                             `json:"byte_size"`
+				Availability maildomain.AttachmentAvailability `json:"availability"`
+			} `json:"attachments"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(listOut), &listed); err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.Data.Attachments) != 2 || listed.Data.Attachments[0].Filename != "renamed-note.txt" ||
+		listed.Data.Attachments[0].MediaType != "text/custom" || listed.Data.Attachments[0].Availability != maildomain.AttachmentAvailable {
+		t.Fatalf("listed attachments = %+v", listed.Data.Attachments)
+	}
+	destination := filepath.Join(t.TempDir(), "saved.txt")
+	code, _, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "attachments", "save", listed.Data.Attachments[0].ID, "--output", destination)
+	if code != 0 || stderr != "" {
+		t.Fatalf("attachment save code=%d stderr=%q", code, stderr)
+	}
+	saved, err := os.ReadFile(destination)
+	if err != nil || !bytes.Equal(saved, small) {
+		t.Fatalf("saved attachment bytes=%d err=%v", len(saved), err)
+	}
+
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", send...)
+	if code != 0 || stderr != "" || sender.calls != 1 || !strings.Contains(stdout, `"reused":true`) {
+		t.Fatalf("attachment idempotent repeat code=%d stdout=%q stderr=%q calls=%d", code, stdout, stderr, sender.calls)
+	}
+}
+
+type mutatingTerminalReader struct {
+	path    string
+	mutated bool
+}
+
+func (reader *mutatingTerminalReader) Read(buffer []byte) (int, error) {
+	if !reader.mutated {
+		reader.mutated = true
+		if err := os.WriteFile(reader.path, []byte("changed after review"), 0o600); err != nil {
+			return 0, err
+		}
+	}
+	return strings.NewReader("yes\n").Read(buffer)
+}
+
+func (*mutatingTerminalReader) IsTerminal() bool { return true }
+
+func TestMailSendAttachmentMutationAndUnsafeSourcesStopBeforeSMTP(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("ICLOUD_SEND_PASSWORD", "synthetic-send-secret")
+	commands, _ := newTestAccountCommands()
+	sender := &fakeSMTPSender{}
+	commands.sender = sender
+	addSendAccount(t, commands, home)
+	root := t.TempDir()
+	path := filepath.Join(root, "reviewed.txt")
+	if err := os.WriteFile(path, []byte("reviewed bytes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	args := []string{
+		"--home", home, "mail", "send", "--to", "primary@example.com",
+		"--subject", "Mutation guard", "--body", "Body", "--attach", path,
+		"--idempotency-key", "mutation-guard-key",
+	}
+	code, stdout, stderr := runWithAccountCommandsReader(commands, &mutatingTerminalReader{path: path}, args...)
+	if code != cli.ExitSafety || !strings.Contains(stdout, "send-preview") || !strings.Contains(stderr, "outbound attachment review failed") || sender.calls != 0 {
+		t.Fatalf("attachment mutation code=%d stdout=%q stderr=%q calls=%d", code, stdout, stderr, sender.calls)
+	}
+
+	oversize := filepath.Join(root, "oversize.bin")
+	if err := os.WriteFile(oversize, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Truncate(oversize, maildomain.MaxSendAttachmentBytes+1); err != nil {
+		t.Fatal(err)
+	}
+	for _, unsafe := range []string{filepath.Join(root, "missing.bin"), root, oversize} {
+		caseArgs := []string{
+			"--home", home, "mail", "send", "--to", "primary@example.com",
+			"--subject", "Unsafe attachment", "--body", "Body", "--attach", unsafe,
+			"--idempotency-key", "unsafe-" + filepath.Base(unsafe), "--yes",
+		}
+		code, stdout, stderr = runWithAccountCommands(t, commands, "", caseArgs...)
+		if code != cli.ExitSafety || stdout != "" || stderr == "" || sender.calls != 0 {
+			t.Fatalf("unsafe attachment %q code=%d stdout=%q stderr=%q calls=%d", unsafe, code, stdout, stderr, sender.calls)
+		}
+	}
+
+	providerOversize := filepath.Join(root, "provider-oversize.bin")
+	if err := os.WriteFile(providerOversize, bytes.Repeat([]byte("p"), 16<<20), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "send", "--to", "primary@example.com",
+		"--subject", "Provider message limit", "--body", "Body", "--attach", providerOversize,
+		"--idempotency-key", "provider-message-limit-key", "--yes")
+	if code != cli.ExitSafety || stdout != "" || !strings.Contains(stderr, "20 MiB message limit") || sender.calls != 0 {
+		t.Fatalf("provider message limit code=%d stdout=%q stderr=%q calls=%d", code, stdout, stderr, sender.calls)
+	}
+
+	commands.attachmentBlobs = func(config.AppPaths) attachmentBlobStore {
+		return failingAttachmentBlobStore{err: errors.New("synthetic attachment cache failure")}
+	}
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "send", "--to", "primary@example.com",
+		"--subject", "Cache failure", "--body", "Body", "--attach", path, "--idempotency-key", "cache-failure-key", "--yes")
+	if code != cli.ExitSafety || stdout != "" || !strings.Contains(stderr, "outbound attachment review failed") || sender.calls != 0 {
+		t.Fatalf("attachment cache failure code=%d stdout=%q stderr=%q calls=%d", code, stdout, stderr, sender.calls)
+	}
+}
+
+func TestMailPhaseFifteenHelpAndOutboundStatusRemainCompactAndPayloadFree(t *testing.T) {
+	commands, _ := newTestAccountCommands()
+	for _, test := range []struct {
+		args []string
+		want []string
+	}{
+		{args: []string{"mail", "send", "--help"}, want: []string{"--attach", "--attach-name", "--attach-type", "--retry-of", "--retry-unknown"}},
+		{args: []string{"mail", "sync", "--help"}, want: []string{"--reconcile-outbound"}},
+		{args: []string{"mail", "status", "--help"}, want: []string{"--outbound", "--limit", "--json"}},
+	} {
+		code, stdout, stderr := runWithAccountCommands(t, commands, "", test.args...)
+		if code != 0 || stderr != "" {
+			t.Fatalf("help %v code=%d stdout=%q stderr=%q", test.args, code, stdout, stderr)
+		}
+		for _, want := range test.want {
+			if !strings.Contains(stdout, want) {
+				t.Fatalf("help %v missing %q: %q", test.args, want, stdout)
+			}
+		}
+	}
+
+	home := t.TempDir()
+	t.Setenv("ICLOUD_SEND_PASSWORD", "synthetic-send-secret")
+	sender := &fakeSMTPSender{}
+	commands.sender = sender
+	addSendAccount(t, commands, home)
+	code, stdout, stderr := runWithAccountCommands(t, commands, "",
+		"--home", home, "mail", "send", "--to", "primary@example.com",
+		"--subject", "Outbound status private subject", "--body", "outbound-status-private-body",
+		"--idempotency-key", "outbound-status-private-key", "--yes",
+	)
+	if code != 0 || stderr != "" || sender.calls != 1 {
+		t.Fatalf("status fixture send code=%d stdout=%q stderr=%q calls=%d", code, stdout, stderr, sender.calls)
+	}
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "status", "--outbound", "--limit", "1")
+	if code != 0 || stderr != "" || !compactContainsAll(stdout, "outbound\nsend_", "status=sent", "reconciliation=pending", "outbound-status\naccount=acct_", "count=1") {
+		t.Fatalf("outbound status code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	if lines, size := strings.Count(stdout, "\n"), len(stdout); lines > 20 || size > 800 {
+		t.Fatalf("outbound status compact budget lines=%d bytes=%d output=%q", lines, size, stdout)
+	}
+	for _, forbidden := range []string{"primary@example.com", "Outbound status private subject", "outbound-status-private-body", "outbound-status-private-key", "synthetic-send-secret"} {
+		if strings.Contains(stdout, forbidden) {
+			t.Fatalf("outbound status exposed %q: %q", forbidden, stdout)
+		}
+	}
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "status", "--outbound", "--limit", "1", "--json")
+	if code != 0 || stderr != "" || !strings.Contains(stdout, `"schema_version":12`) || !strings.Contains(stdout, `"count":1`) || !strings.Contains(stdout, `"status":"sent"`) {
+		t.Fatalf("outbound status JSON code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	for _, forbidden := range []string{"primary@example.com", "Outbound status private subject", "outbound-status-private-body", "outbound-status-private-key", "synthetic-send-secret"} {
+		if strings.Contains(stdout, forbidden) {
+			t.Fatalf("outbound status JSON exposed %q: %q", forbidden, stdout)
+		}
+	}
+}
+
+func TestMailSyncReconcileOutboundResolvesUnknownFromFetchedSentCopy(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("ICLOUD_SEND_PASSWORD", "synthetic-send-secret")
+	commands, _ := newTestAccountCommands()
+	sender := &fakeSMTPSender{err: &transport.SMTPSendError{
+		Outcome: transport.SMTPSendUnknown,
+		Failure: transport.NewFailure(transport.StageSMTPAccept, transport.FailureUnavailable, true, errors.New("synthetic post-DATA disconnect")),
+	}}
+	commands.sender = sender
+	addSendAccount(t, commands, home)
+
+	code, stdout, stderr := runWithAccountCommands(t, commands, "",
+		"--home", home, "mail", "send", "--to", "primary@example.com",
+		"--subject", "Sent reconciliation fixture", "--body", "sent-reconciliation-token",
+		"--idempotency-key", "sent-reconciliation-key", "--yes", "--json",
+	)
+	if code != cli.ExitUnavailable || stdout != "" || sender.calls != 1 || len(sender.messages) != 1 || !strings.Contains(stderr, `"status":"unknown"`) {
+		t.Fatalf("unknown fixture code=%d stdout=%q stderr=%q calls=%d", code, stdout, stderr, sender.calls)
+	}
+	parsed, err := maildomain.ParseNormalized(bytes.NewReader(sender.messages[0]))
+	if err != nil || parsed.Preview.RFCMessageID == "" {
+		t.Fatalf("parse outbound fixture message-id=%q err=%v", parsed.Preview.RFCMessageID, err)
+	}
+
+	state, err := openState(context.Background(), home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	accountValue, err := state.Accounts().ResolveSelected(context.Background(), "")
+	if err != nil {
+		state.Close()
+		t.Fatal(err)
+	}
+	observedAt := time.Date(2026, 8, 6, 17, 30, 0, 0, time.UTC)
+	folders, err := state.Folders().Reconcile(context.Background(), accountValue.ID, []folder.RemoteObservation{{
+		Name: "Sent Messages", WireName: "Sent Messages", Kind: folder.KindSent, KindSource: "special_use",
+		Selectable: true, Subscription: folder.SubscriptionSubscribed, UIDValidity: 500, StatusKnown: true,
+	}}, observedAt, func() (string, error) { return "fld_0198d704-6c00-7000-8000-000000000500", nil })
+	if err != nil || len(folders) != 1 {
+		state.Close()
+		t.Fatalf("reconcile Sent folders=%+v err=%v", folders, err)
+	}
+	if _, err := state.Folders().SetSync(context.Background(), accountValue.ID, folders[0].ID, true, observedAt); err != nil {
+		state.Close()
+		t.Fatal(err)
+	}
+	if err := state.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	commands.mail = &fakeInboxClient{results: []fakeInboxPageResult{{
+		page: transport.InboxPage{
+			Mailbox: "Sent Messages", UIDValidity: 500, LastCommittedUID: 1, LastScannedUID: 1,
+			Bootstrap: true, Messages: []transport.FetchedMessage{{UID: 1, InternalDate: observedAt.Add(time.Minute)}},
+		},
+		raw: map[uint32]string{1: string(sender.messages[0])},
+	}}}
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "sync", "--reconcile-outbound", "--limit", "20")
+	if code != 0 || stderr != "" || !compactContainsAll(stdout,
+		"mail-sync\nfld_", "folder=\"Sent Messages\"", "fetched=1", "outbound_resolved_unknown=1",
+	) {
+		t.Fatalf("Sent reconciliation sync code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "status", "--outbound", "--limit", "1", "--json")
+	if code != 0 || stderr != "" || !strings.Contains(stdout, `"status":"sent"`) || !strings.Contains(stdout, `"reconciliation":"confirmed"`) || !strings.Contains(stdout, `"reconciled_location_id":"loc_`) {
+		t.Fatalf("reconciled outbound status code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	for _, forbidden := range []string{"primary@example.com", "Sent reconciliation fixture", "sent-reconciliation-token", "sent-reconciliation-key", "synthetic-send-secret"} {
+		if strings.Contains(stdout, forbidden) {
+			t.Fatalf("reconciled status exposed %q: %q", forbidden, stdout)
+		}
+	}
+}
+
+func TestMailSendAppendsAcceptedRawMessageToDiscoveredSentMailbox(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("ICLOUD_SEND_PASSWORD", "synthetic-send-secret")
+	commands, _ := newTestAccountCommands()
+	sender := &fakeSMTPSender{}
+	appender := &fakeSentAppender{}
+	commands.sender = sender
+	commands.sent = appender
+	addSendAccount(t, commands, home)
+	addSendSentFolder(t, home)
+
+	code, stdout, stderr := runWithAccountCommands(t, commands, "",
+		"--home", home, "mail", "send", "--to", "primary@example.com",
+		"--subject", "Sent append proof", "--body", "sent-append-token",
+		"--idempotency-key", "sent-append-key", "--yes", "--json",
+	)
+	if code != 0 || stderr != "" || sender.calls != 1 || appender.calls != 1 {
+		t.Fatalf("Sent append code=%d stdout=%q stderr=%q smtp=%d append=%d", code, stdout, stderr, sender.calls, appender.calls)
+	}
+	if len(appender.auth) != 1 || appender.auth[0].Username != "owner@icloud.com" ||
+		len(appender.requests) != 1 || appender.requests[0].Mailbox != "Sent Messages" ||
+		appender.requests[0].Size != int64(len(sender.messages[0])) || len(appender.messages) != 1 ||
+		!bytes.Equal(appender.messages[0], sender.messages[0]) {
+		t.Fatalf("Sent append auth=%+v requests=%+v messages=%d SMTP-bytes=%d", appender.auth, appender.requests, len(appender.messages), len(sender.messages[0]))
+	}
+	if !strings.Contains(stdout, `"status":"sent"`) || !strings.Contains(stdout, `"reconciliation":"pending"`) {
+		t.Fatalf("Sent append output = %q", stdout)
+	}
+}
+
+func TestMailSendSentAppendFailurePreservesAcceptedAttemptAndNeverResends(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("ICLOUD_SEND_PASSWORD", "synthetic-send-secret")
+	commands, _ := newTestAccountCommands()
+	sender := &fakeSMTPSender{}
+	appender := &fakeSentAppender{err: transport.NewFailure(
+		transport.StageIMAPAppend, transport.FailureUnavailable, true, errors.New("synthetic append disconnect"),
+	)}
+	commands.sender = sender
+	commands.sent = appender
+	addSendAccount(t, commands, home)
+	addSendSentFolder(t, home)
+	args := []string{
+		"--home", home, "mail", "send", "--to", "primary@example.com",
+		"--subject", "Sent append failure", "--body", "sent-append-failure-token",
+		"--idempotency-key", "sent-append-failure-key", "--yes", "--json",
+	}
+	code, stdout, stderr := runWithAccountCommands(t, commands, "", args...)
+	if code != cli.ExitUnavailable || stdout != "" || sender.calls != 1 || appender.calls != 1 ||
+		!strings.Contains(stderr, "SMTP accepted the message but its Sent copy could not be confirmed; do not resend") ||
+		!strings.Contains(stderr, `"status":"sent"`) {
+		t.Fatalf("Sent append failure code=%d stdout=%q stderr=%q smtp=%d append=%d", code, stdout, stderr, sender.calls, appender.calls)
+	}
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", args...)
+	if code != 0 || stderr != "" || sender.calls != 1 || appender.calls != 1 ||
+		!strings.Contains(stdout, `"reused":true`) || !strings.Contains(stdout, `"status":"sent"`) ||
+		!strings.Contains(stdout, `"reconciliation":"unknown"`) {
+		t.Fatalf("Sent append idempotent replay code=%d stdout=%q stderr=%q smtp=%d append=%d", code, stdout, stderr, sender.calls, appender.calls)
+	}
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "status", "--outbound", "--limit", "1")
+	if code != 0 || stderr != "" || !strings.Contains(stdout, "status=sent") || !strings.Contains(stdout, "reconciliation=unknown") ||
+		!strings.Contains(stdout, "reconciliation_error=sent_copy_append") || !strings.Contains(stdout, "do not resend") {
+		t.Fatalf("Sent append status code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+}
+
+func addSendSentFolder(t *testing.T, home string) folder.Folder {
+	t.Helper()
+	state, err := openState(context.Background(), home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	accountValue, err := state.Accounts().ResolveSelected(context.Background(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 8, 6, 18, 15, 0, 0, time.UTC)
+	values, err := state.Folders().Reconcile(context.Background(), accountValue.ID, []folder.RemoteObservation{{
+		Name: "Sent Messages", WireName: "Sent Messages", Kind: folder.KindSent, KindSource: "special_use",
+		Selectable: true, Subscription: folder.SubscriptionSubscribed, UIDValidity: 500, StatusKnown: true,
+	}}, now, func() (string, error) { return "fld_0198d704-6c00-7000-8000-000000000550", nil })
+	if err != nil || len(values) != 1 {
+		t.Fatalf("add Sent folder values=%+v err=%v", values, err)
+	}
+	if _, err := state.Folders().SetSync(context.Background(), accountValue.ID, values[0].ID, true, now); err != nil {
+		t.Fatal(err)
+	}
+	return values[0]
 }
 
 func addSendAccount(t *testing.T, commands accountCommands, home string) {

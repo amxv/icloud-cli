@@ -26,6 +26,7 @@ const (
 	StageIMAPSelect     Stage = "imap_select"
 	StageIMAPSearch     Stage = "imap_search"
 	StageIMAPFetch      Stage = "imap_fetch"
+	StageIMAPAppend     Stage = "imap_append"
 	StageIMAPStore      Stage = "imap_store"
 	StageIMAPLogout     Stage = "imap_logout"
 	StageSMTPGreeting   Stage = "smtp_greeting"
@@ -197,6 +198,23 @@ func (err *UIDValidityError) Error() string { return "IMAP UID validity changed"
 
 type IMAPInboxClient interface {
 	FetchInboxPage(context.Context, AuthRequest, InboxFetchRequest, blob.Stager) (InboxPage, error)
+}
+
+type SentAppendRequest struct {
+	Mailbox      string
+	Message      io.Reader
+	Size         int64
+	InternalDate time.Time
+}
+
+type SentAppendResult struct {
+	Mailbox     string `json:"mailbox"`
+	UIDValidity uint32 `json:"uid_validity,omitempty"`
+	UID         uint32 `json:"uid,omitempty"`
+}
+
+type IMAPSentAppender interface {
+	AppendSent(context.Context, AuthRequest, SentAppendRequest) (SentAppendResult, error)
 }
 
 type RemoteSearchCriteria struct {

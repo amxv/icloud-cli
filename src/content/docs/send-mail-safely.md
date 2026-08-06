@@ -1,9 +1,9 @@
 ---
 title: Send mail safely
-description: Preview and send a new iCloud Mail message with explicit confirmation, idempotency, BCC privacy, text or HTML bodies, and honest delivery outcomes.
+description: Preview and send a new iCloud Mail message with explicit confirmation, idempotency, BCC privacy, streamed attachments, and honest delivery outcomes.
 order: 8
 category: Guides
-summary: Dry-run review, interactive or non-TTY confirmation, body inputs, recipient privacy, idempotent retries, stable results, and unknown-outcome recovery.
+summary: Dry-run review, confirmation, body and attachment inputs, recipient privacy, idempotency, Sent reconciliation, explicit retries, and unknown-outcome recovery.
 ---
 
 ## Preview the exact request first
@@ -81,7 +81,42 @@ HTML uses the matching `--html-body` or `--html-body-file` flags. Text and HTML 
 
 Each body is bounded to 8 MiB before composition. One stdin stream cannot supply both text and HTML. A real interactive send cannot consume its body and confirmation from the same stdin; review with `--dry-run`, then rerun with `--yes`.
 
-Filesystem attachments are not accepted by `mail send` in the current command set. The attachment count remains zero, and unsupported attachment input is never silently ignored.
+## Attach reviewed files without buffering the whole message
+
+Repeat `--attach` for regular files. A dry run reads each file, detects its media type, computes its SHA-256 hash, and shows the normalized filename, type, size, and hash before any network connection:
+
+```bash
+icloud mail send \
+  --to client@example.com \
+  --subject 'Project files' \
+  --body 'See attached.' \
+  --attach report.pdf \
+  --attach data.csv \
+  --dry-run
+```
+
+Override untrusted or unhelpful local metadata by referring to the same attached path:
+
+```bash
+icloud mail send \
+  --to client@example.com \
+  --subject 'Project files' \
+  --body 'See attached.' \
+  --attach ./build/output.bin \
+  --attach-name './build/output.bin=report.bin' \
+  --attach-type './build/output.bin=application/octet-stream' \
+  --idempotency-key project-files-2026-08-06 \
+  --yes
+```
+
+The real send rechecks the reviewed bytes before composing the message. A missing file, directory, symbolic or other special file, changed file, unreadable file, unsupported filename, invalid media type, cache failure, or size violation stops before SMTP. The composed RFC message is capped at 20 MiB, including MIME/base64 overhead; the CLI does not invoke Mail Drop.
+
+Accepted attachment bytes are immediately available through the normal local message and attachment commands, even before a later Sent sync confirms the provider location:
+
+```bash
+icloud mail attachments list msg_…
+icloud mail attachments save att_… --output report.pdf
+```
 
 ## Review addresses and headers without exposing BCC on the wire
 
@@ -119,12 +154,41 @@ Every real send persists a pending attempt before the SMTP transaction. The fina
 
 | Status | Meaning | Next action |
 | --- | --- | --- |
-| `sent` | iCloud SMTP returned final acceptance. Normally the local message and attempt commit together and return `msg_…` and `thr_…`. | Use the returned IDs. When an error reports `error_code=local_completion`, iCloud still accepted the message but the local projection is incomplete; do not resend it. |
-| `failed` | The CLI proved the message was not accepted, such as authentication failure or an explicit SMTP rejection. | Fix the reported cause. A deliberate new attempt should use a new idempotency key. |
-| `unknown` | The connection failed after message data may have reached iCloud, so acceptance could not be proved either way. | Do not retry automatically. Verify delivery first. |
+| `sent` | iCloud SMTP returned final acceptance. Normally the local message and attempt commit together and return `msg_…` and `thr_…`. | Use the returned IDs. `reconciliation=pending` means the provider Sent location has not been observed yet; it does not make the send safe to repeat. |
+| `failed` | The CLI proved the message was not accepted, such as authentication failure or an explicit SMTP rejection. | Fix the cause, preserve the original `send_…` ID, then create one linked retry with a new idempotency key. |
+| `unknown` | The connection failed after message data may have reached iCloud, so acceptance could not be proved either way. | Reconcile Sent and check the recipient. Retry only after explicitly accepting duplicate risk. |
 | `pending` | An earlier process stopped before a final durable outcome was recorded. | Treat it as unresolved; do not create an automatic duplicate. |
 
-An `unknown` error is always reported as non-retryable even when the underlying network failure was temporary. Run the exact same command with the same idempotency key to retrieve the original attempt without resending, then check the receiving mailbox or iCloud Sent mailbox before deciding whether a new attempt is appropriate.
+Inspect bounded payload-free status, then synchronize Sent and reconcile exact generated Message-ID evidence:
+
+```bash
+icloud mail status --outbound
+icloud mail sync --reconcile-outbound
+icloud mail status --outbound --json
+```
+
+A unique Sent observation confirms the attempt and associates the provider location with the existing local message. Similar subjects, bodies, times, or attachments are never enough. No match remains pending/unknown, and conflicting exact evidence remains visibly ambiguous.
+
+An `unknown` error is always reported as non-retryable even when the underlying network failure was temporary. Run the exact same command with the same idempotency key to retrieve the original attempt without resending, then reconcile Sent and check the recipient.
+
+After a proven failed attempt, repeat the same normalized message with a new key and link it explicitly:
+
+```bash
+icloud mail send ... \
+  --retry-of send_… \
+  --idempotency-key update-retry-02 \
+  --yes
+```
+
+An unresolved `unknown` attempt requires the additional `--retry-unknown` acknowledgement. This is deliberately noisy because both copies may be delivered:
+
+```bash
+icloud mail send ... \
+  --retry-of send_… \
+  --retry-unknown \
+  --idempotency-key update-duplicate-risk-02 \
+  --yes
+```
 
 A local-completion error is different: the final SMTP acceptance was proven, so the durable attempt remains `sent` and the same idempotency key cannot resubmit it. Preserve the attempt ID and let Sent reconciliation restore the missing local location/message evidence.
 
@@ -139,6 +203,8 @@ A dry-run `--json` response is different: it is an explicit review mode and ther
 - `non-interactive mail send requires --yes`: review with `--dry-run`, then add `--yes` to the deliberate send.
 - `mail body consumed stdin`: stdin cannot also answer an interactive prompt; rerun with `--yes` after review.
 - `idempotency key was already used`: keep the original request or choose a new key for an intentionally different message.
-- `mail send outcome is unknown`: preserve the attempt ID, do not auto-retry, and verify delivery externally.
+- `mail send outcome is unknown`: preserve the attempt ID, run `mail sync --reconcile-outbound`, inspect `mail status --outbound`, and verify the recipient before considering `--retry-unknown`.
 - `SMTP accepted the message but local completion is incomplete`: the provider accepted it; preserve the `send_…` ID and do not resend.
+- `SMTP accepted the message but its Sent copy could not be confirmed`: the message was accepted; do not resend. Refresh folder discovery if needed, then synchronize and reconcile Sent.
+- `composed message exceeds iCloud Mail's 20 MiB message limit`: reduce attachment/body size; MIME encoding overhead counts toward the limit.
 - SMTP authentication or STARTTLS failure: run `icloud account test` and correct the account credential or network path before another deliberate attempt.

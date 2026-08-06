@@ -29,6 +29,7 @@ type accountCommands struct {
 	mail            transport.IMAPInboxClient
 	remote          transport.IMAPRemoteClient
 	flags           transport.IMAPFlagClient
+	sent            transport.IMAPSentAppender
 	blobs           func(config.AppPaths) blob.Stager
 	attachmentBlobs func(config.AppPaths) attachmentBlobStore
 	now             func() time.Time

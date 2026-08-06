@@ -30,7 +30,7 @@ version
 capabilities
 command=icloud
 version=0.1.0
-schema=11
+schema=12
 account_mode=validated_lifecycle
 credentials=keyring,env,file
 network_validation=true
@@ -145,6 +145,7 @@ icloud mail send \
   --to client@example.com \
   --subject 'Project update' \
   --body-file message.txt \
+  --attach report.pdf \
   --dry-run
 ```
 
@@ -155,11 +156,12 @@ icloud mail send \
   --to client@example.com \
   --subject 'Project update' \
   --body-file message.txt \
+  --attach report.pdf \
   --idempotency-key project-update-2026-08-06 \
   --yes
 ```
 
-Success returns only a stable attempt, message, and thread ID. BCC addresses remain in the SMTP envelope and are omitted from the composed message. An `unknown` result means acceptance could not be proved either way and must not be retried automatically. Read [Send mail safely](/docs/send-mail-safely) for text/HTML input, display names, Reply-To, custom headers, dry-run expansions, idempotency conflicts, and recovery.
+Success returns only stable attempt, message, and thread IDs plus attachment counts and reconciliation state. BCC addresses remain in the SMTP envelope and are omitted from the composed message. An `unknown` result means acceptance could not be proved either way and must not be retried automatically. Run `icloud mail sync --reconcile-outbound` before considering an explicit linked retry. Read [Send mail safely](/docs/send-mail-safely) for text/HTML input, attachments, display names, Reply-To, custom headers, dry-run expansions, idempotency, Sent confirmation, and recovery.
 
 ## Discover folders
 

@@ -231,6 +231,14 @@ func (commands accountCommands) syncMailbox(
 			fmt.Errorf("records=%d created=%d updated=%d", len(records), commit.Created, commit.Updated),
 		)
 	}
+	var outboundReconcile *maildomain.OutboundReconcileSummary
+	if folderValue.Kind == folder.KindSent {
+		summary, reconcileErr := state.Outbound().Reconcile(ctx, accountValue.ID, 100, attemptedAt)
+		if reconcileErr != nil {
+			return maildomain.SyncSummary{}, "", cli.WrapAppError(cli.ErrorInternal, "Sent mail committed but outbound reconciliation failed", true, reconcileErr)
+		}
+		outboundReconcile = &summary
+	}
 	return maildomain.SyncSummary{
 		AccountID: accountValue.ID, FolderID: folderValue.ID, FolderName: folderValue.Name,
 		Fetched: len(records), Created: commit.Created, Updated: commit.Updated,
@@ -238,6 +246,7 @@ func (commands accountCommands) syncMailbox(
 		IdentityMerges: commit.IdentityMerges, DedupeConflicts: commit.DedupeConflicts,
 		LastUID: commit.Checkpoint.LastCommittedUID, MoreAvailable: commit.Checkpoint.MoreAvailable,
 		Bootstrap: page.Bootstrap, CompletedAt: attemptedAt, Checkpoint: commit.Checkpoint,
+		OutboundReconcile: outboundReconcile,
 	}, usedUsername, nil
 }
 

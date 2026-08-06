@@ -68,6 +68,19 @@ icloud mail sync --limit 50
 
 `reconciled` counts existing locations whose remote flags were checked without downloading message bodies again. `state_changes` counts real differences. The bounded sweep rotates over time instead of turning one command into a whole-mailbox scan.
 
+## Confirm outbound attempts from Sent evidence
+
+A successful SMTP submission creates the local message immediately, then Sent synchronization confirms the provider copy. Run the focused workflow when an attempt is still pending or its SMTP outcome was unknown:
+
+```bash
+icloud mail status --outbound
+icloud mail sync --reconcile-outbound
+```
+
+The command synchronizes one bounded Sent page and compares recent `sent` or `unknown` attempts with exact generated RFC Message-ID evidence. A single match confirms the attempt and adds the Sent location to the existing `msg_…`; it does not create a second logical message. Subject, body, timestamp, recipients, or attachment resemblance alone never resolves an attempt.
+
+Compact sync output adds nonzero `outbound_confirmed`, `outbound_resolved_unknown`, `outbound_ambiguous`, or `outbound_unmatched` counts. An unmatched attempt can be checked again after a later Sent page. Ambiguous evidence stays unknown and requires inspection; reconciliation never guesses or resends.
+
 ## Read Inbox or Sent locally
 
 The existing local list command defaults to Inbox:
@@ -291,6 +304,16 @@ icloud mail sync status --folder sent
 ```
 
 Send or append a new test message through the normal mail workflow, then run `icloud mail sync --folder sent` again. The CLI does not crawl old Sent history implicitly.
+
+### A sent or unknown attempt is not confirmed
+
+```bash
+icloud mail folders status
+icloud mail sync --reconcile-outbound
+icloud mail status --outbound
+```
+
+`unmatched` means the bounded Sent synchronization has not observed one exact generated Message-ID yet. Repeat after the provider copy appears. `ambiguous_sent_evidence` means more than one current Sent location matches; keep the attempt unresolved and inspect the mailbox before any duplicate-risk retry.
 
 ### Sync failed at an IMAP stage
 

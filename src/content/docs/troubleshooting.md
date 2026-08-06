@@ -130,11 +130,33 @@ The CLI lost certainty after message data may have reached iCloud, so it cannot 
 
 Do not rerun with a new idempotency key immediately. Keep the returned `send_…` attempt ID, rerun the exact same command with the same key only to retrieve the original attempt, and verify the receiving mailbox or iCloud Sent mailbox before deciding whether another message is appropriate.
 
+Run the bounded reconciliation workflow first:
+
+```bash
+icloud mail status --outbound
+icloud mail sync --reconcile-outbound
+icloud mail status --outbound
+```
+
+Only after checking both Sent and the recipient may you deliberately create a linked duplicate-risk retry with a new idempotency key, `--retry-of send_…`, `--retry-unknown`, and `--yes`.
+
 ## SMTP accepted the message but local completion is incomplete
 
 The provider returned final acceptance, but the CLI could not finish the local searchable message/thread transaction. The durable attempt remains `sent` with `error_code=local_completion` so an idempotent replay cannot submit it again.
 
-Do not resend. Preserve the `send_…` ID and use outbound Sent reconciliation when available to restore the missing local linkage.
+Do not resend. Preserve the `send_…` ID and run `icloud mail sync --reconcile-outbound` to restore the missing local linkage from exact Sent evidence.
+
+## SMTP accepted the message but its Sent copy was not confirmed
+
+The recipient submission succeeded, but the follow-up Sent copy or its local status update failed. The attempt remains `sent`; repeating the same idempotency key returns it without another SMTP submission.
+
+Do not resend. Refresh folders if necessary, then reconcile:
+
+```bash
+icloud mail folders status
+icloud mail sync --reconcile-outbound
+icloud mail status --outbound
+```
 
 ## Mail send failed before acceptance
 
@@ -146,7 +168,13 @@ Use the reported stage:
 - `smtp_data` or a final explicit SMTP rejection — the server proved that the attempt was not accepted;
 - `timeout` before DATA — check connectivity and choose a deliberate larger global timeout when justified.
 
-A `failed` attempt is not automatically retried. Correct the cause, review again, and use a new idempotency key for the deliberate new attempt.
+A `failed` attempt is not automatically retried. Correct the cause, preserve its `send_…` ID, review the same normalized message again, and use `--retry-of send_…` with a new idempotency key for the deliberate new attempt.
+
+## An outbound attachment was rejected before SMTP
+
+The CLI accepts only readable regular files and rechecks reviewed bytes before sending. Missing paths, directories, symbolic or other special files, changed files, invalid filename/media-type overrides, cache failures, and per-file/count/total bounds stop before SMTP.
+
+The complete MIME message must also fit the 20 MiB iCloud Mail limit after base64 and multipart overhead. Reduce the files or body when the source files appear smaller than the reported composed-message limit. The CLI does not invoke Mail Drop.
 
 ## An account already exists
 
@@ -245,7 +273,7 @@ Generating completion output does not install it automatically.
 
 ## A local command is not contacting iCloud
 
-That is expected for `account add`, credential replacement, account reads, local folder `list`/`show`, folder policy changes, and `doctor` without `--live`. Use `icloud account test`, `icloud doctor --live`, `icloud mail folders status`, or `icloud mail sync` for explicit network work. Folder sync is read-only at iCloud; sending and mailbox mutation are not implemented in this build.
+That is expected for `account add`, credential replacement, account reads, local folder `list`/`show`, folder policy changes, outbound status, and `doctor` without `--live`. Use `icloud account test`, `icloud doctor --live`, `icloud mail folders status`, `icloud mail sync`, or a real `icloud mail send` for explicit network work. Folder sync and outbound status never resend a message; move, copy, archive, trash, and delete are not implemented yet.
 
 ## Folder list is empty
 
