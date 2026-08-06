@@ -26,7 +26,9 @@ Compact output is bounded to 20 records by default:
 
 ```text
 folder fld_… name=INBOX kind=inbox selectable=yes subscription=unknown present=yes sync=enabled messages=15 unseen=2
+
 folder fld_… name=Projects/Alpha kind=other parent=Projects selectable=yes subscription=unknown present=yes sync=disabled messages=1
+
 folder-status account=acct_… count=8 present=8 stale=0 enabled=2
 ```
 

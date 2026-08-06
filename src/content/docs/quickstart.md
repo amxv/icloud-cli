@@ -87,6 +87,7 @@ icloud account test Personal
 
 ```text
 account-test acct_… status=connected imap=ok smtp=ok imap_username=owner mailboxes=6 inbox_messages=42 inbox_unseen=3 checked_at=2026-08-06T03:00:00Z
+
 account-tests count=1 healthy=1
 ```
 
@@ -136,6 +137,7 @@ icloud mail inbox
 
 ```text
 message msg_… from=sender@example.com subject="Project update" at=2026-08-06T08:30:00Z unread=true attachments=1 snippet="Here is the latest update…"
+
 inbox account=acct_… count=1 more=false
 ```
 

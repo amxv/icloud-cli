@@ -54,11 +54,17 @@ Representative default output:
 
 ```text
 account-test acct_… status=connected imap=ok smtp=ok imap_username=owner mailboxes=6 inbox_messages=42 inbox_unseen=3
+
 folder-status account=acct_… count=8 present=8 stale=0 enabled=2
+
 mail-sync fld_… account=acct_… folder=INBOX fetched=20 created=20 updated=0 last_uid=184 more=false bootstrap=true
+
 inbox account=acct_… count=20 more=false
+
 doctor accounts=1 status=healthy
+
 version 0.1.0
+
 capabilities command=icloud version=0.1.0 schema=4 account_mode=validated_lifecycle credentials=keyring,env,file network_validation=true diagnostics=true mail_folders=true mail_sync=true default_output=compact json=true completion=bash,zsh,fish,powershell man=true
 ```
 

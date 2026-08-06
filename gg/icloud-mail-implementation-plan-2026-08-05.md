@@ -195,7 +195,7 @@ Command names are stable; shallow aliases may be added only when they do not cre
 ### Output contract
 
 - Compact plain text is the default for every command, whether stdout is a TTY or redirected to an agent. Normal execution must not require an agent to pass a flag merely to avoid JSON, HTML, raw MIME, or verbose prose.
-- The compact renderer uses stable field order, omits empty/default fields, avoids borders and repeated labels, keeps pages bounded, prints stable IDs needed for follow-up actions, and never repeats a body or request value the caller already supplied unless review is the command's purpose.
+- The compact renderer uses stable field order, omits empty/default fields, avoids borders and repeated labels, keeps pages bounded, prints stable IDs needed for follow-up actions, and never repeats a body or request value the caller already supplied unless review is the command's purpose. Each record remains one dense line, with one blank separator line between consecutive records or the final summary so compact output is equally scannable for humans and agents.
 - List/search/inbox/latest output emits one concise record per result plus a minimal next-cursor/more marker. Sync/status/doctor output emits one summary per account/folder and only actionable warnings or failures; per-message/per-stage detail requires `--verbose`.
 - Message and thread reads default to essential identity/routing fields and a bounded decoded plain-text excerpt. `--full` returns complete decoded text; `--format text|html|raw`, `--headers`, and `--body-only` select explicit richer representations. HTML and raw MIME are never selected implicitly.
 - Successful write output defaults to outcome plus stable attempt/message/thread/draft/location IDs and any next action. It does not echo submitted bodies, HTML, headers, recipient lists, or attachment paths unless required to explain a failure. `--dry-run` is the deliberate review exception: it renders the normalized envelope and clean text body once, compactly, with richer header/HTML/raw detail only when requested.
@@ -224,10 +224,13 @@ Representative compact shapes establish the intended information density. Empty 
 
 ```text
 sync account=personal folder=INBOX fetched=12 new=10 updated=2 flags=4 more=false
+
 msg msg_01 2026-08-05T18:42Z unread from=alice@example.com subject="Launch notes" — Can you review the final…
+
 thread th_01 messages=3 unread=1 subject="Launch notes"
   msg msg_01 18:42Z alice@example.com — Can you review the final…
   msg msg_02 19:07Z me — Reviewed; two comments…
+
 sent attempt=send_01 message=msg_03 thread=th_01 state=sent
 ```
 
@@ -1944,3 +1947,10 @@ Regression scope is the entire repository: Go formatting/vet/test/race/fuzz wher
 - **Quality safeguard:** this is a persistence requirement, not a throughput target. Agents must not combine phases prematurely, skip phase-scoped reading, reduce test depth, leave cleanup for later, weaken acceptance, or write shallow documentation to maximize phase count. One fully complete phase remains the atomic unit of progress.
 - **Documentation change:** hand-authored docs are a concise, polished product guide for humans and agent users, not a prose rendering of the repository. Every paragraph must help the reader accomplish, understand, choose, or troubleshoot something. Agents improve coherent reader journeys and create new pages only for distinct user goals; exhaustive syntax stays in generated references. Implementation mechanics are omitted unless required for safe use or actionable troubleshooting.
 - **Affected phases:** all remaining phases, progressive documentation checkpoints, Phase 24 consolidation, Phase 25 acceptance, and both reusable agent prompts.
+
+### 2026-08-06 — Separate compact records with a blank line
+
+- **Trigger:** the user liked the dense one-line compact records but clarified that adjacent records and summaries were visually cramped for human readers.
+- **Change:** every compact record keeps its stable fields on one line, while the shared renderer inserts exactly one blank separator line before each subsequent record or summary. Single-record output and one-line errors remain unchanged; JSON, JSONL, raw, completion, and man output are unaffected.
+- **Quality boundary:** the separator is whitespace only. It must not add headings, tables, repeated parent context, decorative borders, unbounded prose, or body content. Golden line budgets must account for the deliberate separator lines while retaining byte and record-count bounds.
+- **Affected phases:** the universal output contract, all existing and future compact multi-record commands, progressive docs examples, Phase 23 bulk output, Phase 24 reference consolidation, and Phase 25 compact-output acceptance.

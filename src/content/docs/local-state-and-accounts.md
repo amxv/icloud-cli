@@ -55,6 +55,7 @@ The default returns at most 20 account records; `--limit` accepts `1` through `1
 
 ```text
 account acct_0198d704-6c00-7000-8000-000000000001 name=Personal email=owner@icloud.com imap_username=owner@icloud.com status=pending_validation default=true credential=keyring
+
 accounts count=1
 ```
 

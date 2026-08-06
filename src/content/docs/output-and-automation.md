@@ -12,12 +12,15 @@ The CLI does not switch to JSON because stdout is redirected or a caller is non-
 
 ```text
 version 0.1.0
+
 account-added acct_… status=pending_validation default=true credential=keyring
+
 accounts count=1
+
 account-test acct_… status=connected imap=ok smtp=ok imap_username=owner mailboxes=6 inbox_messages=42 inbox_unseen=3 checked_at=2026-08-06T03:00:00Z
 ```
 
-Default output omits empty values, ANSI color, box-drawing tables, JSON punctuation, and repeated labels. Successful output goes to stdout.
+Each compact record remains one dense line. When one command emits several records or a final summary, the renderer places one blank separator line between them. Default output still omits empty values, ANSI color, box-drawing tables, JSON punctuation, and repeated labels. Successful output goes to stdout.
 
 `account list`, `mail inbox`, and checkpoint lists return 20 records by default, accept `--limit` through 100, and report `more=true` when truncated. Mutation commands return an outcome and stable account ID rather than echoing submitted names, email addresses, paths, or passwords.
 

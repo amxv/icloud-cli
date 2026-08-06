@@ -45,6 +45,7 @@ Each compact record contains the stable message ID, sender, subject, best availa
 
 ```text
 message msg_… from=sender@example.com subject="Project update" at=2026-08-06T08:30:00Z unread=true attachments=1 snippet="Here is the latest update…"
+
 inbox account=acct_… count=1 more=false
 ```
 

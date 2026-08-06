@@ -104,8 +104,11 @@ func Field(key string, value any) CompactField {
 
 // CompactTextRenderer is the universal undecorated default-output boundary.
 // Callers control field order; empty and default-valued fields are omitted.
+// Each record stays on one dense line, while consecutive records are separated
+// by one blank line so bounded multi-record output remains easy to scan.
 type CompactTextRenderer struct {
-	w io.Writer
+	w       io.Writer
+	records int
 }
 
 func NewCompactTextRenderer(w io.Writer) *CompactTextRenderer {
@@ -126,8 +129,15 @@ func (r *CompactTextRenderer) Record(kind, id string, fields ...CompactField) er
 		}
 		parts = append(parts, strings.TrimSpace(field.Key)+"="+compactValue(field.Value))
 	}
-	_, err := fmt.Fprintln(r.w, strings.Join(parts, " "))
-	return err
+	line := strings.Join(parts, " ")
+	if r.records > 0 {
+		line = "\n" + line
+	}
+	if _, err := fmt.Fprintln(r.w, line); err != nil {
+		return err
+	}
+	r.records++
+	return nil
 }
 
 func (r *CompactTextRenderer) Summary(kind string, fields ...CompactField) error {

@@ -35,7 +35,7 @@ func TestInboxCompactTwentyRecordBudgetAndPrivacy(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := output.String()
-	if lines := strings.Count(text, "\n"); lines != 21 {
+	if lines := strings.Count(text, "\n"); lines != 41 {
 		t.Fatalf("lines = %d", lines)
 	}
 	if len(text) > 13000 {

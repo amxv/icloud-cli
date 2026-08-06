@@ -311,3 +311,5 @@ Help goes to stdout. Usage failures go to stderr and exit `2`.
 ## Output availability
 
 Every account and credential lifecycle command above, `account test`, every folder command, Inbox sync/read/status/checkpoints, `doctor`, `version`, and `capabilities` supports `--json`. Validation, doctor, and folder reads/status support bounded `--verbose` detail where advertised. Completion and man generation retain native text. No command silently accepts unsupported JSONL, full-body, HTML, raw, header, or body-only modes. The current Inbox read is intentionally preview-only.
+
+Compact records keep all related fields on one line. Commands that return several records or a final summary place one blank separator line between them; single-record output and one-line errors remain unchanged.

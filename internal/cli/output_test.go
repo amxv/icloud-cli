@@ -45,7 +45,7 @@ func TestCompactSummaryAndEventPrimitives(t *testing.T) {
 	if err := renderer.Event("started", 1, Field("account", "acct_01")); err != nil {
 		t.Fatal(err)
 	}
-	const want = "sync messages=3 next_cursor=cur_02\nevent started sequence=1 account=acct_01\n"
+	const want = "sync messages=3 next_cursor=cur_02\n\nevent started sequence=1 account=acct_01\n"
 	if out.String() != want {
 		t.Fatalf("compact primitives mismatch\nwant: %q\n got: %q", want, out.String())
 	}

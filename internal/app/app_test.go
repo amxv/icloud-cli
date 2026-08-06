@@ -233,7 +233,7 @@ func TestFolderDiscoveryAndPolicyWorkflow(t *testing.T) {
 	if len(folderClient.usernames) < 2 || folderClient.usernames[0] != "owner@icloud.com" || folderClient.usernames[1] != "owner" {
 		t.Fatalf("folder usernames = %v", folderClient.usernames)
 	}
-	if lines, bytes := strings.Count(stdout, "\n"), len(stdout); lines != 7 || bytes > 2000 {
+	if lines, bytes := strings.Count(stdout, "\n"), len(stdout); lines != 13 || bytes > 2000 {
 		t.Fatalf("folder status budget lines=%d bytes=%d", lines, bytes)
 	}
 
@@ -635,11 +635,11 @@ func TestAccountListAndShowReadStoredAccountCompactly(t *testing.T) {
 	if exitCode != 0 || stderr != "" {
 		t.Fatalf("code=%d stderr=%q", exitCode, stderr)
 	}
-	const wantList = "account acct_0198d704-6c00-7000-8000-000000000001 name=Personal email=owner@example.com imap_username=owner status=pending_validation default=true credential=env\naccounts count=1\n"
+	const wantList = "account acct_0198d704-6c00-7000-8000-000000000001 name=Personal email=owner@example.com imap_username=owner status=pending_validation default=true credential=env\n\naccounts count=1\n"
 	if stdout != wantList {
 		t.Fatalf("stdout mismatch\nwant: %q\n got: %q", wantList, stdout)
 	}
-	if strings.Count(stdout, "\n") != 2 || len(stdout) > 220 {
+	if strings.Count(stdout, "\n") != 3 || len(stdout) > 220 {
 		t.Fatalf("compact budget exceeded: lines=%d bytes=%d", strings.Count(stdout, "\n"), len(stdout))
 	}
 	for _, private := range []string{"ICLOUD_TEST_APP_PASSWORD", "credential_ref", "reference="} {
@@ -696,7 +696,7 @@ func TestAccountListIsBoundedAndReportsMore(t *testing.T) {
 	if exitCode != 0 || stderr != "" {
 		t.Fatalf("code=%d stderr=%q", exitCode, stderr)
 	}
-	const want = "account acct_0198d704-6c00-7000-8000-000000000001 name=Personal email=owner@example.com imap_username=owner status=pending_validation default=true credential=env\naccounts count=1 more=true\n"
+	const want = "account acct_0198d704-6c00-7000-8000-000000000001 name=Personal email=owner@example.com imap_username=owner status=pending_validation default=true credential=env\n\naccounts count=1 more=true\n"
 	if stdout != want {
 		t.Fatalf("stdout mismatch\nwant: %q\n got: %q", want, stdout)
 	}
@@ -1174,7 +1174,7 @@ func TestAccountTestPersistsUsernameFallbackCapabilitiesAndHealthyState(t *testi
 			t.Fatalf("test output missing %q: %q", want, stdout)
 		}
 	}
-	if lines, bytes := strings.Count(stdout, "\n"), len(stdout); lines != 2 || bytes > 360 {
+	if lines, bytes := strings.Count(stdout, "\n"), len(stdout); lines != 3 || bytes > 360 {
 		t.Fatalf("account test compact budget exceeded: lines=%d bytes=%d output=%q", lines, bytes, stdout)
 	}
 	if got := strings.Join(imapValidator.usernames, ","); got != "owner@icloud.com,owner" {
@@ -1218,7 +1218,7 @@ func TestAccountTestPersistsUsernameFallbackCapabilitiesAndHealthyState(t *testi
 	if calls := len(imapValidator.usernames) + len(smtpValidator.usernames); calls != priorCalls {
 		t.Fatalf("local doctor unexpectedly contacted protocols: calls=%d prior=%d", calls, priorCalls)
 	}
-	if lines, bytes := strings.Count(stdout, "\n"), len(stdout); lines != 2 || bytes > 320 {
+	if lines, bytes := strings.Count(stdout, "\n"), len(stdout); lines != 3 || bytes > 320 {
 		t.Fatalf("doctor compact budget exceeded: lines=%d bytes=%d output=%q", lines, bytes, stdout)
 	}
 }
@@ -1338,7 +1338,7 @@ func TestAccountTestAndLiveDoctorSupportBoundedAllAccountRuns(t *testing.T) {
 	if exitCode != 0 || stderr != "" || !strings.Contains(stdout, "account-tests count=2 healthy=2") || strings.Count(stdout, "account-test ") != 2 {
 		t.Fatalf("all test code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
 	}
-	if lines, bytes := strings.Count(stdout, "\n"), len(stdout); lines != 3 || bytes > 650 {
+	if lines, bytes := strings.Count(stdout, "\n"), len(stdout); lines != 5 || bytes > 650 {
 		t.Fatalf("all-account compact budget exceeded: lines=%d bytes=%d", lines, bytes)
 	}
 
@@ -1350,7 +1350,7 @@ func TestAccountTestAndLiveDoctorSupportBoundedAllAccountRuns(t *testing.T) {
 	if calls := len(imapValidator.usernames) + len(smtpValidator.usernames); calls != previousCalls+4 {
 		t.Fatalf("live doctor protocol calls=%d want=%d", calls, previousCalls+4)
 	}
-	if lines, bytes := strings.Count(stdout, "\n"), len(stdout); lines != 3 || bytes > 600 {
+	if lines, bytes := strings.Count(stdout, "\n"), len(stdout); lines != 5 || bytes > 600 {
 		t.Fatalf("live doctor compact budget exceeded: lines=%d bytes=%d", lines, bytes)
 	}
 
@@ -1582,7 +1582,7 @@ func TestMailSyncIncrementalWorkflowAndCompactBudgets(t *testing.T) {
 	if exitCode != 0 || stderr != "" || strings.Count(stdout, "message msg_") != 2 || !strings.Contains(stdout, "count=2 more=false") {
 		t.Fatalf("inbox code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
 	}
-	if !strings.Contains(stdout, "unread=true flagged=true") || strings.Contains(stdout, "hidden-bcc") || strings.Count(stdout, "\n") != 3 || len(stdout) > 1400 {
+	if !strings.Contains(stdout, "unread=true flagged=true") || strings.Contains(stdout, "hidden-bcc") || strings.Count(stdout, "\n") != 5 || len(stdout) > 1400 {
 		t.Fatalf("inbox compact privacy/budget failure: %q", stdout)
 	}
 

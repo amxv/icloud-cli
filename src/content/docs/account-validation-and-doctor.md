@@ -25,6 +25,7 @@ Successful compact output has this shape:
 
 ```text
 account-test acct_… status=connected imap=ok smtp=ok imap_username=owner mailboxes=6 inbox_messages=42 inbox_unseen=3 checked_at=2026-08-06T03:00:00Z
+
 account-tests count=1 healthy=1
 ```
 
@@ -94,6 +95,7 @@ Example local output:
 
 ```text
 doctor acct_… status=connected credential=env last_tested=2026-08-06T03:00:00Z last_healthy=2026-08-06T03:00:00Z
+
 doctor accounts=1 status=healthy
 ```
 
