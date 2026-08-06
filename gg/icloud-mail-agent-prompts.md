@@ -25,6 +25,22 @@ Read these in this order before implementing:
 
 The implementation plan is the acceptance contract and architecture. `gg/progress.md` is the handoff ledger. The sweep is current-state evidence, not a second plan.
 
+## Disposable live harness and authorization
+
+Read the `Disposable live integration harness` section near the top of `gg/progress.md` before any provider-facing work.
+
+- Disposable iCloud Mail: `amxv_agents@icloud.com`; proven IMAP username `amxv_agents`.
+- Disposable AgentMail: `amxv@agentmail.to`; its connector inbox ID is the same address.
+- Protected Zodex app-specific-password file: `$HOME/.config/icloud-cli/amxv-agents-app-password`.
+- Isolated live CLI state: `$HOME/.local/share/icloud-cli-live-test`.
+- Existing fixture/round-trip record: AgentBox thread `thr_44ae4377-89df-4099-843f-e21f12967888`.
+
+The AgentMail connector is available in the ChatGPT environment, but discover its current tool schema before invoking it. Use the iCloud side through the CLI/transport under test and AgentMail as the independent sender, receiver, reply endpoint, and delivery/threading verifier.
+
+The user explicitly authorizes full autonomous testing on these two disposable accounts only. You may create/read/send/reply/reply-all/forward mail, add attachments, create/update/send/delete drafts, create/rename/delete folders, change subscriptions, flags and read state, move/copy/archive/trash/restore/permanently delete messages, generate IDLE events, introduce repair/reconciliation scenarios, and clean up fixtures without asking for separate confirmation. Keep all content synthetic.
+
+Prefer this live loop for provider-facing integration, smoke, and acceptance evidence. Retain deterministic fake servers/fixtures for injected failures, malformed responses, cursor gaps, transaction/blob failures, races, scale bounds, ambiguity, and offline CI. Live authority does not weaken the CLI's own `--yes`, confirmation, dry-run, idempotency, or destructive-operation contracts; exercise those safeguards rather than bypassing them.
+
 ## Reference repository
 
 The existing read-only `amxv/gg-ama` checkout on the Zodex machine is:
@@ -84,7 +100,8 @@ For every phase or coherent partial slice:
 ## Safety and privacy
 
 - Never commit iCloud credentials, app-specific passwords, live mailbox content, raw MIME, recipient data, local databases, blobs, protocol captures, or private absolute paths other than the explicitly documented read-only checkout `/tmp/icloud-cli-recon/gg-ama`.
-- Use fake servers/fixtures for normal tests. Any live iCloud test must be explicit, opt-in, disposable-account based, and scrubbed.
+- Prefer the documented disposable live loop for provider-facing integration/smoke evidence. Use deterministic fakes in addition where exact failures, scale, timing, ambiguity, or offline repeatability are required.
+- Never use or request access to a personal mailbox. The standing authorization applies only to `amxv_agents@icloud.com` and `amxv@agentmail.to`.
 - Preserve the plan’s noninteractive send/destructive-operation safety contract; do not add a shortcut around it.
 
 Do not ask for confirmation or restate the plan. Read the artifacts and code, implement the earliest pending phase, validate it, update the handoff, commit, and push.
@@ -113,6 +130,22 @@ Read these in order:
 
 Do not trust `gg/progress.md` blindly. Reconcile it against code, tests, Git history, and the plan. If it is stale or overclaims completion, correct it before continuing and record the evidence.
 
+## Disposable live harness and authorization
+
+Read the `Disposable live integration harness` section near the top of `gg/progress.md` before selecting or testing the next phase.
+
+- Disposable iCloud Mail: `amxv_agents@icloud.com`; proven IMAP username `amxv_agents`.
+- Disposable AgentMail: `amxv@agentmail.to`; its connector inbox ID is the same address.
+- Protected Zodex app-specific-password file: `$HOME/.config/icloud-cli/amxv-agents-app-password`.
+- Isolated live CLI state: `$HOME/.local/share/icloud-cli-live-test`.
+- Existing fixture/round-trip record: AgentBox thread `thr_44ae4377-89df-4099-843f-e21f12967888`.
+
+The AgentMail connector is available in the ChatGPT environment. Discover its current function schema before use instead of assuming static tool names. Use AgentMail to create inbound fixtures, inspect delivery, read RFC metadata, reply/forward, and verify the opposite side of iCloud CLI operations.
+
+The user has explicitly authorized agents to perform the full mail lifecycle needed for development and smoke testing on these two disposable accounts, without asking for per-operation confirmation. This includes reads, sends, replies, reply-all, forwards, attachments, drafts, folders/subscriptions, flags/read state, move/copy/archive/trash/restore/permanent delete, search, repair, reconciliation, IDLE triggers, and cleanup. Keep all content synthetic and scope every live operation to the two named accounts.
+
+Prefer the live two-way harness for provider-facing integration, smoke, and phase acceptance whenever technically applicable. Deterministic fake servers, repositories, clocks, blobs, and large pages remain mandatory where the acceptance criterion requires exact injected failures, malformed data, cursor/transaction invariants, races, scale bounds, ambiguity, or offline CI. Do not mark a provider-facing phase complete from fake-only evidence when the corresponding live behavior can be exercised safely.
+
 ## Reference repository
 
 Use the existing Zodex checkout `/tmp/icloud-cli-recon/gg-ama` only as read-only implementation evidence. If the path is missing, recreate `amxv/gg-ama` there and check out `d5c15aff9b7cab98ef6e4ad9b360eab96b20420b`. The reusable source is primarily under `apps/amaos`.
@@ -137,7 +170,7 @@ Implement as many contiguous complete phases as context safely permits, but neve
 - Fix defect classes, not only symptoms. Do not copy the source’s unsafe UID cursor, metadata-only locations, unread reset, immediate-parent thread identity, thread-wide Sent mutation, conditional TLS, whole-mailbox search, or ambiguous-send retry behavior.
 - Keep one path after cutover. Do not add fallback stores, duplicate transports, permanent compatibility shims, or a second public executable.
 - Keep work vertically exercisable. A phase is not complete because an unused backend/module exists.
-- Add phase-specific positive tests and the named regression scope. Use fake protocol servers/fixtures by default.
+- Add phase-specific positive tests and the named regression scope. Prefer the live disposable harness for provider-facing end-to-end evidence; add deterministic fakes for exact failure, edge, race, scale, and offline proofs.
 - Maintain bounded pages, streaming blobs, transaction boundaries, locks, cancellation, secret/BCC/body redaction, and non-TTY safety.
 - Preserve compact plain text as the universal default for every command, including redirected/non-TTY agent use. Lists/sync/status must be bounded summaries; message/thread reads must use essential fields plus bounded decoded-text excerpts; writes must return outcome and stable IDs without echoing submitted payloads; watch/bulk must use concise text unless `--jsonl` is explicitly requested.
 - Do not remove or weaken `--json`, `--jsonl`, complete decoded text, HTML, raw MIME, headers, body-only, verbose, or export modes. They are explicit expansions. Add or maintain golden compact-output byte/line budgets so later phases cannot bloat default context.
@@ -159,7 +192,9 @@ Never mark a phase complete without its full observable outcome, positive eviden
 
 ## Safety and privacy
 
-Never commit credentials, app-specific-password values, private mailbox contents, raw live MIME, live recipient lists, local SQLite databases, blobs, protocol captures, or private absolute paths other than the explicitly documented read-only checkout `/tmp/icloud-cli-recon/gg-ama`. Live tests must be opt-in, disposable-account based, and scrubbed.
+Never commit credentials, app-specific-password values, private mailbox contents, raw live MIME, live recipient lists, local SQLite databases, blobs, protocol captures, or private absolute paths other than the explicitly documented read-only checkout `/tmp/icloud-cli-recon/gg-ama`. Load the protected credential only for the test process and unset temporary variables afterward.
+
+The standing live-test authorization applies only to `amxv_agents@icloud.com` and `amxv@agentmail.to`. It removes the need for repeated user confirmation about test operations on those disposable accounts, but it does not remove or weaken the CLI's own confirmation, `--yes`, dry-run, idempotency, BCC/privacy, or destructive-operation requirements. Never operate on a personal mailbox.
 
 Do not ask the user to repeat prior decisions or wait for confirmation. Reconstruct the branch, continue the earliest real incomplete phase, validate, document, commit, push, and return the exact implementation coordinates and next handoff.
 ```

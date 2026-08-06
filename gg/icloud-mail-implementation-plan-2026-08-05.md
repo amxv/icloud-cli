@@ -13,6 +13,7 @@
 - **Code inspected:** the complete iCloud provider package and tests; generic mail contracts and normalization; mail account/sync/send/reply/read-model paths in `cases.Service`; mail storage schema; mail CLI and tests; destination CLI, release, npm, and docs wiring.
 - **External references used to settle dependency and protocol choices:** [Apple iCloud Mail server settings](https://support.apple.com/en-in/102525), [Apple app-specific passwords](https://support.apple.com/en-in/102654), [Cobra](https://github.com/spf13/cobra), [go-imap v2 client](https://pkg.go.dev/github.com/emersion/go-imap/v2/imapclient), [go-message](https://pkg.go.dev/github.com/emersion/go-message), [go-smtp](https://pkg.go.dev/github.com/emersion/go-smtp), [go-keyring](https://pkg.go.dev/github.com/zalando/go-keyring), [modernc SQLite](https://pkg.go.dev/modernc.org/sqlite), [goose](https://pkg.go.dev/github.com/pressly/goose/v3), and [gofrs/flock](https://pkg.go.dev/github.com/gofrs/flock).
 - **Unverified input:** no real iCloud account was contacted during planning, so actual server capabilities, localized folders, mailbox volume, and provider edge responses remain live-validation assumptions.
+- **Current disposable live harness:** after planning, the user provisioned `amxv_agents@icloud.com` and `amxv@agentmail.to`, completed a synthetic two-way fixture corpus, installed the iCloud app-specific password outside Git on the Zodex machine, and connected the AgentMail tools in ChatGPT. Amendment 2026-08-06 makes this harness the preferred provider-facing integration and smoke-test path for all remaining phases.
 
 ## State of Current System
 
@@ -267,7 +268,7 @@ The plan proceeds on the following falsifiable assumptions.
   Assume no production SQLite/config/keyring state exists because the repository contains no mail implementation. If false, the schema and account phases require migration/import criteria before implementation.
 
 - **iCloud IMAP feature set.**
-  Assume baseline IMAP4rev1 commands, SPECIAL-USE where available, and IDLE on the accounts used for validation; every optional capability must still have an explicit fallback or unsupported result. If the baseline login/fetch behavior is incompatible with the selected client library, Phase 3 invalidates Phases 4-17 and must amend the plan.
+  Planning assumed baseline IMAP4rev1 commands, SPECIAL-USE where available, and IDLE on the accounts used for validation. Phases 4-5 have since proven real direct-TLS login, capability discovery, LIST, STATUS, nested/Unicode mailbox handling, and secure SMTP submission against the disposable account. Every remaining optional capability still requires an explicit fallback or unsupported result, and later phases must continue to prove their own provider behavior live.
 
 - **Mailbox scale.**
   Assume accounts may contain hundreds of thousands of messages and multi-gigabyte history, so every list/search/sync path requires bounded pages and streaming blobs. If actual scale is tiny, the architecture remains valid; the reverse assumption would not.
@@ -558,6 +559,32 @@ The plan proceeds on the following falsifiable assumptions.
 
 **Selected:** A.
 
+---
+
+#### 21. Disposable live integration harness and testing authority
+
+**Reversible testing-process decision, mandatory for the remaining multi-agent track.**
+
+- **A. Prefer the real disposable iCloud/AgentMail loop for provider-facing integration, smoke, and acceptance evidence; retain deterministic fakes for failure injection, edge invariants, scale bounds, races, and offline CI.** — **Recommended**
+- **B. Continue fake-first and treat the real loop as optional evidence.**
+- **C. Use only the live accounts and remove deterministic protocol fixtures.**
+
+**Why A:** the user created both mailboxes specifically for autonomous agent development, the iCloud credential is already protected on Zodex, and AgentMail is connected in ChatGPT. Live testing can now prove real delivery, threading, folders, flags, mutations, drafts, search, reconciliation, and provider behavior without exposing personal data. B leaves provider-facing defects undiscovered until late acceptance. C cannot deterministically reproduce fetch/parse/blob/transaction failures, cursor gaps, race conditions, large bounded pages, malformed wire responses, ambiguous SMTP outcomes, or offline release checks.
+
+**Selected:** A.
+
+The authorized harness is:
+
+- iCloud Mail: `amxv_agents@icloud.com`, proven IMAP username `amxv_agents`;
+- AgentMail: `amxv@agentmail.to`, with the same value as its connector inbox ID;
+- Zodex credential file: `$HOME/.config/icloud-cli/amxv-agents-app-password`, outside Git and mode `0600`;
+- isolated CLI state: `$HOME/.local/share/icloud-cli-live-test`;
+- fixture and round-trip record: AgentBox thread `thr_44ae4377-89df-4099-843f-e21f12967888`.
+
+The user explicitly authorizes agents to perform the full set of mail operations needed for development and smoke testing on **these two disposable accounts only**, without requesting separate confirmation for each action. This includes creating and reading synthetic messages, sending, replying, reply-all, forwarding, attachments, drafts, folder creation/rename/delete, subscription tests, flags/read state, move/copy/archive/trash/restore/permanent delete, search, backfill, repair, IDLE-trigger generation, reconciliation, and cleanup. Agents may create new synthetic fixtures through either side of the loop as needed.
+
+This authorization does not weaken the product contract. Agents must still exercise required `--yes`, confirmation, dry-run, idempotency, and destructive-operation safeguards when testing the CLI, must never use a personal account, and must never commit credentials, raw live mailbox data, local state, blobs, or private paths. Future sessions must discover the currently exposed AgentMail connector functions before invoking them rather than assuming static tool names.
+
 ## Acceptance Criteria
 
 An independent reviewer can mark this track complete only when all applicable items are demonstrably true.
@@ -667,9 +694,9 @@ An independent reviewer can mark this track complete only when all applicable it
 
 ### Quality, release, and scope
 
-77. Protocol behavior has deterministic fake-server/fixture coverage for cursor paging, flags, special-use folders, IDLE, MOVE fallback, UIDVALIDITY, MIME charsets, archive/unarchive, and ambiguous SMTP outcomes.
+77. Protocol behavior has deterministic fake-server/fixture coverage for cursor paging, injected failures, flags, special-use folders, IDLE, MOVE fallback, UIDVALIDITY, MIME charsets, archive/unarchive, bounded scale, races, and ambiguous SMTP outcomes.
 78. Parser and identity boundaries have fuzz/property coverage for malformed RFC822, headers, MIME trees, mailbox names, references, and dedupe/rethread invariants.
-79. Optional live integration tests can run against a disposable iCloud account without hard-coded credentials and are excluded safely when credentials are absent.
+79. Every provider-facing phase prefers and, when technically applicable, records end-to-end evidence through the documented disposable iCloud/AgentMail harness. Fake-only completion is acceptable only for behavior that cannot be induced safely or deterministically live, and the reason must be recorded. Credentials remain external and live evidence is scrubbed.
 80. Large-mailbox query plans and representative large-message/attachment tests demonstrate bounded memory and responsive paginated reads.
 81. The release matrix continues to build without CGO for supported macOS, Linux, and Windows architectures, and release assets/npm installation invoke `icloud` successfully.
 82. Checksums and release metadata cover every native artifact; package contents include required man/completion/docs assets.
@@ -689,13 +716,28 @@ An independent reviewer can mark this track complete only when all applicable it
 1. Start from the current `main`, inspect Git status/log, read this plan, and reconcile [`gg/progress.md`](./progress.md) against code before changing anything.
 2. Read only the phase-scoped sweep sections and source regions listed below; do not reload the entire reference repository by habit.
 3. Use the existing Zodex checkout `/tmp/icloud-cli-recon/gg-ama` and keep `gg-ama` read-only. Port behavior and tests deliberately; do not copy AMA storage/contracts/case/event dependencies.
-4. Every phase that introduces or changes a command must define and test its compact plain-text default, including field omission, page/excerpt bounds, byte/line budget, and absence of implicit JSON/JSONL/HTML/raw/verbose content; it must also preserve every applicable explicit expansion mode.
-5. At each substantial user-visible slice or completed command/workflow subset, create or update a self-contained user-facing page under `src/content/docs`. Do not wait for Phase 24. Internal-only or partial commits may skip the site, but the progress entry must say why documentation was not applicable.
-6. Documentation explains how to use the validated public behavior—goal, prerequisites, safe setup, commands, compact output, expansion flags, errors, and next actions—without unnecessary implementation internals or unshipped promises. Run the relevant docs validation/build scope for every documentation checkpoint.
-7. A phase is complete only when its positive evidence exists, the relevant regression scope passes, command-local help and the applicable progressive docs are current, and the branch is usable at the boundary.
-8. Update `gg/progress.md` in the same commit or final commit for the phase. Record current SHA, files, validation evidence, documentation pages/evidence, decisions, risks, and the exact next handoff.
-9. If evidence invalidates this plan, append an entry under Amendments immediately and identify every affected later phase. Do not silently reinterpret an acceptance criterion.
-10. Push coherent commits directly to `main`; never leave generated secrets, mailbox fixtures containing private mail, local databases, or blob data tracked.
+4. Read the `Disposable live integration harness` section in `gg/progress.md`, discover the current AgentMail connector schema, and prefer the real two-way harness for provider-facing integration, smoke, and acceptance evidence. Use deterministic fakes in addition for failure injection, edge invariants, scale bounds, races, and offline CI—not as a substitute for live behavior that can be exercised safely.
+5. Every phase that introduces or changes a command must define and test its compact plain-text default, including field omission, page/excerpt bounds, byte/line budget, and absence of implicit JSON/JSONL/HTML/raw/verbose content; it must also preserve every applicable explicit expansion mode.
+6. At each substantial user-visible slice or completed command/workflow subset, create or update a self-contained user-facing page under `src/content/docs`. Do not wait for Phase 24. Internal-only or partial commits may skip the site, but the progress entry must say why documentation was not applicable.
+7. Documentation explains how to use the validated public behavior—goal, prerequisites, safe setup, commands, compact output, expansion flags, errors, and next actions—without unnecessary implementation internals or unshipped promises. Run the relevant docs validation/build scope for every documentation checkpoint.
+8. A phase is complete only when its positive evidence exists, the relevant regression scope passes, command-local help and the applicable progressive docs are current, and the branch is usable at the boundary.
+9. Update `gg/progress.md` in the same commit or final commit for the phase. Record current SHA, files, deterministic and live validation evidence, documentation pages/evidence, decisions, risks, and the exact next handoff.
+10. If evidence invalidates this plan, append an entry under Amendments immediately and identify every affected later phase. Do not silently reinterpret an acceptance criterion.
+11. Push coherent commits directly to `main`; never leave generated secrets, mailbox fixtures containing private mail, local databases, or blob data tracked.
+
+### Live disposable harness policy for all remaining phases
+
+The live harness is the default provider test bed from Phase 6 onward. Agents should use the iCloud side through the CLI/transport under test and use the AgentMail connector as the independent sender, receiver, reply endpoint, and delivery/threading verifier. The AgentBox fixture thread is existing evidence, not a limit: agents may add new synthetic messages, attachments, threads, folders, drafts, and state transitions whenever a phase needs them.
+
+Examples of the expected live loop:
+
+- sync/read/MIME/attachment/search phases: create or identify synthetic mail through AgentMail, synchronize/read it through the iCloud CLI, and compare stable markers and metadata;
+- flag/move/folder/draft/delete phases: perform the operation through the CLI against the disposable iCloud mailbox, inspect the resulting provider state, and restore or clean up fixtures when useful;
+- Sent/send/reply/reply-all/forward phases: send from the iCloud CLI to AgentMail, verify delivery and RFC metadata with the connector, and send/reply back through AgentMail to close the loop;
+- watch/IDLE phases: generate a new AgentMail delivery while the CLI watches and verify the event and subsequent durable state;
+- reconciliation/repair/backfill phases: create controlled provider/local divergence in the disposable state and prove convergence without using personal data.
+
+Live evidence does not replace deterministic coverage. Fake servers, repositories, clocks, blob failures, killed transactions, and large synthetic pages remain required whenever the acceptance criterion depends on exact timing, failure location, malformed input, ambiguity, scale, or reproducibility.
 
 Future-phase reading entries marked **phase output** name files that an earlier phase is required to create. They do not exist at the planning SHA; the implementation agent must verify their current path and public contract on the live branch before proceeding. A rename is acceptable only when recorded in `gg/progress.md` or Amendments so later agents can resolve it.
 
@@ -871,11 +913,11 @@ Implement:
 - account health and last-error/last-healthy updates;
 - account-scoped diagnostics in `icloud doctor`.
 
-Tests use deterministic in-process fake IMAP/SMTP servers. Add an opt-in live test harness requiring explicit environment variables and a disposable account; it must skip cleanly otherwise. This phase is the compatibility gate: do not begin mailbox persistence features if the selected IMAP client cannot log in, list, status, and log out against real iCloud.
+Tests use deterministic in-process fake IMAP/SMTP servers for failure and wire invariants. The disposable live harness is the preferred compatibility evidence and is expected whenever its credential is available. This phase is the compatibility gate: do not begin mailbox persistence features if the selected IMAP client cannot log in, list, status, and log out against real iCloud.
 
 #### Validation strategy
 
-Positive evidence must distinguish secret-resolution, DNS/dial, TLS, IMAP authentication, SMTP STARTTLS, SMTP authentication, and timeout failures; demonstrate successful separate IMAP and SMTP validation; persist the successful IMAP username form and health; cancel a stalled fake server; and optionally pass a real disposable-account smoke test.
+Positive evidence must distinguish secret-resolution, DNS/dial, TLS, IMAP authentication, SMTP STARTTLS, SMTP authentication, and timeout failures; demonstrate successful separate IMAP and SMTP validation; persist the successful IMAP username form and health; cancel a stalled fake server; and pass a real disposable-account smoke test when the documented harness is available.
 
 Regression scope includes secret redaction, account status transitions, no plaintext storage, cross-platform compilation, and all previous CLI/storage behavior.
 
@@ -986,6 +1028,8 @@ Inbox reads use repository pagination and return stable cursors. Default `mail s
 Positive evidence must reproduce the current skipped-UID scenario and show that the second run ingests the remaining UID; demonstrate no checkpoint advance on fetch, parse, blob, or transaction failure; preserve malformed-date identity without `time.Now`; handle UIDVALIDITY mismatch as a visible repair-required state; paginate Inbox without loading all rows; and retry a killed/interrupted page safely.
 
 Use fake IMAP pages large enough to prove the fetch page is bounded and that the implementation does not require sorting/materializing an unlimited UID result before choosing work.
+
+Also use the disposable live harness to synchronize the existing synthetic iCloud Inbox, verify known fixture markers and bounded counts through local reads, create an additional message from AgentMail, and prove a second incremental sync ingests it without duplication or skipped UIDs. Treat the connector as independent delivery evidence; do not record raw bodies or credentials in Git/progress.
 
 Regression scope includes account/folder health, locks, migrations, JSON envelopes, cancellation, and previous live compatibility tests.
 
@@ -1856,7 +1900,7 @@ Perform the terminal exhaustive hardening and cutover pass:
 - add fuzz/property tests around RFC822/MIME/mailbox/reference/address/ID/dedupe boundaries;
 - measure and fix query plans, memory bounds, blob streaming, and lock behavior at representative scale;
 - run race/concurrency/interruption/partial-failure suites;
-- run opt-in live receive/send/reply/move/draft/IDLE smoke tests with a disposable account and scrub generated artifacts;
+- run authorized live receive/send/reply/move/draft/IDLE smoke tests through the documented disposable iCloud/AgentMail loop and scrub generated artifacts;
 - review secret/BCC/body/log redaction and filesystem permissions;
 - measure representative default outputs for account/folder/inbox/search/message/thread/sync/watch/send/reply/move/doctor commands against their compact golden byte/line budgets, and reject duplicated payloads, decorative noise, unbounded excerpts, or accidental JSON/HTML/raw output;
 - verify database migration/repair from every released schema in this track;
@@ -1871,7 +1915,7 @@ This phase may fix defects discovered by exhaustive validation, but it must not 
 
 Positive evidence is a final acceptance matrix mapping every numbered criterion to code/tests/manual or live evidence, with no unexplained “not tested” for a gating item. The old skipped-UID, unread-reset, thread-fragmentation, Sent-to-Inbox unarchive, plaintext SMTP, full-view search, and duplicate-unknown-send scenarios must each have a failing-against-old/passing-now regression. The matrix must also include representative compact-output snapshots and byte/line budgets alongside explicit full-text, HTML, raw, headers, verbose, JSON, and JSONL expansion tests.
 
-Regression scope is the entire repository: Go formatting/vet/test/race/fuzz where supported, npm package/install, cross-platform binaries, docs checks/build, generated-reference drift, release workflow validation, clean Git status, and optional live smoke evidence.
+Regression scope is the entire repository: Go formatting/vet/test/race/fuzz where supported, npm package/install, cross-platform binaries, docs checks/build, generated-reference drift, release workflow validation, clean Git status, and live disposable-harness evidence for every provider-facing capability that can be exercised safely.
 
 #### What must not break
 
@@ -1881,4 +1925,10 @@ Regression scope is the entire repository: Go formatting/vet/test/race/fuzz wher
 
 ## Amendments
 
-None yet.
+### 2026-08-06 — Prefer the authorized disposable live mail loop for all remaining phases
+
+- **Trigger:** the user provisioned `amxv_agents@icloud.com` and `amxv@agentmail.to`, completed a synthetic round-trip corpus, stored the app-specific password securely on Zodex, connected AgentMail tools in ChatGPT, and explicitly authorized full live testing on both disposable accounts.
+- **Change:** Decision 21, the quality criteria, the execution protocol, Phase 4/6 validation language, and the reusable agent prompts now make live provider-facing integration/smoke evidence the preferred path. Agents may perform any mail lifecycle operation required for development on these two accounts without asking for per-operation confirmation.
+- **Safety boundary:** authorization is limited to the two disposable accounts and synthetic test data. It does not waive the CLI's own confirmation, `--yes`, dry-run, idempotency, or destructive-operation contracts, and it does not permit credential or mailbox-data leakage into Git, logs, artifacts, or progress notes.
+- **Deterministic coverage retained:** fake servers/fixtures remain required for injected failures, cursor gaps, malformed protocol/MIME, transaction/blob errors, races, bounded scale, ambiguity, and offline CI. Live testing complements rather than replaces those proofs.
+- **Affected phases:** all remaining provider-facing phases, especially 6-23 and final acceptance in Phase 25.
