@@ -79,23 +79,25 @@ During implementation:
 - add golden default-output tests with bounded bytes/lines and reject repeated labels, duplicated request/body payloads, decorative tables/ANSI, unbounded excerpts, or implicit JSON/HTML/raw output;
 - keep the branch working at the phase boundary;
 - add positive tests whose result changes because of Phase 1, plus the regression scope named in the plan;
-- update command-local help and create or revise the appropriate page under `src/content/docs` when Phase 1 establishes a substantial public command subset; do not defer the user-facing site until Phase 24;
-- write docs for a first-time CLI user or agent: explain the goal, prerequisites, safe setup, shortest normal workflow, representative compact output, expansion flags, common errors, and next actions; omit package/schema/migration/planning details that are not needed to use the CLI;
+- update command-local help and review the affected reader journey under `src/content/docs` when Phase 1 establishes a substantial public command subset; improve an existing guide or navigation when possible, and create a new page only for a distinct user goal rather than to mirror the phase;
+- write as a polished product-documentation author who values the reader's time. Lead with what the user or agent can accomplish, the shortest safe workflow, useful choices, expected result, common recovery, and next action. Keep exhaustive syntax in generated reference material and omit code narration, package/schema/migration/lock/transaction/protocol/test/planning details that do not change how the product is used;
 - run the relevant docs check/build scope for every documentation checkpoint and record the pages/evidence in `gg/progress.md`;
 - do not begin Phase 2 until every Phase 1 outcome and validation item is complete.
 
-You may continue into later contiguous phases only when the current phase is fully complete, pushed, and recorded, and you still have enough context to execute the next phase without compressing or skipping its research/validation. Prefer one thoroughly completed phase over several partial phases.
+Keep going phase by phase until every phase is complete. After the current phase is fully researched, implemented, validated, documented appropriately, committed, pushed, and recorded, immediately reconstruct and begin the next phase. Do not stop merely because one phase is complete, the work is lengthy, or a convenient handoff exists. Stop only when all phases are complete, a genuine user-decision blocker exists, or the external tools/environment have become unreliable enough that further edits, validation, or pushes cannot be trusted. Never compress research, implementation, tests, documentation, or review to increase the phase count; complete each phase slowly and methodically before proceeding.
 
 ## Handoff requirements
 
-For every phase or coherent partial slice:
+At every phase boundary or coherent partial slice:
 
 - use coherent commits with descriptive messages;
 - update the phase table, Current handoff, and append a full entry in `gg/progress.md`, including documentation pages and docs validation evidence or a concrete `not applicable` reason;
 - if reality invalidates the plan, append an Amendment to the implementation plan immediately and identify affected later phases;
 - never mark a phase complete without phase-specific positive evidence;
 - push the code and progress update to `main`;
-- finish with the pushed commit SHAs, code and docs validation evidence, user-facing pages changed, any amendment, known risks, and the exact next phase/boundary.
+- checkpoint the pushed commit SHAs, validation evidence, reader-facing docs changes, amendments, risks, and exact next boundary in `gg/progress.md`, then continue to the next phase without returning to the user.
+
+Only when a permitted stop condition is reached—all phases complete, a genuine user-decision blocker, or persistent environment/tool unreliability—return a final handoff with the pushed commit SHAs, validation evidence, reader-facing docs changed, amendments, known risks, and exact remaining boundary.
 
 ## Safety and privacy
 
@@ -161,7 +163,7 @@ Find the earliest phase in `gg/progress.md` that is not genuinely complete. Star
 - If a previous phase is marked complete but its required evidence or contract is missing, reopen it and fix the class of defect before moving forward.
 - Do not skip an earlier dependency merely because a later phase looks easier.
 
-Implement as many contiguous complete phases as context safely permits, but never leave several half-built phases. Each completed phase must leave the branch buildable, tested, documented for its new commands, pushed, and independently observable.
+The session goal is to complete every remaining phase, one at a time. Keep working after each clean phase boundary and continue until all phases are complete. Stop earlier only for a genuine user-decision blocker or when the external tools/environment have become unreliable enough that further edits, validation, or pushes cannot be trusted. Do not treat a long session as permission to rush: never combine phases prematurely, skip phase-scoped research, reduce validation, defer necessary cleanup, or produce shallow docs merely to increase the phase count. Each phase must independently leave the branch buildable, tested, appropriately documented, pushed, and observable before the next phase begins.
 
 ## Architecture and quality rules
 
@@ -174,13 +176,14 @@ Implement as many contiguous complete phases as context safely permits, but neve
 - Maintain bounded pages, streaming blobs, transaction boundaries, locks, cancellation, secret/BCC/body redaction, and non-TTY safety.
 - Preserve compact plain text as the universal default for every command, including redirected/non-TTY agent use. Lists/sync/status must be bounded summaries; message/thread reads must use essential fields plus bounded decoded-text excerpts; writes must return outcome and stable IDs without echoing submitted payloads; watch/bulk must use concise text unless `--jsonl` is explicitly requested.
 - Do not remove or weaken `--json`, `--jsonl`, complete decoded text, HTML, raw MIME, headers, body-only, verbose, or export modes. They are explicit expansions. Add or maintain golden compact-output byte/line budgets so later phases cannot bloat default context.
-- Treat the docs site as a progressive product surface. After a substantial user-visible slice or completed command/workflow subset, add or update an appropriate page under `src/content/docs`; not every internal commit requires docs, but a phase cannot complete with a meaningful new workflow undocumented.
-- Write narrative docs for first-time humans and agents who do not know the repository: focus on goals, prerequisites, safe setup, commands, compact output, explicit richer modes, errors, and next actions. Do not expose package layout, database tables, migrations, internal types, test fixtures, planning history, or AMAOS ancestry unless strictly necessary for user troubleshooting.
-- Describe only behavior that exists and is validated on the current branch, use sanitized examples, keep navigation discoverable, run the docs check/build scope, and record changed pages or a concrete `not applicable` reason in `gg/progress.md`.
+- Treat the docs site as a polished product surface, not an implementation diary. At each substantial user-visible slice, review the affected reader journey. Prefer improving an existing setup/workflow page or navigation; create a new page only when the product supports a distinct user goal, never merely because a phase or package exists.
+- Write for first-time humans and agent users who want to understand and use the product quickly. Lead with the capability and outcome, then the shortest safe path, useful decisions, expected result, common recovery, and next action. Use concise, scannable prose and progressive disclosure. Let generated command reference, schemas, man pages, and completions own exhaustive syntax.
+- Every paragraph must help the reader accomplish, understand, choose, or troubleshoot something. Do not narrate source code or expose package layout, database tables, schemas/migrations, locks, transactions, protocol command sequences, internal types, fixtures, test strategy, planning history, or AMAOS ancestry unless one detail is necessary for safe use or actionable troubleshooting. Technical accuracy is required; implementation completeness is not a documentation goal.
+- Describe only behavior that exists and is validated on the current branch, use sanitized examples, keep navigation discoverable, run the docs check/build scope, and record the reader-facing improvement—or a concrete `not applicable` reason—in `gg/progress.md`. When touching an existing guide, simplify nearby implementation-centric prose instead of layering on more detail.
 
 ## Progress, amendments, commits, and push
 
-After every coherent implementation session:
+After every completed phase, and before any permitted early stop:
 
 - update the phase table and Current handoff in `gg/progress.md`;
 - append the required detailed progress entry with starting/ending SHAs, outcome, files, positive/regression evidence, documentation pages and docs validation (or a concrete `not applicable` reason), decisions, risks, and next boundary;
@@ -190,11 +193,13 @@ After every coherent implementation session:
 
 Never mark a phase complete without its full observable outcome, positive evidence, regressions, command help, applicable progressive user-facing docs, docs validation evidence, and push.
 
+Do not return to the user merely because a phase was completed and pushed. Treat that boundary as an internal checkpoint, reconstruct the next phase, and continue. Return a final handoff only after all phases are complete, a genuine user-decision blocker is reached, or persistent environment/tool unreliability makes further trustworthy work impossible.
+
 ## Safety and privacy
 
 Never commit credentials, app-specific-password values, private mailbox contents, raw live MIME, live recipient lists, local SQLite databases, blobs, protocol captures, or private absolute paths other than the explicitly documented read-only checkout `/tmp/icloud-cli-recon/gg-ama`. Load the protected credential only for the test process and unset temporary variables afterward.
 
 The standing live-test authorization applies only to `amxv_agents@icloud.com` and `amxv@agentmail.to`. It removes the need for repeated user confirmation about test operations on those disposable accounts, but it does not remove or weaken the CLI's own confirmation, `--yes`, dry-run, idempotency, BCC/privacy, or destructive-operation requirements. Never operate on a personal mailbox.
 
-Do not ask the user to repeat prior decisions or wait for confirmation. Reconstruct the branch, continue the earliest real incomplete phase, validate, document, commit, push, and return the exact implementation coordinates and next handoff.
+Do not ask the user to repeat prior decisions or wait for confirmation. Reconstruct the branch, continue the earliest real incomplete phase, and keep moving phase by phase with full research, validation, documentation judgment, commits, and verified pushes until a permitted stop condition is reached. Then return the exact implementation coordinates and handoff.
 ```
