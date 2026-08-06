@@ -75,7 +75,12 @@ func TestIMAPValidationClassifiesAuthenticationTLSDNSAndCancellation(t *testing.
 	t.Run("tls", func(t *testing.T) {
 		server := newIMAPServer(t, imapServerOptions{AuthOK: true})
 		defer server.Close()
-		client := New(Config{IMAPHost: "127.0.0.1", IMAPPort: server.Port(), StageTimeout: time.Second})
+		client := New(Config{
+			IMAPHost: "127.0.0.1", IMAPPort: server.Port(), StageTimeout: time.Second,
+			TLSConfig: &tls.Config{
+				RootCAs: server.certificate.pool, ServerName: "wrong-host.example", MinVersion: tls.VersionTLS12,
+			},
+		})
 		_, err := client.ValidateIMAP(context.Background(), transport.AuthRequest{Username: "user", Password: []byte("secret")})
 		assertFailure(t, err, transport.StageTLS, transport.FailureUnavailable)
 	})
