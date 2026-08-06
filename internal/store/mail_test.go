@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -234,6 +235,163 @@ func TestMailAttachmentsKeepDistinctMetadataForDuplicateContent(t *testing.T) {
 	first, err := state.Mail().Attachment(context.Background(), accountID, values[0].ID)
 	if err != nil || first.Filename != values[0].Filename {
 		t.Fatalf("single attachment=%+v err=%v", first, err)
+	}
+}
+
+func TestMailLocationFlagsReconcileAndDeriveSummariesAcrossEligibleLocations(t *testing.T) {
+	state, accountID, inboxID := newMailStoreFixture(t)
+	defer state.Close()
+	now := time.Date(2026, 8, 6, 5, 25, 0, 0, time.UTC)
+	archiveID := "fld_0198d704-6c00-7000-8000-000000000570"
+	if _, err := state.db.Exec(`
+INSERT INTO folders (
+    folder_id, account_id, name, wire_name, kind, kind_source, selectable,
+    subscription, present, stale, sync_enabled, uid_validity,
+    discovered_at, status_at, created_at, updated_at
+) VALUES (?, ?, 'Archive', 'Archive', 'archive', 'special_use', 1,
+          'subscribed', 1, 0, 1, 200, ?, ?, ?, ?)`,
+		archiveID, accountID, now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano),
+		now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano),
+	); err != nil {
+		t.Fatal(err)
+	}
+	inboxRecord := mailRecordFixture(accountID, inboxID, 100, 61, "state-summary@example.test")
+	inboxRecord.Flags = []string{`\Seen`, `$InboxKeyword`}
+	inboxRecord.ModSequence = 10
+	if _, err := state.Mail().CommitInboxPage(context.Background(), maildomain.CommitPage{
+		CheckpointID: "chk_0198d704-6c00-7000-8000-000000000571",
+		AccountID:    accountID, FolderID: inboxID, UIDValidity: 100, Bootstrap: true,
+		LastCommittedUID: 61, LastScannedUID: 61, AttemptedAt: now,
+		Records: []maildomain.IngestRecord{inboxRecord},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	archiveRecord := mailRecordFixture(accountID, archiveID, 200, 9, "state-summary@example.test")
+	archiveRecord.Flags = []string{`\Flagged`, `$ArchiveKeyword`}
+	archiveRecord.ModSequence = 20
+	if _, err := state.Mail().CommitInboxPage(context.Background(), maildomain.CommitPage{
+		CheckpointID: "chk_0198d704-6c00-7000-8000-000000000572",
+		AccountID:    accountID, FolderID: archiveID, UIDValidity: 200, Bootstrap: true,
+		LastCommittedUID: 9, LastScannedUID: 9, AttemptedAt: now,
+		Records: []maildomain.IngestRecord{archiveRecord},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	message, err := state.Mail().Message(context.Background(), accountID, inboxRecord.MessageID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !message.Unread || !message.Flagged || len(message.Locations) != 2 {
+		t.Fatalf("cross-location summary = %+v", message)
+	}
+	var archiveLocation maildomain.Location
+	for _, location := range message.Locations {
+		if location.FolderID == archiveID {
+			archiveLocation = location
+		}
+	}
+	if archiveLocation.ModSequence != 20 || !archiveLocation.Flags.Flagged ||
+		len(archiveLocation.Flags.Unknown) != 1 || archiveLocation.Flags.Unknown[0] != "$ArchiveKeyword" {
+		t.Fatalf("archive location = %+v", archiveLocation)
+	}
+	commit, err := state.Mail().CommitInboxPage(context.Background(), maildomain.CommitPage{
+		CheckpointID: "chk_0198d704-6c00-7000-8000-000000000572",
+		AccountID:    accountID, FolderID: archiveID, UIDValidity: 200,
+		LastCommittedUID: 9, LastScannedUID: 9, AttemptedAt: now.Add(time.Minute),
+		Reconciled: []maildomain.ReconcileRecord{{
+			UID: 9, Flags: maildomain.ParseLocationFlags([]string{`\Deleted`, `$ArchiveKeyword`, `$NewKeyword`}),
+			ModSequence: 21, Present: true,
+		}},
+	})
+	if err != nil || commit.Reconciled != 1 || commit.StateChanges != 1 {
+		t.Fatalf("reconcile commit=%+v err=%v", commit, err)
+	}
+	message, err = state.Mail().Message(context.Background(), accountID, inboxRecord.MessageID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if message.Unread || message.Flagged {
+		t.Fatalf("deleted location affected summary = %+v", message)
+	}
+	uids, err := state.Mail().ReconcileUIDs(context.Background(), accountID, archiveID, 200, 100)
+	if err != nil || len(uids) != 1 || uids[0] != 9 {
+		t.Fatalf("reconcile UIDs=%v err=%v", uids, err)
+	}
+	missingCommit, err := state.Mail().CommitInboxPage(context.Background(), maildomain.CommitPage{
+		CheckpointID: "chk_0198d704-6c00-7000-8000-000000000571",
+		AccountID:    accountID, FolderID: inboxID, UIDValidity: 100,
+		LastCommittedUID: 61, LastScannedUID: 61, AttemptedAt: now.Add(90 * time.Second),
+		Reconciled: []maildomain.ReconcileRecord{{UID: 61, Present: false}},
+	})
+	if err != nil || missingCommit.Reconciled != 1 || missingCommit.StateChanges != 1 || missingCommit.Checkpoint.LastCommittedUID != 61 {
+		t.Fatalf("missing reconcile commit=%+v err=%v", missingCommit, err)
+	}
+	inboxUIDs, err := state.Mail().ReconcileUIDs(context.Background(), accountID, inboxID, 100, 100)
+	if err != nil || len(inboxUIDs) != 0 {
+		t.Fatalf("missing Inbox reconcile UIDs=%v err=%v", inboxUIDs, err)
+	}
+	message, err = state.Mail().Message(context.Background(), accountID, inboxRecord.MessageID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inboxPresent := true
+	for _, location := range message.Locations {
+		if location.FolderID == inboxID {
+			inboxPresent = location.Present
+		}
+	}
+	if message.Unread || message.Flagged || inboxPresent {
+		t.Fatalf("missing location summary = %+v", message)
+	}
+	updated, err := state.Mail().UpdateLocationState(
+		context.Background(), accountID, archiveLocation.ID, 21,
+		maildomain.ParseLocationFlags([]string{`\Flagged`, `$Restored`}), 22, true, now.Add(2*time.Minute),
+	)
+	if err != nil || updated.ModSequence != 22 || !updated.Flags.Flagged || updated.Flags.Deleted {
+		t.Fatalf("updated location=%+v err=%v", updated, err)
+	}
+	if _, err := state.Mail().UpdateLocationState(
+		context.Background(), accountID, archiveLocation.ID, 21,
+		maildomain.LocationFlags{}, 23, true, now.Add(3*time.Minute),
+	); !errors.Is(err, maildomain.ErrLocationConflict) {
+		t.Fatalf("stale location update error = %v", err)
+	}
+}
+
+func TestMailReconcileUIDsRotatesBoundedSweep(t *testing.T) {
+	state, accountID, folderID := newMailStoreFixture(t)
+	defer state.Close()
+	now := time.Date(2026, 8, 6, 5, 35, 0, 0, time.UTC)
+	records := []maildomain.IngestRecord{
+		mailRecordFixture(accountID, folderID, 100, 1, "rotation-1@example.test"),
+		mailRecordFixture(accountID, folderID, 100, 2, "rotation-2@example.test"),
+		mailRecordFixture(accountID, folderID, 100, 3, "rotation-3@example.test"),
+	}
+	if _, err := state.Mail().CommitInboxPage(context.Background(), maildomain.CommitPage{
+		CheckpointID: "chk_0198d704-6c00-7000-8000-000000000581",
+		AccountID:    accountID, FolderID: folderID, UIDValidity: 100, Bootstrap: true,
+		LastCommittedUID: 3, LastScannedUID: 3, AttemptedAt: now, Records: records,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	first, err := state.Mail().ReconcileUIDs(context.Background(), accountID, folderID, 100, 2)
+	if err != nil || !reflect.DeepEqual(first, []uint32{3, 2}) {
+		t.Fatalf("first reconciliation page=%v err=%v", first, err)
+	}
+	if _, err := state.Mail().CommitInboxPage(context.Background(), maildomain.CommitPage{
+		CheckpointID: "chk_0198d704-6c00-7000-8000-000000000581",
+		AccountID:    accountID, FolderID: folderID, UIDValidity: 100,
+		LastCommittedUID: 3, LastScannedUID: 3, AttemptedAt: now.Add(time.Minute),
+		Reconciled: []maildomain.ReconcileRecord{
+			{UID: 3, Flags: maildomain.LocationFlags{}, Present: true},
+			{UID: 2, Flags: maildomain.LocationFlags{}, Present: true},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	second, err := state.Mail().ReconcileUIDs(context.Background(), accountID, folderID, 100, 2)
+	if err != nil || !reflect.DeepEqual(second, []uint32{1, 3}) {
+		t.Fatalf("rotated reconciliation page=%v err=%v", second, err)
 	}
 }
 

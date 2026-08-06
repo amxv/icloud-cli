@@ -20,6 +20,7 @@ type MailService interface {
 	MailMessage(context.Context, string, string, string) (account.Account, maildomain.Message, maildomain.ContentSource, int64, error)
 	MailAttachments(context.Context, string, string, string, int) (account.Account, maildomain.Message, []maildomain.Attachment, bool, int64, error)
 	MailAttachment(context.Context, string, string, string) (account.Account, maildomain.Attachment, maildomain.AttachmentSource, int64, error)
+	MailUpdateFlag(context.Context, string, string, string, string, maildomain.FlagMutation) (account.Account, folder.Folder, maildomain.Message, maildomain.Location, int64, error)
 }
 
 type mailSyncData struct {
@@ -77,14 +78,16 @@ type publicMessage struct {
 }
 
 type publicLocation struct {
-	ID           string     `json:"id"`
-	FolderID     string     `json:"folder_id"`
-	UIDValidity  uint32     `json:"uid_validity"`
-	UID          uint32     `json:"uid"`
-	Flags        []string   `json:"flags,omitempty"`
-	InternalDate *time.Time `json:"internal_date,omitempty"`
-	RFC822Size   int64      `json:"rfc822_size,omitempty"`
-	Present      bool       `json:"present"`
+	ID             string                   `json:"id"`
+	FolderID       string                   `json:"folder_id"`
+	UIDValidity    uint32                   `json:"uid_validity"`
+	UID            uint32                   `json:"uid"`
+	Flags          maildomain.LocationFlags `json:"flags"`
+	ModSequence    uint64                   `json:"mod_sequence,omitempty"`
+	FlagsCheckedAt *time.Time               `json:"flags_checked_at,omitempty"`
+	InternalDate   *time.Time               `json:"internal_date,omitempty"`
+	RFC822Size     int64                    `json:"rfc822_size,omitempty"`
+	Present        bool                     `json:"present"`
 }
 
 func newMailSyncCommand(state *executionState) *cobra.Command {
@@ -115,6 +118,8 @@ func newMailSyncCommand(state *executionState) *cobra.Command {
 				Field("fetched", fmt.Sprintf("%d", summary.Fetched)),
 				Field("created", fmt.Sprintf("%d", summary.Created)),
 				Field("updated", fmt.Sprintf("%d", summary.Updated)),
+				Field("reconciled", fmt.Sprintf("%d", summary.Reconciled)),
+				Field("state_changes", fmt.Sprintf("%d", summary.StateChanges)),
 				Field("last_uid", summary.LastUID),
 				Field("more", fmt.Sprintf("%t", summary.MoreAvailable)),
 				Field("bootstrap", fmt.Sprintf("%t", summary.Bootstrap)),
@@ -282,8 +287,9 @@ func sanitizeMessage(value maildomain.Message) publicMessage {
 	for _, location := range value.Locations {
 		locations = append(locations, publicLocation{
 			ID: location.ID, FolderID: location.FolderID, UIDValidity: location.UIDValidity,
-			UID: location.UID, Flags: append([]string(nil), location.Flags...),
-			InternalDate: location.InternalDate, RFC822Size: location.RFC822Size, Present: location.Present,
+			UID: location.UID, Flags: location.Flags, ModSequence: location.ModSequence,
+			FlagsCheckedAt: location.FlagsCheckedAt,
+			InternalDate:   location.InternalDate, RFC822Size: location.RFC822Size, Present: location.Present,
 		})
 	}
 	return publicMessage{
@@ -320,4 +326,7 @@ func (unavailableMailService) MailAttachments(context.Context, string, string, s
 }
 func (unavailableMailService) MailAttachment(context.Context, string, string, string) (account.Account, maildomain.Attachment, maildomain.AttachmentSource, int64, error) {
 	return account.Account{}, maildomain.Attachment{}, nil, 0, NewAppError(ErrorConfiguration, "local attachment content is unavailable", false)
+}
+func (unavailableMailService) MailUpdateFlag(context.Context, string, string, string, string, maildomain.FlagMutation) (account.Account, folder.Folder, maildomain.Message, maildomain.Location, int64, error) {
+	return account.Account{}, folder.Folder{}, maildomain.Message{}, maildomain.Location{}, 0, NewAppError(ErrorConfiguration, "message-state mutation is unavailable", false)
 }

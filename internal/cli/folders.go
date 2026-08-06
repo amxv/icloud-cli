@@ -6,6 +6,7 @@ import (
 
 	"github.com/amxv/icloud-cli/internal/account"
 	"github.com/amxv/icloud-cli/internal/folder"
+	maildomain "github.com/amxv/icloud-cli/internal/mail"
 	"github.com/spf13/cobra"
 )
 
@@ -47,6 +48,10 @@ func newMailCommand(state *executionState) *cobra.Command {
 	command.AddCommand(newMailInboxCommand(state))
 	command.AddCommand(newMailMessageCommand(state))
 	command.AddCommand(newMailAttachmentsCommand(state))
+	command.AddCommand(newMailFlagMutationCommand(state, "mark-read", "Mark one selected message location as read", maildomain.FlagMutationMarkRead))
+	command.AddCommand(newMailFlagMutationCommand(state, "mark-unread", "Mark one selected message location as unread", maildomain.FlagMutationMarkUnread))
+	command.AddCommand(newMailFlagMutationCommand(state, "flag", "Flag one selected message location", maildomain.FlagMutationFlag))
+	command.AddCommand(newMailFlagMutationCommand(state, "unflag", "Remove the flag from one selected message location", maildomain.FlagMutationUnflag))
 	return command
 }
 

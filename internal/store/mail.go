@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -36,6 +37,13 @@ SELECT a.attachment_id, a.message_id, a.part_id, a.ordinal, a.part_path,
        a.content_id, a.inline, a.content_hash, a.storage_key, a.byte_size,
        a.availability, a.error_code
 FROM attachments AS a`
+
+const locationColumns = `
+SELECT location_id, message_id, account_id, folder_id, uid_validity, uid,
+       seen, flagged, answered, draft, deleted, unknown_flags_json,
+       mod_sequence, flags_checked_at, internal_date, rfc822_size, raw_content_hash,
+       raw_storage_key, raw_byte_size, present, created_at, updated_at
+FROM message_locations`
 
 func (repository *MailRepository) Checkpoint(ctx context.Context, accountID, folderID string) (maildomain.Checkpoint, error) {
 	row := repository.db.QueryRowContext(ctx, checkpointColumns+` WHERE account_id = ? AND folder_id = ?`, accountID, folderID)
@@ -101,7 +109,7 @@ func (repository *MailRepository) CommitInboxPage(ctx context.Context, page mail
 		}
 	}
 
-	created, updated := 0, 0
+	created, updated, stateChanges := 0, 0, 0
 	timestamp := page.AttemptedAt.UTC().Format(time.RFC3339Nano)
 	for _, record := range page.Records {
 		if err := validateIngestRecord(page, record); err != nil {
@@ -115,6 +123,23 @@ func (repository *MailRepository) CommitInboxPage(ctx context.Context, page mail
 			created++
 		} else {
 			updated++
+		}
+	}
+	seenReconciled := make(map[uint32]struct{}, len(page.Reconciled))
+	for _, record := range page.Reconciled {
+		if record.UID == 0 {
+			return maildomain.CommitResult{}, errors.New("commit inbox page: reconciled UID is required")
+		}
+		if _, exists := seenReconciled[record.UID]; exists {
+			return maildomain.CommitResult{}, errors.New("commit inbox page: duplicate reconciled UID")
+		}
+		seenReconciled[record.UID] = struct{}{}
+		changed, reconcileErr := reconcileLocationInTx(ctx, tx, page.AccountID, page.FolderID, page.UIDValidity, record, timestamp)
+		if reconcileErr != nil {
+			return maildomain.CommitResult{}, reconcileErr
+		}
+		if changed {
+			stateChanges++
 		}
 	}
 
@@ -156,7 +181,10 @@ ON CONFLICT(account_id, folder_id) DO UPDATE SET
 	if err := tx.Commit(); err != nil {
 		return maildomain.CommitResult{}, fmt.Errorf("commit inbox page: %w", err)
 	}
-	return maildomain.CommitResult{Created: created, Updated: updated, Checkpoint: checkpoint}, nil
+	return maildomain.CommitResult{
+		Created: created, Updated: updated, Reconciled: len(page.Reconciled),
+		StateChanges: stateChanges, Checkpoint: checkpoint,
+	}, nil
 }
 
 func (repository *MailRepository) RecordFailure(ctx context.Context, checkpointID, accountID, folderID string, uidValidity uint32, code string, attemptedAt time.Time) (maildomain.Checkpoint, error) {
@@ -280,6 +308,93 @@ WHERE m.account_id = ? AND m.message_id = ?`, strings.TrimSpace(accountID), stri
 	}
 	if err := repository.loadMessageContent(ctx, &value); err != nil {
 		return maildomain.Message{}, err
+	}
+	return value, nil
+}
+
+func (repository *MailRepository) ReconcileUIDs(ctx context.Context, accountID, folderID string, uidValidity uint32, limit int) ([]uint32, error) {
+	if uidValidity == 0 || limit < 1 {
+		return nil, errors.New("list reconciliation UIDs: UID validity and positive limit are required")
+	}
+	rows, err := repository.db.QueryContext(ctx, `
+SELECT uid
+FROM message_locations
+WHERE account_id = ? AND folder_id = ? AND uid_validity = ? AND present = 1
+ORDER BY flags_checked_at IS NOT NULL, flags_checked_at, uid DESC
+LIMIT ?`, strings.TrimSpace(accountID), strings.TrimSpace(folderID), uidValidity, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list reconciliation UIDs: %w", err)
+	}
+	defer rows.Close()
+	values := make([]uint32, 0, limit)
+	for rows.Next() {
+		var uid uint32
+		if err := rows.Scan(&uid); err != nil {
+			return nil, fmt.Errorf("read reconciliation UID: %w", err)
+		}
+		values = append(values, uid)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list reconciliation UIDs: %w", err)
+	}
+	return values, nil
+}
+
+func (repository *MailRepository) Location(ctx context.Context, accountID, locationID string) (maildomain.Location, error) {
+	value, err := scanLocation(repository.db.QueryRowContext(ctx, locationColumns+`
+WHERE account_id = ? AND location_id = ?`, strings.TrimSpace(accountID), strings.TrimSpace(locationID)))
+	if err != nil {
+		return maildomain.Location{}, err
+	}
+	return value, nil
+}
+
+func (repository *MailRepository) UpdateLocationState(
+	ctx context.Context,
+	accountID, locationID string,
+	expectedModSequence uint64,
+	flags maildomain.LocationFlags,
+	modSequence uint64,
+	present bool,
+	now time.Time,
+) (maildomain.Location, error) {
+	tx, err := repository.db.BeginTx(ctx, nil)
+	if err != nil {
+		return maildomain.Location{}, fmt.Errorf("begin location state update: %w", err)
+	}
+	defer tx.Rollback()
+	current, err := scanLocation(tx.QueryRowContext(ctx, locationColumns+`
+WHERE account_id = ? AND location_id = ?`, strings.TrimSpace(accountID), strings.TrimSpace(locationID)))
+	if err != nil {
+		return maildomain.Location{}, err
+	}
+	if current.ModSequence != expectedModSequence {
+		return maildomain.Location{}, maildomain.ErrLocationConflict
+	}
+	unknownJSON, err := json.Marshal(maildomain.ParseLocationFlags(flags.Unknown).Unknown)
+	if err != nil {
+		return maildomain.Location{}, fmt.Errorf("encode unknown message flags: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+UPDATE message_locations
+SET seen = ?, flagged = ?, answered = ?, draft = ?, deleted = ?,
+    unknown_flags_json = ?, mod_sequence = ?, flags_checked_at = ?,
+    present = ?, updated_at = ?
+WHERE account_id = ? AND location_id = ?`,
+		boolInt(flags.Seen), boolInt(flags.Flagged), boolInt(flags.Answered),
+		boolInt(flags.Draft), boolInt(flags.Deleted), string(unknownJSON),
+		formatModSequence(modSequence), now.UTC().Format(time.RFC3339Nano),
+		boolInt(present), now.UTC().Format(time.RFC3339Nano),
+		strings.TrimSpace(accountID), strings.TrimSpace(locationID),
+	); err != nil {
+		return maildomain.Location{}, fmt.Errorf("update location state: %w", err)
+	}
+	value, err := scanLocation(tx.QueryRowContext(ctx, locationColumns+` WHERE location_id = ?`, locationID))
+	if err != nil {
+		return maildomain.Location{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return maildomain.Location{}, fmt.Errorf("commit location state update: %w", err)
 	}
 	return value, nil
 }
@@ -507,19 +622,28 @@ VALUES (?, ?, ?, ?, ?)`, record.MessageID, group.kind, index, address.DisplayNam
 			return false, err
 		}
 	}
-	flagsJSON, err := json.Marshal(maildomain.NormalizeFlags(record.Flags))
+	structuredFlags := maildomain.ParseLocationFlags(record.Flags)
+	unknownFlagsJSON, err := json.Marshal(structuredFlags.Unknown)
 	if err != nil {
-		return false, fmt.Errorf("encode message flags: %w", err)
+		return false, fmt.Errorf("encode unknown message flags: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO message_locations (
     location_id, message_id, account_id, folder_id, uid_validity, uid,
-    flags_json, internal_date, rfc822_size, raw_content_hash, raw_storage_key,
+    seen, flagged, answered, draft, deleted, unknown_flags_json, mod_sequence,
+    flags_checked_at, internal_date, rfc822_size, raw_content_hash, raw_storage_key,
     raw_byte_size, present, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
 ON CONFLICT(account_id, folder_id, uid_validity, uid) DO UPDATE SET
     message_id = excluded.message_id,
-    flags_json = excluded.flags_json,
+    seen = excluded.seen,
+    flagged = excluded.flagged,
+    answered = excluded.answered,
+    draft = excluded.draft,
+    deleted = excluded.deleted,
+    unknown_flags_json = excluded.unknown_flags_json,
+    mod_sequence = excluded.mod_sequence,
+    flags_checked_at = excluded.flags_checked_at,
     internal_date = excluded.internal_date,
     rfc822_size = excluded.rfc822_size,
     raw_content_hash = excluded.raw_content_hash,
@@ -528,13 +652,70 @@ ON CONFLICT(account_id, folder_id, uid_validity, uid) DO UPDATE SET
     present = 1,
     updated_at = excluded.updated_at`,
 		record.LocationID, record.MessageID, record.AccountID, record.FolderID,
-		record.UIDValidity, record.UID, string(flagsJSON), nullableTimeValue(record.InternalDate),
+		record.UIDValidity, record.UID,
+		boolInt(structuredFlags.Seen), boolInt(structuredFlags.Flagged), boolInt(structuredFlags.Answered),
+		boolInt(structuredFlags.Draft), boolInt(structuredFlags.Deleted), string(unknownFlagsJSON),
+		formatModSequence(record.ModSequence), timestamp, nullableTimeValue(record.InternalDate),
 		record.RFC822Size, record.RawContentHash, record.RawStorageKey,
 		record.RawByteSize, timestamp, timestamp,
 	); err != nil {
 		return false, fmt.Errorf("persist message location: %w", err)
 	}
 	return created, nil
+}
+
+func reconcileLocationInTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	accountID, folderID string,
+	uidValidity uint32,
+	record maildomain.ReconcileRecord,
+	timestamp string,
+) (bool, error) {
+	current, err := scanLocation(tx.QueryRowContext(ctx, locationColumns+`
+WHERE account_id = ? AND folder_id = ? AND uid_validity = ? AND uid = ?`,
+		accountID, folderID, uidValidity, record.UID,
+	))
+	if err != nil {
+		if errors.Is(err, maildomain.ErrLocationNotFound) {
+			return false, errors.New("commit inbox page: reconciled location is missing locally")
+		}
+		return false, err
+	}
+	flags := record.Flags
+	unknownJSON, err := json.Marshal(maildomain.ParseLocationFlags(flags.Unknown).Unknown)
+	if err != nil {
+		return false, fmt.Errorf("encode reconciled unknown flags: %w", err)
+	}
+	changed := current.Present != record.Present || current.ModSequence != record.ModSequence || !locationFlagsEqual(current.Flags, flags)
+	if _, err := tx.ExecContext(ctx, `
+UPDATE message_locations
+SET seen = ?, flagged = ?, answered = ?, draft = ?, deleted = ?,
+    unknown_flags_json = ?, mod_sequence = ?, flags_checked_at = ?,
+    present = ?, updated_at = CASE WHEN ? THEN ? ELSE updated_at END
+WHERE account_id = ? AND folder_id = ? AND uid_validity = ? AND uid = ?`,
+		boolInt(flags.Seen), boolInt(flags.Flagged), boolInt(flags.Answered),
+		boolInt(flags.Draft), boolInt(flags.Deleted), string(unknownJSON),
+		formatModSequence(record.ModSequence), timestamp, boolInt(record.Present),
+		boolInt(changed), timestamp,
+		accountID, folderID, uidValidity, record.UID,
+	); err != nil {
+		return false, fmt.Errorf("reconcile message location: %w", err)
+	}
+	return true, nil
+}
+
+func locationFlagsEqual(left, right maildomain.LocationFlags) bool {
+	leftValues, rightValues := left.All(), right.All()
+	if len(leftValues) != len(rightValues) {
+		return false
+	}
+	for index := range leftValues {
+		if leftValues[index] != rightValues[index] {
+			return false
+		}
+	}
+	return true
 }
 
 func upsertMessageContent(ctx context.Context, tx *sql.Tx, messageID string, content maildomain.NormalizedContent, timestamp string) error {
@@ -877,11 +1058,8 @@ ORDER BY CASE kind WHEN 'to' THEN 0 WHEN 'cc' THEN 1 ELSE 2 END, ordinal`, value
 		return fmt.Errorf("close message references: %w", err)
 	}
 
-	locationRows, err := repository.db.QueryContext(ctx, `
-SELECT location_id, message_id, account_id, folder_id, uid_validity, uid,
-       flags_json, internal_date, rfc822_size, raw_content_hash,
-       raw_storage_key, raw_byte_size, present, created_at, updated_at
-FROM message_locations WHERE message_id = ?
+	locationRows, err := repository.db.QueryContext(ctx, locationColumns+`
+WHERE message_id = ?
 ORDER BY present DESC, folder_id, uid`, value.ID)
 	if err != nil {
 		return fmt.Errorf("read message locations: %w", err)
@@ -893,9 +1071,9 @@ ORDER BY present DESC, folder_id, uid`, value.ID)
 			return scanErr
 		}
 		value.Locations = append(value.Locations, location)
-		if location.Present {
-			value.Unread = !maildomain.HasFlag(location.Flags, `\Seen`)
-			value.Flagged = maildomain.HasFlag(location.Flags, `\Flagged`)
+		if location.Present && location.Flags.Eligible() {
+			value.Unread = value.Unread || !location.Flags.Seen
+			value.Flagged = value.Flagged || location.Flags.Flagged
 		}
 	}
 	if err := locationRows.Close(); err != nil {
@@ -1019,24 +1197,43 @@ FROM attachments WHERE message_id = ? ORDER BY ordinal`, value.ID)
 
 func scanLocation(row rowScanner) (maildomain.Location, error) {
 	var (
-		value                maildomain.Location
-		flagsJSON            string
-		internalDate         sql.NullString
-		present              int
-		createdAt, updatedAt string
+		value                                   maildomain.Location
+		seen, flagged, answered, draft, deleted int
+		unknownFlagsJSON, modSequence           string
+		flagsCheckedAt, internalDate            sql.NullString
+		present                                 int
+		createdAt, updatedAt                    string
 	)
 	if err := row.Scan(
 		&value.ID, &value.MessageID, &value.AccountID, &value.FolderID,
-		&value.UIDValidity, &value.UID, &flagsJSON, &internalDate,
+		&value.UIDValidity, &value.UID, &seen, &flagged, &answered, &draft, &deleted,
+		&unknownFlagsJSON, &modSequence, &flagsCheckedAt, &internalDate,
 		&value.RFC822Size, &value.RawContentHash, &value.RawStorageKey,
 		&value.RawByteSize, &present, &createdAt, &updatedAt,
 	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return maildomain.Location{}, maildomain.ErrLocationNotFound
+		}
 		return maildomain.Location{}, fmt.Errorf("read message location: %w", err)
 	}
-	if err := json.Unmarshal([]byte(flagsJSON), &value.Flags); err != nil {
-		return maildomain.Location{}, fmt.Errorf("parse message flags: %w", err)
+	value.Flags.Seen = seen == 1
+	value.Flags.Flagged = flagged == 1
+	value.Flags.Answered = answered == 1
+	value.Flags.Draft = draft == 1
+	value.Flags.Deleted = deleted == 1
+	if err := json.Unmarshal([]byte(unknownFlagsJSON), &value.Flags.Unknown); err != nil {
+		return maildomain.Location{}, fmt.Errorf("parse unknown message flags: %w", err)
 	}
+	value.Flags.Unknown = maildomain.ParseLocationFlags(value.Flags.Unknown).Unknown
 	var err error
+	value.ModSequence, err = parseModSequence(modSequence)
+	if err != nil {
+		return maildomain.Location{}, fmt.Errorf("parse message location mod-sequence: %w", err)
+	}
+	value.FlagsCheckedAt, err = parseNullableTime(flagsCheckedAt)
+	if err != nil {
+		return maildomain.Location{}, fmt.Errorf("parse message location flag check time: %w", err)
+	}
 	value.InternalDate, err = parseNullableTime(internalDate)
 	if err != nil {
 		return maildomain.Location{}, fmt.Errorf("parse message location date: %w", err)
@@ -1051,6 +1248,21 @@ func scanLocation(row rowScanner) (maildomain.Location, error) {
 		return maildomain.Location{}, fmt.Errorf("parse message location update time: %w", err)
 	}
 	return value, nil
+}
+
+func formatModSequence(value uint64) string {
+	if value == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d", value)
+}
+
+func parseModSequence(value string) (uint64, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, nil
+	}
+	return strconv.ParseUint(value, 10, 64)
 }
 
 func nullableTime(value *time.Time) any {

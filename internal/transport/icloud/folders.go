@@ -35,7 +35,7 @@ func (client *Client) DiscoverFolders(ctx context.Context, request transport.Aut
 	imapClient := imapclient.New(tlsConn, &imapclient.Options{
 		WordDecoder: &mime.WordDecoder{CharsetReader: charset.Reader},
 	})
-	defer imapClient.Close()
+	defer closeIMAPClient(plainConn, imapClient)
 
 	if err := runWithDeadline(ctx, tlsConn, client.config.StageTimeout, imapClient.WaitGreeting); err != nil {
 		return transport.FolderDiscoveryResult{}, classifyFailure(transport.StageIMAPGreeting, err)

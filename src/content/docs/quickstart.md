@@ -1,9 +1,9 @@
 ---
 title: Quickstart
-description: Install icloud, configure an app-specific password safely, validate the account, discover folders, synchronize the Inbox, and read messages or save attachments explicitly.
+description: Install icloud, configure an app-specific password safely, validate the account, discover folders, synchronize the Inbox, read or save content, and update message state explicitly.
 order: 1
 category: Start
-summary: The shortest safe path from installation to a validated account, locally readable Inbox, explicit full-message access, and safe attachment export.
+summary: The shortest safe path from installation to a validated account, locally readable Inbox, explicit content access, safe attachment export, and location-aware read or flag updates.
 ---
 
 ## Install and inspect the binary
@@ -30,7 +30,7 @@ version
 capabilities
 command=icloud
 version=0.1.0
-schema=6
+schema=7
 account_mode=validated_lifecycle
 credentials=keyring,env,file
 network_validation=true
@@ -39,6 +39,7 @@ mail_folders=true
 mail_sync=true
 mail_content=true
 mail_attachments=true
+mail_flags=true
 default_output=compact
 json=true
 completion=bash,zsh,fish,powershell
@@ -225,6 +226,25 @@ icloud mail attachments save-all msg_… --dir ./message-attachments
 
 Attachment filenames are treated as untrusted metadata. Existing files are not replaced without `--force`, binary stdout requires `--binary`, and a batch is prepared before installation so failures do not leave an intentional partial set.
 
+## Change read or flag state deliberately
+
+Use the stable message ID from `mail inbox`:
+
+```bash
+icloud mail mark-read msg_…
+icloud mail flag msg_…
+icloud mail mark-unread msg_…
+icloud mail unflag msg_…
+```
+
+The command updates one exact current provider location and then stores the state returned by iCloud. When a message has several eligible locations, choose one explicitly:
+
+```bash
+icloud mail mark-read msg_… --folder INBOX
+```
+
+These commands do not search Sent or mutate every copy of a message. A later `mail sync` refreshes bounded location state without downloading message bodies again.
+
 Inspect progress:
 
 ```bash
@@ -232,7 +252,7 @@ icloud mail sync status
 icloud mail sync checkpoints
 ```
 
-Read [Sync and read the Inbox](/docs/sync-and-read-inbox) for incremental behavior and recovery, or [Save mail attachments](/docs/save-mail-attachments) for filename, collision, batch, and binary-output rules.
+Read [Sync and read the Inbox](/docs/sync-and-read-inbox) for incremental state reconciliation, location selection, and recovery, or [Save mail attachments](/docs/save-mail-attachments) for filename, collision, batch, and binary-output rules.
 
 ## Select another account
 

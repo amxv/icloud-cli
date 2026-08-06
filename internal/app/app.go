@@ -27,6 +27,7 @@ func RunWithInput(ctx context.Context, args []string, stdin io.Reader, stdout, s
 		smtp:    protocolClient,
 		folders: protocolClient,
 		mail:    protocolClient,
+		flags:   protocolClient,
 	})
 }
 

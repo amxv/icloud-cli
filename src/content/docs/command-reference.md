@@ -209,11 +209,11 @@ icloud mail sync --limit 50
 icloud --account Personal mail sync --json
 ```
 
-Fetches and atomically commits one bounded Inbox page. The default page is 20 messages and the maximum is 100. The first run starts at the current Inbox tail; later runs fetch only newer UIDs. `more=true` means another bounded page is available.
+Fetches and atomically commits one bounded Inbox page. The default page is 20 messages and the maximum is 100. The first run starts at the current Inbox tail; later runs fetch only newer UIDs. `more=true` means another bounded new-message page is available.
 
-The command requires a previously discovered, present, selectable, sync-enabled Inbox. It never changes remote flags, reads Sent, moves mail, or sends a message. An interrupted fetch, parse, blob write, or local commit leaves the prior frontier unchanged.
+Each run also refreshes up to 100 least-recently checked current Inbox locations using metadata-only UID reads. The rotating sweep detects server-side Seen, Flagged, Answered, Draft, Deleted, unknown flags, disappearance, and mod-sequences when available without downloading bodies again. Sync never changes remote flags, reads Sent, moves mail, or sends a message.
 
-Compact success reports the account/folder IDs, fetched/created/updated counts, committed UID, `more`, and whether the page was the initial bootstrap. `--json` returns the same outcome plus the durable checkpoint.
+Compact success reports account/folder IDs, fetched/created/updated counts, reconciled locations, actual state changes, committed UID, `more`, and bootstrap state. `--json` returns the same outcome plus the durable checkpoint. An interrupted fetch, reconciliation, parse, blob write, or local commit leaves the prior frontier unchanged.
 
 ## `icloud mail inbox`
 
@@ -226,6 +226,30 @@ icloud mail inbox --json
 Reads a bounded page from local state without contacting iCloud. Compact records include stable ID, sender, subject, best available date, true unread/flagged states, nonzero attachment count, and a bounded decoded-text preview.
 
 JSON adds complete locally stored preview metadata and provider location IDs while omitting credentials, BCC, raw storage paths/hashes, and full message bodies.
+
+## `icloud mail mark-read` / `mark-unread`
+
+```bash
+icloud mail mark-read msg_…
+icloud mail mark-read msg_… --folder INBOX
+icloud mail mark-unread msg_… --json
+```
+
+Adds or removes `Seen` on one exact current provider location. Without `--folder`, the message must have exactly one eligible present location. A message with several eligible copies returns conflict rather than guessing. `--folder` accepts a stable folder ID, decoded name, exact wire name, or unambiguous kind and still requires exactly one matching location.
+
+The provider UID and UID validity are taken from synchronized local state; the command never searches mailboxes by Message-ID or thread reference. It stores the flags returned by iCloud and recomputes the message's unread and flagged summaries across every eligible current location. Deleted or absent locations are excluded.
+
+## `icloud mail flag` / `unflag`
+
+```bash
+icloud mail flag msg_…
+icloud mail flag msg_… --folder fld_…
+icloud mail unflag msg_… --json
+```
+
+Adds or removes `Flagged` at one location with the same resolution and ambiguity rules as read state. Unknown provider flags are preserved. Conditional updates use the synchronized mod-sequence when iCloud exposes one; a concurrent change returns conflict after the current server state has been persisted.
+
+Compact success reports the action plus stable message, location, and folder IDs and the recomputed unread/flagged summaries. JSON additionally includes UID identity, structured flags, mod-sequence, last flag-check time, and schema version. No command in this phase offers implicit all-locations or thread-wide mutation.
 
 ## `icloud mail message show`
 
@@ -361,7 +385,7 @@ Compact output:
 capabilities
 command=icloud
 version=0.1.0
-schema=6
+schema=7
 account_mode=validated_lifecycle
 credentials=keyring,env,file
 network_validation=true
@@ -370,6 +394,7 @@ mail_folders=true
 mail_sync=true
 mail_content=true
 mail_attachments=true
+mail_flags=true
 default_output=compact
 json=true
 completion=bash,zsh,fish,powershell
@@ -415,6 +440,6 @@ Help goes to stdout. Usage failures go to stderr and exit `2`.
 
 ## Output availability
 
-Every account and credential lifecycle command above, `account test`, every folder command, Inbox sync/read/status/checkpoints, `mail message show`, attachment list/save/save-all, `doctor`, `version`, and `capabilities` supports `--json` where a native byte stream is not requested. Validation, doctor, folder reads/status, and message reads support bounded `--verbose` detail where advertised. `mail message raw`, `message export --output -`, and `attachments save --output - --binary` retain native bytes; completion and man generation retain their native formats. Inbox stays preview-only, while stable-ID message reads provide explicit full-text, HTML, raw, headers, body-only, metadata-only, verbose, and JSON modes.
+Every account and credential lifecycle command above, `account test`, every folder command, Inbox sync/read/status/checkpoints, message read and state commands, attachment list/save/save-all, `doctor`, `version`, and `capabilities` supports `--json` where a native byte stream is not requested. Validation, doctor, folder reads/status, and message reads support bounded `--verbose` detail where advertised. `mail message raw`, `message export --output -`, and `attachments save --output - --binary` retain native bytes; completion and man generation retain their native formats. Inbox stays preview-only, while stable-ID message reads provide explicit full-text, HTML, raw, headers, body-only, metadata-only, verbose, and JSON modes.
 
 Compact output uses vertical blocks: result type first, stable identity plus the first field next when present, then one remaining field per line. A blank line separates consecutive records or a final summary. Errors use the same block shape on stderr.

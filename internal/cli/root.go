@@ -103,6 +103,7 @@ type capabilitiesData struct {
 	MailSync          bool             `json:"mail_sync"`
 	MailContent       bool             `json:"mail_content"`
 	MailAttachments   bool             `json:"mail_attachments"`
+	MailFlags         bool             `json:"mail_flags"`
 	Output            capabilityOutput `json:"output"`
 	Completion        []string         `json:"completion"`
 	Man               bool             `json:"man"`
@@ -201,8 +202,8 @@ func newRootCommand(state *executionState) *cobra.Command {
 	root := &cobra.Command{
 		Use:           commandName,
 		Short:         "Control iCloud services from the command line",
-		Long:          "icloud controls iCloud services from the command line. This build provides secure account setup, live read-only IMAP and SMTP validation, durable folder discovery, bounded Inbox synchronization, complete local message reads, account health diagnostics, version and capability reporting, shell completions, and man-page generation.",
-		Example:       "  icloud account add --name Personal --email owner@icloud.com --password-stdin\n  icloud account test\n  icloud mail sync\n  icloud mail message show msg_…\n  icloud doctor",
+		Long:          "icloud controls iCloud services from the command line. This build provides secure account setup, live read-only IMAP and SMTP validation, durable folder discovery, bounded Inbox synchronization and flag reconciliation, complete local message reads, verified attachment export, location-aware read and flag updates, account health diagnostics, version and capability reporting, shell completions, and man-page generation.",
+		Example:       "  icloud account add --name Personal --email owner@icloud.com --password-stdin\n  icloud account test\n  icloud mail sync\n  icloud mail message show msg_…\n  icloud mail mark-read msg_…\n  icloud doctor",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		Args:          cobra.NoArgs,
@@ -313,6 +314,7 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				MailSync:          true,
 				MailContent:       true,
 				MailAttachments:   true,
+				MailFlags:         true,
 				Output: capabilityOutput{
 					Default: "compact",
 					JSON:    true,
@@ -340,6 +342,7 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				Field("mail_sync", data.MailSync),
 				Field("mail_content", data.MailContent),
 				Field("mail_attachments", data.MailAttachments),
+				Field("mail_flags", data.MailFlags),
 				Field("default_output", data.Output.Default),
 				Field("json", data.Output.JSON),
 				Field("completion", data.Completion),

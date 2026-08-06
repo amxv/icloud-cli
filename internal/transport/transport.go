@@ -25,6 +25,7 @@ const (
 	StageIMAPSelect     Stage = "imap_select"
 	StageIMAPSearch     Stage = "imap_search"
 	StageIMAPFetch      Stage = "imap_fetch"
+	StageIMAPStore      Stage = "imap_store"
 	StageIMAPLogout     Stage = "imap_logout"
 	StageSMTPGreeting   Stage = "smtp_greeting"
 	StageSMTPStartTLS   Stage = "smtp_starttls"
@@ -132,6 +133,7 @@ type InboxFetchRequest struct {
 	LastScannedUID      uint32
 	Bootstrap           bool
 	Limit               int
+	ReconcileUIDs       []uint32
 }
 
 type EnvelopeAddress struct {
@@ -156,8 +158,16 @@ type FetchedMessage struct {
 	Flags        []string        `json:"flags,omitempty"`
 	InternalDate time.Time       `json:"internal_date,omitempty"`
 	RFC822Size   int64           `json:"rfc822_size,omitempty"`
+	ModSequence  uint64          `json:"mod_sequence,omitempty"`
 	Envelope     MessageEnvelope `json:"envelope,omitempty"`
 	Raw          *blob.Staged    `json:"-"`
+}
+
+type LocationState struct {
+	UID         uint32   `json:"uid"`
+	Flags       []string `json:"flags,omitempty"`
+	ModSequence uint64   `json:"mod_sequence,omitempty"`
+	Present     bool     `json:"present"`
 }
 
 type InboxPage struct {
@@ -168,6 +178,7 @@ type InboxPage struct {
 	MoreAvailable    bool             `json:"more_available"`
 	Bootstrap        bool             `json:"bootstrap"`
 	Messages         []FetchedMessage `json:"messages"`
+	LocationStates   []LocationState  `json:"location_states,omitempty"`
 }
 
 type UIDValidityError struct {
@@ -179,6 +190,28 @@ func (err *UIDValidityError) Error() string { return "IMAP UID validity changed"
 
 type IMAPInboxClient interface {
 	FetchInboxPage(context.Context, AuthRequest, InboxFetchRequest, blob.Stager) (InboxPage, error)
+}
+
+type FlagMutationRequest struct {
+	Mailbox             string
+	ExpectedUIDValidity uint32
+	UID                 uint32
+	ExpectedModSequence uint64
+	Flag                string
+	Add                 bool
+}
+
+type FlagMutationResult struct {
+	Mailbox     string
+	UIDValidity uint32
+	UID         uint32
+	Flags       []string
+	ModSequence uint64
+	Present     bool
+}
+
+type IMAPFlagClient interface {
+	UpdateFlags(context.Context, AuthRequest, FlagMutationRequest) (FlagMutationResult, error)
 }
 
 type IMAPFolderClient interface {

@@ -30,6 +30,13 @@ func (commands accountCommands) MailSync(ctx context.Context, home, accountSelec
 	if checkpoint.State == maildomain.CheckpointRepairRequired {
 		return account.Account{}, folder.Folder{}, maildomain.SyncSummary{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorConflict, "Inbox identity changed at iCloud; run mail sync repair before continuing", false, maildomain.ErrRepairRequired)
 	}
+	var reconcileUIDs []uint32
+	if checkpoint.UIDValidity != 0 {
+		reconcileUIDs, err = state.Mail().ReconcileUIDs(ctx, accountValue.ID, inbox.ID, checkpoint.UIDValidity, 100)
+		if err != nil {
+			return account.Account{}, folder.Folder{}, maildomain.SyncSummary{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot select bounded Inbox locations for state reconciliation", false, err)
+		}
+	}
 	checkpointID := checkpoint.ID
 	if checkpointID == "" {
 		checkpointID, err = commands.generateID("chk")
@@ -60,6 +67,7 @@ func (commands accountCommands) MailSync(ctx context.Context, home, accountSelec
 			LastScannedUID:      checkpoint.LastScannedUID,
 			Bootstrap:           !checkpoint.BootstrapComplete,
 			Limit:               limit,
+			ReconcileUIDs:       reconcileUIDs,
 		}, stager)
 		if lastErr == nil {
 			usedUsername = username
@@ -141,7 +149,15 @@ func (commands accountCommands) MailSync(ctx context.Context, home, accountSelec
 			fetched.Raw.ContentHash, fetched.Raw.StorageKey, fetched.Raw.ByteSize, normalized.Preview,
 		)
 		record.Content = &normalized
+		record.ModSequence = fetched.ModSequence
 		records = append(records, record)
+	}
+	reconciled := make([]maildomain.ReconcileRecord, 0, len(page.LocationStates))
+	for _, remote := range page.LocationStates {
+		reconciled = append(reconciled, maildomain.ReconcileRecord{
+			UID: remote.UID, Flags: maildomain.ParseLocationFlags(remote.Flags),
+			ModSequence: remote.ModSequence, Present: remote.Present,
+		})
 	}
 	for _, fetched := range page.Messages {
 		if err := fetched.Raw.Commit(); err != nil {
@@ -164,6 +180,7 @@ func (commands accountCommands) MailSync(ctx context.Context, home, accountSelec
 		MoreAvailable:    page.MoreAvailable,
 		AttemptedAt:      attemptedAt,
 		Records:          records,
+		Reconciled:       reconciled,
 	})
 	if err != nil {
 		_, _ = state.Mail().RecordFailure(ctx, checkpointID, accountValue.ID, inbox.ID, checkpoint.UIDValidity, "transaction", attemptedAt)
@@ -176,6 +193,8 @@ func (commands accountCommands) MailSync(ctx context.Context, home, accountSelec
 		Fetched:       len(page.Messages),
 		Created:       commit.Created,
 		Updated:       commit.Updated,
+		Reconciled:    commit.Reconciled,
+		StateChanges:  commit.StateChanges,
 		LastUID:       commit.Checkpoint.LastCommittedUID,
 		MoreAvailable: commit.Checkpoint.MoreAvailable,
 		Bootstrap:     page.Bootstrap,

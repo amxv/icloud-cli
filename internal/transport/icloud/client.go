@@ -82,7 +82,7 @@ func (client *Client) ValidateIMAP(ctx context.Context, request transport.AuthRe
 	imapClient := imapclient.New(tlsConn, &imapclient.Options{
 		WordDecoder: &mime.WordDecoder{CharsetReader: charset.Reader},
 	})
-	defer imapClient.Close()
+	defer closeIMAPClient(plainConn, imapClient)
 
 	if err := runWithDeadline(ctx, tlsConn, client.config.StageTimeout, imapClient.WaitGreeting); err != nil {
 		return transport.IMAPResult{}, classifyFailure(transport.StageIMAPGreeting, err)
@@ -267,22 +267,30 @@ func runValueWithDeadline[T any](ctx context.Context, conn net.Conn, timeout tim
 	if contextDeadline, ok := ctx.Deadline(); ok && contextDeadline.Before(deadline) {
 		deadline = contextDeadline
 	}
-	if err := conn.SetDeadline(deadline); err != nil {
-		return zero, err
+	type operationResult struct {
+		value T
+		err   error
 	}
-	done := make(chan struct{})
+	result := make(chan operationResult, 1)
 	go func() {
-		select {
-		case <-ctx.Done():
-			_ = conn.SetDeadline(time.Now())
-		case <-done:
-		}
+		value, err := fn()
+		result <- operationResult{value: value, err: err}
 	}()
-	value, err := fn()
-	close(done)
-	_ = conn.SetDeadline(time.Time{})
-	if ctx.Err() != nil {
+	timer := time.NewTimer(time.Until(deadline))
+	defer timer.Stop()
+	select {
+	case value := <-result:
+		return value.value, value.err
+	case <-ctx.Done():
+		_ = conn.Close()
 		return zero, ctx.Err()
+	case <-timer.C:
+		_ = conn.Close()
+		return zero, context.DeadlineExceeded
 	}
-	return value, err
+}
+
+func closeIMAPClient(conn net.Conn, client *imapclient.Client) {
+	_ = conn.Close()
+	_ = client.Close()
 }

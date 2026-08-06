@@ -1,9 +1,9 @@
 ---
 title: Sync and read the Inbox
-description: Download a bounded iCloud Inbox page into private local state, read compact previews or complete messages offline, inspect progress, and recover safely from interrupted syncs.
+description: Download a bounded iCloud Inbox page into private local state, refresh location flags, read or save content offline, update one exact message location, and recover safely.
 order: 6
 category: Guides
-summary: Bounded Inbox sync, compact previews, explicit full-message reads, incremental checkpoints, safe retries, and recovery.
+summary: Bounded Inbox sync, rotating flag reconciliation, compact previews, explicit content reads, location-aware read/flag mutations, safe retries, and recovery.
 ---
 
 ## Sync the current Inbox
@@ -25,12 +25,16 @@ folder=INBOX
 fetched=20
 created=20
 updated=0
+reconciled=20
+state_changes=2
 last_uid=184
 more=true
 bootstrap=true
 ```
 
-`more=true` means another bounded page is available. Repeat the command until it reports `more=false`:
+`reconciled` is the number of existing current locations whose flags were checked without re-downloading message bodies. `state_changes` counts locations whose remote state actually changed. The sweep rotates by oldest check time, so repeated syncs eventually refresh every current local Inbox location without turning one run into a whole-mailbox operation.
+
+`more=true` means another bounded new-message page is available. Repeat the command until it reports `more=false`:
 
 ```bash
 while icloud mail sync | tee /dev/stderr | grep -q 'more=true'; do :; done
@@ -111,6 +115,39 @@ icloud mail attachments save att_… --output - --binary > document.pdf
 
 See [Save mail attachments](/docs/save-mail-attachments) for collision handling, inline files, unnamed attachments, JSON, and recovery.
 
+## Change read or flag state at one exact location
+
+```bash
+icloud mail mark-read msg_…
+icloud mail mark-unread msg_…
+icloud mail flag msg_…
+icloud mail unflag msg_…
+```
+
+The default is intentionally narrow: the message must have exactly one eligible current location. The CLI updates that provider UID, stores the flags returned by iCloud, and recomputes the message's local unread and flagged summaries from all eligible current locations.
+
+When the message has more than one eligible location, select one folder explicitly by stable ID, name, provider wire name, or confirmed kind:
+
+```bash
+icloud mail mark-read msg_… --folder INBOX
+icloud mail flag msg_… --folder fld_…
+```
+
+Deleted or missing locations are not eligible. These commands never search every mailbox by Message-ID or thread reference, and they do not touch a Sent location unless that exact location is selected in a later synchronized-folder workflow.
+
+Compact success is small and does not echo subjects, recipients, or provider flags:
+
+```text
+mail-state
+msg_… action=mark_read
+location=loc_…
+folder=fld_…
+unread=false
+flagged=false
+```
+
+Use `--json` when automation needs the selected UID, structured canonical and unknown flags, provider mod-sequence when available, and recomputed message summaries.
+
 ## Stream or export exact raw MIME
 
 ```bash
@@ -139,12 +176,14 @@ folder=INBOX
 fetched=0
 created=0
 updated=0
+reconciled=20
+state_changes=0
 last_uid=184
 more=false
 bootstrap=false
 ```
 
-Interrupted downloads are safe to retry. The CLI advances its durable frontier only after the whole bounded page and its local metadata commit together, so a failed message cannot be silently skipped.
+Interrupted downloads and flag reconciliation are safe to retry. The CLI advances its durable new-message frontier only after the whole bounded page and its local metadata commit together, so a failed message cannot be silently skipped. A reconciliation-only run keeps `committed` unchanged.
 
 ## Inspect the synchronization frontier
 
@@ -192,11 +231,12 @@ icloud mail sync status --json
 icloud mail message show msg_… --json
 icloud mail message show msg_… --full --json
 icloud mail attachments list msg_… --json
+icloud mail mark-read msg_… --json
 ```
 
 Inbox JSON returns stable message, location, and checkpoint identifiers plus locally stored preview metadata. Default message JSON adds content-availability and parse-status fields without including headers, MIME parts, complete bodies, or raw bytes. Use the same explicit flags to include text, HTML, headers, MIME-part metadata, or base64 raw MIME. Raw JSON is limited to 8 MiB; plain raw/export streaming remains available up to the synchronized message-size limit.
 
-Credential references, raw storage paths, and BCC recipients remain excluded from JSON. Attachment-list JSON includes a decoded content hash for verification but omits its private storage location. Exact raw MIME can contain a BCC header only when raw output was explicitly requested.
+Credential references, raw storage paths, and BCC recipients remain excluded from JSON. Attachment-list JSON includes a decoded content hash for verification but omits its private storage location. State-mutation JSON includes only the selected stable IDs, UID identity, structured flags, mod-sequence, and recomputed summaries. Exact raw MIME can contain a BCC header only when raw output was explicitly requested.
 
 ## Recover from common problems
 
@@ -240,5 +280,20 @@ The first run intentionally starts from the newest bounded page. Repeat `mail sy
 ### An attachment cannot be saved
 
 Run `icloud mail attachments list msg_…` to distinguish unavailable decoded content from a destination conflict. Missing or corrupt content fails before a successful file is installed. Existing files require `--force`; symbolic links, directories, and other special files are always rejected.
+
+### A state command says the location is ambiguous
+
+Inspect the message's current locations, then choose one:
+
+```bash
+icloud mail message show msg_… --metadata-only --json
+icloud mail mark-read msg_… --folder INBOX
+```
+
+The CLI does not guess which copy should change and has no implicit all-locations mode.
+
+### iCloud changed the flags concurrently
+
+The CLI stores the current server-returned state and returns a conflict rather than claiming success. Read the message metadata again and retry the desired action. When iCloud supports conditional state updates, its mod-sequence is used to detect the race; otherwise a targeted UID read verifies the final state.
 
 Continue with [Save mail attachments](/docs/save-mail-attachments), [Output and automation](/docs/output-and-automation) for stable stream rules, or the [command reference](/docs/command-reference) for exact flags.

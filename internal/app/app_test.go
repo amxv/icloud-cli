@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +20,8 @@ import (
 	"github.com/amxv/icloud-cli/internal/blob"
 	"github.com/amxv/icloud-cli/internal/cli"
 	"github.com/amxv/icloud-cli/internal/config"
+	"github.com/amxv/icloud-cli/internal/folder"
+	maildomain "github.com/amxv/icloud-cli/internal/mail"
 	"github.com/amxv/icloud-cli/internal/store"
 	"github.com/amxv/icloud-cli/internal/transport"
 	"github.com/gofrs/flock"
@@ -447,14 +450,14 @@ func TestCapabilitiesCompactGoldenBudget(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("exit code = %d, stderr = %q", exitCode, stderr)
 	}
-	const want = "capabilities\ncommand=icloud\nversion=dev\nschema=6\naccount_mode=validated_lifecycle\ncredentials=keyring,env,file\nnetwork_validation=true\ndiagnostics=true\nmail_folders=true\nmail_sync=true\nmail_content=true\nmail_attachments=true\ndefault_output=compact\njson=true\ncompletion=bash,zsh,fish,powershell\nman=true\n"
+	const want = "capabilities\ncommand=icloud\nversion=dev\nschema=7\naccount_mode=validated_lifecycle\ncredentials=keyring,env,file\nnetwork_validation=true\ndiagnostics=true\nmail_folders=true\nmail_sync=true\nmail_content=true\nmail_attachments=true\nmail_flags=true\ndefault_output=compact\njson=true\ncompletion=bash,zsh,fish,powershell\nman=true\n"
 	if stdout != want {
 		t.Fatalf("stdout mismatch\nwant: %q\n got: %q", want, stdout)
 	}
-	if lines := strings.Count(stdout, "\n"); lines > 16 {
+	if lines := strings.Count(stdout, "\n"); lines > 17 {
 		t.Fatalf("line budget exceeded: %d", lines)
 	}
-	if len(stdout) > 320 {
+	if len(stdout) > 340 {
 		t.Fatalf("byte budget exceeded: %d", len(stdout))
 	}
 	for _, unwanted := range []string{"{", "}", "\x1b[", "│", "Command:", "Version:"} {
@@ -477,7 +480,7 @@ func TestCapabilitiesJSONEnvelope(t *testing.T) {
 		t.Fatalf("ok = %#v", envelope["ok"])
 	}
 	data, ok := envelope["data"].(map[string]any)
-	if !ok || data["data_schema_version"] != float64(6) || data["network_validation"] != true || data["diagnostics"] != true || data["mail_folders"] != true || data["mail_sync"] != true || data["mail_content"] != true || data["mail_attachments"] != true {
+	if !ok || data["data_schema_version"] != float64(7) || data["network_validation"] != true || data["diagnostics"] != true || data["mail_folders"] != true || data["mail_sync"] != true || data["mail_content"] != true || data["mail_attachments"] != true || data["mail_flags"] != true {
 		t.Fatalf("data = %#v", envelope["data"])
 	}
 	if strings.Contains(stdout, "\x1b[") {
@@ -600,7 +603,7 @@ func TestAccountListCreatesAndReopensPrivateZeroState(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &envelope); err != nil {
 		t.Fatalf("invalid JSON: %v\n%s", err, stdout)
 	}
-	if !envelope.OK || envelope.Data.Count != 0 || len(envelope.Data.Accounts) != 0 || envelope.Data.SchemaVersion != 6 {
+	if !envelope.OK || envelope.Data.Count != 0 || len(envelope.Data.Accounts) != 0 || envelope.Data.SchemaVersion != 7 {
 		t.Fatalf("unexpected envelope: %+v", envelope)
 	}
 	if envelope.Meta.RequestID != "req_accounts" {
@@ -728,7 +731,7 @@ func TestAccountListAndShowReadStoredAccountCompactly(t *testing.T) {
 		t.Fatalf("invalid JSON: %v\n%s", err, stdout)
 	}
 	if !envelope.OK || envelope.Data.Account.ID != "acct_0198d704-6c00-7000-8000-000000000001" ||
-		envelope.Data.Account.CredentialScheme != "env" || envelope.Data.SchemaVersion != 6 {
+		envelope.Data.Account.CredentialScheme != "env" || envelope.Data.SchemaVersion != 7 {
 		t.Fatalf("unexpected envelope: %+v", envelope)
 	}
 }
@@ -1550,6 +1553,31 @@ type fakeInboxClient struct {
 	calls    int
 }
 
+type fakeFlagClient struct {
+	results   []transport.FlagMutationResult
+	errors    []error
+	requests  []transport.FlagMutationRequest
+	usernames []string
+}
+
+func (client *fakeFlagClient) UpdateFlags(_ context.Context, auth transport.AuthRequest, request transport.FlagMutationRequest) (transport.FlagMutationResult, error) {
+	client.usernames = append(client.usernames, auth.Username)
+	client.requests = append(client.requests, request)
+	if len(client.errors) > 0 {
+		err := client.errors[0]
+		client.errors = client.errors[1:]
+		if err != nil {
+			return transport.FlagMutationResult{}, err
+		}
+	}
+	if len(client.results) == 0 {
+		return transport.FlagMutationResult{}, errors.New("unexpected flag mutation")
+	}
+	result := client.results[0]
+	client.results = client.results[1:]
+	return result, nil
+}
+
 func (client *fakeInboxClient) FetchInboxPage(ctx context.Context, _ transport.AuthRequest, request transport.InboxFetchRequest, stager blob.Stager) (transport.InboxPage, error) {
 	client.requests = append(client.requests, request)
 	client.calls++
@@ -1616,6 +1644,9 @@ func TestMailSyncIncrementalWorkflowAndCompactBudgets(t *testing.T) {
 		}}, raw: map[uint32]string{21: fixture21, 22: fixture22}},
 		{page: transport.InboxPage{Mailbox: "INBOX", UIDValidity: 100, LastCommittedUID: 23, LastScannedUID: 23, Bootstrap: false, Messages: []transport.FetchedMessage{
 			{UID: 23, InternalDate: time.Date(2026, 8, 6, 4, 23, 0, 0, time.UTC)},
+		}, LocationStates: []transport.LocationState{
+			{UID: 21, Flags: []string{`\Seen`, `$RemoteKeyword`}, ModSequence: 31, Present: true},
+			{UID: 22, Flags: []string{`\Seen`, `\Flagged`}, ModSequence: 32, Present: true},
 		}}, raw: map[uint32]string{23: fixture23}},
 	}}
 	commands.mail = mailClient
@@ -1630,7 +1661,7 @@ func TestMailSyncIncrementalWorkflowAndCompactBudgets(t *testing.T) {
 			t.Fatalf("first sync missing %q: %s", want, stdout)
 		}
 	}
-	if strings.Count(stdout, "\n") != 9 || len(stdout) > 420 {
+	if strings.Count(stdout, "\n") != 11 || len(stdout) > 520 {
 		t.Fatalf("sync budget lines=%d bytes=%d output=%q", strings.Count(stdout, "\n"), len(stdout), stdout)
 	}
 
@@ -1648,10 +1679,14 @@ func TestMailSyncIncrementalWorkflowAndCompactBudgets(t *testing.T) {
 	}
 
 	exitCode, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "sync", "--limit", "2")
-	if exitCode != 0 || stderr != "" || !strings.Contains(stdout, "fetched=1") || !strings.Contains(stdout, "created=1") || !strings.Contains(stdout, "last_uid=23") || strings.Contains(stdout, "more=true") {
+	if exitCode != 0 || stderr != "" || !strings.Contains(stdout, "fetched=1") || !strings.Contains(stdout, "created=1") ||
+		!strings.Contains(stdout, "reconciled=2") || !strings.Contains(stdout, "state_changes=2") ||
+		!strings.Contains(stdout, "last_uid=23") || strings.Contains(stdout, "more=true") {
 		t.Fatalf("second sync code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
 	}
-	if len(mailClient.requests) != 2 || !mailClient.requests[0].Bootstrap || mailClient.requests[0].ExpectedUIDValidity != 0 || mailClient.requests[1].Bootstrap || mailClient.requests[1].ExpectedUIDValidity != 100 || mailClient.requests[1].LastCommittedUID != 22 {
+	if len(mailClient.requests) != 2 || !mailClient.requests[0].Bootstrap || mailClient.requests[0].ExpectedUIDValidity != 0 ||
+		mailClient.requests[1].Bootstrap || mailClient.requests[1].ExpectedUIDValidity != 100 || mailClient.requests[1].LastCommittedUID != 22 ||
+		!reflect.DeepEqual(mailClient.requests[1].ReconcileUIDs, []uint32{22, 21}) {
 		t.Fatalf("sync requests = %+v", mailClient.requests)
 	}
 
@@ -1663,6 +1698,130 @@ func TestMailSyncIncrementalWorkflowAndCompactBudgets(t *testing.T) {
 		if strings.Contains(stdout, forbidden) {
 			t.Fatalf("JSON Inbox exposed %q: %s", forbidden, stdout)
 		}
+	}
+	if !strings.Contains(stdout, `"unknown":["$RemoteKeyword"]`) || !strings.Contains(stdout, `"mod_sequence":31`) {
+		t.Fatalf("reconciled structured flags missing: %s", stdout)
+	}
+}
+
+func TestMailFlagMutationsUseOneLocationAndPersistServerReturnedState(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "state")
+	t.Setenv("ICLOUD_MAIL_FLAG_PASSWORD", "synthetic-mail-flag-secret")
+	commands, _ := newTestAccountCommands()
+	commands.folders = oneInboxFolderClient()
+	mailClient := &fakeInboxClient{results: []fakeInboxPageResult{{
+		page: transport.InboxPage{
+			Mailbox: "INBOX", UIDValidity: 100, LastCommittedUID: 70, LastScannedUID: 70,
+			Bootstrap: true, Messages: []transport.FetchedMessage{{
+				UID: 70, Flags: []string{"$Custom"}, ModSequence: 10,
+				InternalDate: time.Date(2026, 8, 6, 4, 40, 0, 0, time.UTC),
+			}},
+		},
+		raw: map[uint32]string{70: syntheticMailFixture(70, "fixture-70@example.test", "Flag fixture", "State fixture", "")},
+	}}}
+	commands.mail = mailClient
+	flagClient := &fakeFlagClient{results: []transport.FlagMutationResult{
+		{Mailbox: "INBOX", UIDValidity: 100, UID: 70, Flags: []string{`\Seen`, "$Custom"}, ModSequence: 11, Present: true},
+		{Mailbox: "INBOX", UIDValidity: 100, UID: 70, Flags: []string{`\Seen`, `\Flagged`, "$Custom"}, ModSequence: 12, Present: true},
+		{Mailbox: "INBOX", UIDValidity: 100, UID: 70, Flags: []string{`\Flagged`, "$Custom"}, ModSequence: 13, Present: true},
+		{Mailbox: "INBOX", UIDValidity: 100, UID: 70, Flags: []string{"$Custom"}, ModSequence: 14, Present: true},
+		{Mailbox: "INBOX", UIDValidity: 100, UID: 70, Flags: []string{"$Custom"}, ModSequence: 15, Present: true},
+	}}
+	commands.flags = flagClient
+	addAndDiscoverInbox(t, commands, home, "ICLOUD_MAIL_FLAG_PASSWORD")
+	if code, stdout, stderr := runWithAccountCommands(t, commands, "", "--home", home, "mail", "sync"); code != 0 || stderr != "" {
+		t.Fatalf("sync code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	code, stdout, stderr := runWithAccountCommands(t, commands, "", "--home", home, "mail", "inbox", "--json")
+	if code != 0 || stderr != "" {
+		t.Fatalf("inbox code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	var inboxEnvelope struct {
+		Data struct {
+			Messages []struct {
+				ID string `json:"id"`
+			} `json:"messages"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &inboxEnvelope); err != nil || len(inboxEnvelope.Data.Messages) != 1 {
+		t.Fatalf("inbox envelope=%+v err=%v", inboxEnvelope, err)
+	}
+	messageID := inboxEnvelope.Data.Messages[0].ID
+
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "mark-read", messageID, "--folder", "INBOX")
+	if code != 0 || stderr != "" || !compactContainsAll(stdout, "mail-state\n", "action=mark_read", "unread=false", "flagged=false") {
+		t.Fatalf("mark-read code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "flag", messageID, "--json")
+	if code != 0 || stderr != "" || !strings.Contains(stdout, `"action":"flag"`) || !strings.Contains(stdout, `"flagged":true`) || !strings.Contains(stdout, `"unknown":["$Custom"]`) {
+		t.Fatalf("flag code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "mark-unread", messageID)
+	if code != 0 || stderr != "" || !compactContainsAll(stdout, "action=mark_unread", "unread=true", "flagged=true") {
+		t.Fatalf("mark-unread code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "unflag", messageID)
+	if code != 0 || stderr != "" || !compactContainsAll(stdout, "action=unflag", "unread=true", "flagged=false") {
+		t.Fatalf("unflag code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	if len(flagClient.requests) != 4 {
+		t.Fatalf("flag requests = %+v", flagClient.requests)
+	}
+	for index, request := range flagClient.requests {
+		if request.Mailbox != "INBOX" || request.ExpectedUIDValidity != 100 || request.UID != 70 || request.ExpectedModSequence != uint64(10+index) {
+			t.Fatalf("request %d = %+v", index, request)
+		}
+	}
+	if flagClient.requests[0].Flag != `\Seen` || !flagClient.requests[0].Add ||
+		flagClient.requests[1].Flag != `\Flagged` || !flagClient.requests[1].Add ||
+		flagClient.requests[2].Flag != `\Seen` || flagClient.requests[2].Add ||
+		flagClient.requests[3].Flag != `\Flagged` || flagClient.requests[3].Add {
+		t.Fatalf("mutation operations = %+v", flagClient.requests)
+	}
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "message", "show", messageID, "--metadata-only", "--json")
+	if code != 0 || stderr != "" || !strings.Contains(stdout, `"mod_sequence":14`) ||
+		!strings.Contains(stdout, `"unknown":["$Custom"]`) || strings.Contains(stdout, "synthetic-mail-flag-secret") {
+		t.Fatalf("stored state code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "mark-read", messageID, "--json")
+	if code != cli.ExitConflict || stdout != "" || !strings.Contains(stderr, "changed concurrently") || !strings.Contains(stderr, `"mod_sequence":15`) {
+		t.Fatalf("concurrent state code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+}
+
+type staticFolderResolver map[string]folder.Folder
+
+func (resolver staticFolderResolver) Resolve(_ context.Context, _ string, selector string) (folder.Folder, error) {
+	for _, value := range resolver {
+		if selector == value.ID || selector == value.Name || selector == value.WireName || selector == string(value.Kind) {
+			return value, nil
+		}
+	}
+	return folder.Folder{}, folder.ErrNotFound
+}
+
+func TestResolveMutationLocationRequiresUnambiguousEligibleLocation(t *testing.T) {
+	resolver := staticFolderResolver{
+		"inbox":   {ID: "fld_inbox", Name: "INBOX", WireName: "INBOX", Kind: folder.KindInbox, Present: true, Selectable: true},
+		"archive": {ID: "fld_archive", Name: "Archive", WireName: "Archive", Kind: folder.KindArchive, Present: true, Selectable: true},
+	}
+	message := maildomain.Message{Locations: []maildomain.Location{
+		{ID: "loc_inbox", FolderID: "fld_inbox", Present: true},
+		{ID: "loc_archive", FolderID: "fld_archive", Present: true},
+	}}
+	_, _, err := resolveMutationLocation(context.Background(), resolver, "acct_fixture", message, "")
+	var appErr *cli.AppError
+	if !errors.As(err, &appErr) || appErr.Code != cli.ErrorConflict || !errors.Is(err, maildomain.ErrLocationAmbiguous) {
+		t.Fatalf("ambiguous location error = %#v", err)
+	}
+	folderValue, location, err := resolveMutationLocation(context.Background(), resolver, "acct_fixture", message, "Archive")
+	if err != nil || folderValue.ID != "fld_archive" || location.ID != "loc_archive" {
+		t.Fatalf("selected folder=%+v location=%+v err=%v", folderValue, location, err)
+	}
+	message.Locations[1].Flags.Deleted = true
+	folderValue, location, err = resolveMutationLocation(context.Background(), resolver, "acct_fixture", message, "")
+	if err != nil || folderValue.ID != "fld_inbox" || location.ID != "loc_inbox" {
+		t.Fatalf("eligible default folder=%+v location=%+v err=%v", folderValue, location, err)
 	}
 }
 

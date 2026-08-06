@@ -386,10 +386,14 @@ func newTestCertificate(t *testing.T) testCertificate {
 }
 
 type imapServerOptions struct {
-	AuthOK        bool
-	StallGreeting bool
-	ListLines     []string
-	Statuses      map[string]transport.MailboxStatus
+	AuthOK                   bool
+	StallGreeting            bool
+	StallUIDStore            bool
+	CondStore                bool
+	ConditionalStoreConflict bool
+	UIDValidity              uint32
+	ListLines                []string
+	Statuses                 map[string]transport.MailboxStatus
 }
 
 type imapTestServer struct {
@@ -431,7 +435,11 @@ func (server *imapTestServer) handle(conn net.Conn, options imapServerOptions) {
 	}
 	reader := bufio.NewReader(conn)
 	writer := bufio.NewWriter(conn)
-	_, _ = writer.WriteString("* OK [CAPABILITY IMAP4rev1 SPECIAL-USE IDLE UIDPLUS] ready\r\n")
+	capabilities := "IMAP4rev1 SPECIAL-USE IDLE UIDPLUS"
+	if options.CondStore {
+		capabilities += " CONDSTORE"
+	}
+	_, _ = writer.WriteString("* OK [CAPABILITY " + capabilities + "] ready\r\n")
 	_ = writer.Flush()
 	for {
 		line, err := reader.ReadString('\n')
@@ -449,7 +457,7 @@ func (server *imapTestServer) handle(conn net.Conn, options imapServerOptions) {
 		server.mu.Unlock()
 		switch command {
 		case "CAPABILITY":
-			_, _ = writer.WriteString("* CAPABILITY IMAP4rev1 SPECIAL-USE IDLE UIDPLUS\r\n" + tag + " OK capability\r\n")
+			_, _ = writer.WriteString("* CAPABILITY " + capabilities + "\r\n" + tag + " OK capability\r\n")
 		case "LOGIN":
 			username := ""
 			if len(fields) > 2 {
@@ -486,6 +494,32 @@ func (server *imapTestServer) handle(conn net.Conn, options imapServerOptions) {
 			wireName := encodeMailboxWireName(mailbox)
 			_, _ = writer.WriteString(fmt.Sprintf("* STATUS %s (MESSAGES %d UNSEEN %d UIDNEXT %d UIDVALIDITY %d)\r\n%s OK status\r\n",
 				strconv.Quote(wireName), status.Messages, status.Unseen, status.UIDNext, status.UIDValidity, tag))
+		case "SELECT":
+			uidValidity := options.UIDValidity
+			if uidValidity == 0 {
+				uidValidity = 77
+			}
+			response := fmt.Sprintf("* FLAGS (\\Seen \\Flagged)\r\n* OK [PERMANENTFLAGS (\\Seen \\Flagged \\*)] flags\r\n* 1 EXISTS\r\n* OK [UIDVALIDITY %d] validity\r\n* OK [UIDNEXT 2] next\r\n", uidValidity)
+			if options.CondStore {
+				response += "* OK [HIGHESTMODSEQ 12] modseq\r\n"
+			}
+			response += tag + " OK [READ-WRITE] selected\r\n"
+			_, _ = writer.WriteString(response)
+		case "UID":
+			if len(fields) > 2 && strings.EqualFold(fields[2], "STORE") {
+				if options.StallUIDStore {
+					continue
+				}
+				if options.ConditionalStoreConflict {
+					_, _ = writer.WriteString(tag + " NO [MODIFIED 1] conditional store lost a race\r\n")
+					break
+				}
+			}
+			if len(fields) > 2 && strings.EqualFold(fields[2], "FETCH") && options.ConditionalStoreConflict {
+				_, _ = writer.WriteString("* 1 FETCH (UID 1 FLAGS (\\Flagged $Remote) MODSEQ (12))\r\n" + tag + " OK fetch\r\n")
+				break
+			}
+			_, _ = writer.WriteString(tag + " BAD unsupported UID command\r\n")
 		case "LOGOUT":
 			_, _ = writer.WriteString("* BYE logging out\r\n" + tag + " OK logout\r\n")
 			_ = writer.Flush()

@@ -136,6 +136,134 @@ func TestFetchInboxPageAgainstMemoryIMAPServer(t *testing.T) {
 	}
 }
 
+func TestReconcileAndUpdateFlagsAgainstMemoryIMAPServer(t *testing.T) {
+	const (
+		username = "state-user"
+		password = "state-password"
+	)
+	memServer := imapmemserver.New()
+	user := imapmemserver.NewUser(username, password)
+	if err := user.Create("INBOX", nil); err != nil {
+		t.Fatal(err)
+	}
+	raw := rawSyncFixture("state-1@example.test", "State fixture")
+	if _, err := user.Append("INBOX", &literalReader{Reader: strings.NewReader(raw), size: int64(len(raw))}, &imap.AppendOptions{
+		Time: time.Date(2026, 8, 6, 1, 30, 0, 0, time.UTC),
+		Flags: []imap.Flag{
+			imap.FlagSeen, imap.FlagFlagged, imap.FlagAnswered, imap.FlagDraft,
+			imap.Flag("$Forwarded"),
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	memServer.AddUser(user)
+	certificate := newTestCertificate(t)
+	server := imapserver.New(&imapserver.Options{
+		NewSession: func(*imapserver.Conn) (imapserver.Session, *imapserver.GreetingData, error) {
+			return memServer.NewSession(), nil, nil
+		},
+		TLSConfig: &tls.Config{Certificates: []tls.Certificate{certificate.certificate}, MinVersion: tls.VersionTLS12},
+		Caps:      imap.CapSet{imap.CapIMAP4rev1: {}},
+	})
+	listener, err := tls.Listen("tcp", "127.0.0.1:0", serverTLSConfig(certificate))
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = server.Serve(listener) }()
+	defer server.Close()
+	_, port, err := net.SplitHostPort(listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := New(Config{
+		IMAPHost: "127.0.0.1", IMAPPort: port, StageTimeout: 2 * time.Second,
+		TLSConfig: &tls.Config{RootCAs: certificate.pool, ServerName: "localhost", MinVersion: tls.VersionTLS12},
+	})
+	auth := transport.AuthRequest{Username: username, Password: []byte(password)}
+	page, err := client.FetchInboxPage(context.Background(), auth, transport.InboxFetchRequest{
+		Mailbox: "INBOX", Bootstrap: true, Limit: 20,
+	}, blob.New(t.TempDir()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer abortFetched(page.Messages)
+	if len(page.Messages) != 1 || !slices.Contains(page.Messages[0].Flags, `\Seen`) ||
+		!slices.Contains(page.Messages[0].Flags, `\Flagged`) || !slices.Contains(page.Messages[0].Flags, `$Forwarded`) {
+		t.Fatalf("initial flags = %+v", page.Messages)
+	}
+	result, err := client.UpdateFlags(context.Background(), auth, transport.FlagMutationRequest{
+		Mailbox: "INBOX", ExpectedUIDValidity: page.UIDValidity, UID: 1,
+		Flag: `\Seen`, Add: false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Present || slices.Contains(result.Flags, `\Seen`) || !slices.Contains(result.Flags, `\Flagged`) || !slices.Contains(result.Flags, `$Forwarded`) {
+		t.Fatalf("STORE result = %+v", result)
+	}
+	reconciled, err := client.FetchInboxPage(context.Background(), auth, transport.InboxFetchRequest{
+		Mailbox: "INBOX", ExpectedUIDValidity: page.UIDValidity,
+		LastCommittedUID: 1, LastScannedUID: 1, Limit: 20,
+		ReconcileUIDs: []uint32{1},
+	}, blob.New(t.TempDir()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer abortFetched(reconciled.Messages)
+	if len(reconciled.Messages) != 0 || len(reconciled.LocationStates) != 1 ||
+		!reconciled.LocationStates[0].Present || slices.Contains(reconciled.LocationStates[0].Flags, `\Seen`) {
+		t.Fatalf("reconciled page = %+v", reconciled)
+	}
+}
+
+func TestUpdateFlagsTimesOutAtStoreAndDoesNotSearch(t *testing.T) {
+	server := newIMAPServer(t, imapServerOptions{AuthOK: true, UIDValidity: 77, StallUIDStore: true})
+	defer server.Close()
+	client := New(Config{
+		IMAPHost: "127.0.0.1", IMAPPort: server.Port(), StageTimeout: 40 * time.Millisecond,
+		TLSConfig: server.ClientTLSConfig(),
+	})
+	_, err := client.UpdateFlags(context.Background(), transport.AuthRequest{
+		Username: "owner", Password: []byte("synthetic"),
+	}, transport.FlagMutationRequest{
+		Mailbox: "INBOX", ExpectedUIDValidity: 77, UID: 1,
+		Flag: `\Seen`, Add: true,
+	})
+	assertFailure(t, err, transport.StageTimeout, transport.FailureUnavailable)
+	commands := strings.Join(server.Commands(), ",")
+	if !strings.Contains(commands, "UID") || strings.Contains(commands, "SEARCH") || strings.Contains(commands, "APPEND") || strings.Contains(commands, "COPY") {
+		t.Fatalf("mutation commands = %q", commands)
+	}
+}
+
+func TestUpdateFlagsReturnsCurrentStateAfterConditionalStoreConflict(t *testing.T) {
+	server := newIMAPServer(t, imapServerOptions{
+		AuthOK: true, UIDValidity: 77, CondStore: true, ConditionalStoreConflict: true,
+	})
+	defer server.Close()
+	client := New(Config{
+		IMAPHost: "127.0.0.1", IMAPPort: server.Port(), StageTimeout: time.Second,
+		TLSConfig: server.ClientTLSConfig(),
+	})
+	result, err := client.UpdateFlags(context.Background(), transport.AuthRequest{
+		Username: "owner", Password: []byte("synthetic"),
+	}, transport.FlagMutationRequest{
+		Mailbox: "INBOX", ExpectedUIDValidity: 77, UID: 1,
+		ExpectedModSequence: 10, Flag: `\Seen`, Add: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Present || result.ModSequence != 12 || slices.Contains(result.Flags, `\Seen`) ||
+		!slices.Contains(result.Flags, `\Flagged`) || !slices.Contains(result.Flags, `$Remote`) {
+		t.Fatalf("conditional conflict state = %+v", result)
+	}
+	commands := strings.Join(server.Commands(), ",")
+	if strings.Contains(commands, "SEARCH") || !strings.Contains(commands, "UID") {
+		t.Fatalf("conditional conflict commands = %q", commands)
+	}
+}
+
 type literalReader struct {
 	io.Reader
 	size int64

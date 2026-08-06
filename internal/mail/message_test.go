@@ -57,3 +57,41 @@ func TestParsePreviewDecodesCharsetAndCountsAttachmentsWithoutKeepingBodies(t *t
 		t.Fatalf("parsed = %+v", parsed)
 	}
 }
+
+func TestParseLocationFlagsSeparatesCanonicalAndUnknownFlags(t *testing.T) {
+	flags := ParseLocationFlags([]string{
+		`\seen`, `\FLAGGED`, `\Answered`, `\Draft`, `\Deleted`,
+		`$Forwarded`, `$forwarded`, `Custom`, "", "bad\nflag",
+	})
+	if !flags.Seen || !flags.Flagged || !flags.Answered || !flags.Draft || !flags.Deleted {
+		t.Fatalf("canonical flags = %+v", flags)
+	}
+	if !reflect.DeepEqual(flags.Unknown, []string{"$Forwarded", "Custom"}) {
+		t.Fatalf("unknown flags = %v", flags.Unknown)
+	}
+	want := []string{`\Seen`, `\Flagged`, `\Answered`, `\Draft`, `\Deleted`, `$Forwarded`, `Custom`}
+	if got := flags.All(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("all flags = %v want %v", got, want)
+	}
+}
+
+func TestFlagMutationAchievementIsExplicit(t *testing.T) {
+	flags := LocationFlags{Seen: true, Flagged: false}
+	tests := []struct {
+		mutation FlagMutation
+		wantFlag string
+		wantAdd  bool
+		achieved bool
+	}{
+		{FlagMutationMarkRead, `\Seen`, true, true},
+		{FlagMutationMarkUnread, `\Seen`, false, false},
+		{FlagMutationFlag, `\Flagged`, true, false},
+		{FlagMutationUnflag, `\Flagged`, false, true},
+	}
+	for _, test := range tests {
+		flag, add, ok := test.mutation.ProviderFlag()
+		if !ok || flag != test.wantFlag || add != test.wantAdd || test.mutation.Achieved(flags) != test.achieved {
+			t.Fatalf("mutation %q flag=%q add=%v ok=%v achieved=%v", test.mutation, flag, add, ok, test.mutation.Achieved(flags))
+		}
+	}
+}

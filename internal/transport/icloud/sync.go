@@ -29,6 +29,9 @@ func (client *Client) FetchInboxPage(ctx context.Context, auth transport.AuthReq
 	if request.Limit < 1 || request.Limit > 100 {
 		return transport.InboxPage{}, transport.NewFailure(transport.StageIMAPFetch, transport.FailureConfiguration, false, errors.New("message page limit is outside the supported range"))
 	}
+	if len(request.ReconcileUIDs) > 100 {
+		return transport.InboxPage{}, transport.NewFailure(transport.StageIMAPFetch, transport.FailureConfiguration, false, errors.New("reconciliation UID bound exceeds the supported range"))
+	}
 	mailbox := strings.TrimSpace(request.Mailbox)
 	if mailbox == "" {
 		mailbox = "INBOX"
@@ -45,7 +48,7 @@ func (client *Client) FetchInboxPage(ctx context.Context, auth transport.AuthReq
 		return transport.InboxPage{}, classifyFailure(transport.StageTLS, err)
 	}
 	imapClient := imapclient.New(tlsConn, &imapclient.Options{WordDecoder: &mime.WordDecoder{CharsetReader: charset.Reader}})
-	defer imapClient.Close()
+	defer closeIMAPClient(plainConn, imapClient)
 	if err := runWithDeadline(ctx, tlsConn, client.config.StageTimeout, imapClient.WaitGreeting); err != nil {
 		return transport.InboxPage{}, classifyFailure(transport.StageIMAPGreeting, err)
 	}
@@ -63,9 +66,16 @@ func (client *Client) FetchInboxPage(ctx context.Context, auth transport.AuthReq
 	}); err != nil {
 		return transport.InboxPage{}, classifyAuthenticationFailure(transport.StageIMAPAuth, err)
 	}
+	postAuthCaps, err := runValueWithDeadline(ctx, tlsConn, client.config.StageTimeout, func() (imap.CapSet, error) {
+		return imapClient.Capability().Wait()
+	})
+	if err != nil {
+		return transport.InboxPage{}, classifyFailure(transport.StageIMAPCapability, err)
+	}
+	condStore := postAuthCaps.Has(imap.CapCondStore)
 
 	selected, err := runValueWithDeadline(ctx, tlsConn, client.config.StageTimeout, func() (*imap.SelectData, error) {
-		return imapClient.Select(mailbox, &imap.SelectOptions{ReadOnly: true}).Wait()
+		return imapClient.Select(mailbox, &imap.SelectOptions{ReadOnly: true, CondStore: condStore}).Wait()
 	})
 	if err != nil {
 		return transport.InboxPage{}, classifyFailure(transport.StageIMAPSelect, err)
@@ -78,8 +88,18 @@ func (client *Client) FetchInboxPage(ctx context.Context, auth transport.AuthReq
 	if err != nil {
 		return transport.InboxPage{}, err
 	}
-	messages, err := fetchInboxMessages(ctx, tlsConn, imapClient, selection.UIDs, stager, client.config.StageTimeout)
+	messages, err := fetchInboxMessages(ctx, tlsConn, imapClient, selection.UIDs, stager, condStore, client.config.StageTimeout)
 	if err != nil {
+		return transport.InboxPage{}, err
+	}
+	reconcileUIDs, err := normalizeReconcileUIDs(request.ReconcileUIDs, selection.UIDs)
+	if err != nil {
+		abortFetched(messages)
+		return transport.InboxPage{}, transport.NewFailure(transport.StageIMAPFetch, transport.FailureConfiguration, false, err)
+	}
+	locationStates, err := fetchLocationStates(ctx, tlsConn, imapClient, reconcileUIDs, condStore, client.config.StageTimeout)
+	if err != nil {
+		abortFetched(messages)
 		return transport.InboxPage{}, err
 	}
 	if err := runWithDeadline(ctx, tlsConn, client.config.StageTimeout, func() error {
@@ -96,6 +116,7 @@ func (client *Client) FetchInboxPage(ctx context.Context, auth transport.AuthReq
 		MoreAvailable:    selection.MoreAvailable,
 		Bootstrap:        request.Bootstrap,
 		Messages:         messages,
+		LocationStates:   locationStates,
 	}, nil
 }
 
@@ -217,7 +238,7 @@ func selectBootstrapUIDs(ctx context.Context, conn net.Conn, client *imapclient.
 	return inboxUIDSelection{UIDs: uids, LastCommittedUID: last, LastScannedUID: last, MoreAvailable: last < remoteTail}, nil
 }
 
-func fetchInboxMessages(ctx context.Context, conn net.Conn, client *imapclient.Client, uids []imap.UID, stager blob.Stager, timeout time.Duration) ([]transport.FetchedMessage, error) {
+func fetchInboxMessages(ctx context.Context, conn net.Conn, client *imapclient.Client, uids []imap.UID, stager blob.Stager, condStore bool, timeout time.Duration) ([]transport.FetchedMessage, error) {
 	if len(uids) == 0 {
 		return nil, nil
 	}
@@ -229,6 +250,7 @@ func fetchInboxMessages(ctx context.Context, conn net.Conn, client *imapclient.C
 			UID:          true,
 			Envelope:     true,
 			Flags:        true,
+			ModSeq:       condStore,
 			InternalDate: true,
 			RFC822Size:   true,
 			BodySection:  []*imap.FetchItemBodySection{section},
@@ -255,6 +277,8 @@ func fetchInboxMessages(ctx context.Context, conn net.Conn, client *imapclient.C
 					message.InternalDate = value.Time.UTC()
 				case imapclient.FetchItemDataRFC822Size:
 					message.RFC822Size = value.Size
+				case imapclient.FetchItemDataModSeq:
+					message.ModSequence = value.ModSeq
 				case imapclient.FetchItemDataEnvelope:
 					message.Envelope = convertEnvelope(value.Envelope)
 				case imapclient.FetchItemDataBodySection:
@@ -304,6 +328,74 @@ func fetchInboxMessages(ctx context.Context, conn net.Conn, client *imapclient.C
 		ordered = append(ordered, message)
 	}
 	return ordered, nil
+}
+
+func normalizeReconcileUIDs(values []uint32, fetched []imap.UID) ([]imap.UID, error) {
+	excluded := make(map[uint32]struct{}, len(fetched))
+	for _, uid := range fetched {
+		excluded[uint32(uid)] = struct{}{}
+	}
+	seen := make(map[uint32]struct{}, len(values))
+	result := make([]imap.UID, 0, len(values))
+	for _, uid := range values {
+		if uid == 0 {
+			return nil, errors.New("reconciliation UID cannot be zero")
+		}
+		if _, skip := excluded[uid]; skip {
+			continue
+		}
+		if _, duplicate := seen[uid]; duplicate {
+			return nil, errors.New("reconciliation UID cannot be duplicated")
+		}
+		seen[uid] = struct{}{}
+		result = append(result, imap.UID(uid))
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i] < result[j] })
+	return result, nil
+}
+
+func fetchLocationStates(ctx context.Context, conn net.Conn, client *imapclient.Client, uids []imap.UID, condStore bool, timeout time.Duration) ([]transport.LocationState, error) {
+	if len(uids) == 0 {
+		return nil, nil
+	}
+	uidSet := imap.UIDSetNum(uids...)
+	buffers, err := runValueWithDeadline(ctx, conn, timeout, func() ([]*imapclient.FetchMessageBuffer, error) {
+		return client.Fetch(uidSet, &imap.FetchOptions{UID: true, Flags: true, ModSeq: condStore}).Collect()
+	})
+	if err != nil {
+		return nil, classifyFailure(transport.StageIMAPFetch, err)
+	}
+	wanted := make(map[uint32]struct{}, len(uids))
+	for _, uid := range uids {
+		wanted[uint32(uid)] = struct{}{}
+	}
+	byUID := make(map[uint32]transport.LocationState, len(buffers))
+	for _, buffer := range buffers {
+		if buffer == nil || buffer.UID == 0 {
+			return nil, transport.NewFailure(transport.StageIMAPFetch, transport.FailureUnavailable, false, errors.New("provider omitted a reconciled UID"))
+		}
+		uid := uint32(buffer.UID)
+		if _, expected := wanted[uid]; !expected {
+			return nil, transport.NewFailure(transport.StageIMAPFetch, transport.FailureUnavailable, false, errors.New("provider returned an unexpected reconciled UID"))
+		}
+		if _, duplicate := byUID[uid]; duplicate {
+			return nil, transport.NewFailure(transport.StageIMAPFetch, transport.FailureUnavailable, false, errors.New("provider returned a duplicate reconciled UID"))
+		}
+		flags := make([]string, 0, len(buffer.Flags))
+		for _, flag := range buffer.Flags {
+			flags = append(flags, string(flag))
+		}
+		byUID[uid] = transport.LocationState{UID: uid, Flags: flags, ModSequence: buffer.ModSeq, Present: true}
+	}
+	result := make([]transport.LocationState, 0, len(uids))
+	for _, uid := range uids {
+		state, exists := byUID[uint32(uid)]
+		if !exists {
+			state = transport.LocationState{UID: uint32(uid), Present: false}
+		}
+		result = append(result, state)
+	}
+	return result, nil
 }
 
 func convertEnvelope(value *imap.Envelope) transport.MessageEnvelope {

@@ -313,6 +313,45 @@ icloud mail sync status
 
 A missing or corrupt decoded attachment fails before a successful output file is installed. Keep the local state intact and do not replace cached content manually. Stable message, MIME-part, and attachment IDs remain available for the later repair workflow.
 
+## A read or flag command says the location is ambiguous
+
+The message has more than one eligible current provider location. Inspect the local metadata and choose one exact folder:
+
+```bash
+icloud mail message show msg_… --metadata-only --json
+icloud mail mark-read msg_… --folder INBOX
+icloud mail flag msg_… --folder fld_…
+```
+
+Folder selectors can be a stable ID, decoded name, exact provider wire name, or unambiguous kind. The CLI never guesses and has no implicit all-locations mode.
+
+## A message has no eligible current location
+
+The synchronized copies are absent, deleted, stale, or in a folder that is no longer current and selectable. Refresh discovery and Inbox state first:
+
+```bash
+icloud mail folders status
+icloud mail sync
+icloud mail message show msg_… --metadata-only --json
+```
+
+Do not use an old UID from logs or JSON directly. State mutations resolve only from current local location identity.
+
+## A flag update reports a concurrent change
+
+iCloud changed the selected location after the local state was read. The CLI persists the current server-returned flags and returns conflict instead of claiming the requested state was applied. Read the message again and retry only when the new state still needs changing:
+
+```bash
+icloud mail message show msg_… --metadata-only --json
+icloud mail mark-unread msg_… --folder INBOX
+```
+
+When the server exposes a mod-sequence, the CLI uses it for conditional updates. Otherwise it verifies the final state with a targeted UID read. Neither path searches Sent or other mailboxes.
+
+## Sync reports reconciliation but no new messages
+
+That is expected. `fetched=0` means the new-message frontier did not move; `reconciled` counts existing current locations whose flags were checked, while `state_changes` counts real remote differences. The bounded sweep rotates by oldest check time, so repeated syncs eventually cover older local Inbox locations without re-downloading bodies.
+
 ## Raw message content is missing or corrupt
 
 `mail message raw`, raw format, and export verify the local blob's recorded size and SHA-256 address before returning bytes. An unavailable/corrupt error means the metadata remains present but the exact local RFC822 bytes cannot be trusted.

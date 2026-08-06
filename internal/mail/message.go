@@ -19,6 +19,9 @@ var (
 	ErrMessageNotFound    = errors.New("message not found")
 	ErrAttachmentNotFound = errors.New("attachment not found")
 	ErrCheckpointNotFound = errors.New("sync checkpoint not found")
+	ErrLocationNotFound   = errors.New("message location not found")
+	ErrLocationAmbiguous  = errors.New("message has multiple eligible locations")
+	ErrLocationConflict   = errors.New("message location changed concurrently")
 	ErrRepairRequired     = errors.New("mailbox synchronization requires repair")
 	ErrInvalidMessage     = errors.New("message cannot be normalized")
 )
@@ -107,22 +110,138 @@ type Message struct {
 	Content         *NormalizedContent `json:"content,omitempty"`
 }
 
+type LocationFlags struct {
+	Seen     bool     `json:"seen"`
+	Flagged  bool     `json:"flagged"`
+	Answered bool     `json:"answered"`
+	Draft    bool     `json:"draft"`
+	Deleted  bool     `json:"deleted"`
+	Unknown  []string `json:"unknown,omitempty"`
+}
+
+type FlagMutation string
+
+const (
+	FlagMutationMarkRead   FlagMutation = "mark_read"
+	FlagMutationMarkUnread FlagMutation = "mark_unread"
+	FlagMutationFlag       FlagMutation = "flag"
+	FlagMutationUnflag     FlagMutation = "unflag"
+)
+
+func (mutation FlagMutation) ProviderFlag() (string, bool, bool) {
+	switch mutation {
+	case FlagMutationMarkRead:
+		return `\Seen`, true, true
+	case FlagMutationMarkUnread:
+		return `\Seen`, false, true
+	case FlagMutationFlag:
+		return `\Flagged`, true, true
+	case FlagMutationUnflag:
+		return `\Flagged`, false, true
+	default:
+		return "", false, false
+	}
+}
+
+func (mutation FlagMutation) Achieved(flags LocationFlags) bool {
+	switch mutation {
+	case FlagMutationMarkRead:
+		return flags.Seen
+	case FlagMutationMarkUnread:
+		return !flags.Seen
+	case FlagMutationFlag:
+		return flags.Flagged
+	case FlagMutationUnflag:
+		return !flags.Flagged
+	default:
+		return false
+	}
+}
+
+func ParseLocationFlags(values []string) LocationFlags {
+	var result LocationFlags
+	unknown := make([]string, 0, len(values))
+	seenUnknown := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || len(value) > 128 || strings.ContainsFunc(value, unicode.IsControl) {
+			continue
+		}
+		switch strings.ToLower(value) {
+		case `\seen`:
+			result.Seen = true
+		case `\flagged`:
+			result.Flagged = true
+		case `\answered`:
+			result.Answered = true
+		case `\draft`:
+			result.Draft = true
+		case `\deleted`:
+			result.Deleted = true
+		default:
+			key := strings.ToLower(value)
+			if _, exists := seenUnknown[key]; exists {
+				continue
+			}
+			seenUnknown[key] = struct{}{}
+			unknown = append(unknown, value)
+		}
+	}
+	sort.Slice(unknown, func(i, j int) bool {
+		left, right := strings.ToLower(unknown[i]), strings.ToLower(unknown[j])
+		if left == right {
+			return unknown[i] < unknown[j]
+		}
+		return left < right
+	})
+	if len(unknown) > 59 {
+		unknown = unknown[:59]
+	}
+	result.Unknown = unknown
+	return result
+}
+
+func (flags LocationFlags) All() []string {
+	values := make([]string, 0, 5+len(flags.Unknown))
+	if flags.Seen {
+		values = append(values, `\Seen`)
+	}
+	if flags.Flagged {
+		values = append(values, `\Flagged`)
+	}
+	if flags.Answered {
+		values = append(values, `\Answered`)
+	}
+	if flags.Draft {
+		values = append(values, `\Draft`)
+	}
+	if flags.Deleted {
+		values = append(values, `\Deleted`)
+	}
+	values = append(values, ParseLocationFlags(flags.Unknown).Unknown...)
+	return values
+}
+
+func (flags LocationFlags) Eligible() bool { return !flags.Deleted }
+
 type Location struct {
-	ID             string     `json:"id"`
-	MessageID      string     `json:"message_id"`
-	AccountID      string     `json:"account_id"`
-	FolderID       string     `json:"folder_id"`
-	UIDValidity    uint32     `json:"uid_validity"`
-	UID            uint32     `json:"uid"`
-	Flags          []string   `json:"flags,omitempty"`
-	InternalDate   *time.Time `json:"internal_date,omitempty"`
-	RFC822Size     int64      `json:"rfc822_size,omitempty"`
-	RawContentHash string     `json:"-"`
-	RawStorageKey  string     `json:"-"`
-	RawByteSize    int64      `json:"raw_byte_size"`
-	Present        bool       `json:"present"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
+	ID             string        `json:"id"`
+	MessageID      string        `json:"message_id"`
+	AccountID      string        `json:"account_id"`
+	FolderID       string        `json:"folder_id"`
+	UIDValidity    uint32        `json:"uid_validity"`
+	UID            uint32        `json:"uid"`
+	Flags          LocationFlags `json:"flags"`
+	ModSequence    uint64        `json:"mod_sequence,omitempty"`
+	FlagsCheckedAt *time.Time    `json:"flags_checked_at,omitempty"`
+	InternalDate   *time.Time    `json:"internal_date,omitempty"`
+	RFC822Size     int64         `json:"rfc822_size,omitempty"`
+	RawContentHash string        `json:"-"`
+	RawStorageKey  string        `json:"-"`
+	RawByteSize    int64         `json:"raw_byte_size"`
+	Present        bool          `json:"present"`
+	CreatedAt      time.Time     `json:"created_at"`
+	UpdatedAt      time.Time     `json:"updated_at"`
 }
 
 type Checkpoint struct {
@@ -150,6 +269,7 @@ type IngestRecord struct {
 	UIDValidity    uint32
 	UID            uint32
 	Flags          []string
+	ModSequence    uint64
 	InternalDate   time.Time
 	RFC822Size     int64
 	RawContentHash string
@@ -157,6 +277,13 @@ type IngestRecord struct {
 	RawByteSize    int64
 	Parsed         ParsedMessage
 	Content        *NormalizedContent
+}
+
+type ReconcileRecord struct {
+	UID         uint32
+	Flags       LocationFlags
+	ModSequence uint64
+	Present     bool
 }
 
 type CommitPage struct {
@@ -170,12 +297,15 @@ type CommitPage struct {
 	MoreAvailable    bool
 	AttemptedAt      time.Time
 	Records          []IngestRecord
+	Reconciled       []ReconcileRecord
 }
 
 type CommitResult struct {
-	Created    int        `json:"created"`
-	Updated    int        `json:"updated"`
-	Checkpoint Checkpoint `json:"checkpoint"`
+	Created      int        `json:"created"`
+	Updated      int        `json:"updated"`
+	Reconciled   int        `json:"reconciled"`
+	StateChanges int        `json:"state_changes"`
+	Checkpoint   Checkpoint `json:"checkpoint"`
 }
 
 type SyncSummary struct {
@@ -185,6 +315,8 @@ type SyncSummary struct {
 	Fetched       int        `json:"fetched"`
 	Created       int        `json:"created"`
 	Updated       int        `json:"updated"`
+	Reconciled    int        `json:"reconciled"`
+	StateChanges  int        `json:"state_changes"`
 	LastUID       uint32     `json:"last_uid,omitempty"`
 	MoreAvailable bool       `json:"more_available"`
 	Bootstrap     bool       `json:"bootstrap"`
@@ -216,25 +348,7 @@ func BuildIngestRecord(messageID, locationID, accountID, folderID string, uidVal
 }
 
 func NormalizeFlags(values []string) []string {
-	seen := make(map[string]struct{}, len(values))
-	result := make([]string, 0, len(values))
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" || len(value) > 128 || strings.ContainsFunc(value, unicode.IsControl) {
-			continue
-		}
-		key := strings.ToLower(value)
-		if _, exists := seen[key]; exists {
-			continue
-		}
-		seen[key] = struct{}{}
-		result = append(result, value)
-	}
-	sort.Slice(result, func(i, j int) bool { return strings.ToLower(result[i]) < strings.ToLower(result[j]) })
-	if len(result) > 64 {
-		result = result[:64]
-	}
-	return result
+	return ParseLocationFlags(values).All()
 }
 
 func HasFlag(flags []string, target string) bool {

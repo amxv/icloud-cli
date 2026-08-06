@@ -8,6 +8,10 @@ summary: Public command, output, installation, and documentation changes.
 
 ## Unreleased
 
+- Added structured per-location Seen, Flagged, Answered, Draft, Deleted, unknown-flag, mod-sequence, presence, and last-checked state through schema version 7.
+- Added bounded rotating Inbox flag reconciliation so repeated syncs detect remote state changes and missing locations without re-downloading message bodies or starving older local messages.
+- Added location-aware `mail mark-read`, `mark-unread`, `flag`, and `unflag` commands with explicit folder selection for ambiguous messages, server-returned state persistence, conditional-race detection, targeted verification, and cancellation-safe IMAP STORE timeouts.
+- Corrected unread and flagged summaries to derive from every eligible current location rather than mutable counters or the last location read, while excluding deleted or absent copies and preserving unknown provider flags.
 - Added first-class inbound attachment records with stable IDs, MIME-part links, decoded sizes and hashes, media parameters, inline/content-ID metadata, and explicit availability state through schema version 6.
 - Added `icloud mail attachments list`, verified single-file save, binary stdout opt-in, and atomic `save-all` with safe Unicode filenames, deterministic collision suffixes, no-clobber defaults, and rollback on batch failure.
 - Preserved exact raw RFC822 authority and stable message, location, MIME-part, and attachment identities while existing schema-5 messages hydrate decoded attachments once from trusted local content.

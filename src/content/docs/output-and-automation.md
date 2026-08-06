@@ -35,7 +35,7 @@ checked_at=2026-08-06T03:00:00Z
 
 Each compact result is a small vertical block. The first line names the result, the next line carries its stable identity plus the first field when present, and every remaining field appears on its own line. A blank line separates consecutive blocks. Default output still omits empty values, ANSI color, box-drawing tables, JSON punctuation, and repeated prose. Successful output goes to stdout.
 
-`account list`, `mail inbox`, attachment lists, and checkpoint lists return 20 records by default, accept `--limit` through 100, and report `more=true` when truncated. Mutation and export commands return an outcome and stable IDs rather than echoing submitted names, email addresses, paths, or passwords.
+`account list`, `mail inbox`, attachment lists, and checkpoint lists return 20 records by default, accept `--limit` through 100, and report `more=true` when truncated. Sync also reconciles at most 100 least-recently checked current locations per run. Mutation and export commands return an outcome and stable IDs rather than echoing submitted names, email addresses, subjects, paths, or passwords.
 
 ## JSON is explicit
 
@@ -46,10 +46,10 @@ icloud --request-id account-01 account show --json
 ```
 
 ```json
-{"ok":true,"data":{"account":{"id":"acct_…","name":"Personal","email":"owner@icloud.com","imap_username":"owner","status":"connected","default":true,"credential_scheme":"keyring","imap_capabilities":["IDLE","IMAP4REV1"],"smtp_capabilities":["AUTH"],"last_healthy_at":"2026-08-06T03:00:00Z","last_tested_at":"2026-08-06T03:00:00Z","created_at":"2026-08-06T02:30:00Z","updated_at":"2026-08-06T03:00:00Z"},"schema_version":6},"meta":{"request_id":"account-01"}}
+{"ok":true,"data":{"account":{"id":"acct_…","name":"Personal","email":"owner@icloud.com","imap_username":"owner","status":"connected","default":true,"credential_scheme":"keyring","imap_capabilities":["IDLE","IMAP4REV1"],"smtp_capabilities":["AUTH"],"last_healthy_at":"2026-08-06T03:00:00Z","last_tested_at":"2026-08-06T03:00:00Z","created_at":"2026-08-06T02:30:00Z","updated_at":"2026-08-06T03:00:00Z"},"schema_version":7},"meta":{"request_id":"account-01"}}
 ```
 
-Account lifecycle, credential, validation, doctor, folder discovery/policy, Inbox sync and reads, message reads, attachment list/save/save-all, account reads, `version`, and `capabilities` support JSON when stdout is not carrying native bytes. Folder list/show/status also support bounded `--verbose` provider metadata. Completion and man generation intentionally return native text formats.
+Account lifecycle, credential, validation, doctor, folder discovery/policy, Inbox sync and reads, message reads and state mutations, attachment list/save/save-all, account reads, `version`, and `capabilities` support JSON when stdout is not carrying native bytes. Folder list/show/status also support bounded `--verbose` provider metadata. Completion and man generation intentionally return native text formats.
 
 Credential metadata JSON omits internal IDs, keyring references, environment names, file paths, and values. Error envelopes omit wrapped provider and storage causes.
 
@@ -117,7 +117,7 @@ Help remains on stdout. A failed command never writes a success payload to stdou
 --request-id <id>     correlate structured output
 ```
 
-Version, capabilities, completion, man, and help remain disk-free. Account reads, `mail inbox`, `mail message`, attachment reads, sync status, checkpoint reads, and local `doctor` never prompt or contact Apple. Mutations and live validation use the same global timeout; streaming message and attachment reads also honor the command timeout.
+Version, capabilities, completion, man, and help remain disk-free. Account reads, `mail inbox`, `mail message`, attachment reads, sync status, checkpoint reads, and local `doctor` never prompt or contact Apple. Sync, read/flag mutations, and live validation contact Apple and use the same global timeout; streaming message and attachment reads also honor the command timeout.
 
 ## Message content is explicit
 
@@ -153,3 +153,14 @@ icloud mail attachments save att_… --output - --binary > document.pdf
 ```
 
 The native stdout mode contains only attachment bytes. File and batch success output remains concise and omits the destination path. `save-all` stages the complete supported set before installing it, so automation does not need to infer whether a partial batch succeeded.
+
+## Read and flag mutations are location-scoped
+
+```bash
+icloud mail mark-read msg_… --json
+icloud mail flag msg_… --folder INBOX --json
+```
+
+Success JSON identifies the exact stable message, location, and folder plus UID validity, UID, structured canonical and unknown flags, provider mod-sequence when available, last flag-check time, and recomputed message summaries. Compact output intentionally omits provider flags and subjects.
+
+Several eligible locations return a conflict until `--folder` selects one. A conditional provider race also returns conflict, but the response details contain the current server-returned location state that was persisted locally. Automation should read fresh metadata and decide whether to retry; it should not treat conflict as partial success or broaden the operation to other locations.
