@@ -19,7 +19,15 @@ The first run downloads the newest Inbox page into the selected private state ro
 Expected shape:
 
 ```text
-mail-sync fld_… account=acct_… folder=INBOX fetched=20 created=20 updated=0 last_uid=184 more=true bootstrap=true
+mail-sync
+fld_… account=acct_…
+folder=INBOX
+fetched=20
+created=20
+updated=0
+last_uid=184
+more=true
+bootstrap=true
 ```
 
 `more=true` means another bounded page is available. Repeat the command until it reports `more=false`:
@@ -44,9 +52,18 @@ icloud mail inbox --limit 50
 Each compact record contains the stable message ID, sender, subject, best available date, unread or flagged state when true, attachment count when nonzero, and a bounded decoded-text preview:
 
 ```text
-message msg_… from=sender@example.com subject="Project update" at=2026-08-06T08:30:00Z unread=true attachments=1 snippet="Here is the latest update…"
+message
+msg_… from=sender@example.com
+subject="Project update"
+at=2026-08-06T08:30:00Z
+unread=true
+attachments=1
+snippet="Here is the latest update…"
 
-inbox account=acct_… count=1 more=false
+inbox
+account=acct_…
+count=1
+more=false
 ```
 
 `mail inbox` reads only local state. It works offline and never marks a message read. Full bodies, HTML, raw MIME, headers, and attachment downloads arrive through later explicit commands; the compact Inbox intentionally stays small.
@@ -62,7 +79,15 @@ icloud mail sync
 A no-change run is still a successful result:
 
 ```text
-mail-sync fld_… account=acct_… folder=INBOX fetched=0 created=0 updated=0 last_uid=184 more=false bootstrap=false
+mail-sync
+fld_… account=acct_…
+folder=INBOX
+fetched=0
+created=0
+updated=0
+last_uid=184
+more=false
+bootstrap=false
 ```
 
 Interrupted downloads are safe to retry. The CLI advances its durable frontier only after the whole bounded page and its local metadata commit together, so a failed message cannot be silently skipped.
@@ -74,7 +99,17 @@ icloud mail sync status
 ```
 
 ```text
-sync-status chk_… account=acct_… folder=INBOX folder_id=fld_… state=idle uid_validity=1 committed=184 scanned=184 bootstrap=true more=false last_success=2026-08-06T08:31:00Z
+sync-status
+chk_… account=acct_…
+folder=INBOX
+folder_id=fld_…
+state=idle
+uid_validity=1
+committed=184
+scanned=184
+bootstrap=true
+more=false
+last_success=2026-08-06T08:31:00Z
 ```
 
 Useful fields:

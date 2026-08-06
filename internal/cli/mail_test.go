@@ -35,7 +35,7 @@ func TestInboxCompactTwentyRecordBudgetAndPrivacy(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := output.String()
-	if lines := strings.Count(text, "\n"); lines != 41 {
+	if lines := strings.Count(text, "\n"); lines != 156 {
 		t.Fatalf("lines = %d", lines)
 	}
 	if len(text) > 13000 {
@@ -45,6 +45,9 @@ func TestInboxCompactTwentyRecordBudgetAndPrivacy(t *testing.T) {
 		t.Fatalf("compact Inbox exposed private/internal metadata: %q", text)
 	}
 	for _, line := range strings.Split(strings.TrimSuffix(text, "\n"), "\n") {
+		if line == "" {
+			continue
+		}
 		if len(line) > 620 {
 			t.Fatalf("line exceeds byte budget: %d", len(line))
 		}

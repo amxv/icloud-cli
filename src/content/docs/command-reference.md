@@ -256,7 +256,8 @@ icloud version --json
 Compact output:
 
 ```text
-version 0.1.0
+version
+0.1.0
 ```
 
 ## `icloud capabilities`
@@ -269,7 +270,20 @@ icloud capabilities --json
 Compact output:
 
 ```text
-capabilities command=icloud version=0.1.0 schema=4 account_mode=validated_lifecycle credentials=keyring,env,file network_validation=true diagnostics=true mail_folders=true mail_sync=true default_output=compact json=true completion=bash,zsh,fish,powershell man=true
+capabilities
+command=icloud
+version=0.1.0
+schema=4
+account_mode=validated_lifecycle
+credentials=keyring,env,file
+network_validation=true
+diagnostics=true
+mail_folders=true
+mail_sync=true
+default_output=compact
+json=true
+completion=bash,zsh,fish,powershell
+man=true
 ```
 
 The schema field reports the installed local-state migration version without opening state.
@@ -295,7 +309,8 @@ icloud man --output-dir ./man
 Directory mode returns:
 
 ```text
-man generated dir=man
+man
+generated dir=man
 ```
 
 ## `icloud help`
@@ -312,4 +327,4 @@ Help goes to stdout. Usage failures go to stderr and exit `2`.
 
 Every account and credential lifecycle command above, `account test`, every folder command, Inbox sync/read/status/checkpoints, `doctor`, `version`, and `capabilities` supports `--json`. Validation, doctor, and folder reads/status support bounded `--verbose` detail where advertised. Completion and man generation retain native text. No command silently accepts unsupported JSONL, full-body, HTML, raw, header, or body-only modes. The current Inbox read is intentionally preview-only.
 
-Compact records keep all related fields on one line. Commands that return several records or a final summary place one blank separator line between them; single-record output and one-line errors remain unchanged.
+Compact output uses vertical blocks: result type first, stable identity plus the first field next when present, then one remaining field per line. A blank line separates consecutive records or a final summary. Errors use the same block shape on stderr.

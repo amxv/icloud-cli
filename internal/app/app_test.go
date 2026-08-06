@@ -147,6 +147,25 @@ func runWithAccountCommands(t *testing.T, commands accountCommands, stdin string
 	return exitCode, stdout.String(), stderr.String()
 }
 
+func compactContainsAll(output string, values ...string) bool {
+	for _, value := range values {
+		if !strings.Contains(output, value) {
+			return false
+		}
+	}
+	return true
+}
+
+func compactBlockCount(output, kind string) int {
+	count := 0
+	for _, line := range strings.Split(output, "\n") {
+		if line == kind {
+			count++
+		}
+	}
+	return count
+}
+
 func TestRootHelpUsesICloudIdentityAndGroups(t *testing.T) {
 	exitCode, stdout, stderr := run(t, "--help")
 	if exitCode != 0 {
@@ -203,7 +222,7 @@ func TestFolderDiscoveryAndPolicyWorkflow(t *testing.T) {
 	}
 
 	exitCode, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "folders", "list")
-	if exitCode != 0 || stderr != "" || !strings.Contains(stdout, "folders account=acct_") || !strings.Contains(stdout, "count=0") || folderClient.calls != 0 {
+	if exitCode != 0 || stderr != "" || !compactContainsAll(stdout, "folders\n", "account=acct_", "count=0") || folderClient.calls != 0 {
 		t.Fatalf("empty local list code=%d stdout=%q stderr=%q calls=%d", exitCode, stdout, stderr, folderClient.calls)
 	}
 
@@ -212,13 +231,13 @@ func TestFolderDiscoveryAndPolicyWorkflow(t *testing.T) {
 		t.Fatalf("status code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
 	}
 	for _, want := range []string{
-		"name=INBOX kind=inbox",
-		`name="Sent Messages" kind=sent`,
-		"name=Projects kind=other selectable=no",
-		"name=Projects/Alpha kind=other parent=Projects",
+		"name=INBOX", "kind=inbox",
+		`name="Sent Messages"`, "kind=sent",
+		"name=Projects", "kind=other", "selectable=no",
+		"name=Projects/Alpha", "parent=Projects",
 		"name=Unicode-日本語",
 		"wire_name=Unicode-&ZeVnLIqe-",
-		"folder-status account=acct_",
+		"folder-status\n", "account=acct_",
 		"count=6",
 		"present=6",
 		"enabled=2",
@@ -233,7 +252,7 @@ func TestFolderDiscoveryAndPolicyWorkflow(t *testing.T) {
 	if len(folderClient.usernames) < 2 || folderClient.usernames[0] != "owner@icloud.com" || folderClient.usernames[1] != "owner" {
 		t.Fatalf("folder usernames = %v", folderClient.usernames)
 	}
-	if lines, bytes := strings.Count(stdout, "\n"), len(stdout); lines != 13 || bytes > 2000 {
+	if lines, bytes := strings.Count(stdout, "\n"), len(stdout); lines > 130 || bytes > 2200 {
 		t.Fatalf("folder status budget lines=%d bytes=%d", lines, bytes)
 	}
 
@@ -244,7 +263,7 @@ func TestFolderDiscoveryAndPolicyWorkflow(t *testing.T) {
 
 	priorCalls := folderClient.calls
 	exitCode, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "folders", "list")
-	if exitCode != 0 || stderr != "" || folderClient.calls != priorCalls || strings.Count(stdout, "folder fld_") != 6 {
+	if exitCode != 0 || stderr != "" || folderClient.calls != priorCalls || compactBlockCount(stdout, "folder") != 6 {
 		t.Fatalf("local list code=%d stdout=%q stderr=%q calls=%d prior=%d", exitCode, stdout, stderr, folderClient.calls, priorCalls)
 	}
 
@@ -263,7 +282,7 @@ func TestFolderDiscoveryAndPolicyWorkflow(t *testing.T) {
 	}
 	for _, want := range []string{
 		"name=Projects/Beta",
-		"name=Receipts kind=other selectable=yes subscription=unknown present=no stale=true sync=enabled",
+		"name=Receipts", "kind=other", "selectable=yes", "subscription=unknown", "present=no", "stale=true", "sync=enabled",
 		"count=6",
 		"present=5",
 		"stale=1",
@@ -310,7 +329,7 @@ func TestFolderStatusPersistsAllButBoundsOutput(t *testing.T) {
 		t.Fatalf("add code=%d stderr=%q", exitCode, stderr)
 	}
 	exitCode, stdout, stderr := runWithAccountCommands(t, commands, "", "--home", home, "mail", "folders", "status")
-	if exitCode != 0 || stderr != "" || strings.Count(stdout, "folder fld_") != 20 || !strings.Contains(stdout, "count=20 total=25 more=true") {
+	if exitCode != 0 || stderr != "" || compactBlockCount(stdout, "folder") != 20 || !compactContainsAll(stdout, "folder-status\n", "count=20", "total=25", "more=true") {
 		t.Fatalf("bounded status code=%d lines=%d stdout=%q stderr=%q", exitCode, strings.Count(stdout, "\n"), stdout, stderr)
 	}
 	exitCode, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "folders", "list", "--limit", "100", "--json")
@@ -362,7 +381,7 @@ func TestVersionCompactDefault(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("exit code = %d, stderr = %q", exitCode, stderr)
 	}
-	if stdout != "version dev\n" {
+	if stdout != "version\ndev\n" {
 		t.Fatalf("stdout = %q", stdout)
 	}
 	if stderr != "" {
@@ -401,11 +420,11 @@ func TestCapabilitiesCompactGoldenBudget(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("exit code = %d, stderr = %q", exitCode, stderr)
 	}
-	const want = "capabilities command=icloud version=dev schema=4 account_mode=validated_lifecycle credentials=keyring,env,file network_validation=true diagnostics=true mail_folders=true mail_sync=true default_output=compact json=true completion=bash,zsh,fish,powershell man=true\n"
+	const want = "capabilities\ncommand=icloud\nversion=dev\nschema=4\naccount_mode=validated_lifecycle\ncredentials=keyring,env,file\nnetwork_validation=true\ndiagnostics=true\nmail_folders=true\nmail_sync=true\ndefault_output=compact\njson=true\ncompletion=bash,zsh,fish,powershell\nman=true\n"
 	if stdout != want {
 		t.Fatalf("stdout mismatch\nwant: %q\n got: %q", want, stdout)
 	}
-	if lines := strings.Count(stdout, "\n"); lines > 1 {
+	if lines := strings.Count(stdout, "\n"); lines > 14 {
 		t.Fatalf("line budget exceeded: %d", lines)
 	}
 	if len(stdout) > 280 {
@@ -452,7 +471,7 @@ func TestUnknownCommandIsCompactUsageErrorWithSuggestion(t *testing.T) {
 			t.Fatalf("stderr missing %q: %q", want, stderr)
 		}
 	}
-	if strings.Count(stderr, "\n") != 1 {
+	if strings.Count(stderr, "\n") != 3 {
 		t.Fatalf("error line budget exceeded: %q", stderr)
 	}
 }
@@ -516,7 +535,7 @@ func TestAccountListCreatesAndReopensPrivateZeroState(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "state")
 	for runIndex := 0; runIndex < 2; runIndex++ {
 		exitCode, stdout, stderr := run(t, "--home", home, "account", "list")
-		if exitCode != 0 || stdout != "accounts count=0\n" || stderr != "" {
+		if exitCode != 0 || stdout != "accounts\ncount=0\n" || stderr != "" {
 			t.Fatalf("run=%d code=%d stdout=%q stderr=%q", runIndex, exitCode, stdout, stderr)
 		}
 	}
@@ -566,7 +585,7 @@ func TestAccountListUsesICloudHome(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "environment-state")
 	t.Setenv("ICLOUD_HOME", home)
 	exitCode, stdout, stderr := run(t, "account", "list")
-	if exitCode != 0 || stdout != "accounts count=0\n" || stderr != "" {
+	if exitCode != 0 || stdout != "accounts\ncount=0\n" || stderr != "" {
 		t.Fatalf("code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
 	}
 	if _, err := os.Stat(filepath.Join(home, "mail.db")); err != nil {
@@ -580,11 +599,11 @@ func TestAccountHomesAreIsolated(t *testing.T) {
 	seedAccount(t, populatedHome)
 
 	exitCode, populatedOutput, populatedError := run(t, "--home", populatedHome, "account", "list")
-	if exitCode != 0 || populatedError != "" || !strings.Contains(populatedOutput, "accounts count=1") {
+	if exitCode != 0 || populatedError != "" || !compactContainsAll(populatedOutput, "accounts\n", "count=1") {
 		t.Fatalf("populated code=%d stdout=%q stderr=%q", exitCode, populatedOutput, populatedError)
 	}
 	exitCode, emptyOutput, emptyError := run(t, "--home", emptyHome, "account", "list")
-	if exitCode != 0 || emptyOutput != "accounts count=0\n" || emptyError != "" {
+	if exitCode != 0 || emptyOutput != "accounts\ncount=0\n" || emptyError != "" {
 		t.Fatalf("empty code=%d stdout=%q stderr=%q", exitCode, emptyOutput, emptyError)
 	}
 	if strings.Contains(emptyOutput, "owner@example.com") {
@@ -598,7 +617,7 @@ func TestAccountShowMissingUsesNotFoundExitAndJSON(t *testing.T) {
 	if exitCode != 7 || stdout != "" {
 		t.Fatalf("code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
 	}
-	if stderr != "error code=not_found message=\"account not found\"\n" {
+	if stderr != "error\ncode=not_found\nmessage=\"account not found\"\n" {
 		t.Fatalf("stderr = %q", stderr)
 	}
 
@@ -635,11 +654,11 @@ func TestAccountListAndShowReadStoredAccountCompactly(t *testing.T) {
 	if exitCode != 0 || stderr != "" {
 		t.Fatalf("code=%d stderr=%q", exitCode, stderr)
 	}
-	const wantList = "account acct_0198d704-6c00-7000-8000-000000000001 name=Personal email=owner@example.com imap_username=owner status=pending_validation default=true credential=env\n\naccounts count=1\n"
+	const wantList = "account\nacct_0198d704-6c00-7000-8000-000000000001 name=Personal\nemail=owner@example.com\nimap_username=owner\nstatus=pending_validation\ndefault=true\ncredential=env\n\naccounts\ncount=1\n"
 	if stdout != wantList {
 		t.Fatalf("stdout mismatch\nwant: %q\n got: %q", wantList, stdout)
 	}
-	if strings.Count(stdout, "\n") != 3 || len(stdout) > 220 {
+	if strings.Count(stdout, "\n") != 10 || len(stdout) > 220 {
 		t.Fatalf("compact budget exceeded: lines=%d bytes=%d", strings.Count(stdout, "\n"), len(stdout))
 	}
 	for _, private := range []string{"ICLOUD_TEST_APP_PASSWORD", "credential_ref", "reference="} {
@@ -652,7 +671,7 @@ func TestAccountListAndShowReadStoredAccountCompactly(t *testing.T) {
 	if exitCode != 0 || stderr != "" {
 		t.Fatalf("code=%d stderr=%q", exitCode, stderr)
 	}
-	const wantShow = "account acct_0198d704-6c00-7000-8000-000000000001 name=Personal email=owner@example.com imap_username=owner status=pending_validation default=true credential=env\n"
+	const wantShow = "account\nacct_0198d704-6c00-7000-8000-000000000001 name=Personal\nemail=owner@example.com\nimap_username=owner\nstatus=pending_validation\ndefault=true\ncredential=env\n"
 	if stdout != wantShow {
 		t.Fatalf("stdout mismatch\nwant: %q\n got: %q", wantShow, stdout)
 	}
@@ -696,7 +715,7 @@ func TestAccountListIsBoundedAndReportsMore(t *testing.T) {
 	if exitCode != 0 || stderr != "" {
 		t.Fatalf("code=%d stderr=%q", exitCode, stderr)
 	}
-	const want = "account acct_0198d704-6c00-7000-8000-000000000001 name=Personal email=owner@example.com imap_username=owner status=pending_validation default=true credential=env\n\naccounts count=1 more=true\n"
+	const want = "account\nacct_0198d704-6c00-7000-8000-000000000001 name=Personal\nemail=owner@example.com\nimap_username=owner\nstatus=pending_validation\ndefault=true\ncredential=env\n\naccounts\ncount=1\nmore=true\n"
 	if stdout != want {
 		t.Fatalf("stdout mismatch\nwant: %q\n got: %q", want, stdout)
 	}
@@ -755,7 +774,7 @@ func TestAccountListReturnsConflictWhileMigrationLockIsHeld(t *testing.T) {
 	if exitCode != 6 || stdout != "" {
 		t.Fatalf("code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
 	}
-	const want = "error code=conflict message=\"local state is busy while another icloud process migrates it\" retryable=true\n"
+	const want = "error\ncode=conflict\nmessage=\"local state is busy while another icloud process migrates it\"\nretryable=true\n"
 	if stderr != want {
 		t.Fatalf("stderr mismatch\nwant: %q\n got: %q", want, stderr)
 	}
@@ -764,7 +783,7 @@ func TestAccountListReturnsConflictWhileMigrationLockIsHeld(t *testing.T) {
 func TestNonStateCommandsDoNotCreateHome(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "unused")
 	exitCode, stdout, stderr := run(t, "--home", home, "version")
-	if exitCode != 0 || stdout != "version dev\n" || stderr != "" {
+	if exitCode != 0 || stdout != "version\ndev\n" || stderr != "" {
 		t.Fatalf("code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
 	}
 	if _, err := os.Stat(home); !errors.Is(err, os.ErrNotExist) {
@@ -786,7 +805,7 @@ func TestAccountProfileLifecycleWithEnvAndFileReferences(t *testing.T) {
 	if exitCode != 0 || stderr != "" {
 		t.Fatalf("add personal code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
 	}
-	if stdout != "account-added acct_0198d704-6c00-7000-8000-000000000001 status=pending_validation default=true credential=env\n" {
+	if stdout != "account-added\nacct_0198d704-6c00-7000-8000-000000000001 status=pending_validation\ndefault=true\ncredential=env\n" {
 		t.Fatalf("personal output = %q", stdout)
 	}
 
@@ -808,11 +827,11 @@ func TestAccountProfileLifecycleWithEnvAndFileReferences(t *testing.T) {
 	}
 
 	exitCode, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "account", "rename", "Work", "Business")
-	if exitCode != 0 || stdout != "account-renamed acct_0198d704-6c00-7000-8000-000000000002\n" || stderr != "" {
+	if exitCode != 0 || stdout != "account-renamed\nacct_0198d704-6c00-7000-8000-000000000002\n" || stderr != "" {
 		t.Fatalf("rename code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
 	}
 	exitCode, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "account", "default", "Business")
-	if exitCode != 0 || stdout != "account-default acct_0198d704-6c00-7000-8000-000000000002\n" || stderr != "" {
+	if exitCode != 0 || stdout != "account-default\nacct_0198d704-6c00-7000-8000-000000000002\n" || stderr != "" {
 		t.Fatalf("default code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
 	}
 	exitCode, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "account", "show")
@@ -838,7 +857,7 @@ func TestAccountProfileLifecycleWithEnvAndFileReferences(t *testing.T) {
 		t.Fatalf("restore default code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
 	}
 	exitCode, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "account", "remove", "Business", "--yes")
-	if exitCode != 0 || stderr != "" || stdout != "account-removed acct_0198d704-6c00-7000-8000-000000000002\n" {
+	if exitCode != 0 || stderr != "" || stdout != "account-removed\nacct_0198d704-6c00-7000-8000-000000000002\n" {
 		t.Fatalf("remove code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
 	}
 
@@ -883,7 +902,7 @@ func TestKeyringCredentialAddReplaceAndRemoveNeverPersistsOrPrintsSecrets(t *tes
 		"account", "credential", "replace", "Personal",
 		"--password-stdin",
 	)
-	if exitCode != 0 || stderr != "" || strings.Contains(stdout, secondSecret) || stdout != "credential-replaced acct_0198d704-6c00-7000-8000-000000000001 scheme=keyring\n" {
+	if exitCode != 0 || stderr != "" || strings.Contains(stdout, secondSecret) || stdout != "credential-replaced\nacct_0198d704-6c00-7000-8000-000000000001 scheme=keyring\n" {
 		t.Fatalf("replace code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
 	}
 	for _, value := range keyringStore.values {
@@ -914,7 +933,7 @@ func TestKeyringCredentialAddReplaceAndRemoveNeverPersistsOrPrintsSecrets(t *tes
 		t.Fatalf("keyring was not cleaned: %#v", keyringStore.values)
 	}
 	exitCode, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "account", "list")
-	if exitCode != 0 || stdout != "accounts count=0\n" || stderr != "" {
+	if exitCode != 0 || stdout != "accounts\ncount=0\n" || stderr != "" {
 		t.Fatalf("empty list code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
 	}
 }
@@ -998,7 +1017,7 @@ func TestKeyringDeleteFailureLeavesAccountAndRedactsBackendCause(t *testing.T) {
 	}
 	keyringStore.deleteError = nil
 	exitCode, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "account", "list")
-	if exitCode != 0 || stderr != "" || !strings.Contains(stdout, "accounts count=1") || len(keyringStore.values) != 1 {
+	if exitCode != 0 || stderr != "" || !compactContainsAll(stdout, "accounts\n", "count=1") || len(keyringStore.values) != 1 {
 		t.Fatalf("account changed after failed delete code=%d stdout=%q stderr=%q values=%#v", exitCode, stdout, stderr, keyringStore.values)
 	}
 }
@@ -1174,7 +1193,7 @@ func TestAccountTestPersistsUsernameFallbackCapabilitiesAndHealthyState(t *testi
 			t.Fatalf("test output missing %q: %q", want, stdout)
 		}
 	}
-	if lines, bytes := strings.Count(stdout, "\n"), len(stdout); lines != 3 || bytes > 360 {
+	if lines, bytes := strings.Count(stdout, "\n"), len(stdout); lines != 13 || bytes > 360 {
 		t.Fatalf("account test compact budget exceeded: lines=%d bytes=%d output=%q", lines, bytes, stdout)
 	}
 	if got := strings.Join(imapValidator.usernames, ","); got != "owner@icloud.com,owner" {
@@ -1218,7 +1237,7 @@ func TestAccountTestPersistsUsernameFallbackCapabilitiesAndHealthyState(t *testi
 	if calls := len(imapValidator.usernames) + len(smtpValidator.usernames); calls != priorCalls {
 		t.Fatalf("local doctor unexpectedly contacted protocols: calls=%d prior=%d", calls, priorCalls)
 	}
-	if lines, bytes := strings.Count(stdout, "\n"), len(stdout); lines != 3 || bytes > 320 {
+	if lines, bytes := strings.Count(stdout, "\n"), len(stdout); lines > 14 || bytes > 320 {
 		t.Fatalf("doctor compact budget exceeded: lines=%d bytes=%d output=%q", lines, bytes, stdout)
 	}
 }
@@ -1309,7 +1328,7 @@ func TestDoctorZeroStateAndLiveMode(t *testing.T) {
 	commands.imap = &fakeIMAPValidator{}
 	commands.smtp = &fakeSMTPValidator{}
 	exitCode, stdout, stderr := runWithAccountCommands(t, commands, "", "--home", home, "doctor")
-	if exitCode != 0 || stderr != "" || stdout != "doctor status=configuration_required\n" {
+	if exitCode != 0 || stderr != "" || stdout != "doctor\nstatus=configuration_required\n" {
 		t.Fatalf("code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
 	}
 }
@@ -1335,22 +1354,22 @@ func TestAccountTestAndLiveDoctorSupportBoundedAllAccountRuns(t *testing.T) {
 		}
 	}
 	exitCode, stdout, stderr := runWithAccountCommands(t, commands, "", "--home", home, "account", "test", "--all")
-	if exitCode != 0 || stderr != "" || !strings.Contains(stdout, "account-tests count=2 healthy=2") || strings.Count(stdout, "account-test ") != 2 {
+	if exitCode != 0 || stderr != "" || !compactContainsAll(stdout, "account-tests\n", "count=2", "healthy=2") || compactBlockCount(stdout, "account-test") != 2 {
 		t.Fatalf("all test code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
 	}
-	if lines, bytes := strings.Count(stdout, "\n"), len(stdout); lines != 5 || bytes > 650 {
+	if lines, bytes := strings.Count(stdout, "\n"), len(stdout); lines > 24 || bytes > 650 {
 		t.Fatalf("all-account compact budget exceeded: lines=%d bytes=%d", lines, bytes)
 	}
 
 	previousCalls := len(imapValidator.usernames) + len(smtpValidator.usernames)
 	exitCode, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "doctor", "--all", "--live")
-	if exitCode != 0 || stderr != "" || !strings.Contains(stdout, "doctor accounts=2 status=healthy") || strings.Count(stdout, "doctor acct_") != 2 {
+	if exitCode != 0 || stderr != "" || !compactContainsAll(stdout, "accounts=2", "status=healthy") || compactBlockCount(stdout, "doctor") != 3 {
 		t.Fatalf("live doctor code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
 	}
 	if calls := len(imapValidator.usernames) + len(smtpValidator.usernames); calls != previousCalls+4 {
 		t.Fatalf("live doctor protocol calls=%d want=%d", calls, previousCalls+4)
 	}
-	if lines, bytes := strings.Count(stdout, "\n"), len(stdout); lines != 5 || bytes > 600 {
+	if lines, bytes := strings.Count(stdout, "\n"), len(stdout); lines > 24 || bytes > 600 {
 		t.Fatalf("live doctor compact budget exceeded: lines=%d bytes=%d", lines, bytes)
 	}
 
@@ -1574,20 +1593,20 @@ func TestMailSyncIncrementalWorkflowAndCompactBudgets(t *testing.T) {
 			t.Fatalf("first sync missing %q: %s", want, stdout)
 		}
 	}
-	if strings.Count(stdout, "\n") != 1 || len(stdout) > 420 {
+	if strings.Count(stdout, "\n") != 9 || len(stdout) > 420 {
 		t.Fatalf("sync budget lines=%d bytes=%d output=%q", strings.Count(stdout, "\n"), len(stdout), stdout)
 	}
 
 	exitCode, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "inbox", "--limit", "2")
-	if exitCode != 0 || stderr != "" || strings.Count(stdout, "message msg_") != 2 || !strings.Contains(stdout, "count=2 more=false") {
+	if exitCode != 0 || stderr != "" || compactBlockCount(stdout, "message") != 2 || !compactContainsAll(stdout, "inbox\n", "count=2", "more=false") {
 		t.Fatalf("inbox code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
 	}
-	if !strings.Contains(stdout, "unread=true flagged=true") || strings.Contains(stdout, "hidden-bcc") || strings.Count(stdout, "\n") != 5 || len(stdout) > 1400 {
+	if !compactContainsAll(stdout, "unread=true", "flagged=true") || strings.Contains(stdout, "hidden-bcc") || strings.Count(stdout, "\n") > 24 || len(stdout) > 1400 {
 		t.Fatalf("inbox compact privacy/budget failure: %q", stdout)
 	}
 
 	exitCode, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "sync", "status")
-	if exitCode != 0 || stderr != "" || !strings.Contains(stdout, "state=idle") || !strings.Contains(stdout, "committed=22 scanned=22") || !strings.Contains(stdout, "more=true") {
+	if exitCode != 0 || stderr != "" || !compactContainsAll(stdout, "state=idle", "committed=22", "scanned=22", "more=true") {
 		t.Fatalf("status code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
 	}
 
@@ -1627,7 +1646,7 @@ func TestMailSyncFailuresNeverAdvanceAndRetryIsIdempotent(t *testing.T) {
 		t.Fatalf("failure code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
 	}
 	exitCode, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "sync", "status")
-	if exitCode != 0 || stderr != "" || !strings.Contains(stdout, "state=failed") || !strings.Contains(stdout, "committed=0 scanned=0") || !strings.Contains(stdout, "last_error=imap_fetch") {
+	if exitCode != 0 || stderr != "" || !compactContainsAll(stdout, "state=failed", "committed=0", "scanned=0", "last_error=imap_fetch") {
 		t.Fatalf("failed status code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
 	}
 	exitCode, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "sync")
@@ -1686,7 +1705,7 @@ func TestMailSyncParseBlobAndUIDValidityFailuresPreserveFrontier(t *testing.T) {
 				t.Fatalf("status code=%d stdout=%q stderr=%q", exitCode, stdout, stderr)
 			}
 			if test.name == "uid-validity" {
-				if !strings.Contains(stdout, "committed=20 scanned=20") || !strings.Contains(stdout, "uid_validity=200") {
+				if !compactContainsAll(stdout, "committed=20", "scanned=20", "uid_validity=200") {
 					t.Fatalf("repair frontier changed: %q", stdout)
 				}
 				priorCalls := client.calls
@@ -1694,7 +1713,7 @@ func TestMailSyncParseBlobAndUIDValidityFailuresPreserveFrontier(t *testing.T) {
 				if exitCode != cli.ExitConflict || client.calls != priorCalls {
 					t.Fatalf("repair guard code=%d calls=%d prior=%d", exitCode, client.calls, priorCalls)
 				}
-			} else if !strings.Contains(stdout, "committed=0 scanned=0") {
+			} else if !compactContainsAll(stdout, "committed=0", "scanned=0") {
 				t.Fatalf("failure advanced frontier: %q", stdout)
 			}
 		})

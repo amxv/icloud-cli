@@ -232,7 +232,7 @@ func newRootCommand(state *executionState) *cobra.Command {
 	root.DisableAutoGenTag = true
 	root.SuggestionsMinimumDistance = 2
 	root.Version = state.version
-	root.SetVersionTemplate("version {{.Version}}\n")
+	root.SetVersionTemplate("version\n{{.Version}}\n")
 
 	root.PersistentFlags().StringVar(&state.global.Home, "home", "", "Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)")
 	root.PersistentFlags().StringVar(&state.global.Account, "account", "", "Select an account by name, email, or stable ID")

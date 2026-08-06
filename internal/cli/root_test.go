@@ -24,7 +24,7 @@ func execute(t *testing.T, args ...string) (Result, string, string) {
 
 func TestVersionFlagUsesCompactOutput(t *testing.T) {
 	result, stdout, stderr := execute(t, "--version")
-	if result.ExitCode != 0 || stdout != "version 1.2.3\n" || stderr != "" {
+	if result.ExitCode != 0 || stdout != "version\n1.2.3\n" || stderr != "" {
 		t.Fatalf("result=%+v stdout=%q stderr=%q", result, stdout, stderr)
 	}
 }
@@ -63,7 +63,7 @@ func TestManGenerationToStdoutAndDirectory(t *testing.T) {
 	if result.ExitCode != 0 || stderr != "" {
 		t.Fatalf("result=%+v stderr=%q", result, stderr)
 	}
-	if !strings.Contains(stdout, "man generated") {
+	if !strings.Contains(stdout, "man\ngenerated dir=") {
 		t.Fatalf("unexpected summary: %q", stdout)
 	}
 	matches, err := filepath.Glob(filepath.Join(directory, "*.1"))

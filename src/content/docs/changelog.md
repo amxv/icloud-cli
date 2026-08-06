@@ -8,7 +8,7 @@ summary: Public command, output, installation, and documentation changes.
 
 ## Unreleased
 
-- Added one blank separator line between consecutive compact records and summaries while keeping every record's related fields together on one dense line.
+- Changed compact text to readable vertical blocks: result type first, stable identity plus the first field next when present, one remaining field per line, and a blank line between blocks.
 - Added bounded `icloud mail sync` for current-tail Inbox bootstrap and incremental UID paging, with streamed raw-message staging and atomic page/checkpoint commits.
 - Added local bounded `icloud mail inbox`, compact decoded-text previews, explicit JSON metadata, and stable message/location/checkpoint identities without exposing BCC or raw storage paths.
 - Added `mail sync status` and `mail sync checkpoints`, visible failed/repair-required states, UIDVALIDITY mismatch protection, empty-gap scanning, and retry-safe frontier handling.

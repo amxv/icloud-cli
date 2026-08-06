@@ -29,6 +29,10 @@ func TestCompactRendererOmitsDefaultsAndBoundsExcerpt(t *testing.T) {
 	if strings.Count(got, "snippet=") != 1 || !strings.Contains(got, "…") {
 		t.Fatalf("excerpt was not bounded: %q", got)
 	}
+	const prefix = "msg\nmsg_01 unread=true\nsubject=\"Launch notes\"\nsnippet="
+	if !strings.HasPrefix(got, prefix) {
+		t.Fatalf("compact block shape mismatch: %q", got)
+	}
 	for _, unwanted := range []string{"{", "}", "\x1b[", "│"} {
 		if strings.Contains(got, unwanted) {
 			t.Fatalf("compact output contains %q: %q", unwanted, got)
@@ -45,7 +49,7 @@ func TestCompactSummaryAndEventPrimitives(t *testing.T) {
 	if err := renderer.Event("started", 1, Field("account", "acct_01")); err != nil {
 		t.Fatal(err)
 	}
-	const want = "sync messages=3 next_cursor=cur_02\n\nevent started sequence=1 account=acct_01\n"
+	const want = "sync\nmessages=3\nnext_cursor=cur_02\n\nevent\nstarted sequence=1\naccount=acct_01\n"
 	if out.String() != want {
 		t.Fatalf("compact primitives mismatch\nwant: %q\n got: %q", want, out.String())
 	}

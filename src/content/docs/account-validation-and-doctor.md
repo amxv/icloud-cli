@@ -24,9 +24,19 @@ The SMTP test never issues `MAIL`, `RCPT`, or `DATA`. The IMAP test does not app
 Successful compact output has this shape:
 
 ```text
-account-test acct_… status=connected imap=ok smtp=ok imap_username=owner mailboxes=6 inbox_messages=42 inbox_unseen=3 checked_at=2026-08-06T03:00:00Z
+account-test
+acct_… status=connected
+imap=ok
+smtp=ok
+imap_username=owner
+mailboxes=6
+inbox_messages=42
+inbox_unseen=3
+checked_at=2026-08-06T03:00:00Z
 
-account-tests count=1 healthy=1
+account-tests
+count=1
+healthy=1
 ```
 
 An account becomes `connected` only when both protocol checks succeed.
@@ -94,15 +104,22 @@ icloud doctor Personal
 Example local output:
 
 ```text
-doctor acct_… status=connected credential=env last_tested=2026-08-06T03:00:00Z last_healthy=2026-08-06T03:00:00Z
+doctor
+acct_… status=connected
+credential=env
+last_tested=2026-08-06T03:00:00Z
+last_healthy=2026-08-06T03:00:00Z
 
-doctor accounts=1 status=healthy
+doctor
+accounts=1
+status=healthy
 ```
 
 For a new empty state:
 
 ```text
-doctor status=configuration_required
+doctor
+status=configuration_required
 ```
 
 Run the same read-only protocol validation and include its result in diagnostics:
@@ -128,10 +145,12 @@ Failures identify the stage without exposing a credential, stored environment na
 | `smtp_auth` | SMTP rejected the app-specific password. | `4` |
 | `timeout` | The command or a protocol stage exceeded its deadline. | `5` |
 
-Plain errors remain one compact stderr line:
+Plain errors use the same compact block shape on stderr:
 
 ```text
-error code=authentication message="account validation failed at smtp_auth"
+error
+code=authentication
+message="account validation failed at smtp_auth"
 ```
 
 With `--json`, the error envelope includes redacted structured reports and the stage so automation can choose a next action.

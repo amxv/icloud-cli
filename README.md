@@ -53,19 +53,58 @@ icloud help [command]
 Representative default output:
 
 ```text
-account-test acct_… status=connected imap=ok smtp=ok imap_username=owner mailboxes=6 inbox_messages=42 inbox_unseen=3
+account-test
+acct_… status=connected
+imap=ok
+smtp=ok
+imap_username=owner
+mailboxes=6
+inbox_messages=42
+inbox_unseen=3
 
-folder-status account=acct_… count=8 present=8 stale=0 enabled=2
+folder-status
+account=acct_…
+count=8
+present=8
+stale=0
+enabled=2
 
-mail-sync fld_… account=acct_… folder=INBOX fetched=20 created=20 updated=0 last_uid=184 more=false bootstrap=true
+mail-sync
+fld_… account=acct_…
+folder=INBOX
+fetched=20
+created=20
+updated=0
+last_uid=184
+more=false
+bootstrap=true
 
-inbox account=acct_… count=20 more=false
+inbox
+account=acct_…
+count=20
+more=false
 
-doctor accounts=1 status=healthy
+doctor
+accounts=1
+status=healthy
 
-version 0.1.0
+version
+0.1.0
 
-capabilities command=icloud version=0.1.0 schema=4 account_mode=validated_lifecycle credentials=keyring,env,file network_validation=true diagnostics=true mail_folders=true mail_sync=true default_output=compact json=true completion=bash,zsh,fish,powershell man=true
+capabilities
+command=icloud
+version=0.1.0
+schema=4
+account_mode=validated_lifecycle
+credentials=keyring,env,file
+network_validation=true
+diagnostics=true
+mail_folders=true
+mail_sync=true
+default_output=compact
+json=true
+completion=bash,zsh,fish,powershell
+man=true
 ```
 
 Redirected and non-interactive execution uses the same compact default. Use `--json` only on commands that advertise it. For isolated state, set `ICLOUD_HOME=./icloud-state` or pass `--home ./icloud-state`. Use an app-specific password, never the primary Apple Account password; pass it through a secure prompt or `--password-stdin`, not argv.

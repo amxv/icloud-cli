@@ -24,8 +24,23 @@ make build
 Representative output:
 
 ```text
-version 0.1.0
-capabilities command=icloud version=0.1.0 schema=4 account_mode=validated_lifecycle credentials=keyring,env,file network_validation=true diagnostics=true mail_folders=true mail_sync=true default_output=compact json=true completion=bash,zsh,fish,powershell man=true
+version
+0.1.0
+
+capabilities
+command=icloud
+version=0.1.0
+schema=4
+account_mode=validated_lifecycle
+credentials=keyring,env,file
+network_validation=true
+diagnostics=true
+mail_folders=true
+mail_sync=true
+default_output=compact
+json=true
+completion=bash,zsh,fish,powershell
+man=true
 ```
 
 ## Choose private local state
@@ -40,7 +55,8 @@ icloud account list
 A new state returns:
 
 ```text
-accounts count=0
+accounts
+count=0
 ```
 
 Keep this directory private. It contains account metadata, the local mail database, raw synchronized messages, and locks.
@@ -65,7 +81,10 @@ unset ICLOUD_APP_PASSWORD
 Expected shape:
 
 ```text
-account-added acct_… status=pending_validation default=true credential=keyring
+account-added
+acct_… status=pending_validation
+default=true
+credential=keyring
 ```
 
 For a headless process, keep the value in an environment variable or protected file and store only its reference:
@@ -86,9 +105,19 @@ icloud account test Personal
 ```
 
 ```text
-account-test acct_… status=connected imap=ok smtp=ok imap_username=owner mailboxes=6 inbox_messages=42 inbox_unseen=3 checked_at=2026-08-06T03:00:00Z
+account-test
+acct_… status=connected
+imap=ok
+smtp=ok
+imap_username=owner
+mailboxes=6
+inbox_messages=42
+inbox_unseen=3
+checked_at=2026-08-06T03:00:00Z
 
-account-tests count=1 healthy=1
+account-tests
+count=1
+healthy=1
 ```
 
 Validation authenticates to both mail protocols but does not send, fetch, move, or mark a message. It also remembers the working full-email or short iCloud IMAP username.
@@ -124,7 +153,15 @@ icloud mail sync
 The first run downloads one bounded current-tail page into private local state:
 
 ```text
-mail-sync fld_… account=acct_… folder=INBOX fetched=20 created=20 updated=0 last_uid=184 more=true bootstrap=true
+mail-sync
+fld_… account=acct_…
+folder=INBOX
+fetched=20
+created=20
+updated=0
+last_uid=184
+more=true
+bootstrap=true
 ```
 
 Repeat while `more=true`. Later runs fetch only newer Inbox messages. A failed page leaves the previous frontier intact and is safe to retry.
@@ -136,9 +173,18 @@ icloud mail inbox
 ```
 
 ```text
-message msg_… from=sender@example.com subject="Project update" at=2026-08-06T08:30:00Z unread=true attachments=1 snippet="Here is the latest update…"
+message
+msg_… from=sender@example.com
+subject="Project update"
+at=2026-08-06T08:30:00Z
+unread=true
+attachments=1
+snippet="Here is the latest update…"
 
-inbox account=acct_… count=1 more=false
+inbox
+account=acct_…
+count=1
+more=false
 ```
 
 The command reads local state only and never marks messages read. Full bodies, HTML, raw MIME, headers, and attachment download are explicit later capabilities rather than part of the universal compact default.

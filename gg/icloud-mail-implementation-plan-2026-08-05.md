@@ -195,8 +195,8 @@ Command names are stable; shallow aliases may be added only when they do not cre
 ### Output contract
 
 - Compact plain text is the default for every command, whether stdout is a TTY or redirected to an agent. Normal execution must not require an agent to pass a flag merely to avoid JSON, HTML, raw MIME, or verbose prose.
-- The compact renderer uses stable field order, omits empty/default fields, avoids borders and repeated labels, keeps pages bounded, prints stable IDs needed for follow-up actions, and never repeats a body or request value the caller already supplied unless review is the command's purpose. Each record remains one dense line, with one blank separator line between consecutive records or the final summary so compact output is equally scannable for humans and agents.
-- List/search/inbox/latest output emits one concise record per result plus a minimal next-cursor/more marker. Sync/status/doctor output emits one summary per account/folder and only actionable warnings or failures; per-message/per-stage detail requires `--verbose`.
+- The compact renderer uses stable field order, omits empty/default fields, avoids borders and repeated labels, keeps pages bounded, prints stable IDs needed for follow-up actions, and never repeats a body or request value the caller already supplied unless review is the command's purpose. Each result is a small vertical block: result kind on the first line, stable identity plus the first field on the next line when an identity exists, then one remaining field per line. Consecutive blocks are separated by one blank line.
+- List/search/inbox/latest output emits one concise vertical block per result plus a minimal next-cursor/more block. Sync/status/doctor output emits one block per account/folder and only actionable warnings or failures; per-message/per-stage detail requires `--verbose`.
 - Message and thread reads default to essential identity/routing fields and a bounded decoded plain-text excerpt. `--full` returns complete decoded text; `--format text|html|raw`, `--headers`, and `--body-only` select explicit richer representations. HTML and raw MIME are never selected implicitly.
 - Successful write output defaults to outcome plus stable attempt/message/thread/draft/location IDs and any next action. It does not echo submitted bodies, HTML, headers, recipient lists, or attachment paths unless required to explain a failure. `--dry-run` is the deliberate review exception: it renders the normalized envelope and clean text body once, compactly, with richer header/HTML/raw detail only when requested.
 - Streaming/watch commands default to concise plain-text lifecycle lines; `--jsonl` opts into typed JSONL events. Bulk commands likewise use compact per-item text unless `--jsonl` is requested.
@@ -223,15 +223,32 @@ or:
 Representative compact shapes establish the intended information density. Empty fields are omitted, parent context appears once, excerpts are bounded, and `next=` appears only when another page exists:
 
 ```text
-sync account=personal folder=INBOX fetched=12 new=10 updated=2 flags=4 more=false
+sync
+account=personal
+folder=INBOX
+fetched=12
+new=10
+updated=2
+flags=4
+more=false
 
-msg msg_01 2026-08-05T18:42Z unread from=alice@example.com subject="Launch notes" — Can you review the final…
+msg
+msg_01 at=2026-08-05T18:42Z
+state=unread
+from=alice@example.com
+subject="Launch notes"
+excerpt="Can you review the final…"
 
-thread th_01 messages=3 unread=1 subject="Launch notes"
-  msg msg_01 18:42Z alice@example.com — Can you review the final…
-  msg msg_02 19:07Z me — Reviewed; two comments…
+thread
+th_01 messages=3
+unread=1
+subject="Launch notes"
 
-sent attempt=send_01 message=msg_03 thread=th_01 state=sent
+sent
+attempt=send_01
+message=msg_03
+thread=th_01
+state=sent
 ```
 
 Commands may use a command-specific compact shape, but they must preserve the same rules: sufficient information to decide the next action, stable IDs for that action, no repeated parent/request data, and a clear `more`/`next`/warning marker whenever omitted information changes what the caller should do.
@@ -1954,3 +1971,12 @@ Regression scope is the entire repository: Go formatting/vet/test/race/fuzz wher
 - **Change:** every compact record keeps its stable fields on one line, while the shared renderer inserts exactly one blank separator line before each subsequent record or summary. Single-record output and one-line errors remain unchanged; JSON, JSONL, raw, completion, and man output are unaffected.
 - **Quality boundary:** the separator is whitespace only. It must not add headings, tables, repeated parent context, decorative borders, unbounded prose, or body content. Golden line budgets must account for the deliberate separator lines while retaining byte and record-count bounds.
 - **Affected phases:** the universal output contract, all existing and future compact multi-record commands, progressive docs examples, Phase 23 bulk output, Phase 24 reference consolidation, and Phase 25 compact-output acceptance.
+
+### 2026-08-06 — Render compact output as vertical blocks
+
+- **Trigger:** the user clarified that “use a new line separator” applied to the fields inside each compact result, not only to the space between adjacent records. The intended `sync-status` shape places the result kind on its own line, the checkpoint ID and account together on the next line, and every remaining field on its own line.
+- **Change:** the shared compact renderer now emits a vertical block for every result. The first line is the result kind. When a stable ID exists, the second line contains that ID plus the first non-empty field; otherwise the first field starts the second line. Every remaining non-empty field occupies one line. One blank line separates consecutive blocks or a final summary. Errors use the same block shape on stderr.
+- **Supersedes:** this corrects and supersedes the immediately preceding “Separate compact records with a blank line” interpretation. That earlier amendment remains in history as the reason for the follow-up correction, but it is no longer the active output contract.
+- **Quality boundary:** vertical layout changes whitespace, not information volume. It adds no table borders, prose labels, indentation hierarchy, duplicated context, implicit body content, ANSI decoration, or JSON punctuation. Existing page, excerpt, record-count, privacy, and byte bounds remain in force; golden line budgets explicitly cover the new field-per-line shape.
+- **Unaffected modes:** JSON, JSONL, raw MIME/export bytes, completion scripts, generated man content, and other native non-compact formats are unchanged.
+- **Affected phases:** every existing and future compact command, all progressive examples, Phase 23 agent/bulk output, Phase 24 generated/narrative reference consolidation, and Phase 25 compact-output acceptance.

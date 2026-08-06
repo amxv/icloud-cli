@@ -104,8 +104,9 @@ func Field(key string, value any) CompactField {
 
 // CompactTextRenderer is the universal undecorated default-output boundary.
 // Callers control field order; empty and default-valued fields are omitted.
-// Each record stays on one dense line, while consecutive records are separated
-// by one blank line so bounded multi-record output remains easy to scan.
+// Each record is a small vertical block: kind on the first line, identity plus
+// the first field on the next line when available, then one remaining field per
+// line. Consecutive blocks are separated by one blank line.
 type CompactTextRenderer struct {
 	w       io.Writer
 	records int
@@ -116,24 +117,38 @@ func NewCompactTextRenderer(w io.Writer) *CompactTextRenderer {
 }
 
 func (r *CompactTextRenderer) Record(kind, id string, fields ...CompactField) error {
-	parts := make([]string, 0, 2+len(fields))
-	if kind = strings.TrimSpace(kind); kind != "" {
-		parts = append(parts, kind)
-	}
-	if id = strings.TrimSpace(id); id != "" {
-		parts = append(parts, compactToken(id))
-	}
+	kind = strings.TrimSpace(kind)
+	id = strings.TrimSpace(id)
+	fieldLines := make([]string, 0, len(fields))
 	for _, field := range fields {
 		if strings.TrimSpace(field.Key) == "" || isEmptyValue(field.Value) {
 			continue
 		}
-		parts = append(parts, strings.TrimSpace(field.Key)+"="+compactValue(field.Value))
+		fieldLines = append(fieldLines, strings.TrimSpace(field.Key)+"="+compactValue(field.Value))
 	}
-	line := strings.Join(parts, " ")
+
+	lines := make([]string, 0, 2+len(fieldLines))
+	if kind != "" {
+		lines = append(lines, kind)
+	}
+	if id != "" {
+		identity := compactToken(id)
+		if len(fieldLines) > 0 {
+			identity += " " + fieldLines[0]
+			fieldLines = fieldLines[1:]
+		}
+		lines = append(lines, identity)
+	}
+	lines = append(lines, fieldLines...)
+	if len(lines) == 0 {
+		return nil
+	}
+
+	block := strings.Join(lines, "\n")
 	if r.records > 0 {
-		line = "\n" + line
+		block = "\n" + block
 	}
-	if _, err := fmt.Fprintln(r.w, line); err != nil {
+	if _, err := fmt.Fprintln(r.w, block); err != nil {
 		return err
 	}
 	r.records++
