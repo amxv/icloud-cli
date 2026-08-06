@@ -1948,6 +1948,13 @@ Regression scope is the entire repository: Go formatting/vet/test/race/fuzz wher
 
 ## Amendments
 
+### 2026-08-06 — Enforce the provider message-size bound before outbound SMTP
+
+- **Trigger:** Phase 15’s planned per-file/count/total attachment bounds permit a normalized request whose MIME/base64 expansion is larger than iCloud Mail’s ordinary 20 MB message limit. Waiting for SMTP to reject that request would violate the preflight/safety contract and could leave a needless failed attempt after all attachment bytes had already been reviewed and cached.
+- **Change:** every outbound message is streamed through the canonical raw-message stager with a 20 MiB composed-message limit before SMTP begins. The bound includes headers, text/HTML parts, multipart framing, and base64 expansion rather than only source-file sizes. A message that crosses the bound fails with the safety class before SMTP; the CLI does not invoke Mail Drop.
+- **Streaming boundary:** the limit is enforced by the existing bounded streaming blob path, not by buffering the composed message. Per-file/count/decoded-total attachment limits remain defense-in-depth and still reject impossible sources before composition.
+- **Affected phases:** Phase 15 attachment send/reconciliation, Phase 16-17 reply/forward attachments, Phase 22 drafts, Phase 23 JSON input, Phase 24 public reference/docs, and Phase 25 provider-limit acceptance.
+
 ### 2026-08-06 — Bound remote search before metadata fetch and keep targeted hydration outside sync frontiers
 
 - **Trigger:** the reference implementation issues one unbounded UID SEARCH and then fetches every match. Phase 13 must expose current provider search without reproducing Landmine 3, scanning every folder implicitly, or acknowledging any message through the ordinary bootstrap/incremental checkpoint.
