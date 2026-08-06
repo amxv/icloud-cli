@@ -31,13 +31,13 @@ func (commands accountCommands) MailMessage(ctx context.Context, home, accountSe
 		}
 		return account.Account{}, maildomain.Message{}, nil, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot read the local message", false, err)
 	}
-	location, ok := rawMessageLocation(message)
+	rawSource, ok := rawMessageSource(message)
 	if !ok {
 		return account.Account{}, maildomain.Message{}, nil, state.SchemaVersion(), cli.NewAppError(cli.ErrorUnavailable, "raw message content is not available locally", false)
 	}
 	blobStore := blob.New(paths.BlobRoot)
 	if message.Content == nil || !message.Content.AttachmentsIndexed {
-		reader, openErr := blobStore.OpenVerifiedContext(ctx, location.RawStorageKey, location.RawContentHash, location.RawByteSize)
+		reader, openErr := blobStore.OpenVerifiedContext(ctx, rawSource.StorageKey, rawSource.ContentHash, rawSource.ByteSize)
 		if openErr != nil {
 			return account.Account{}, maildomain.Message{}, nil, state.SchemaVersion(), mapBlobReadError(openErr)
 		}
@@ -57,7 +57,7 @@ func (commands accountCommands) MailMessage(ctx context.Context, home, accountSe
 		if err := attachmentSet.Commit(); err != nil {
 			return account.Account{}, maildomain.Message{}, nil, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot commit a decoded message attachment", true, err)
 		}
-		if err := state.Mail().SaveMessageContent(ctx, accountValue.ID, message.ID, location.ID, normalized, commands.timeNow()); err != nil {
+		if err := state.Mail().SaveMessageContent(ctx, accountValue.ID, message.ID, rawSource.LocationID, normalized, commands.timeNow()); err != nil {
 			return account.Account{}, maildomain.Message{}, nil, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot persist local message content metadata", true, err)
 		}
 		message, err = state.Mail().Message(ctx, accountValue.ID, message.ID)
@@ -65,21 +65,21 @@ func (commands accountCommands) MailMessage(ctx context.Context, home, accountSe
 			return account.Account{}, maildomain.Message{}, nil, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot reload local message content metadata", true, err)
 		}
 	}
-	source := &messageContentSource{store: blobStore, location: location, content: *message.Content}
+	source := &messageContentSource{store: blobStore, raw: rawSource, content: *message.Content}
 	return accountValue, message, source, state.SchemaVersion(), nil
 }
 
 type messageContentSource struct {
-	store    *blob.Store
-	location maildomain.Location
-	content  maildomain.NormalizedContent
+	store   *blob.Store
+	raw     messageRawSource
+	content maildomain.NormalizedContent
 }
 
 func (source *messageContentSource) WriteRaw(ctx context.Context, writer io.Writer) error {
 	if source == nil || writer == nil {
 		return errors.New("raw message writer is required")
 	}
-	reader, err := source.store.OpenVerifiedContext(ctx, source.location.RawStorageKey, source.location.RawContentHash, source.location.RawByteSize)
+	reader, err := source.store.OpenVerifiedContext(ctx, source.raw.StorageKey, source.raw.ContentHash, source.raw.ByteSize)
 	if err != nil {
 		return mapContentSourceError(err)
 	}
@@ -101,7 +101,7 @@ func (source *messageContentSource) WriteBody(ctx context.Context, format maildo
 	if len(paths) == 0 {
 		return errors.New("requested message body is not available")
 	}
-	reader, err := source.store.OpenVerifiedContext(ctx, source.location.RawStorageKey, source.location.RawContentHash, source.location.RawByteSize)
+	reader, err := source.store.OpenVerifiedContext(ctx, source.raw.StorageKey, source.raw.ContentHash, source.raw.ByteSize)
 	if err != nil {
 		return mapContentSourceError(err)
 	}
@@ -109,30 +109,40 @@ func (source *messageContentSource) WriteBody(ctx context.Context, format maildo
 	return maildomain.WriteSelectedBody(ctx, reader, format, paths, writer)
 }
 
-func rawMessageLocation(message maildomain.Message) (maildomain.Location, bool) {
+type messageRawSource struct {
+	LocationID  string
+	ContentHash string
+	StorageKey  string
+	ByteSize    int64
+}
+
+func rawMessageSource(message maildomain.Message) (messageRawSource, bool) {
 	if sourceLocationID := strings.TrimSpace(message.ContentLocationID); sourceLocationID != "" {
 		for _, location := range message.Locations {
 			if location.ID == sourceLocationID && location.Present && location.RawStorageKey != "" && location.RawContentHash != "" {
-				return location, true
+				return messageRawSource{LocationID: location.ID, ContentHash: location.RawContentHash, StorageKey: location.RawStorageKey, ByteSize: location.RawByteSize}, true
 			}
 		}
 		for _, location := range message.Locations {
 			if location.ID == sourceLocationID && location.RawStorageKey != "" && location.RawContentHash != "" {
-				return location, true
+				return messageRawSource{LocationID: location.ID, ContentHash: location.RawContentHash, StorageKey: location.RawStorageKey, ByteSize: location.RawByteSize}, true
 			}
 		}
 	}
 	for _, location := range message.Locations {
 		if location.Present && location.RawStorageKey != "" && location.RawContentHash != "" {
-			return location, true
+			return messageRawSource{LocationID: location.ID, ContentHash: location.RawContentHash, StorageKey: location.RawStorageKey, ByteSize: location.RawByteSize}, true
 		}
 	}
 	for _, location := range message.Locations {
 		if location.RawStorageKey != "" && location.RawContentHash != "" {
-			return location, true
+			return messageRawSource{LocationID: location.ID, ContentHash: location.RawContentHash, StorageKey: location.RawStorageKey, ByteSize: location.RawByteSize}, true
 		}
 	}
-	return maildomain.Location{}, false
+	if message.LocalRaw != nil && message.LocalRaw.StorageKey != "" && message.LocalRaw.ContentHash != "" {
+		return messageRawSource{ContentHash: message.LocalRaw.ContentHash, StorageKey: message.LocalRaw.StorageKey, ByteSize: message.LocalRaw.ByteSize}, true
+	}
+	return messageRawSource{}, false
 }
 
 func mapBlobReadError(err error) error {

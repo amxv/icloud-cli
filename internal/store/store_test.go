@@ -42,7 +42,7 @@ func TestOpenCreatesAndReopensVersionedPrivateState(t *testing.T) {
 	if state.SchemaVersion() != SchemaVersion {
 		t.Fatalf("schema version = %d", state.SchemaVersion())
 	}
-	for _, table := range []string{"app_metadata", "accounts", "credential_refs", "folders", "raw_blobs", "messages", "message_recipients", "message_references", "message_locations", "message_content", "message_parts", "attachments", "sync_checkpoints", "message_identity_evidence", "message_dedupe_conflicts", "threads", "thread_messages", "thread_aliases", "thread_edges", "message_search_documents", "message_search_fts", "goose_db_version"} {
+	for _, table := range []string{"app_metadata", "accounts", "credential_refs", "folders", "raw_blobs", "messages", "message_recipients", "message_references", "message_locations", "message_content", "message_parts", "attachments", "sync_checkpoints", "message_identity_evidence", "message_dedupe_conflicts", "threads", "thread_messages", "thread_aliases", "thread_edges", "message_search_documents", "message_search_fts", "outbound_attempts", "idempotency_records", "local_message_sources", "goose_db_version"} {
 		var count int
 		if err := state.db.QueryRowContext(context.Background(),
 			"SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?", table,
@@ -1211,6 +1211,84 @@ VALUES (?, 0, 'migration-root@example.test')`, replyID); err != nil {
 		}
 		if storedID != messageID {
 			t.Fatalf("message ID changed: got %q want %q", storedID, messageID)
+		}
+	}
+}
+
+func TestOpenUpgradesPhaseThirteenStateWithEmptyOutboundLedger(t *testing.T) {
+	t.Parallel()
+	paths := testPaths(t, filepath.Join(t.TempDir(), "state"))
+	if err := config.EnsureAppPaths(paths); err != nil {
+		t.Fatal(err)
+	}
+	database, err := sql.Open("sqlite", paths.Database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := configureSQLite(context.Background(), database); err != nil {
+		t.Fatal(err)
+	}
+	migrationFS, err := fs.Sub(migrations, "migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider, err := goose.NewProvider(goose.DialectSQLite3, database, migrationFS, goose.WithLogger(goose.NopLogger()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.UpTo(context.Background(), 10); err != nil {
+		t.Fatal(err)
+	}
+	timestamp := time.Date(2026, 8, 6, 13, 45, 0, 0, time.UTC).Format(time.RFC3339Nano)
+	accountID := "acct_0198d704-6c00-7000-8000-000000001401"
+	credentialID := "cred_0198d704-6c00-7000-8000-000000001402"
+	if _, err := database.Exec(`
+INSERT INTO accounts (
+    account_id, friendly_name, email_address, imap_username,
+    status, is_default, created_at, updated_at
+) VALUES (?, 'Phase Thirteen', 'phase-thirteen@icloud.com',
+          'phase-thirteen', 'connected', 1, ?, ?)`, accountID, timestamp, timestamp); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(`
+INSERT INTO credential_refs (
+    credential_ref_id, account_id, scheme, reference, created_at, updated_at
+) VALUES (?, ?, 'env', 'env:PHASE_THIRTEEN_PASSWORD', ?, ?)`, credentialID, accountID, timestamp, timestamp); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	state, err := Open(context.Background(), paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	if state.SchemaVersion() != SchemaVersion {
+		t.Fatalf("schema version = %d", state.SchemaVersion())
+	}
+	accountValue, err := state.Accounts().ResolveSelected(context.Background(), accountID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if accountValue.ID != accountID || accountValue.Name != "Phase Thirteen" || accountValue.Email != "phase-thirteen@icloud.com" {
+		t.Fatalf("upgraded account = %+v", accountValue)
+	}
+	_, credential, err := state.Accounts().Credential(context.Background(), accountID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if credential.ID != credentialID || credential.Reference != "env:PHASE_THIRTEEN_PASSWORD" {
+		t.Fatalf("upgraded credential = %+v", credential)
+	}
+	for _, table := range []string{"outbound_attempts", "idempotency_records", "local_message_sources"} {
+		var count int
+		if err := state.db.QueryRow(`SELECT COUNT(*) FROM ` + table).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != 0 {
+			t.Fatalf("%s count = %d", table, count)
 		}
 	}
 }

@@ -24,6 +24,7 @@ type accountCommands struct {
 	keyring         secret.Keyring
 	imap            transport.IMAPValidator
 	smtp            transport.SMTPValidator
+	sender          transport.SMTPSender
 	folders         transport.IMAPFolderClient
 	mail            transport.IMAPInboxClient
 	remote          transport.IMAPRemoteClient

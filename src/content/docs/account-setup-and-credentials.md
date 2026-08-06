@@ -41,6 +41,8 @@ unset ICLOUD_APP_PASSWORD
 
 `--password-stdin` never prints the value and no `--password` argument exists. Avoid putting a password directly in a command line, shell history, JSON request, or environment exported to unrelated processes.
 
+The configured `--name` is also the display name used in the `From` header for new outbound mail. Choose the sender name recipients should see; `account rename` changes it for future sends without changing the email address or stable account ID.
+
 On a headless Linux session without a Secret Service keyring, use an environment or file reference instead.
 
 ## Persist an environment reference

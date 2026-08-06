@@ -114,6 +114,7 @@ type Message struct {
 	ContentLocationID string             `json:"content_location_id,omitempty"`
 	Identity          []IdentityEvidence `json:"identity,omitempty"`
 	DedupeConflicts   []DedupeConflict   `json:"dedupe_conflicts,omitempty"`
+	LocalRaw          *LocalRawSource    `json:"-"`
 }
 
 type IdentityKind string

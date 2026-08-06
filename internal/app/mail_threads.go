@@ -77,7 +77,7 @@ func (commands accountCommands) MailThread(ctx context.Context, home, accountSel
 }
 
 func (commands accountCommands) threadMessageSource(ctx context.Context, state *store.Store, paths config.AppPaths, accountID string, message maildomain.Message, options maildomain.ThreadReadOptions) (maildomain.Message, maildomain.ContentSource, error) {
-	location, ok := rawMessageLocation(message)
+	rawSource, ok := rawMessageSource(message)
 	if !ok {
 		if !options.RequireSource && !options.HydrateContent {
 			return message, nil, nil
@@ -86,7 +86,7 @@ func (commands accountCommands) threadMessageSource(ctx context.Context, state *
 	}
 	blobStore := blob.New(paths.BlobRoot)
 	if options.HydrateContent && (message.Content == nil || !message.Content.AttachmentsIndexed) {
-		reader, openErr := blobStore.OpenVerifiedContext(ctx, location.RawStorageKey, location.RawContentHash, location.RawByteSize)
+		reader, openErr := blobStore.OpenVerifiedContext(ctx, rawSource.StorageKey, rawSource.ContentHash, rawSource.ByteSize)
 		if openErr != nil {
 			return maildomain.Message{}, nil, mapBlobReadError(openErr)
 		}
@@ -106,7 +106,7 @@ func (commands accountCommands) threadMessageSource(ctx context.Context, state *
 		if err := attachmentSet.Commit(); err != nil {
 			return maildomain.Message{}, nil, cli.WrapAppError(cli.ErrorInternal, "cannot commit a decoded thread attachment", true, err)
 		}
-		if err := state.Mail().SaveMessageContent(ctx, accountID, message.ID, location.ID, normalized, commands.timeNow()); err != nil {
+		if err := state.Mail().SaveMessageContent(ctx, accountID, message.ID, rawSource.LocationID, normalized, commands.timeNow()); err != nil {
 			return maildomain.Message{}, nil, cli.WrapAppError(cli.ErrorInternal, "cannot persist local thread message content metadata", true, err)
 		}
 		var reloadErr error
@@ -114,7 +114,7 @@ func (commands accountCommands) threadMessageSource(ctx context.Context, state *
 		if reloadErr != nil {
 			return maildomain.Message{}, nil, cli.WrapAppError(cli.ErrorInternal, "cannot reload local thread message content metadata", true, reloadErr)
 		}
-		location, ok = rawMessageLocation(message)
+		rawSource, ok = rawMessageSource(message)
 		if !ok {
 			return maildomain.Message{}, nil, cli.NewAppError(cli.ErrorUnavailable, "raw thread message content is not available locally", false)
 		}
@@ -123,6 +123,6 @@ func (commands accountCommands) threadMessageSource(ctx context.Context, state *
 	if message.Content != nil {
 		content = *message.Content
 	}
-	source := &messageContentSource{store: blobStore, location: location, content: content}
+	source := &messageContentSource{store: blobStore, raw: rawSource, content: content}
 	return message, source, nil
 }

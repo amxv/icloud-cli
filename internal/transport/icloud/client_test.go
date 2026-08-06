@@ -12,8 +12,10 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"net"
+	"net/textproto"
 	"os"
 	"sort"
 	"strconv"
@@ -596,8 +598,11 @@ func parseIMAPMailboxArgument(line, command string) string {
 }
 
 type smtpServerOptions struct {
-	AdvertiseSTARTTLS bool
-	AuthOK            bool
+	AdvertiseSTARTTLS   bool
+	AuthOK              bool
+	AcceptSend          bool
+	RejectAfterData     bool
+	DisconnectAfterData bool
 }
 
 type smtpTestServer struct {
@@ -608,6 +613,9 @@ type smtpTestServer struct {
 	startTLS    bool
 	auth        bool
 	mutation    bool
+	mailFrom    string
+	recipients  []string
+	message     []byte
 }
 
 func newSMTPServer(t *testing.T, options smtpServerOptions) *smtpTestServer {
@@ -642,7 +650,8 @@ func (server *smtpTestServer) handle(conn net.Conn, options smtpServerOptions) {
 		if err != nil {
 			return
 		}
-		command := strings.ToUpper(strings.TrimSpace(line))
+		trimmed := strings.TrimSpace(line)
+		command := strings.ToUpper(trimmed)
 		switch {
 		case strings.HasPrefix(command, "EHLO "):
 			if !tlsActive && options.AdvertiseSTARTTLS {
@@ -680,11 +689,50 @@ func (server *smtpTestServer) handle(conn net.Conn, options smtpServerOptions) {
 		case command == "QUIT":
 			writeSMTP(writer, "221 bye")
 			return
-		case strings.HasPrefix(command, "MAIL"), strings.HasPrefix(command, "RCPT"), command == "DATA":
+		case strings.HasPrefix(command, "MAIL"):
+			server.mu.Lock()
+			server.mutation = true
+			server.mailFrom = trimmed
+			server.mu.Unlock()
+			if options.AcceptSend {
+				writeSMTP(writer, "250 sender ok")
+			} else {
+				writeSMTP(writer, "550 validation cannot send")
+			}
+		case strings.HasPrefix(command, "RCPT"):
+			server.mu.Lock()
+			server.mutation = true
+			server.recipients = append(server.recipients, trimmed)
+			server.mu.Unlock()
+			if options.AcceptSend {
+				writeSMTP(writer, "250 recipient ok")
+			} else {
+				writeSMTP(writer, "550 validation cannot send")
+			}
+		case command == "DATA":
 			server.mu.Lock()
 			server.mutation = true
 			server.mu.Unlock()
-			writeSMTP(writer, "550 validation cannot send")
+			if !options.AcceptSend {
+				writeSMTP(writer, "550 validation cannot send")
+				continue
+			}
+			writeSMTP(writer, "354 continue")
+			data, readErr := io.ReadAll(textproto.NewReader(reader).DotReader())
+			if readErr != nil {
+				return
+			}
+			server.mu.Lock()
+			server.message = append([]byte(nil), data...)
+			server.mu.Unlock()
+			if options.DisconnectAfterData {
+				return
+			}
+			if options.RejectAfterData {
+				writeSMTP(writer, "550 message rejected")
+			} else {
+				writeSMTP(writer, "250 accepted")
+			}
 		default:
 			writeSMTP(writer, "500 unsupported")
 		}
@@ -721,6 +769,18 @@ func (server *smtpTestServer) SawMutation() bool {
 	server.mu.Lock()
 	defer server.mu.Unlock()
 	return server.mutation
+}
+
+func (server *smtpTestServer) Envelope() (string, []string) {
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	return server.mailFrom, append([]string(nil), server.recipients...)
+}
+
+func (server *smtpTestServer) Message() []byte {
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	return append([]byte(nil), server.message...)
 }
 
 func (server *smtpTestServer) Close() { _ = server.listener.Close() }

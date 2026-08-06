@@ -1097,6 +1097,9 @@ LIMIT ?`, arguments...)
 		if err := mailRepository.loadMessageContent(ctx, &messages[index]); err != nil {
 			return maildomain.ThreadPage{}, err
 		}
+		if err := mailRepository.loadLocalRawSource(ctx, &messages[index]); err != nil {
+			return maildomain.ThreadPage{}, err
+		}
 	}
 	thread.Messages = messages
 	edges, err := repository.edges(ctx, accountID, messageIDs(messages))

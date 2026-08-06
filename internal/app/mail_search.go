@@ -75,13 +75,13 @@ func (commands accountCommands) MailSearchRepair(
 			_ = state.Search().RecordBodyError(ctx, accountValue.ID, item.MessageID, "message_unavailable", commands.timeNow())
 			continue
 		}
-		location, ok := rawMessageLocation(message)
+		rawSource, ok := rawMessageSource(message)
 		if !ok {
 			summary.Failed++
 			_ = state.Search().RecordBodyError(ctx, accountValue.ID, item.MessageID, "raw_unavailable", commands.timeNow())
 			continue
 		}
-		reader, openErr := blobStore.OpenVerifiedContext(ctx, location.RawStorageKey, location.RawContentHash, location.RawByteSize)
+		reader, openErr := blobStore.OpenVerifiedContext(ctx, rawSource.StorageKey, rawSource.ContentHash, rawSource.ByteSize)
 		if openErr != nil {
 			summary.Failed++
 			_ = state.Search().RecordBodyError(ctx, accountValue.ID, item.MessageID, "raw_unavailable", commands.timeNow())

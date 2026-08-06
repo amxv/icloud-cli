@@ -412,6 +412,9 @@ func messageHasRawSource(message maildomain.Message) bool {
 			return true
 		}
 	}
+	if message.LocalRaw != nil && message.LocalRaw.StorageKey != "" && message.LocalRaw.ContentHash != "" && message.LocalRaw.ByteSize >= 0 {
+		return true
+	}
 	return false
 }
 
@@ -486,6 +489,9 @@ func rawMessageSize(message maildomain.Message) int64 {
 		if location.Present && location.RawByteSize > 0 {
 			return location.RawByteSize
 		}
+	}
+	if message.LocalRaw != nil {
+		return message.LocalRaw.ByteSize
 	}
 	return 0
 }

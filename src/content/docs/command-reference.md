@@ -1,9 +1,9 @@
 ---
 title: Command reference
-description: A complete reference for account lifecycle, iCloud validation, folder discovery, enabled-folder synchronization, local search, message and attachment reads, doctor diagnostics, global controls, output modes, completion, and man generation.
+description: A complete reference for account lifecycle, iCloud validation, safe outbound mail, folder discovery, synchronization, search, message and attachment reads, diagnostics, output modes, completion, and man generation.
 order: 11
 category: Reference
-summary: Every account, credential, validation, folder, enabled-folder sync/read/search, message, attachment, doctor, capability, completion, man, help, and global control available now.
+summary: Every account, credential, validation, send, folder, sync/read/search, message, attachment, doctor, capability, completion, man, help, and global control available now.
 ---
 
 ## Root command
@@ -224,6 +224,43 @@ When a new folder copy has the same strong message identity as an existing local
 Compact success prints one block per selected folder with fetched/created/updated counts, reconciled locations, actual state changes, nonzero identity merges or conflicts, committed UID, `more`, and bootstrap state. `--json` returns every folder summary plus its durable checkpoint. An interrupted fetch, reconciliation, parse, blob write, or local commit leaves that folder's prior frontier unchanged.
 
 `--hydrate <rem_…,...>` switches to targeted remote caching and cannot be combined with `--folder`. It accepts 1-100 stale-safe remote references, deduplicates repeated arguments, verifies each account/folder/UIDVALIDITY/UID, and routes the fetched message through the same parser, blob, identity, attachment, search, and thread ingestion path. It does not create or advance a sync checkpoint. Compact output reports stable message/location IDs plus `created`, `updated`, or `cached`; JSON omits the submitted remote references.
+
+## `icloud mail send`
+
+Preview or send one new text/HTML message through the selected iCloud account:
+
+```bash
+icloud mail send --to client@example.com --subject Update --body 'Hello' --dry-run
+icloud mail send --to client@example.com --subject Update --body-file message.txt --dry-run --headers
+icloud mail send --to client@example.com --subject Update --body-file message.txt --idempotency-key update-01 --yes
+printf '%s\n' 'Hello' | icloud mail send --to client@example.com --subject Update --body-file - --yes --json
+```
+
+| Flag | Purpose |
+| --- | --- |
+| `--to <address>` | Required To recipient; repeat or pass a comma-separated list. |
+| `--cc <address>` / `--bcc <address>` | Visible Cc or envelope-only Bcc recipient; repeat as needed. |
+| `--reply-to <address>` | Optional Reply-To address with display-name support. |
+| `--subject <text>` | Required normalized subject. |
+| `--body <text>` / `--body-file <path|->` | Inline, regular-file, or stdin text body. |
+| `--html-body <html>` / `--html-body-file <path|->` | Inline, regular-file, or stdin HTML body. |
+| `--header 'Name: Value'` | Repeatable safe custom header; routing, identity, MIME, delivery, `Received`, and `Resent-*` fields are reserved. |
+| `--idempotency-key <key>` | Return the original attempt for the same normalized request; changed content with the same key conflicts. |
+| `--dry-run` | Normalize and review without opening SMTP or creating an attempt. |
+| `--yes` | Authorize a real non-interactive send. It cannot be combined with `--dry-run`. |
+| `--headers` / `--verbose` | Expand a dry-run review with normalized safe header fields or HTML/custom-header detail. |
+| `--format text|html|raw` | Emit one explicit dry-run body or composed RFC message instead of compact review text. |
+| `--json` | Emit a dry-run review envelope or sanitized real-send outcome. |
+
+The configured account name and address become `From`. Text plus HTML produces multipart alternative; HTML-only input receives a simple plain-text alternative. Each body is bounded to 8 MiB. The command currently accepts no filesystem attachments, so the attachment count is always zero.
+
+Dry-run compact output includes the normalized recipient lists, including BCC, subject, body counts, text body once, request hash, and a no-network/no-attempt safety summary. `--headers` never prints a `Bcc` header. `--format raw` composes a complete preview message with a generated preview Message-ID and date, but BCC remains absent because it is only an SMTP-envelope recipient.
+
+Without `--dry-run`, a terminal receives the same compact preview and a `Send this message? [y/N]` prompt unless `--yes` is supplied. Non-TTY execution and `--no-input` require `--yes`. When stdin supplied a body, interactive confirmation is unavailable; review first, then rerun with `--yes`.
+
+A pending attempt is durable before SMTP. Final status is `sent`, `failed`, or `unknown`; successful acceptance creates a searchable local `msg_…`, reconstructed `thr_…`, and reconciliation state in the same local transaction. `unknown` means acceptance could not be proved either way and is always non-retryable. Repeating the exact normalized request with its idempotency key returns the original attempt without another SMTP transaction.
+
+Real compact/JSON success returns only stable account, attempt, message, and thread identity plus status, reconciliation, reuse state, and schema metadata. It omits recipients, BCC, subject, bodies, custom headers, idempotency key, and raw-storage coordinates. Dry-run JSON intentionally contains the full normalized review request and must be treated as private message content.
 
 ## `icloud mail inbox`
 
@@ -501,7 +538,7 @@ Compact output:
 capabilities
 command=icloud
 version=0.1.0
-schema=10
+schema=11
 account_mode=validated_lifecycle
 credentials=keyring,env,file
 network_validation=true
@@ -515,6 +552,7 @@ mail_threads=true
 mail_search=true
 mail_remote_search=true
 mail_hydration=true
+mail_send=true
 default_output=compact
 json=true
 completion=bash,zsh,fish,powershell
@@ -560,6 +598,6 @@ Help goes to stdout. Usage failures go to stderr and exit `2`.
 
 ## Output availability
 
-Every account and credential lifecycle command above, `account test`, every folder command, enabled-folder sync/read/local-or-remote-search/status/checkpoints, targeted hydration, latest/thread reads, message read and state commands, attachment list/save/save-all, `doctor`, `version`, and `capabilities` supports `--json` where a native byte stream is not requested. Validation, doctor, folder reads/status, thread reads, and message reads support bounded `--verbose` detail where advertised. `mail message raw`, `message export --output -`, and `attachments save --output - --binary` retain native bytes; completion and man generation retain their native formats. Local folder, search, and thread lists stay preview-only. Remote summaries stay metadata-only until `--cache`; stable local thread/message reads then provide explicit full-text, HTML, raw, headers, metadata-only, verbose, and JSON modes.
+Every account and credential lifecycle command above, `account test`, every folder command, enabled-folder sync/read/local-or-remote-search/status/checkpoints, targeted hydration, send preview/outcome, latest/thread reads, message read and state commands, attachment list/save/save-all, `doctor`, `version`, and `capabilities` supports `--json` where a native byte stream is not requested. Validation, doctor, folder reads/status, thread reads, message reads, and dry-run send review support bounded `--verbose` detail where advertised. `mail message raw`, `message export --output -`, `attachments save --output - --binary`, and dry-run send `--format text|html|raw` retain their explicit native formats; completion and man generation do likewise. Local folder, search, and thread lists stay preview-only. Remote summaries stay metadata-only until `--cache`; stable local thread/message reads then provide explicit full-text, HTML, raw, headers, metadata-only, verbose, and JSON modes.
 
 Compact output uses vertical blocks: result type first, stable identity plus the first field next when present, then one remaining field per line. A blank line separates consecutive records or a final summary. Errors use the same block shape on stderr.

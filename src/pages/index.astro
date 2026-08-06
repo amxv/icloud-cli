@@ -29,6 +29,7 @@ const workflows = [
   "Add an offline iCloud Mail profile using the native keyring or an environment/file credential reference.",
   "Select, rename, default, rotate, or remove multiple profiles without exposing credential references or values.",
   "Validate direct-TLS IMAP and mandatory-STARTTLS SMTP safely, then inspect stored health with icloud doctor.",
+  "Preview a normalized outbound request without network or state changes, then send text or HTML with explicit confirmation and idempotency.",
   "Discover nested and Unicode mailboxes, then synchronize bounded pages from enabled folders into private local state.",
   "Search synchronized mail offline, or query bounded iCloud metadata explicitly and hydrate only the remote messages you choose.",
   "Read compact sender, subject, state, attachment-count, and decoded-text previews offline without marking mail read.",
@@ -55,10 +56,10 @@ const workflows = [
         and one public executable across local builds, npm installs, and release assets.
       </p>
       <p class="hero__annotation">
-        The current build validates both iCloud Mail protocols, discovers every folder, synchronizes
+        The current build validates both iCloud Mail protocols, previews and sends deliberate text or HTML messages, discovers every folder, synchronizes
         bounded enabled-folder pages, starts Sent without crawling history, searches locally or through explicit bounded iCloud queries,
         hydrates selected remote messages without advancing sync, reconstructs RFC conversations locally,
-        reads complete local messages explicitly, and never sends or mutates mail.
+        reads complete local messages explicitly, and keeps every mutation scoped and explicit.
       </p>
       <div class="hero__actions">
         <a class="button button--solid" href="/docs/quickstart">Start with the quickstart</a>
@@ -75,7 +76,7 @@ const workflows = [
         <span>capabilities</span>
         <span>command=icloud</span>
         <span>version=0.1.0</span>
-        <span>schema=10 …</span>
+        <span>schema=11 …</span>
         <span>$ icloud account add --name Personal --email owner@icloud.com</span>
         <span>App-specific password:</span>
         <span>account-added</span>
@@ -87,6 +88,14 @@ const workflows = [
         <span>acct_… status=connected</span>
         <span>imap=ok</span>
         <span>smtp=ok …</span>
+        <span>$ icloud mail send --to client@example.com --subject Update --body-file message.txt --dry-run</span>
+        <span>send-preview</span>
+        <span>acct_… from="Personal &lt;owner@icloud.com&gt;"</span>
+        <span>smtp_contacted=false</span>
+        <span>$ icloud mail send --to client@example.com --subject Update --body-file message.txt --idempotency-key update-01 --yes</span>
+        <span>mail-send</span>
+        <span>send_… status=sent</span>
+        <span>message_id=msg_…</span>
         <span>$ icloud mail folders status</span>
         <span>folder-status</span>
         <span>account=acct_…</span>
@@ -142,7 +151,7 @@ const workflows = [
   <section class="shell split-section">
     <div>
       <p class="section-label">Available now</p>
-      <h2>Configure private profiles, validate both mail protocols, synchronize or search deliberately, and choose exactly what remote content to cache and read.</h2>
+      <h2>Configure private profiles, validate both mail protocols, send deliberately, synchronize or search safely, and choose exactly what remote content to cache and read.</h2>
     </div>
     <div class="stack-list">
       {workflows.map((item) => (

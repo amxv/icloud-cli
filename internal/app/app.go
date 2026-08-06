@@ -25,6 +25,7 @@ func RunWithInput(ctx context.Context, args []string, stdin io.Reader, stdout, s
 	return runWithAccounts(ctx, args, stdin, stdout, stderr, accountCommands{
 		imap:    protocolClient,
 		smtp:    protocolClient,
+		sender:  protocolClient,
 		folders: protocolClient,
 		mail:    protocolClient,
 		remote:  protocolClient,

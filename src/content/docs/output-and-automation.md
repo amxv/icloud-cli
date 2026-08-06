@@ -1,9 +1,9 @@
 ---
 title: Output and automation
-description: Understand compact defaults, JSON envelopes, stdin credential safety, stderr, request IDs, timeouts, and stable exit classes.
+description: Understand compact defaults, JSON envelopes, outbound-review privacy, stdin safety, stderr, request IDs, timeouts, and stable exit classes.
 order: 9
 category: Guides
-summary: The agent-facing contract for bounded text, explicit JSON, safe input, and stable failures.
+summary: The agent-facing contract for bounded text, explicit JSON, safe credential and message input, deliberate sends, and stable failures.
 ---
 
 ## Compact text is always the default
@@ -46,14 +46,22 @@ icloud --request-id account-01 account show --json
 ```
 
 ```json
-{"ok":true,"data":{"account":{"id":"acct_…","name":"Personal","email":"owner@icloud.com","imap_username":"owner","status":"connected","default":true,"credential_scheme":"keyring","imap_capabilities":["IDLE","IMAP4REV1"],"smtp_capabilities":["AUTH"],"last_healthy_at":"2026-08-06T03:00:00Z","last_tested_at":"2026-08-06T03:00:00Z","created_at":"2026-08-06T02:30:00Z","updated_at":"2026-08-06T03:00:00Z"},"schema_version":10},"meta":{"request_id":"account-01"}}
+{"ok":true,"data":{"account":{"id":"acct_…","name":"Personal","email":"owner@icloud.com","imap_username":"owner","status":"connected","default":true,"credential_scheme":"keyring","imap_capabilities":["IDLE","IMAP4REV1"],"smtp_capabilities":["AUTH"],"last_healthy_at":"2026-08-06T03:00:00Z","last_tested_at":"2026-08-06T03:00:00Z","created_at":"2026-08-06T02:30:00Z","updated_at":"2026-08-06T03:00:00Z"},"schema_version":11},"meta":{"request_id":"account-01"}}
 ```
 
-Account lifecycle, credential, validation, doctor, folder discovery/policy, enabled-folder sync, local and explicit remote search, targeted hydration, local folder reads, latest/thread reads, message reads and state mutations, attachment list/save/save-all, account reads, `version`, and `capabilities` support JSON when stdout is not carrying native bytes. Folder list/show/status and thread reads also support bounded `--verbose` evidence. Completion and man generation intentionally return native text formats.
+Account lifecycle, credential, validation, doctor, folder discovery/policy, enabled-folder sync, local and explicit remote search, targeted hydration, local folder reads, latest/thread reads, message reads and state mutations, attachment list/save/save-all, send preview/outcome, account reads, `version`, and `capabilities` support JSON when stdout is not carrying native bytes. Folder list/show/status and thread reads also support bounded `--verbose` evidence. Completion and man generation intentionally return native text formats.
 
 Thread JSON remains local reconstruction data. `mail latest --json` returns aggregates only. `mail thread show --metadata-only --verbose --json` returns chronological messages and bounded RFC graph evidence without excerpts, BCC, raw-storage coordinates, bodies, or internal edge IDs. `--format raw --json` is explicit and bounded; plain multi-message raw output is rejected.
 
 Credential metadata JSON omits internal IDs, keyring references, environment names, file paths, and values. Error envelopes omit wrapped provider and storage causes.
+
+## Outbound review and success have different privacy contracts
+
+`mail send --dry-run` is an explicit message-review mode. Its compact output includes the normalized recipient lists, including BCC, the subject, the text body once, body-part and attachment counts, and a safety summary proving that SMTP was not contacted and no attempt was created. `--headers`, `--verbose`, `--format text|html|raw`, and `--json` deliberately expand that review. Dry-run JSON contains normalized recipients, BCC, subject, bodies, Reply-To, and safe custom headers; treat it as private message content rather than routine telemetry.
+
+A real send behaves differently. Non-interactive execution requires `--yes`, and automation should supply a stable `--idempotency-key`. Compact or JSON success returns the account ID, stable attempt/message/thread IDs, status, reconciliation state, reuse state, schema version, and request ID. It does not echo recipients, BCC, subject, bodies, custom headers, the idempotency key, or raw-storage coordinates.
+
+An indeterminate post-DATA result uses status `unknown`, returns the stable attempt ID on stderr, and is always `retryable=false`. The caller must not infer that a temporary network cause makes the send safe to repeat. Reusing the same normalized request and idempotency key retrieves the original attempt without another SMTP transaction.
 
 An `account test --json` failure writes one error envelope to stderr. Its `details.stage` and bounded `details.reports` identify the failing protocol without including the credential reference, password, raw server response, or debug transcript.
 
@@ -119,7 +127,7 @@ Help remains on stdout. A failed command never writes a success payload to stdou
 --request-id <id>     correlate structured output
 ```
 
-Version, capabilities, completion, man, and help remain disk-free. Account reads, `mail inbox` with any folder selector, local `mail search`, `mail search repair`, `mail latest`, `mail thread show`, local `mail message`, attachment reads, sync status, checkpoint reads, and local `doctor` never prompt or contact Apple. Compact thread reads and plain local `--metadata-only` use stored summaries without opening raw message files. Search repair may verify and parse already synchronized raw bytes, but it never contacts iCloud. `mail search --remote`, `mail message show rem_… --remote`, targeted hydration, normal sync, read/flag mutations, and live validation contact Apple and use the same global timeout. Streaming message and attachment reads also honor the command timeout.
+Version, capabilities, completion, man, and help remain disk-free. Account reads, `mail inbox` with any folder selector, local `mail search`, `mail search repair`, `mail latest`, `mail thread show`, local `mail message`, attachment reads, sync status, checkpoint reads, local `doctor`, and `mail send --dry-run` never prompt or contact Apple. Compact thread reads and plain local `--metadata-only` use stored summaries without opening raw message files. Search repair may verify and parse already synchronized raw bytes, but it never contacts iCloud. `mail search --remote`, `mail message show rem_… --remote`, targeted hydration, normal sync, read/flag mutations, real mail send, and live validation contact Apple and use the same global timeout. Streaming message, attachment, and outbound MIME paths also honor the command timeout.
 
 Remote compact/JSON results expose only the stale-safe `rem_…` reference, current folder/UID identity, bounded envelope fields, flags, size, provider preview, and an optional cached stable message ID. BCC, credentials, raw storage coordinates, raw MIME, full bodies, HTML, attachment bytes, and private local paths remain excluded. Hydration output omits the submitted remote reference and returns only stable local IDs and created/updated/cached status.
 

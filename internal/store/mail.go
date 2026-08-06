@@ -346,7 +346,30 @@ WHERE m.account_id = ? AND m.message_id = ?`, strings.TrimSpace(accountID), stri
 	if err := repository.loadMessageContent(ctx, &value); err != nil {
 		return maildomain.Message{}, err
 	}
+	if err := repository.loadLocalRawSource(ctx, &value); err != nil {
+		return maildomain.Message{}, err
+	}
 	return value, nil
+}
+
+func (repository *MailRepository) loadLocalRawSource(ctx context.Context, value *maildomain.Message) error {
+	if value == nil || strings.TrimSpace(value.ID) == "" {
+		return nil
+	}
+	var source maildomain.LocalRawSource
+	err := repository.db.QueryRowContext(ctx, `
+SELECT raw_content_hash, raw_storage_key, raw_byte_size
+FROM local_message_sources WHERE message_id = ?`, value.ID).Scan(
+		&source.ContentHash, &source.StorageKey, &source.ByteSize,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read local raw message source: %w", err)
+	}
+	value.LocalRaw = &source
+	return nil
 }
 
 func (repository *MailRepository) MessageByProviderLocation(ctx context.Context, accountID, folderID string, uidValidity, uid uint32) (maildomain.Message, error) {

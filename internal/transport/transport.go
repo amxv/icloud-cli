@@ -3,6 +3,7 @@ package transport
 import (
 	"context"
 	"errors"
+	"io"
 	"sort"
 	"strings"
 	"time"
@@ -30,6 +31,11 @@ const (
 	StageSMTPGreeting   Stage = "smtp_greeting"
 	StageSMTPStartTLS   Stage = "smtp_starttls"
 	StageSMTPAuth       Stage = "smtp_auth"
+	StageSMTPMail       Stage = "smtp_mail"
+	StageSMTPRecipient  Stage = "smtp_recipient"
+	StageSMTPData       Stage = "smtp_data"
+	StageSMTPWrite      Stage = "smtp_write"
+	StageSMTPAccept     Stage = "smtp_accept"
 	StageSMTPNoop       Stage = "smtp_noop"
 	StageSMTPQuit       Stage = "smtp_quit"
 	StageTimeout        Stage = "timeout"
@@ -283,6 +289,59 @@ type IMAPFolderClient interface {
 
 type SMTPValidator interface {
 	ValidateSMTP(context.Context, AuthRequest) (SMTPResult, error)
+}
+
+type SMTPEnvelope struct {
+	From       string
+	Recipients []string
+}
+
+type SMTPSendRequest struct {
+	Envelope SMTPEnvelope
+	Message  io.Reader
+}
+
+type SMTPSendResult struct {
+	Accepted   bool
+	StatusText string
+}
+
+type SMTPSendOutcome string
+
+const (
+	SMTPSendFailed  SMTPSendOutcome = "failed"
+	SMTPSendUnknown SMTPSendOutcome = "unknown"
+)
+
+type SMTPSendError struct {
+	Outcome SMTPSendOutcome
+	Failure *Failure
+}
+
+func (err *SMTPSendError) Error() string {
+	if err == nil || err.Failure == nil {
+		return "SMTP send failed"
+	}
+	return err.Failure.Error()
+}
+
+func (err *SMTPSendError) Unwrap() error {
+	if err == nil {
+		return nil
+	}
+	return err.Failure
+}
+
+func AsSMTPSendError(err error) (*SMTPSendError, bool) {
+	var sendErr *SMTPSendError
+	if errors.As(err, &sendErr) {
+		return sendErr, true
+	}
+	return nil, false
+}
+
+type SMTPSender interface {
+	SendSMTP(context.Context, AuthRequest, SMTPSendRequest) (SMTPSendResult, error)
 }
 
 func SanitizeCapabilities(values []string) []string {

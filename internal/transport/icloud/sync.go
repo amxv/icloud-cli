@@ -248,8 +248,14 @@ func fetchInboxMessages(ctx context.Context, conn net.Conn, client *imapclient.C
 	}
 	uidSet := imap.UIDSetNum(uids...)
 	section := &imap.FetchItemBodySection{Peek: true}
-	var messages []transport.FetchedMessage
-	err := runWithDeadline(ctx, conn, timeout, func() error {
+	messages, err := runValueWithDeadline(ctx, conn, timeout, func() ([]transport.FetchedMessage, error) {
+		var fetched []transport.FetchedMessage
+		completed := false
+		defer func() {
+			if !completed {
+				abortFetched(fetched)
+			}
+		}()
 		command := client.Fetch(uidSet, &imap.FetchOptions{
 			UID:          true,
 			Envelope:     true,
@@ -287,15 +293,15 @@ func fetchInboxMessages(ctx context.Context, conn net.Conn, client *imapclient.C
 					message.Envelope = convertEnvelope(value.Envelope)
 				case imapclient.FetchItemDataBodySection:
 					if value.Literal == nil {
-						return closeCommand(errors.New("provider returned an empty raw message literal"))
+						return nil, closeCommand(errors.New("provider returned an empty raw message literal"))
 					}
 					if message.Raw != nil {
 						_ = message.Raw.Abort()
-						return closeCommand(errors.New("provider returned duplicate raw message data"))
+						return nil, closeCommand(errors.New("provider returned duplicate raw message data"))
 					}
 					staged, err := stager.Stage(ctx, value.Literal, message.RFC822Size)
 					if err != nil {
-						return closeCommand(err)
+						return nil, closeCommand(err)
 					}
 					message.Raw = staged
 				}
@@ -304,14 +310,17 @@ func fetchInboxMessages(ctx context.Context, conn net.Conn, client *imapclient.C
 				if message.Raw != nil {
 					_ = message.Raw.Abort()
 				}
-				return closeCommand(errors.New("provider omitted required UID or raw message data"))
+				return nil, closeCommand(errors.New("provider omitted required UID or raw message data"))
 			}
-			messages = append(messages, message)
+			fetched = append(fetched, message)
 		}
-		return closeCommand(nil)
+		if err := closeCommand(nil); err != nil {
+			return nil, err
+		}
+		completed = true
+		return fetched, nil
 	})
 	if err != nil {
-		abortFetched(messages)
 		return nil, classifyFailure(transport.StageIMAPFetch, err)
 	}
 	byUID := make(map[uint32]transport.FetchedMessage, len(messages))

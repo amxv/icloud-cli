@@ -8,6 +8,10 @@ summary: Public command, output, installation, and documentation changes.
 
 ## Unreleased
 
+- Added `icloud mail send` for deliberate text/HTML messages with account display-name `From`, display-name recipients, Reply-To, safe custom headers, generated Message-ID, envelope-only BCC, and mandatory STARTTLS submission.
+- Added no-network/no-attempt dry runs, interactive confirmation, non-TTY `--yes`, bounded body/file/stdin input, explicit text/HTML/raw/header preview expansions, and payload-free compact/JSON success output.
+- Added schema version 11 pending/sent/failed/unknown outbound attempts, normalized-request idempotency, pre-SMTP durability, atomic accepted-message/search/thread creation, local raw-message authority, and non-retryable post-DATA ambiguity.
+- Added the Send mail safely guide and updated Quickstart, output/automation, troubleshooting, command reference, README, capabilities, landing, completion, man, migration, privacy, and compact-output contracts.
 - Added explicit bounded iCloud search with stale-safe `rem_…` provider references, one-folder default, opt-in all-folder fan-out, current envelope/flag summaries, decoded bounded previews, visible `more`/`partial` bounds, and honest unsupported-filter errors.
 - Added targeted remote hydration through `mail sync --hydrate` and `mail message show --remote --cache`, reusing the canonical parser/blob/identity/search/attachment/thread path without advancing ordinary synchronization checkpoints.
 - Added `mail_remote_search` and `mail_hydration` capability flags and expanded the search, sync, output, troubleshooting, quickstart, README, and reference journeys.

@@ -28,6 +28,8 @@ type MailService interface {
 	MailRemoteSearch(context.Context, string, string, string, bool, maildomain.SearchOptions) (account.Account, maildomain.RemoteSearchPage, int64, error)
 	MailRemoteSummary(context.Context, string, string, string) (account.Account, maildomain.RemoteSearchHit, int64, error)
 	MailHydrate(context.Context, string, string, []string) (account.Account, []maildomain.HydrateOutcome, int64, error)
+	MailSendPreview(context.Context, string, string, maildomain.SendRequest) (account.Account, maildomain.SendPreview, int64, error)
+	MailSend(context.Context, string, string, maildomain.SendRequest) (account.Account, maildomain.OutboundAttempt, bool, int64, error)
 }
 
 type mailSyncData struct {
@@ -454,4 +456,10 @@ func (unavailableMailService) MailRemoteSummary(context.Context, string, string,
 }
 func (unavailableMailService) MailHydrate(context.Context, string, string, []string) (account.Account, []maildomain.HydrateOutcome, int64, error) {
 	return account.Account{}, nil, 0, NewAppError(ErrorConfiguration, "remote message hydration is unavailable", false)
+}
+func (unavailableMailService) MailSendPreview(context.Context, string, string, maildomain.SendRequest) (account.Account, maildomain.SendPreview, int64, error) {
+	return account.Account{}, maildomain.SendPreview{}, 0, NewAppError(ErrorConfiguration, "mail send preview is unavailable", false)
+}
+func (unavailableMailService) MailSend(context.Context, string, string, maildomain.SendRequest) (account.Account, maildomain.OutboundAttempt, bool, int64, error) {
+	return account.Account{}, maildomain.OutboundAttempt{}, false, 0, NewAppError(ErrorConfiguration, "mail send is unavailable", false)
 }

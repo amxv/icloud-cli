@@ -404,6 +404,9 @@ func readSecretInput(reader io.Reader, stderr io.Writer, interactive bool) ([]by
 }
 
 func isTerminalReader(reader io.Reader) bool {
+	if value, ok := reader.(interface{ IsTerminal() bool }); ok {
+		return value.IsTerminal()
+	}
 	file, ok := reader.(*os.File)
 	return ok && term.IsTerminal(int(file.Fd()))
 }

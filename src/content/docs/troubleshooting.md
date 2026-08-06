@@ -1,6 +1,6 @@
 ---
 title: Troubleshooting
-description: Resolve installation, account setup, credential, IMAP/SMTP validation, state, message and attachment output, completion, and man-generation problems.
+description: Resolve installation, account setup, credential, validation, outbound-send, state, message and attachment output, completion, and man-generation problems.
 order: 10
 category: Guides
 summary: Common errors, privacy-safe diagnosis, and the next command to run.
@@ -96,6 +96,51 @@ Then use the stage from the error:
 - `timeout` — retry with a deliberate larger `--timeout` after checking for a stalled network path.
 
 Run `icloud doctor Personal --live --json` when an agent needs a fresh structured report. Validation never sends a message, so a successful test does not prove delivery.
+
+## Mail send requires authorization
+
+`mail send --dry-run` never contacts SMTP and needs no confirmation. A real non-interactive or `--no-input` send requires `--yes`:
+
+```bash
+icloud mail send \
+  --to client@example.com \
+  --subject Update \
+  --body-file message.txt \
+  --dry-run
+
+icloud mail send \
+  --to client@example.com \
+  --subject Update \
+  --body-file message.txt \
+  --idempotency-key update-01 \
+  --yes
+```
+
+In a terminal, omitting `--yes` prints the normalized compact preview and asks `Send this message? [y/N]`. When `--body-file -` or `--html-body-file -` consumed stdin, the same stream cannot also answer the prompt. Review with `--dry-run`, then rerun with `--yes`.
+
+## Mail send reports an idempotency conflict
+
+The same account and idempotency key were already used for a different normalized request. Do not change recipients, subject, body, Reply-To, headers, or the account identity while reusing a key.
+
+Run the original command unchanged to retrieve its attempt without another SMTP transaction. Use a new key only for an intentionally new message.
+
+## Mail send outcome is unknown
+
+The CLI lost certainty after message data may have reached iCloud, or iCloud accepted the message but the local completion transaction could not be confirmed. This error is deliberately `retryable=false` even when the underlying network problem was temporary.
+
+Do not rerun with a new idempotency key immediately. Keep the returned `send_…` attempt ID, rerun the exact same command with the same key only to retrieve the original attempt, and verify the receiving mailbox or iCloud Sent mailbox before deciding whether another message is appropriate.
+
+## Mail send failed before acceptance
+
+Use the reported stage:
+
+- `smtp_starttls` — the encrypted submission path was unavailable; authentication and message transfer did not proceed;
+- `smtp_auth` — correct the app-specific password, then run `icloud account test`;
+- `smtp_mail` or `smtp_recipient` — iCloud rejected the envelope before message data;
+- `smtp_data` or a final explicit SMTP rejection — the server proved that the attempt was not accepted;
+- `timeout` before DATA — check connectivity and choose a deliberate larger global timeout when justified.
+
+A `failed` attempt is not automatically retried. Correct the cause, review again, and use a new idempotency key for the deliberate new attempt.
 
 ## An account already exists
 

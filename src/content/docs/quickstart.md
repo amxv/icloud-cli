@@ -1,9 +1,9 @@
 ---
 title: Quickstart
-description: Install icloud, configure an app-specific password safely, validate the account, discover and synchronize mail, search or read it offline, save content, and update message state explicitly.
+description: Install icloud, configure an app-specific password safely, validate the account, preview and send mail deliberately, synchronize folders, search or read offline, save content, and update message state explicitly.
 order: 1
 category: Start
-summary: The shortest safe path from installation to a validated account, synchronized Inbox and new Sent copies, local or explicit remote search, targeted hydration, content access, safe attachment export, and location-aware state updates.
+summary: The shortest safe path from installation to a validated account, deliberate outbound mail, synchronized Inbox and new Sent copies, local or explicit remote search, targeted hydration, content access, safe attachment export, and location-aware state updates.
 ---
 
 ## Install and inspect the binary
@@ -30,7 +30,7 @@ version
 capabilities
 command=icloud
 version=0.1.0
-schema=10
+schema=11
 account_mode=validated_lifecycle
 credentials=keyring,env,file
 network_validation=true
@@ -44,6 +44,7 @@ mail_threads=true
 mail_search=true
 mail_remote_search=true
 mail_hydration=true
+mail_send=true
 default_output=compact
 json=true
 completion=bash,zsh,fish,powershell
@@ -134,6 +135,31 @@ Inspect saved health later without another network request:
 ```bash
 icloud doctor
 ```
+
+## Preview and send a message deliberately
+
+Review the normalized request without contacting SMTP or creating an attempt:
+
+```bash
+icloud mail send \
+  --to client@example.com \
+  --subject 'Project update' \
+  --body-file message.txt \
+  --dry-run
+```
+
+In a terminal, rerun without `--dry-run` and confirm the prompt. An agent or redirected process must authorize the real send explicitly and should use an idempotency key:
+
+```bash
+icloud mail send \
+  --to client@example.com \
+  --subject 'Project update' \
+  --body-file message.txt \
+  --idempotency-key project-update-2026-08-06 \
+  --yes
+```
+
+Success returns only a stable attempt, message, and thread ID. BCC addresses remain in the SMTP envelope and are omitted from the composed message. An `unknown` result means acceptance could not be proved either way and must not be retried automatically. Read [Send mail safely](/docs/send-mail-safely) for text/HTML input, display names, Reply-To, custom headers, dry-run expansions, idempotency conflicts, and recovery.
 
 ## Discover folders
 
@@ -350,11 +376,12 @@ Without a selector, commands use the default account, then a sole account. The C
 icloud --request-id inbox-01 mail inbox --json
 ```
 
-JSON is opt-in. Redirecting stdout does not change the compact default. Passwords, credential references, BCC recipients, raw storage paths, and full bodies stay out of Inbox and default message JSON. A message body or raw payload appears in JSON only when the same explicit content mode is requested.
+JSON is opt-in. Redirecting stdout does not change the compact default. Passwords, credential references, BCC recipients, raw storage paths, and full bodies stay out of Inbox, default message JSON, and successful send JSON. A message body or raw payload appears only when the matching explicit content mode is requested. Dry-run send JSON is an intentional request review and therefore includes normalized recipients, BCC, subject, and bodies.
 
 ## Common next actions
 
 - Credential or validation trouble: [Account validation and doctor](/docs/account-validation-and-doctor)
+- Outbound preview, confirmation, idempotency, or an unknown result: [Send mail safely](/docs/send-mail-safely)
 - Empty or unexpected folder inventory: [Folder discovery and sync policy](/docs/folder-discovery-and-sync-policy)
 - Interrupted Inbox, Sent, or other enabled-folder sync: [Sync and read mail](/docs/sync-and-read-inbox)
 - Unexpected conversation grouping or a retired thread ID: [Reconstructed conversations](/docs/read-reconstructed-conversations)
