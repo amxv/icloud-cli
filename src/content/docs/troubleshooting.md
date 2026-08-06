@@ -315,7 +315,7 @@ Generating completion output does not install it automatically.
 
 ## A local command is not contacting iCloud
 
-That is expected for `account add`, credential replacement, account reads, local folder `list`/`show`, folder policy changes, outbound or mutation status, dry-run previews, and `doctor` without `--live`. Use `icloud account test`, `icloud doctor --live`, `icloud mail folders status`, `icloud mail sync`, a real outbound operation, or a real location mutation for explicit network work. Folder sync and status commands never resend or move a message.
+That is expected for `account add`, credential replacement, account reads, local folder `list`/`show`, folder policy changes, outbound or mutation status, folder-administration dry-runs, outbound dry-runs, location-mutation dry-runs, and `doctor` without `--live`. Use `icloud account test`, `icloud doctor --live`, `icloud mail folders status`, a real `mail folders create|rename|delete|subscribe|unsubscribe`, `icloud mail sync`, a real outbound operation, or a real location mutation for explicit network work. Folder sync and status commands never resend or move a message.
 
 ## Folder list is empty
 
@@ -330,6 +330,24 @@ If that fails, use the returned credential, authentication, timeout, TLS, LIST, 
 ## A folder says subscription unknown
 
 That is truthful when iCloud does not expose subscription metadata through the LIST command it accepts. Unknown does not mean unsubscribed and does not prevent local future-sync policy from being enabled.
+
+Provider subscription and local synchronization policy are separate. Use `mail folders subscribe` / `unsubscribe` for the provider state and `mail folders enable` / `disable` for future automatic CLI sync selection.
+
+## A folder rename timed out
+
+Do not immediately repeat the rename. The provider may have accepted the command before the response was lost.
+
+```bash
+icloud mail folders status
+```
+
+Rename recovery is recorded before provider contact. A fresh status refresh can reconnect the new provider name to the original `fld_…` even when iCloud omits rename metadata. If both old and new names remain or neither is visible, keep the state directory intact and avoid another rename until the provider view is unambiguous.
+
+## A custom folder cannot be renamed or deleted
+
+Inbox and provider-discovered system or special-use folders are protected. A folder with current child mailboxes is also protected from automatic rename/delete so an implicit provider hierarchy cascade cannot broaden the operation; change the children first. Non-selectable containers are not deleted automatically.
+
+For deletion, refresh counts with `icloud mail folders status`. A non-empty custom folder additionally requires `--allow-non-empty --yes`, which means its provider contents may be removed.
 
 ## Archive or Drafts says kind other
 

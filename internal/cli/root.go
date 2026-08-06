@@ -36,6 +36,8 @@ type FolderService interface {
 	FolderShow(context.Context, string, string, string) (account.Account, folder.Folder, int64, error)
 	FolderStatus(context.Context, string, string) (account.Account, []folder.Folder, int64, error)
 	FolderSetSync(context.Context, string, string, string, bool) (account.Account, folder.Folder, int64, error)
+	FolderAdminPreview(context.Context, string, string, folder.AdminRequest) (account.Account, folder.AdminPlan, int64, error)
+	FolderAdmin(context.Context, string, string, folder.AdminRequest) (account.Account, folder.AdminOutcome, int64, error)
 }
 
 // AccountService is the application-owned boundary used by account commands.

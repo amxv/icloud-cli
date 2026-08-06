@@ -201,12 +201,46 @@ icloud mail folders disable Receipts
 
 Changes local future-sync policy only; no message is fetched or changed. Newly discovered selectable Inbox and Sent default enabled, while every other folder defaults disabled. Policy survives rediscovery, rename, missing state, and reappearance. Enabling a non-selectable container returns conflict.
 
+## `icloud mail folders create` / `rename`
+
+```bash
+icloud mail folders create 'Projects/Client-日本語' --dry-run
+icloud mail folders create 'Projects/Client-日本語' --yes
+icloud mail folders rename Receipts 'Projects/Receipts' --dry-run
+icloud mail folders rename Receipts 'Projects/Receipts' --yes
+```
+
+Creates or renames one custom provider folder. `--dry-run` resolves local safety without contacting IMAP; a real non-interactive change requires `--yes`. Names use the provider's discovered hierarchy and may contain Unicode. Rename preserves the existing stable folder ID, local sync policy, checkpoint, and locations. Inbox, provider-derived system roles, and folders with current child mailboxes are protected from rename.
+
+An interrupted rename is not safe to repeat automatically: iCloud may have accepted it before the response was lost. Run `icloud mail folders status`; the durable rename recovery reconciles the old and new provider names back to the original stable folder ID when the fresh LIST evidence is decisive.
+
+## `icloud mail folders subscribe` / `unsubscribe`
+
+```bash
+icloud mail folders subscribe Receipts --dry-run
+icloud mail folders subscribe Receipts --yes
+icloud mail folders unsubscribe Receipts --yes
+```
+
+Changes the provider subscription state for one current folder. This is independent from the CLI's local `enable` / `disable` sync policy. `subscription=unknown` remains distinct from subscribed and unsubscribed when iCloud does not report subscription state during normal discovery.
+
+## `icloud mail folders delete`
+
+```bash
+icloud mail folders delete fld_… --dry-run
+icloud mail folders delete fld_… --yes
+icloud mail folders delete fld_… --allow-non-empty --yes
+```
+
+Deletes one exact custom provider folder after local safety checks and an immediate provider message-count recheck. Inbox, provider-derived system/special-use folders, non-selectable containers, and folders with current children are protected. Non-empty deletion additionally requires `--allow-non-empty`; it means the folder's provider contents may be deleted. A confirmed delete marks the retained local folder identity missing/stale and disables its sync policy.
+
 ## `icloud mail sync`
 
 ```bash
 icloud mail sync
 icloud mail sync --folder sent
 icloud mail sync --folder fld_…
+icloud mail sync --all-folders --limit 20
 icloud mail sync --reconcile-outbound
 icloud mail sync --hydrate rem_…
 icloud mail sync --hydrate rem_…,rem_… --json
@@ -214,9 +248,9 @@ icloud mail sync --limit 50
 icloud --account Personal mail sync --json
 ```
 
-Fetches and atomically commits one bounded page for each enabled, current, selectable folder. Inbox and Sent begin enabled. The default page is 20 messages per folder and the maximum is 100. Use `--folder` with a role, stable ID, decoded name, or exact wire name to select one folder.
+Fetches and atomically commits one bounded page for each enabled, current, selectable folder. Inbox and Sent begin enabled. The default page is 20 messages per folder and the maximum is 100. Use `--folder` with a role, stable ID, decoded name, or exact wire name to select one enabled folder. `--all-folders` is an explicit override that selects every current selectable folder, including locally disabled folders, while still applying the same per-folder bound.
 
-Inbox first setup downloads the newest bounded page. Sent first setup records the current remote tail and downloads no historical Sent messages; later runs ingest only new Sent copies. Another enabled folder starts from its newest bounded page. `more=true` means another bounded page is available for that folder.
+Inbox first setup downloads the newest bounded page. Sent first setup records the current remote tail and downloads no historical Sent messages; later runs ingest only new Sent copies. Another enabled or explicitly all-folder-selected mailbox starts from its newest bounded page. Synchronization never walks backward into older history automatically. `more=true` can also reflect a sparse UID tail; subsequent runs continue only above the saved scan frontier.
 
 Each selected folder also refreshes up to 100 least-recently checked current locations using metadata-only UID reads. The rotating sweep detects server-side Seen, Flagged, Answered, Draft, Deleted, unknown flags, disappearance, and mod-sequences when available without downloading bodies again. Sync never changes remote flags, moves mail, or sends a message.
 
@@ -224,9 +258,9 @@ When a new folder copy has the same strong message identity as an existing local
 
 Compact success prints one block per selected folder with fetched/created/updated counts, reconciled locations, actual state changes, nonzero identity merges or conflicts, committed UID, `more`, and bootstrap state. `--json` returns every folder summary plus its durable checkpoint. An interrupted fetch, reconciliation, parse, blob write, or local commit leaves that folder's prior frontier unchanged.
 
-`--hydrate <rem_…,...>` switches to targeted remote caching and cannot be combined with `--folder`. It accepts 1-100 stale-safe remote references, deduplicates repeated arguments, verifies each account/folder/UIDVALIDITY/UID, and routes the fetched message through the same parser, blob, identity, attachment, search, and thread ingestion path. It does not create or advance a sync checkpoint. Compact output reports stable message/location IDs plus `created`, `updated`, or `cached`; JSON omits the submitted remote references.
+`--hydrate <rem_…,...>` switches to targeted remote caching and cannot be combined with `--folder` or `--all-folders`. It accepts 1-100 stale-safe remote references, deduplicates repeated arguments, verifies each account/folder/UIDVALIDITY/UID, and routes the fetched message through the same parser, blob, identity, attachment, search, and thread ingestion path. It does not create or advance a sync checkpoint. Compact output reports stable message/location IDs plus `created`, `updated`, or `cached`; JSON omits the submitted remote references.
 
-`--reconcile-outbound` selects Sent, synchronizes one bounded page, and then checks recent `sent` or `unknown` attempts against exact generated RFC Message-ID evidence. It cannot be combined with `--folder` or `--hydrate`. Unique evidence confirms the existing local message/location; missing or ambiguous evidence remains unresolved and never causes a resend.
+`--reconcile-outbound` selects Sent, synchronizes one bounded page, and then checks recent `sent` or `unknown` attempts against exact generated RFC Message-ID evidence. It cannot be combined with `--folder`, `--all-folders`, or `--hydrate`. Unique evidence confirms the existing local message/location; missing or ambiguous evidence remains unresolved and never causes a resend.
 
 ## `icloud mail send`
 
@@ -704,7 +738,7 @@ Compact output:
 capabilities
 command=icloud
 version=0.1.0
-schema=15
+schema=16
 account_mode=validated_lifecycle
 credentials=keyring,env,file
 network_validation=true

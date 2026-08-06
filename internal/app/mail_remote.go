@@ -306,7 +306,7 @@ func (commands accountCommands) searchRemoteFolder(ctx context.Context, accountV
 	var lastErr error
 	for _, username := range imapUsernameCandidates(accountValue) {
 		page, err := commands.remoteClient().SearchRemote(ctx, transport.AuthRequest{Username: username, Password: password}, transport.RemoteSearchRequest{
-			Mailbox: folderValue.WireName, ExpectedUIDValidity: folderValue.UIDValidity,
+			Mailbox: folderValue.Name, ExpectedUIDValidity: folderValue.UIDValidity,
 			Criteria: criteria, Limit: limit,
 		})
 		if err == nil {
@@ -324,7 +324,7 @@ func (commands accountCommands) fetchRemoteSummary(ctx context.Context, accountV
 	var lastErr error
 	for _, username := range imapUsernameCandidates(accountValue) {
 		result, err := commands.remoteClient().FetchRemoteSummary(ctx, transport.AuthRequest{Username: username, Password: password}, transport.RemoteFetchRequest{
-			Mailbox: folderValue.WireName, ExpectedUIDValidity: reference.UIDValidity, UID: reference.UID,
+			Mailbox: folderValue.Name, ExpectedUIDValidity: reference.UIDValidity, UID: reference.UID,
 		})
 		if err == nil {
 			return result, nil
@@ -341,7 +341,7 @@ func (commands accountCommands) fetchRemoteMessage(ctx context.Context, accountV
 	var lastErr error
 	for _, username := range imapUsernameCandidates(accountValue) {
 		result, err := commands.remoteClient().FetchRemoteMessage(ctx, transport.AuthRequest{Username: username, Password: password}, transport.RemoteFetchRequest{
-			Mailbox: folderValue.WireName, ExpectedUIDValidity: reference.UIDValidity, UID: reference.UID,
+			Mailbox: folderValue.Name, ExpectedUIDValidity: reference.UIDValidity, UID: reference.UID,
 		}, stager)
 		if err == nil {
 			return result, nil

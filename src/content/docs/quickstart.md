@@ -30,7 +30,7 @@ version
 capabilities
 command=icloud
 version=0.1.0
-schema=15
+schema=16
 account_mode=validated_lifecycle
 credentials=keyring,env,file
 network_validation=true
@@ -189,7 +189,7 @@ Read the saved inventory offline:
 icloud mail folders list
 ```
 
-See [Folder discovery and sync policy](/docs/folder-discovery-and-sync-policy) for nested and Unicode names, missing folders, provider roles, and optional sync eligibility.
+See [Manage folders and sync policy](/docs/folder-discovery-and-sync-policy) for safe create/rename/delete, nested and Unicode names, provider roles, interrupted-rename recovery, and optional sync eligibility.
 
 ## Synchronize enabled mail folders
 
@@ -222,6 +222,17 @@ icloud mail sync --folder inbox
 icloud mail sync --folder sent
 icloud mail sync --folder fld_…
 ```
+
+Custom folders begin disabled. Create and opt one into normal sync deliberately:
+
+```bash
+icloud mail folders create 'Projects/Client' --dry-run
+icloud mail folders create 'Projects/Client' --yes
+icloud mail folders enable 'Projects/Client'
+icloud mail sync --folder 'Projects/Client'
+```
+
+Use `icloud mail sync --all-folders --limit 20` only when you explicitly want one bounded pass across every current selectable folder, including locally disabled ones. It starts unsynchronized folders at their newest bounded page; it does not crawl their older history.
 
 ## Read compact previews offline
 
@@ -419,7 +430,7 @@ JSON is opt-in. Redirecting stdout does not change the compact default. Password
 
 - Credential or validation trouble: [Account validation and doctor](/docs/account-validation-and-doctor)
 - Outbound preview, confirmation, idempotency, or an unknown result: [Send mail safely](/docs/send-mail-safely)
-- Empty or unexpected folder inventory: [Folder discovery and sync policy](/docs/folder-discovery-and-sync-policy)
+- Empty or unexpected folder inventory or an interrupted rename: [Manage folders and sync policy](/docs/folder-discovery-and-sync-policy)
 - Interrupted Inbox, Sent, or other enabled-folder sync: [Sync and read mail](/docs/sync-and-read-inbox)
 - Unexpected conversation grouping or a retired thread ID: [Reconstructed conversations](/docs/read-reconstructed-conversations)
 - Attachment listing, export, or collision handling: [Save mail attachments](/docs/save-mail-attachments)

@@ -7,7 +7,23 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/amxv/icloud-cli/internal/folder"
 )
+
+func TestFolderRetentionRiskKeepsRiskySemanticKindsVisible(t *testing.T) {
+	for kind, want := range map[folder.Kind]string{
+		folder.KindTrash:  "provider_auto_delete_possible",
+		folder.KindJunk:   "provider_auto_delete_possible",
+		folder.KindDrafts: "provider_mutable_draft",
+		folder.KindInbox:  "",
+		folder.KindOther:  "",
+	} {
+		if got := folderRetentionRisk(kind); got != want {
+			t.Fatalf("kind %q retention risk = %q, want %q", kind, got, want)
+		}
+	}
+}
 
 func execute(t *testing.T, args ...string) (Result, string, string) {
 	t.Helper()

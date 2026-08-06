@@ -4,13 +4,75 @@ import (
 	"errors"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 var (
 	ErrNotFound      = errors.New("folder not found")
 	ErrAmbiguous     = errors.New("folder selector is ambiguous")
 	ErrNotSelectable = errors.New("folder is not selectable")
+	ErrInvalidName   = errors.New("folder name is invalid")
+	ErrProtected     = errors.New("folder is protected")
 )
+
+type AdminAction string
+
+const (
+	AdminCreate      AdminAction = "create"
+	AdminRename      AdminAction = "rename"
+	AdminDelete      AdminAction = "delete"
+	AdminSubscribe   AdminAction = "subscribe"
+	AdminUnsubscribe AdminAction = "unsubscribe"
+)
+
+type AdminRequest struct {
+	Action        AdminAction `json:"action"`
+	Folder        string      `json:"folder,omitempty"`
+	Name          string      `json:"name,omitempty"`
+	AllowNonEmpty bool        `json:"allow_non_empty,omitempty"`
+}
+
+type AdminPlan struct {
+	Action           AdminAction  `json:"action"`
+	FolderID         string       `json:"folder_id,omitempty"`
+	CurrentName      string       `json:"current_name,omitempty"`
+	RequestedName    string       `json:"requested_name,omitempty"`
+	Kind             Kind         `json:"kind,omitempty"`
+	Subscription     Subscription `json:"subscription,omitempty"`
+	Messages         uint32       `json:"messages,omitempty"`
+	SyncEnabled      bool         `json:"sync_enabled,omitempty"`
+	AllowNonEmpty    bool         `json:"allow_non_empty,omitempty"`
+	Destructive      bool         `json:"destructive,omitempty"`
+	ProviderRechecks bool         `json:"provider_rechecks,omitempty"`
+}
+
+type AdminOutcome struct {
+	Action       AdminAction  `json:"action"`
+	Folder       Folder       `json:"folder"`
+	PreviousName string       `json:"previous_name,omitempty"`
+	Deleted      bool         `json:"deleted,omitempty"`
+	Subscription Subscription `json:"subscription,omitempty"`
+}
+
+type RenameRecoveryStatus string
+
+const (
+	RenameRecoveryPending    RenameRecoveryStatus = "pending"
+	RenameRecoveryResolved   RenameRecoveryStatus = "resolved"
+	RenameRecoveryNotApplied RenameRecoveryStatus = "not_applied"
+)
+
+type RenameRecovery struct {
+	ID        string               `json:"id"`
+	AccountID string               `json:"account_id"`
+	FolderID  string               `json:"folder_id"`
+	OldName   string               `json:"old_name"`
+	NewName   string               `json:"new_name"`
+	Status    RenameRecoveryStatus `json:"status"`
+	CreatedAt time.Time            `json:"created_at"`
+	UpdatedAt time.Time            `json:"updated_at"`
+}
 
 type Kind string
 
@@ -87,6 +149,26 @@ type RemoteObservation struct {
 
 func DefaultSyncEnabled(kind Kind) bool {
 	return kind == KindInbox || kind == KindSent
+}
+
+func ProtectedFromDestructiveMutation(value Folder) bool {
+	return value.Kind != KindOther || strings.EqualFold(strings.TrimSpace(value.Name), "INBOX")
+}
+
+func ValidateAdminName(value, delimiter string) error {
+	name := strings.TrimSpace(value)
+	if name == "" || name != value || len(name) > 1024 || !utf8.ValidString(name) || strings.ContainsRune(name, 0) || strings.ContainsFunc(name, unicode.IsControl) {
+		return ErrInvalidName
+	}
+	if strings.EqualFold(name, "INBOX") {
+		return ErrProtected
+	}
+	if delimiter = strings.TrimSpace(delimiter); delimiter != "" {
+		if strings.HasPrefix(name, delimiter) || strings.HasSuffix(name, delimiter) || strings.Contains(name, delimiter+delimiter) {
+			return ErrInvalidName
+		}
+	}
+	return nil
 }
 
 func NormalizeKind(value string) Kind {

@@ -59,7 +59,7 @@ func (commands accountCommands) MailUpdateFlag(
 	)
 	for _, username := range imapUsernameCandidates(accountValue) {
 		remote, lastErr = commands.flagClient().UpdateFlags(ctx, transport.AuthRequest{Username: username, Password: password}, transport.FlagMutationRequest{
-			Mailbox: folderValue.WireName, ExpectedUIDValidity: location.UIDValidity,
+			Mailbox: folderValue.Name, ExpectedUIDValidity: location.UIDValidity,
 			UID: location.UID, ExpectedModSequence: location.ModSequence,
 			Flag: providerFlag, Add: add,
 		})

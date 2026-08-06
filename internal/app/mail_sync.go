@@ -17,6 +17,14 @@ import (
 )
 
 func (commands accountCommands) MailSync(ctx context.Context, home, accountSelector, folderSelector string, limit int) (account.Account, []folder.Folder, []maildomain.SyncSummary, int64, error) {
+	return commands.mailSync(ctx, home, accountSelector, folderSelector, limit, false)
+}
+
+func (commands accountCommands) MailSyncAll(ctx context.Context, home, accountSelector string, limit int) (account.Account, []folder.Folder, []maildomain.SyncSummary, int64, error) {
+	return commands.mailSync(ctx, home, accountSelector, "", limit, true)
+}
+
+func (commands accountCommands) mailSync(ctx context.Context, home, accountSelector, folderSelector string, limit int, allFolders bool) (account.Account, []folder.Folder, []maildomain.SyncSummary, int64, error) {
 	state, paths, unlock, err := commands.openWriteState(ctx, home)
 	if err != nil {
 		return account.Account{}, nil, nil, 0, err
@@ -28,7 +36,12 @@ func (commands accountCommands) MailSync(ctx context.Context, home, accountSelec
 	if err != nil {
 		return account.Account{}, nil, nil, state.SchemaVersion(), mapAccountError(err)
 	}
-	folders, err := resolveSyncFolders(ctx, state, accountValue.ID, folderSelector)
+	var folders []folder.Folder
+	if allFolders {
+		folders, err = resolveAllSyncFolders(ctx, state, accountValue.ID)
+	} else {
+		folders, err = resolveSyncFolders(ctx, state, accountValue.ID, folderSelector)
+	}
 	if err != nil {
 		return account.Account{}, nil, nil, state.SchemaVersion(), err
 	}
@@ -61,6 +74,20 @@ func (commands accountCommands) MailSync(ctx context.Context, home, accountSelec
 		summaries = append(summaries, summary)
 	}
 	return accountValue, completedFolders, summaries, state.SchemaVersion(), nil
+}
+
+func resolveAllSyncFolders(ctx context.Context, state *store.Store, accountID string) ([]folder.Folder, error) {
+	values, more, err := state.Folders().ListSelectable(ctx, accountID, 1000)
+	if err != nil {
+		return nil, cli.WrapAppError(cli.ErrorInternal, "cannot read current selectable mail folders", false, err)
+	}
+	if more {
+		return nil, cli.NewAppError(cli.ErrorConflict, "current selectable folder count exceeds the explicit all-folder safety bound", false)
+	}
+	if len(values) == 0 {
+		return nil, cli.NewAppError(cli.ErrorConfiguration, "no current selectable mail folders are available; refresh folder status", false)
+	}
+	return values, nil
 }
 
 func resolveSyncFolders(ctx context.Context, state *store.Store, accountID, selector string) ([]folder.Folder, error) {
@@ -149,7 +176,7 @@ func (commands accountCommands) syncMailbox(
 	)
 	for _, username := range imapUsernameCandidates(accountValue) {
 		page, lastErr = commands.inboxClient().FetchInboxPage(ctx, transport.AuthRequest{Username: username, Password: password}, transport.InboxFetchRequest{
-			Mailbox:             folderValue.WireName,
+			Mailbox:             folderValue.Name,
 			ExpectedUIDValidity: checkpoint.UIDValidity,
 			LastCommittedUID:    checkpoint.LastCommittedUID,
 			LastScannedUID:      checkpoint.LastScannedUID,

@@ -394,6 +394,9 @@ func newTestCertificate(t *testing.T) testCertificate {
 
 type imapServerOptions struct {
 	AuthOK                   bool
+	Namespace                bool
+	NamespacePrefix          string
+	NamespaceDelimiter       string
 	StallGreeting            bool
 	StallUIDStore            bool
 	StallUIDCopy             bool
@@ -406,12 +409,13 @@ type imapServerOptions struct {
 }
 
 type imapTestServer struct {
-	t           *testing.T
-	listener    net.Listener
-	certificate testCertificate
-	mu          sync.Mutex
-	usernames   []string
-	commands    []string
+	t            *testing.T
+	listener     net.Listener
+	certificate  testCertificate
+	mu           sync.Mutex
+	usernames    []string
+	commands     []string
+	commandLines []string
 }
 
 func newIMAPServer(t *testing.T, options imapServerOptions) *imapTestServer {
@@ -445,6 +449,9 @@ func (server *imapTestServer) handle(conn net.Conn, options imapServerOptions) {
 	reader := bufio.NewReader(conn)
 	writer := bufio.NewWriter(conn)
 	capabilities := "IMAP4rev1 SPECIAL-USE IDLE UIDPLUS"
+	if options.Namespace {
+		capabilities += " NAMESPACE"
+	}
 	if options.CondStore {
 		capabilities += " CONDSTORE"
 	}
@@ -463,6 +470,7 @@ func (server *imapTestServer) handle(conn net.Conn, options imapServerOptions) {
 		command := strings.ToUpper(fields[1])
 		server.mu.Lock()
 		server.commands = append(server.commands, command)
+		server.commandLines = append(server.commandLines, strings.TrimSpace(line))
 		server.mu.Unlock()
 		switch command {
 		case "CAPABILITY":
@@ -489,6 +497,16 @@ func (server *imapTestServer) handle(conn net.Conn, options imapServerOptions) {
 				_, _ = writer.WriteString(responseLine + "\r\n")
 			}
 			_, _ = writer.WriteString(tag + " OK list\r\n")
+		case "NAMESPACE":
+			if !options.Namespace {
+				_, _ = writer.WriteString(tag + " BAD namespace unsupported\r\n")
+				break
+			}
+			delimiter := options.NamespaceDelimiter
+			if delimiter == "" {
+				delimiter = "/"
+			}
+			_, _ = writer.WriteString(fmt.Sprintf("* NAMESPACE ((%s %s)) NIL NIL\r\n%s OK namespace\r\n", strconv.Quote(options.NamespacePrefix), strconv.Quote(delimiter), tag))
 		case "STATUS":
 			mailbox := parseIMAPMailboxArgument(line, "STATUS")
 			status, ok := options.Statuses[mailbox]
@@ -541,6 +559,8 @@ func (server *imapTestServer) handle(conn net.Conn, options imapServerOptions) {
 				break
 			}
 			_, _ = writer.WriteString(tag + " BAD unsupported UID command\r\n")
+		case "CREATE", "RENAME", "DELETE", "SUBSCRIBE", "UNSUBSCRIBE":
+			_, _ = writer.WriteString(tag + " OK folder change\r\n")
 		case "LOGOUT":
 			_, _ = writer.WriteString("* BYE logging out\r\n" + tag + " OK logout\r\n")
 			_ = writer.Flush()
@@ -571,6 +591,12 @@ func (server *imapTestServer) Commands() []string {
 	server.mu.Lock()
 	defer server.mu.Unlock()
 	return append([]string(nil), server.commands...)
+}
+
+func (server *imapTestServer) CommandLines() []string {
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	return append([]string(nil), server.commandLines...)
 }
 
 func (server *imapTestServer) Close() { _ = server.listener.Close() }

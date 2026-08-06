@@ -38,7 +38,12 @@ icloud mail folders show <selector> [--verbose] [--json]
 icloud mail folders status [--verbose] [--json]
 icloud mail folders enable <selector> [--json]
 icloud mail folders disable <selector> [--json]
-icloud mail sync [--folder <selector>] [--limit <n>] [--json]
+icloud mail folders create <name> [--dry-run|--yes] [--json]
+icloud mail folders rename <selector> <new-name> [--dry-run|--yes] [--json]
+icloud mail folders delete <selector> [--allow-non-empty] [--dry-run|--yes] [--json]
+icloud mail folders subscribe <selector> [--dry-run|--yes] [--json]
+icloud mail folders unsubscribe <selector> [--dry-run|--yes] [--json]
+icloud mail sync [--folder <selector>|--all-folders] [--limit <n>] [--json]
 icloud mail sync --reconcile-outbound [--limit <n>] [--json]
 icloud mail sync --hydrate <rem_…[,rem_…]> [--json]
 icloud mail inbox [--folder <selector>] [--query <text>] [filters] [--cursor <cursor>] [--limit <n>] [--json]
@@ -195,7 +200,7 @@ version
 capabilities
 command=icloud
 version=0.1.0
-schema=15
+schema=16
 account_mode=validated_lifecycle
 credentials=keyring,env,file
 network_validation=true

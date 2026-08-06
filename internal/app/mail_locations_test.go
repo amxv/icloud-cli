@@ -25,11 +25,11 @@ func TestMailLocationMoveDryRunConfirmedPersistenceAndIdempotentReplay(t *testin
 	fixture := seedLocationMutationFixture(t, home, []locationSeed{{folder.KindInbox, 1, `\Flagged`}})
 	client.results = []transport.LocationMutationResult{{
 		Operation: transport.LocationMutationMove, ProviderMethod: "move",
-		SourceMailbox:     fixture.folders[folder.KindInbox].WireName,
+		SourceMailbox:     fixture.folders[folder.KindInbox].Name,
 		SourceUIDValidity: fixture.locations[folder.KindInbox].UIDValidity,
 		SourceUID:         fixture.locations[folder.KindInbox].UID,
 		SourceFlags:       []string{`\Flagged`, `$Live`}, SourceModSequence: 31, SourcePresent: false,
-		DestinationMailbox:     fixture.folders[folder.KindOther].WireName,
+		DestinationMailbox:     fixture.folders[folder.KindOther].Name,
 		DestinationUIDValidity: fixture.folders[folder.KindOther].UIDValidity,
 		DestinationUID:         8, DestinationFlags: []string{`\Flagged`, `$Live`}, DestinationModSequence: 4,
 		DestinationKnown: true, ProviderMutationObserved: true,
@@ -83,8 +83,8 @@ func TestMailLocationMoveDryRunConfirmedPersistenceAndIdempotentReplay(t *testin
 	}
 	request := client.requests[0]
 	if request.Operation != transport.LocationMutationMove ||
-		request.SourceMailbox != fixture.folders[folder.KindInbox].WireName ||
-		request.DestinationMailbox != fixture.folders[folder.KindOther].WireName ||
+		request.SourceMailbox != fixture.folders[folder.KindInbox].Name ||
+		request.DestinationMailbox != fixture.folders[folder.KindOther].Name ||
 		request.ExpectedSourceUIDValidity != fixture.locations[folder.KindInbox].UIDValidity ||
 		request.SourceUID != fixture.locations[folder.KindInbox].UID {
 		t.Fatalf("provider move request = %+v", request)
@@ -162,8 +162,8 @@ func TestMailArchiveNeverTouchesSentAndAmbiguityRequiresFrom(t *testing.T) {
 	if code != 0 || stderr != "" || client.calls != 1 {
 		t.Fatalf("archive code=%d stdout=%q stderr=%q calls=%d", code, stdout, stderr, client.calls)
 	}
-	if client.requests[0].SourceMailbox != fixture.folders[folder.KindInbox].WireName ||
-		client.requests[0].DestinationMailbox != fixture.folders[folder.KindArchive].WireName {
+	if client.requests[0].SourceMailbox != fixture.folders[folder.KindInbox].Name ||
+		client.requests[0].DestinationMailbox != fixture.folders[folder.KindArchive].Name {
 		t.Fatalf("archive provider request = %+v", client.requests[0])
 	}
 	state, err := openState(context.Background(), home)
@@ -429,7 +429,7 @@ func seedLocationMutationFixture(t *testing.T, home string, seeds []locationSeed
 		{Name: "Sent Messages", WireName: "Sent Messages", Kind: folder.KindSent, KindSource: "attribute", Selectable: true, Subscription: folder.SubscriptionSubscribed, UIDValidity: 200, StatusKnown: true},
 		{Name: "Archive Localized", WireName: "Archive Localized", Kind: folder.KindArchive, KindSource: "attribute", Selectable: true, Subscription: folder.SubscriptionSubscribed, UIDValidity: 300, StatusKnown: true},
 		{Name: "Trash Localized", WireName: "Trash Localized", Kind: folder.KindTrash, KindSource: "attribute", Selectable: true, Subscription: folder.SubscriptionSubscribed, UIDValidity: 400, StatusKnown: true},
-		{Name: "Projects", WireName: "Projects", Kind: folder.KindOther, Selectable: true, Subscription: folder.SubscriptionSubscribed, UIDValidity: 500, StatusKnown: true},
+		{Name: "Projects-日本語", WireName: "Projects-&ZeVnLIqe-", Kind: folder.KindOther, Selectable: true, Subscription: folder.SubscriptionSubscribed, UIDValidity: 500, StatusKnown: true},
 	}
 	next := 800
 	values, err := state.Folders().Reconcile(context.Background(), accountValue.ID, observations, base, func() (string, error) {

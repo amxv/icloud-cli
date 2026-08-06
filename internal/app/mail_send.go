@@ -244,7 +244,7 @@ func (commands accountCommands) MailSend(
 		_, appendErr := commands.sentAppender().AppendSent(ctx, transport.AuthRequest{
 			Username: accountValue.IMAPUsername, Password: password,
 		}, transport.SentAppendRequest{
-			Mailbox: sentFolder.WireName, Message: rawReader, Size: staged.ByteSize, InternalDate: commands.timeNow(),
+			Mailbox: sentFolder.Name, Message: rawReader, Size: staged.ByteSize, InternalDate: commands.timeNow(),
 		})
 		closeErr := rawReader.Close()
 		if appendErr == nil {

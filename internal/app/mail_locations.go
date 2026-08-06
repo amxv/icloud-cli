@@ -241,8 +241,8 @@ func planForExistingLocationMutation(
 	}
 	return maildomain.LocationMutationPlan{
 		Action: existing.Action, Operation: existing.Action.TransportOperation(), MessageID: existing.MessageID,
-		SourceLocation: sourceLocation, SourceFolderID: sourceFolder.ID, SourceFolderName: sourceFolder.WireName,
-		DestinationFolderID: destinationFolder.ID, DestinationFolderName: destinationFolder.WireName,
+		SourceLocation: sourceLocation, SourceFolderID: sourceFolder.ID, SourceFolderName: sourceFolder.Name,
+		DestinationFolderID: destinationFolder.ID, DestinationFolderName: destinationFolder.Name,
 		IdempotencyKey: strings.TrimSpace(request.IdempotencyKey), RequestHash: existing.RequestHash,
 	}, nil
 }
@@ -327,8 +327,8 @@ func resolveLocationMutationPlan(
 	}
 	plan := maildomain.LocationMutationPlan{
 		Action: action, Operation: action.TransportOperation(), MessageID: message.ID,
-		SourceLocation: sourceLocation, SourceFolderID: sourceFolder.ID, SourceFolderName: sourceFolder.WireName,
-		DestinationFolderID: destinationFolder.ID, DestinationFolderName: destinationFolder.WireName,
+		SourceLocation: sourceLocation, SourceFolderID: sourceFolder.ID, SourceFolderName: sourceFolder.Name,
+		DestinationFolderID: destinationFolder.ID, DestinationFolderName: destinationFolder.Name,
 		IdempotencyKey: strings.TrimSpace(request.IdempotencyKey),
 	}
 	plan.RequestHash, err = maildomain.LocationMutationHash(plan)

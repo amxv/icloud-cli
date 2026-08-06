@@ -14,35 +14,41 @@ import (
 type Stage string
 
 const (
-	StageCredential     Stage = "credential"
-	StageDNS            Stage = "dns"
-	StageConnect        Stage = "connect"
-	StageTLS            Stage = "tls"
-	StageIMAPGreeting   Stage = "imap_greeting"
-	StageIMAPCapability Stage = "imap_capability"
-	StageIMAPAuth       Stage = "imap_auth"
-	StageIMAPList       Stage = "imap_list"
-	StageIMAPStatus     Stage = "imap_status"
-	StageIMAPSelect     Stage = "imap_select"
-	StageIMAPSearch     Stage = "imap_search"
-	StageIMAPFetch      Stage = "imap_fetch"
-	StageIMAPAppend     Stage = "imap_append"
-	StageIMAPStore      Stage = "imap_store"
-	StageIMAPCopy       Stage = "imap_copy"
-	StageIMAPMove       Stage = "imap_move"
-	StageIMAPExpunge    Stage = "imap_expunge"
-	StageIMAPLogout     Stage = "imap_logout"
-	StageSMTPGreeting   Stage = "smtp_greeting"
-	StageSMTPStartTLS   Stage = "smtp_starttls"
-	StageSMTPAuth       Stage = "smtp_auth"
-	StageSMTPMail       Stage = "smtp_mail"
-	StageSMTPRecipient  Stage = "smtp_recipient"
-	StageSMTPData       Stage = "smtp_data"
-	StageSMTPWrite      Stage = "smtp_write"
-	StageSMTPAccept     Stage = "smtp_accept"
-	StageSMTPNoop       Stage = "smtp_noop"
-	StageSMTPQuit       Stage = "smtp_quit"
-	StageTimeout        Stage = "timeout"
+	StageCredential      Stage = "credential"
+	StageDNS             Stage = "dns"
+	StageConnect         Stage = "connect"
+	StageTLS             Stage = "tls"
+	StageIMAPGreeting    Stage = "imap_greeting"
+	StageIMAPCapability  Stage = "imap_capability"
+	StageIMAPAuth        Stage = "imap_auth"
+	StageIMAPList        Stage = "imap_list"
+	StageIMAPNamespace   Stage = "imap_namespace"
+	StageIMAPStatus      Stage = "imap_status"
+	StageIMAPCreate      Stage = "imap_create"
+	StageIMAPRename      Stage = "imap_rename"
+	StageIMAPDelete      Stage = "imap_delete"
+	StageIMAPSubscribe   Stage = "imap_subscribe"
+	StageIMAPUnsubscribe Stage = "imap_unsubscribe"
+	StageIMAPSelect      Stage = "imap_select"
+	StageIMAPSearch      Stage = "imap_search"
+	StageIMAPFetch       Stage = "imap_fetch"
+	StageIMAPAppend      Stage = "imap_append"
+	StageIMAPStore       Stage = "imap_store"
+	StageIMAPCopy        Stage = "imap_copy"
+	StageIMAPMove        Stage = "imap_move"
+	StageIMAPExpunge     Stage = "imap_expunge"
+	StageIMAPLogout      Stage = "imap_logout"
+	StageSMTPGreeting    Stage = "smtp_greeting"
+	StageSMTPStartTLS    Stage = "smtp_starttls"
+	StageSMTPAuth        Stage = "smtp_auth"
+	StageSMTPMail        Stage = "smtp_mail"
+	StageSMTPRecipient   Stage = "smtp_recipient"
+	StageSMTPData        Stage = "smtp_data"
+	StageSMTPWrite       Stage = "smtp_write"
+	StageSMTPAccept      Stage = "smtp_accept"
+	StageSMTPNoop        Stage = "smtp_noop"
+	StageSMTPQuit        Stage = "smtp_quit"
+	StageTimeout         Stage = "timeout"
 )
 
 type FailureKind string
@@ -126,6 +132,56 @@ type RemoteFolder struct {
 type FolderDiscoveryResult struct {
 	Capabilities []string       `json:"capabilities,omitempty"`
 	Folders      []RemoteFolder `json:"folders"`
+}
+
+type FolderAdminAction string
+
+const (
+	FolderAdminCreate      FolderAdminAction = "create"
+	FolderAdminRename      FolderAdminAction = "rename"
+	FolderAdminDelete      FolderAdminAction = "delete"
+	FolderAdminSubscribe   FolderAdminAction = "subscribe"
+	FolderAdminUnsubscribe FolderAdminAction = "unsubscribe"
+)
+
+type FolderAdminRequest struct {
+	Action        FolderAdminAction
+	Mailbox       string
+	NewMailbox    string
+	AllowNonEmpty bool
+}
+
+type FolderAdminResult struct {
+	Action         FolderAdminAction
+	Folder         RemoteFolder
+	PreviousName   string
+	Deleted        bool
+	SourceMessages uint32
+}
+
+type FolderNonEmptyError struct {
+	Messages uint32
+}
+
+func (err *FolderNonEmptyError) Error() string { return "folder is not empty" }
+
+type FolderAdminTargetError struct {
+	TargetMailbox string
+	Err           error
+}
+
+func (err *FolderAdminTargetError) Error() string {
+	if err == nil || err.Err == nil {
+		return "folder administration failed"
+	}
+	return err.Err.Error()
+}
+
+func (err *FolderAdminTargetError) Unwrap() error {
+	if err == nil {
+		return nil
+	}
+	return err.Err
 }
 
 type SMTPResult struct {
@@ -354,6 +410,10 @@ type IMAPLocationClient interface {
 
 type IMAPFolderClient interface {
 	DiscoverFolders(context.Context, AuthRequest) (FolderDiscoveryResult, error)
+}
+
+type IMAPFolderAdminClient interface {
+	AdministerFolder(context.Context, AuthRequest, FolderAdminRequest) (FolderAdminResult, error)
 }
 
 type SMTPValidator interface {

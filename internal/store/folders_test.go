@@ -11,6 +11,7 @@ import (
 	"github.com/amxv/icloud-cli/internal/account"
 	"github.com/amxv/icloud-cli/internal/config"
 	"github.com/amxv/icloud-cli/internal/folder"
+	maildomain "github.com/amxv/icloud-cli/internal/mail"
 )
 
 func TestFolderReconciliationPreservesIdentityPolicyAndMissingState(t *testing.T) {
@@ -190,6 +191,217 @@ func TestListSelectableIgnoresContainerFoldersBeforeApplyingBound(t *testing.T) 
 	if values[0].Kind != folder.KindInbox || values[1].Kind != folder.KindArchive {
 		t.Fatalf("selectable folders = %+v", values)
 	}
+}
+
+func TestFolderAdministrationPreservesStableIdentityPolicyLocationsAndSubscription(t *testing.T) {
+	state, accountID, inboxID := newMailStoreFixture(t)
+	defer state.Close()
+	now := time.Date(2026, 8, 7, 1, 0, 0, 0, time.UTC)
+	custom, err := state.Folders().CreateObserved(context.Background(), accountID, folder.RemoteObservation{
+		Name: "Projects/Alpha", WireName: "Projects/Alpha", ParentName: "Projects", ParentWireName: "Projects",
+		Delimiter: "/", Kind: folder.KindOther, Selectable: true, Subscription: folder.SubscriptionUnknown,
+		UIDValidity: 200, StatusKnown: true,
+	}, now, func() (string, error) { return "fld_0198d704-6c00-7000-b000-000000000601", nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if custom.SyncEnabled || custom.ID == "" {
+		t.Fatalf("created custom folder = %+v", custom)
+	}
+	custom, err = state.Folders().SetSync(context.Background(), accountID, custom.ID, true, now.Add(time.Minute))
+	if err != nil || !custom.SyncEnabled {
+		t.Fatalf("enable custom folder = %+v err=%v", custom, err)
+	}
+
+	inboxRecord := mailRecordFixture(accountID, inboxID, 100, 41, "folder-admin@example.test")
+	if _, err := state.Mail().CommitInboxPage(context.Background(), maildomain.CommitPage{
+		CheckpointID: "chk_0198d704-6c00-7000-b000-000000000602", AccountID: accountID, FolderID: inboxID,
+		UIDValidity: 100, Bootstrap: true, LastCommittedUID: 41, LastScannedUID: 41, AttemptedAt: now.Add(2 * time.Minute),
+		Records: []maildomain.IngestRecord{inboxRecord},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	customRecord := mailRecordFixture(accountID, custom.ID, 200, 7, "folder-admin@example.test")
+	if _, err := state.Mail().CommitInboxPage(context.Background(), maildomain.CommitPage{
+		CheckpointID: "chk_0198d704-6c00-7000-b000-000000000603", AccountID: accountID, FolderID: custom.ID,
+		UIDValidity: 200, Bootstrap: true, LastCommittedUID: 7, LastScannedUID: 7, AttemptedAt: now.Add(3 * time.Minute),
+		Records: []maildomain.IngestRecord{customRecord},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	before, err := state.Mail().Message(context.Background(), accountID, inboxRecord.MessageID)
+	if err != nil || len(before.Locations) != 2 {
+		t.Fatalf("logical message before rename = %+v err=%v", before, err)
+	}
+	threadsBefore, more, err := state.Threads().Latest(context.Background(), accountID, 10)
+	if err != nil || more || len(threadsBefore) != 1 {
+		t.Fatalf("threads before rename = %+v more=%v err=%v", threadsBefore, more, err)
+	}
+	checkpointBefore, err := state.Mail().Checkpoint(context.Background(), accountID, custom.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	renamed, err := state.Folders().ApplyObservation(context.Background(), accountID, custom.ID, folder.RemoteObservation{
+		Name: "Projects/日本語", WireName: "Projects/&ZeVnLIqe-", OldName: custom.Name, OldWireName: custom.WireName,
+		ParentName: "Projects", ParentWireName: "Projects", Delimiter: "/", Kind: folder.KindOther,
+		Selectable: true, Subscription: folder.SubscriptionUnknown,
+	}, now.Add(4*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if renamed.ID != custom.ID || renamed.Name != "Projects/日本語" || !renamed.SyncEnabled {
+		t.Fatalf("renamed folder = %+v", renamed)
+	}
+	checkpointAfter, err := state.Mail().Checkpoint(context.Background(), accountID, custom.ID)
+	if err != nil || checkpointAfter.ID != checkpointBefore.ID || checkpointAfter.LastCommittedUID != checkpointBefore.LastCommittedUID {
+		t.Fatalf("checkpoint after rename = %+v err=%v", checkpointAfter, err)
+	}
+	customMessages, more, err := state.Mail().MessagesInFolder(context.Background(), accountID, custom.ID, 10)
+	if err != nil || more || len(customMessages) != 1 || customMessages[0].ID != before.ID {
+		t.Fatalf("renamed folder messages = %+v more=%v err=%v", customMessages, more, err)
+	}
+
+	if _, err := state.Folders().SetSubscription(context.Background(), accountID, custom.ID, folder.SubscriptionSubscribed, now.Add(5*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	values, err := state.Folders().Reconcile(context.Background(), accountID, []folder.RemoteObservation{
+		{Name: "INBOX", WireName: "INBOX", Delimiter: "/", Kind: folder.KindInbox, KindSource: "inbox", Selectable: true, Subscription: folder.SubscriptionUnknown, UIDValidity: 100, StatusKnown: true},
+		{Name: renamed.Name, WireName: renamed.WireName, Delimiter: "/", ParentName: "Projects", ParentWireName: "Projects", Kind: folder.KindOther, Selectable: true, Subscription: folder.SubscriptionUnknown, UIDValidity: 200, StatusKnown: true},
+	}, now.Add(6*time.Minute), func() (string, error) { return "fld_unexpected", nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refreshed := foldersByName(values)[renamed.Name]; refreshed.ID != custom.ID || refreshed.Subscription != folder.SubscriptionSubscribed || !refreshed.SyncEnabled {
+		t.Fatalf("subscription/policy after unknown LIST state = %+v", refreshed)
+	}
+
+	deleted, err := state.Folders().MarkDeleted(context.Background(), accountID, custom.ID, now.Add(7*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted.Present || !deleted.Stale || deleted.SyncEnabled {
+		t.Fatalf("deleted folder = %+v", deleted)
+	}
+	after, err := state.Mail().Message(context.Background(), accountID, before.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	present, absent := 0, 0
+	for _, location := range after.Locations {
+		if location.Present {
+			present++
+		} else {
+			absent++
+		}
+	}
+	threadsAfter, more, err := state.Threads().Latest(context.Background(), accountID, 10)
+	if err != nil || more || len(threadsAfter) != 1 || threadsAfter[0].ID != threadsBefore[0].ID {
+		t.Fatalf("threads after folder deletion = %+v more=%v err=%v", threadsAfter, more, err)
+	}
+	if present != 1 || absent != 1 {
+		t.Fatalf("logical message after folder deletion = %+v", after)
+	}
+}
+
+func TestFolderAdministrationRejectsDuplicateObservedWireAndMissingMutationTarget(t *testing.T) {
+	state, accountValue := newFolderTestState(t)
+	defer state.Close()
+	now := time.Date(2026, 8, 7, 1, 20, 0, 0, time.UTC)
+	created, err := state.Folders().CreateObserved(context.Background(), accountValue.ID, folder.RemoteObservation{
+		Name: "Receipts", WireName: "Receipts", Delimiter: "/", Kind: folder.KindOther, Selectable: true, Subscription: folder.SubscriptionUnknown,
+	}, now, func() (string, error) { return "fld_0198d704-6c00-7000-b000-000000000611", nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = state.Folders().CreateObserved(context.Background(), accountValue.ID, folder.RemoteObservation{
+		Name: "Receipts", WireName: "Receipts", Delimiter: "/", Kind: folder.KindOther, Selectable: true, Subscription: folder.SubscriptionUnknown,
+	}, now.Add(time.Minute), func() (string, error) { return "fld_0198d704-6c00-7000-b000-000000000612", nil })
+	if !errors.Is(err, folder.ErrAmbiguous) {
+		t.Fatalf("duplicate create = %v", err)
+	}
+	if _, err := state.Folders().MarkDeleted(context.Background(), accountValue.ID, "fld_missing", now); !errors.Is(err, folder.ErrNotFound) {
+		t.Fatalf("missing delete = %v", err)
+	}
+	if _, err := state.Folders().SetSubscription(context.Background(), accountValue.ID, created.ID, folder.SubscriptionUnknown, now); err == nil {
+		t.Fatal("expected unknown subscription update to fail")
+	}
+}
+
+func TestFolderRenameRecoveryPreservesStableIdentityWhenProviderOmitsOldName(t *testing.T) {
+	state, accountID, inboxID := newMailStoreFixture(t)
+	defer state.Close()
+	now := time.Date(2026, 8, 7, 2, 0, 0, 0, time.UTC)
+	custom, err := state.Folders().CreateObserved(context.Background(), accountID, folder.RemoteObservation{
+		Name: "Projects/Before", WireName: "Projects/Before", ParentName: "Projects", ParentWireName: "Projects",
+		Delimiter: "/", Kind: folder.KindOther, Selectable: true, Subscription: folder.SubscriptionSubscribed,
+		UIDValidity: 500, StatusKnown: true,
+	}, now, func() (string, error) { return "fld_0198d704-6c00-7000-b000-000000000621", nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	custom, err = state.Folders().SetSync(context.Background(), accountID, custom.ID, true, now.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := mailRecordFixture(accountID, custom.ID, 500, 9, "rename-recovery@example.test")
+	if _, err := state.Mail().CommitInboxPage(context.Background(), maildomain.CommitPage{
+		CheckpointID: "chk_0198d704-6c00-7000-b000-000000000622", AccountID: accountID, FolderID: custom.ID,
+		UIDValidity: 500, Bootstrap: true, LastCommittedUID: 9, LastScannedUID: 9, AttemptedAt: now.Add(2 * time.Minute),
+		Records: []maildomain.IngestRecord{record},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	recovery, err := state.Folders().BeginRenameRecovery(context.Background(), accountID, custom.ID, custom.Name, "Projects/After-日本語", now.Add(3*time.Minute), func() (string, error) {
+		return "frr_0198d704-6c00-7000-b000-000000000623", nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	observations := []folder.RemoteObservation{
+		{Name: "INBOX", WireName: "INBOX", Delimiter: "/", Kind: folder.KindInbox, KindSource: "inbox", Selectable: true, Subscription: folder.SubscriptionUnknown, UIDValidity: 100, StatusKnown: true},
+		{Name: "Projects/After-日本語", WireName: "Projects/After-&ZeVnLIqe-", ParentName: "Projects", ParentWireName: "Projects", Delimiter: "/", Kind: folder.KindOther, Selectable: true, Subscription: folder.SubscriptionUnknown, Messages: 1, UIDValidity: 500, StatusKnown: true},
+	}
+	resolved, notApplied, err := state.Folders().ReconcilePendingRenames(context.Background(), accountID, observations, now.Add(4*time.Minute))
+	if err != nil || resolved != 1 || notApplied != 0 {
+		t.Fatalf("rename recovery result resolved=%d notApplied=%d err=%v", resolved, notApplied, err)
+	}
+	values, err := state.Folders().Reconcile(context.Background(), accountID, observations, now.Add(4*time.Minute), func() (string, error) { return "fld_unexpected", nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	renamed := foldersByName(values)["Projects/After-日本語"]
+	if renamed.ID != custom.ID || !renamed.SyncEnabled || renamed.Subscription != folder.SubscriptionSubscribed || !renamed.Present || renamed.Stale {
+		t.Fatalf("renamed stable folder = %+v", renamed)
+	}
+	checkpoint, err := state.Mail().Checkpoint(context.Background(), accountID, custom.ID)
+	if err != nil || checkpoint.LastCommittedUID != 9 || checkpoint.UIDValidity != 500 {
+		t.Fatalf("renamed checkpoint = %+v err=%v", checkpoint, err)
+	}
+	message, err := state.Mail().Message(context.Background(), accountID, record.MessageID)
+	if err != nil || len(message.Locations) != 1 || message.Locations[0].FolderID != custom.ID || !message.Locations[0].Present {
+		t.Fatalf("renamed message locations = %+v err=%v", message.Locations, err)
+	}
+	recovery, err = state.Folders().RenameRecovery(context.Background(), recovery.ID)
+	if err != nil || recovery.Status != folder.RenameRecoveryResolved || recovery.NewName != "Projects/After-日本語" {
+		t.Fatalf("resolved recovery = %+v err=%v", recovery, err)
+	}
+
+	retry, err := state.Folders().BeginRenameRecovery(context.Background(), accountID, custom.ID, renamed.Name, "Projects/NeverApplied", now.Add(5*time.Minute), func() (string, error) {
+		return "frr_0198d704-6c00-7000-b000-000000000624", nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, notApplied, err = state.Folders().ReconcilePendingRenames(context.Background(), accountID, observations, now.Add(6*time.Minute))
+	if err != nil || resolved != 0 || notApplied != 1 {
+		t.Fatalf("not-applied recovery result resolved=%d notApplied=%d err=%v", resolved, notApplied, err)
+	}
+	retry, err = state.Folders().RenameRecovery(context.Background(), retry.ID)
+	if err != nil || retry.Status != folder.RenameRecoveryNotApplied {
+		t.Fatalf("not-applied recovery = %+v err=%v", retry, err)
+	}
+	_ = inboxID
 }
 
 func newFolderTestState(t *testing.T) (*Store, account.Account) {

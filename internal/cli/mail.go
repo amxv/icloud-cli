@@ -14,6 +14,7 @@ import (
 
 type MailService interface {
 	MailSync(context.Context, string, string, string, int) (account.Account, []folder.Folder, []maildomain.SyncSummary, int64, error)
+	MailSyncAll(context.Context, string, string, int) (account.Account, []folder.Folder, []maildomain.SyncSummary, int64, error)
 	MailInbox(context.Context, string, string, string, int) (account.Account, folder.Folder, []maildomain.Message, bool, int64, error)
 	MailSyncStatus(context.Context, string, string, string) (account.Account, folder.Folder, maildomain.Checkpoint, int64, error)
 	MailSyncCheckpoints(context.Context, string, string, int) (account.Account, []maildomain.Checkpoint, bool, int64, error)
@@ -127,6 +128,7 @@ func newMailSyncCommand(state *executionState) *cobra.Command {
 	var jsonOutput bool
 	var limit int
 	var folderSelector string
+	var allFolders bool
 	var hydrate []string
 	var reconcileOutbound bool
 	command := &cobra.Command{
@@ -142,14 +144,14 @@ func newMailSyncCommand(state *executionState) *cobra.Command {
 				return NewAppError(ErrorUsage, fmt.Sprintf("--limit must be between 1 and %d", MaximumPageSize), false)
 			}
 			if reconcileOutbound {
-				if len(hydrate) > 0 || strings.TrimSpace(folderSelector) != "" {
-					return NewAppError(ErrorUsage, "--reconcile-outbound cannot be combined with --folder or --hydrate", false)
+				if len(hydrate) > 0 || strings.TrimSpace(folderSelector) != "" || allFolders {
+					return NewAppError(ErrorUsage, "--reconcile-outbound cannot be combined with --folder, --all-folders, or --hydrate", false)
 				}
 				folderSelector = string(folder.KindSent)
 			}
 			if len(hydrate) > 0 {
-				if strings.TrimSpace(folderSelector) != "" {
-					return NewAppError(ErrorUsage, "--hydrate cannot be combined with --folder", false)
+				if strings.TrimSpace(folderSelector) != "" || allFolders {
+					return NewAppError(ErrorUsage, "--hydrate cannot be combined with --folder or --all-folders", false)
 				}
 				accountValue, outcomes, schemaVersion, err := state.mail.MailHydrate(cmd.Context(), state.global.Home, state.global.Account, hydrate)
 				if err != nil {
@@ -180,7 +182,20 @@ func newMailSyncCommand(state *executionState) *cobra.Command {
 					Field("count", fmt.Sprintf("%d", len(outcomes))),
 				)
 			}
-			accountValue, _, summaries, schemaVersion, err := state.mail.MailSync(cmd.Context(), state.global.Home, state.global.Account, folderSelector, limit)
+			if allFolders && strings.TrimSpace(folderSelector) != "" {
+				return NewAppError(ErrorUsage, "--all-folders cannot be combined with --folder", false)
+			}
+			var (
+				accountValue  account.Account
+				summaries     []maildomain.SyncSummary
+				schemaVersion int64
+				err           error
+			)
+			if allFolders {
+				accountValue, _, summaries, schemaVersion, err = state.mail.MailSyncAll(cmd.Context(), state.global.Home, state.global.Account, limit)
+			} else {
+				accountValue, _, summaries, schemaVersion, err = state.mail.MailSync(cmd.Context(), state.global.Home, state.global.Account, folderSelector, limit)
+			}
 			if err != nil {
 				return err
 			}
@@ -220,6 +235,7 @@ func newMailSyncCommand(state *executionState) *cobra.Command {
 		},
 	}
 	command.Flags().StringVar(&folderSelector, "folder", "", "Sync one enabled folder by kind, ID, name, or wire name instead of all enabled folders")
+	command.Flags().BoolVar(&allFolders, "all-folders", false, "Explicitly sync every current selectable folder, including locally disabled folders, with bounded recent bootstrap")
 	command.Flags().StringSliceVar(&hydrate, "hydrate", nil, "Cache one or more comma-separated rem_… references without advancing folder checkpoints")
 	command.Flags().BoolVar(&reconcileOutbound, "reconcile-outbound", false, "Sync Sent and reconcile recent sent/unknown attempts by exact Message-ID evidence")
 	command.Flags().IntVar(&limit, "limit", DefaultPageSize, fmt.Sprintf("Maximum messages to fetch and commit per folder (1-%d)", MaximumPageSize))
@@ -451,6 +467,10 @@ func sanitizeMessage(value maildomain.Message) publicMessage {
 type unavailableMailService struct{}
 
 func (unavailableMailService) MailSync(context.Context, string, string, string, int) (account.Account, []folder.Folder, []maildomain.SyncSummary, int64, error) {
+	return account.Account{}, nil, nil, 0, NewAppError(ErrorConfiguration, "mail synchronization is unavailable", false)
+}
+
+func (unavailableMailService) MailSyncAll(context.Context, string, string, int) (account.Account, []folder.Folder, []maildomain.SyncSummary, int64, error) {
 	return account.Account{}, nil, nil, 0, NewAppError(ErrorConfiguration, "mail synchronization is unavailable", false)
 }
 func (unavailableMailService) MailInbox(context.Context, string, string, string, int) (account.Account, folder.Folder, []maildomain.Message, bool, int64, error) {

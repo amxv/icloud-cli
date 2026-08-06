@@ -26,6 +26,7 @@ type accountCommands struct {
 	smtp            transport.SMTPValidator
 	sender          transport.SMTPSender
 	folders         transport.IMAPFolderClient
+	folderAdmin     transport.IMAPFolderAdminClient
 	mail            transport.IMAPInboxClient
 	remote          transport.IMAPRemoteClient
 	flags           transport.IMAPFlagClient
@@ -124,28 +125,10 @@ func (commands accountCommands) FolderStatus(ctx context.Context, home, accountS
 	}
 	observations := make([]folder.RemoteObservation, 0, len(result.Folders))
 	for _, remote := range result.Folders {
-		observation := folder.RemoteObservation{
-			Name:           remote.Name,
-			WireName:       remote.WireName,
-			OldName:        remote.OldName,
-			OldWireName:    remote.OldWireName,
-			ParentName:     remote.ParentName,
-			ParentWireName: remote.ParentWireName,
-			Delimiter:      remote.Delimiter,
-			Attributes:     append([]string(nil), remote.Attributes...),
-			Kind:           folder.NormalizeKind(remote.Kind),
-			KindSource:     remote.KindSource,
-			Selectable:     remote.Selectable,
-			Subscription:   folder.NormalizeSubscription(remote.Subscription),
-		}
-		if remote.Status != nil {
-			observation.Messages = remote.Status.Messages
-			observation.Unseen = remote.Status.Unseen
-			observation.UIDNext = remote.Status.UIDNext
-			observation.UIDValidity = remote.Status.UIDValidity
-			observation.StatusKnown = true
-		}
-		observations = append(observations, observation)
+		observations = append(observations, remoteFolderObservation(remote))
+	}
+	if _, _, err := state.Folders().ReconcilePendingRenames(ctx, value.ID, observations, commands.timeNow()); err != nil {
+		return account.Account{}, nil, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot reconcile an interrupted folder rename", false, err)
 	}
 	values, err := state.Folders().Reconcile(ctx, value.ID, observations, commands.timeNow(), func() (string, error) {
 		return commands.generateID("fld")
@@ -679,6 +662,19 @@ func (commands accountCommands) folderClient() transport.IMAPFolderClient {
 	return unavailableFolderClient{}
 }
 
+func (commands accountCommands) folderAdminClient() transport.IMAPFolderAdminClient {
+	if commands.folderAdmin != nil {
+		return commands.folderAdmin
+	}
+	if candidate, ok := commands.folders.(transport.IMAPFolderAdminClient); ok {
+		return candidate
+	}
+	if candidate, ok := commands.imap.(transport.IMAPFolderAdminClient); ok {
+		return candidate
+	}
+	return unavailableFolderAdminClient{}
+}
+
 type unavailableIMAPValidator struct{}
 
 func (unavailableIMAPValidator) ValidateIMAP(context.Context, transport.AuthRequest) (transport.IMAPResult, error) {
@@ -695,6 +691,37 @@ type unavailableFolderClient struct{}
 
 func (unavailableFolderClient) DiscoverFolders(context.Context, transport.AuthRequest) (transport.FolderDiscoveryResult, error) {
 	return transport.FolderDiscoveryResult{}, transport.NewFailure(transport.StageConnect, transport.FailureConfiguration, false, errors.New("folder discovery unavailable"))
+}
+
+type unavailableFolderAdminClient struct{}
+
+func (unavailableFolderAdminClient) AdministerFolder(context.Context, transport.AuthRequest, transport.FolderAdminRequest) (transport.FolderAdminResult, error) {
+	return transport.FolderAdminResult{}, transport.NewFailure(transport.StageConnect, transport.FailureConfiguration, false, errors.New("folder administration unavailable"))
+}
+
+func remoteFolderObservation(remote transport.RemoteFolder) folder.RemoteObservation {
+	observation := folder.RemoteObservation{
+		Name:           remote.Name,
+		WireName:       remote.WireName,
+		OldName:        remote.OldName,
+		OldWireName:    remote.OldWireName,
+		ParentName:     remote.ParentName,
+		ParentWireName: remote.ParentWireName,
+		Delimiter:      remote.Delimiter,
+		Attributes:     append([]string(nil), remote.Attributes...),
+		Kind:           folder.NormalizeKind(remote.Kind),
+		KindSource:     remote.KindSource,
+		Selectable:     remote.Selectable,
+		Subscription:   folder.NormalizeSubscription(remote.Subscription),
+	}
+	if remote.Status != nil {
+		observation.Messages = remote.Status.Messages
+		observation.Unseen = remote.Status.Unseen
+		observation.UIDNext = remote.Status.UIDNext
+		observation.UIDValidity = remote.Status.UIDValidity
+		observation.StatusKnown = true
+	}
+	return observation
 }
 
 func (commands accountCommands) openWriteState(ctx context.Context, home string) (*store.Store, config.AppPaths, func(), error) {
@@ -851,6 +878,10 @@ func mapFolderError(err error) error {
 		return cli.WrapAppError(cli.ErrorConflict, "folder selection is ambiguous; use a stable folder ID or exact wire name", false, err)
 	case errors.Is(err, folder.ErrNotSelectable):
 		return cli.WrapAppError(cli.ErrorConflict, "folder is not selectable and cannot be enabled for synchronization", false, err)
+	case errors.Is(err, folder.ErrInvalidName):
+		return cli.WrapAppError(cli.ErrorUsage, "folder name is invalid for the current mailbox hierarchy", false, err)
+	case errors.Is(err, folder.ErrProtected):
+		return cli.WrapAppError(cli.ErrorSafety, "Inbox and provider-discovered system folders are protected from rename and delete", false, err)
 	default:
 		return cli.WrapAppError(cli.ErrorInternal, "cannot update local folder state", false, err)
 	}

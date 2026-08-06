@@ -8,6 +8,11 @@ summary: Public command, output, installation, and documentation changes.
 
 ## Unreleased
 
+- Added safe custom-folder create, rename, delete, subscribe, and unsubscribe with local dry-runs, explicit non-interactive confirmation, provider hierarchy/role protection, and live non-empty delete rechecks.
+- Added interrupted-rename recovery so a provider-accepted RENAME retains its original `fld_…`, sync policy, checkpoint, and message locations even when the response times out and the next LIST omits rename metadata.
+- Added explicit `mail sync --all-folders` for one bounded pass across every current selectable folder, while keeping custom folders disabled by default and preventing automatic old-history crawls.
+- Corrected Unicode mailbox handling across synchronization, location mutation, flag updates, remote reads, and Sent append so decoded mailbox names are encoded exactly once by the IMAP client.
+- Expanded the folder-management, Quickstart, command-reference, automation, and troubleshooting journeys for nested/Unicode administration, subscription vs sync policy, rename recovery, protected hierarchy changes, and bounded all-folder sync.
 - Added exact provider-location `move`, `copy`, `archive`, `unarchive`, `trash`, `restore`, and permanent `delete` commands with local dry-run resolution, non-interactive `--yes`, and stable idempotency keys.
 - Added durable `mut_…` intents and bounded `mail status --mutations` output for pending, confirmed, failed, and unresolved provider outcomes.
 - Added atomic MOVE preference, safe COPY plus exact UID EXPUNGE fallback, provider UID mapping capture, refusal of mailbox-wide EXPUNGE, and cancellation-safe IMAP cleanup.

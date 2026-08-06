@@ -134,6 +134,208 @@ func (repository *FolderRepository) SetSync(ctx context.Context, accountID, sele
 	return value, nil
 }
 
+func (repository *FolderRepository) CreateObserved(ctx context.Context, accountID string, observation folder.RemoteObservation, now time.Time, newID func() (string, error)) (folder.Folder, error) {
+	if newID == nil {
+		return folder.Folder{}, errors.New("create observed folder: ID generator is required")
+	}
+	if err := validateObservations([]folder.RemoteObservation{observation}); err != nil {
+		return folder.Folder{}, err
+	}
+	tx, err := repository.db.BeginTx(ctx, nil)
+	if err != nil {
+		return folder.Folder{}, fmt.Errorf("begin observed folder creation: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := accountByID(ctx, tx, accountID); err != nil {
+		return folder.Folder{}, err
+	}
+	if existing, err := resolveFolderByWire(ctx, tx, accountID, observation.WireName); err == nil {
+		return folder.Folder{}, fmt.Errorf("%w: folder already exists as %s", folder.ErrAmbiguous, existing.ID)
+	} else if !errors.Is(err, folder.ErrNotFound) {
+		return folder.Folder{}, err
+	}
+	folderID, err := newID()
+	if err != nil {
+		return folder.Folder{}, fmt.Errorf("generate folder ID: %w", err)
+	}
+	attributes, err := json.Marshal(observation.Attributes)
+	if err != nil {
+		return folder.Folder{}, fmt.Errorf("encode folder attributes: %w", err)
+	}
+	timestamp := now.UTC().Format(time.RFC3339Nano)
+	var statusAt any
+	if observation.StatusKnown {
+		statusAt = timestamp
+	}
+	if _, err := tx.ExecContext(ctx, `
+INSERT INTO folders (
+    folder_id, account_id, name, wire_name, parent_name, parent_wire_name,
+    delimiter, attributes_json, kind, kind_source, selectable, subscription,
+    present, stale, sync_enabled, message_count, unseen_count, uid_next,
+    uid_validity, discovered_at, status_at, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		folderID, accountID, observation.Name, observation.WireName,
+		observation.ParentName, observation.ParentWireName, observation.Delimiter,
+		string(attributes), observation.Kind, observation.KindSource,
+		boolInt(observation.Selectable), observation.Subscription,
+		boolInt(folder.DefaultSyncEnabled(observation.Kind) && observation.Selectable),
+		observation.Messages, observation.Unseen, observation.UIDNext,
+		observation.UIDValidity, timestamp, statusAt, timestamp, timestamp,
+	); err != nil {
+		return folder.Folder{}, classifyFolderWrite("create observed folder", err)
+	}
+	value, err := folderByID(ctx, tx, folderID)
+	if err != nil {
+		return folder.Folder{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return folder.Folder{}, fmt.Errorf("commit observed folder creation: %w", err)
+	}
+	return value, nil
+}
+
+func (repository *FolderRepository) ApplyObservation(ctx context.Context, accountID, folderID string, observation folder.RemoteObservation, now time.Time) (folder.Folder, error) {
+	if err := validateObservations([]folder.RemoteObservation{observation}); err != nil {
+		return folder.Folder{}, err
+	}
+	tx, err := repository.db.BeginTx(ctx, nil)
+	if err != nil {
+		return folder.Folder{}, fmt.Errorf("begin folder observation update: %w", err)
+	}
+	defer tx.Rollback()
+	value, err := applyFolderObservationInTx(ctx, tx, accountID, folderID, observation, now)
+	if err != nil {
+		return folder.Folder{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return folder.Folder{}, fmt.Errorf("commit folder observation update: %w", err)
+	}
+	return value, nil
+}
+
+func applyFolderObservationInTx(ctx context.Context, tx *sql.Tx, accountID, folderID string, observation folder.RemoteObservation, now time.Time) (folder.Folder, error) {
+	current, err := folderByID(ctx, tx, folderID)
+	if err != nil {
+		return folder.Folder{}, err
+	}
+	if current.AccountID != strings.TrimSpace(accountID) {
+		return folder.Folder{}, folder.ErrNotFound
+	}
+	attributes, err := json.Marshal(observation.Attributes)
+	if err != nil {
+		return folder.Folder{}, fmt.Errorf("encode folder attributes: %w", err)
+	}
+	subscription := observation.Subscription
+	if subscription == folder.SubscriptionUnknown && current.Subscription != folder.SubscriptionUnknown {
+		subscription = current.Subscription
+	}
+	messages, unseen, uidNext, uidValidity := current.Messages, current.Unseen, current.UIDNext, current.UIDValidity
+	statusAt := current.StatusAt
+	if observation.StatusKnown {
+		messages, unseen, uidNext, uidValidity = observation.Messages, observation.Unseen, observation.UIDNext, observation.UIDValidity
+		copy := now.UTC()
+		statusAt = &copy
+	}
+	timestamp := now.UTC().Format(time.RFC3339Nano)
+	var statusValue any
+	if statusAt != nil {
+		statusValue = statusAt.UTC().Format(time.RFC3339Nano)
+	}
+	if _, err := tx.ExecContext(ctx, `
+UPDATE folders
+SET name = ?, wire_name = ?, parent_name = ?, parent_wire_name = ?, delimiter = ?,
+    attributes_json = ?, kind = ?, kind_source = ?, selectable = ?, subscription = ?,
+    present = 1, stale = 0, message_count = ?, unseen_count = ?, uid_next = ?,
+    uid_validity = ?, discovered_at = ?, status_at = ?, missing_since = NULL,
+    updated_at = ?
+WHERE folder_id = ? AND account_id = ?`,
+		observation.Name, observation.WireName, observation.ParentName,
+		observation.ParentWireName, observation.Delimiter, string(attributes),
+		observation.Kind, observation.KindSource, boolInt(observation.Selectable),
+		subscription, messages, unseen, uidNext, uidValidity, timestamp, statusValue,
+		timestamp, folderID, accountID,
+	); err != nil {
+		return folder.Folder{}, classifyFolderWrite("update observed folder", err)
+	}
+	return folderByID(ctx, tx, folderID)
+}
+
+func (repository *FolderRepository) SetSubscription(ctx context.Context, accountID, folderID string, subscription folder.Subscription, now time.Time) (folder.Folder, error) {
+	if subscription != folder.SubscriptionSubscribed && subscription != folder.SubscriptionUnsubscribed {
+		return folder.Folder{}, fmt.Errorf("set folder subscription: invalid subscription")
+	}
+	timestamp := now.UTC().Format(time.RFC3339Nano)
+	result, err := repository.db.ExecContext(ctx, `
+UPDATE folders SET subscription = ?, updated_at = ? WHERE folder_id = ? AND account_id = ?`,
+		subscription, timestamp, strings.TrimSpace(folderID), strings.TrimSpace(accountID))
+	if err != nil {
+		return folder.Folder{}, fmt.Errorf("set folder subscription: %w", err)
+	}
+	if affected, _ := result.RowsAffected(); affected != 1 {
+		return folder.Folder{}, folder.ErrNotFound
+	}
+	return folderByID(ctx, repository.db, strings.TrimSpace(folderID))
+}
+
+func (repository *FolderRepository) MarkDeleted(ctx context.Context, accountID, folderID string, now time.Time) (folder.Folder, error) {
+	tx, err := repository.db.BeginTx(ctx, nil)
+	if err != nil {
+		return folder.Folder{}, fmt.Errorf("begin folder deletion reconciliation: %w", err)
+	}
+	defer tx.Rollback()
+	current, err := folderByID(ctx, tx, folderID)
+	if err != nil {
+		return folder.Folder{}, err
+	}
+	if current.AccountID != strings.TrimSpace(accountID) {
+		return folder.Folder{}, folder.ErrNotFound
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT DISTINCT message_id FROM message_locations WHERE account_id = ? AND folder_id = ? AND present = 1 ORDER BY message_id`, accountID, folderID)
+	if err != nil {
+		return folder.Folder{}, fmt.Errorf("select deleted-folder messages: %w", err)
+	}
+	messageIDs := make([]string, 0)
+	for rows.Next() {
+		var messageID string
+		if err := rows.Scan(&messageID); err != nil {
+			rows.Close()
+			return folder.Folder{}, fmt.Errorf("read deleted-folder message: %w", err)
+		}
+		messageIDs = append(messageIDs, messageID)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return folder.Folder{}, fmt.Errorf("read deleted-folder messages: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return folder.Folder{}, fmt.Errorf("close deleted-folder message rows: %w", err)
+	}
+	timestamp := now.UTC().Format(time.RFC3339Nano)
+	if _, err := tx.ExecContext(ctx, `UPDATE message_locations SET present = 0, updated_at = ? WHERE account_id = ? AND folder_id = ? AND present = 1`, timestamp, accountID, folderID); err != nil {
+		return folder.Folder{}, fmt.Errorf("mark deleted-folder locations absent: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+UPDATE folders
+SET present = 0, stale = 1, sync_enabled = 0, message_count = 0, unseen_count = 0,
+    missing_since = COALESCE(missing_since, ?), updated_at = ?
+WHERE folder_id = ? AND account_id = ?`, timestamp, timestamp, folderID, accountID); err != nil {
+		return folder.Folder{}, fmt.Errorf("mark folder deleted: %w", err)
+	}
+	if len(messageIDs) > 0 {
+		if err := rebuildAffectedThreadGraph(ctx, tx, accountID, messageIDs, now); err != nil {
+			return folder.Folder{}, err
+		}
+	}
+	value, err := folderByID(ctx, tx, folderID)
+	if err != nil {
+		return folder.Folder{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return folder.Folder{}, fmt.Errorf("commit folder deletion reconciliation: %w", err)
+	}
+	return value, nil
+}
+
 func (repository *FolderRepository) Reconcile(
 	ctx context.Context,
 	accountID string,
@@ -166,6 +368,9 @@ func (repository *FolderRepository) Reconcile(
 	timestamp := now.UTC().Format(time.RFC3339Nano)
 	for _, observation := range observations {
 		match := matchFolder(existing, matched, observation, existingKindCount, remoteKindCount)
+		if match != nil && observation.Subscription == folder.SubscriptionUnknown && match.Subscription != folder.SubscriptionUnknown {
+			observation.Subscription = match.Subscription
+		}
 		attributes, err := json.Marshal(observation.Attributes)
 		if err != nil {
 			return nil, fmt.Errorf("encode folder attributes: %w", err)
@@ -235,6 +440,10 @@ WHERE folder_id = ?`, timestamp, timestamp, value.ID); err != nil {
 	}
 	values, _, err := repository.List(ctx, accountID, 1000, true)
 	return values, err
+}
+
+func resolveFolderByWire(ctx context.Context, queryer folderQueryer, accountID, wireName string) (folder.Folder, error) {
+	return scanFolder(queryer.QueryRowContext(ctx, folderColumns+` WHERE account_id = ? AND wire_name = ?`, strings.TrimSpace(accountID), strings.TrimSpace(wireName)))
 }
 
 func validateObservations(observations []folder.RemoteObservation) error {

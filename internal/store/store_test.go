@@ -1562,7 +1562,7 @@ func TestOpenUpgradesSchemaFourteenForwardAndLocationStateIntoEmptyMutationLedge
 		t.Fatal(err)
 	}
 	defer state.Close()
-	if state.SchemaVersion() != 15 {
+	if state.SchemaVersion() != 16 {
 		t.Fatalf("schema version = %d", state.SchemaVersion())
 	}
 	attempt, err := state.Outbound().Attempt(context.Background(), attemptID)
@@ -1587,5 +1587,9 @@ func TestOpenUpgradesSchemaFourteenForwardAndLocationStateIntoEmptyMutationLedge
 	mutations, more, err := state.LocationMutations().List(context.Background(), accountID, 20)
 	if err != nil || more || len(mutations) != 0 {
 		t.Fatalf("upgraded mutation ledger = %+v more=%v err=%v", mutations, more, err)
+	}
+	var renameRecoveries int
+	if err := state.db.QueryRow(`SELECT count(*) FROM folder_rename_recoveries`).Scan(&renameRecoveries); err != nil || renameRecoveries != 0 {
+		t.Fatalf("upgraded folder rename recovery ledger count=%d err=%v", renameRecoveries, err)
 	}
 }
