@@ -450,7 +450,7 @@ func TestCapabilitiesCompactGoldenBudget(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("exit code = %d, stderr = %q", exitCode, stderr)
 	}
-	const want = "capabilities\ncommand=icloud\nversion=dev\nschema=7\naccount_mode=validated_lifecycle\ncredentials=keyring,env,file\nnetwork_validation=true\ndiagnostics=true\nmail_folders=true\nmail_sync=true\nmail_content=true\nmail_attachments=true\nmail_flags=true\ndefault_output=compact\njson=true\ncompletion=bash,zsh,fish,powershell\nman=true\n"
+	const want = "capabilities\ncommand=icloud\nversion=dev\nschema=8\naccount_mode=validated_lifecycle\ncredentials=keyring,env,file\nnetwork_validation=true\ndiagnostics=true\nmail_folders=true\nmail_sync=true\nmail_content=true\nmail_attachments=true\nmail_flags=true\ndefault_output=compact\njson=true\ncompletion=bash,zsh,fish,powershell\nman=true\n"
 	if stdout != want {
 		t.Fatalf("stdout mismatch\nwant: %q\n got: %q", want, stdout)
 	}
@@ -480,7 +480,7 @@ func TestCapabilitiesJSONEnvelope(t *testing.T) {
 		t.Fatalf("ok = %#v", envelope["ok"])
 	}
 	data, ok := envelope["data"].(map[string]any)
-	if !ok || data["data_schema_version"] != float64(7) || data["network_validation"] != true || data["diagnostics"] != true || data["mail_folders"] != true || data["mail_sync"] != true || data["mail_content"] != true || data["mail_attachments"] != true || data["mail_flags"] != true {
+	if !ok || data["data_schema_version"] != float64(8) || data["network_validation"] != true || data["diagnostics"] != true || data["mail_folders"] != true || data["mail_sync"] != true || data["mail_content"] != true || data["mail_attachments"] != true || data["mail_flags"] != true {
 		t.Fatalf("data = %#v", envelope["data"])
 	}
 	if strings.Contains(stdout, "\x1b[") {
@@ -603,7 +603,7 @@ func TestAccountListCreatesAndReopensPrivateZeroState(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &envelope); err != nil {
 		t.Fatalf("invalid JSON: %v\n%s", err, stdout)
 	}
-	if !envelope.OK || envelope.Data.Count != 0 || len(envelope.Data.Accounts) != 0 || envelope.Data.SchemaVersion != 7 {
+	if !envelope.OK || envelope.Data.Count != 0 || len(envelope.Data.Accounts) != 0 || envelope.Data.SchemaVersion != 8 {
 		t.Fatalf("unexpected envelope: %+v", envelope)
 	}
 	if envelope.Meta.RequestID != "req_accounts" {
@@ -731,7 +731,7 @@ func TestAccountListAndShowReadStoredAccountCompactly(t *testing.T) {
 		t.Fatalf("invalid JSON: %v\n%s", err, stdout)
 	}
 	if !envelope.OK || envelope.Data.Account.ID != "acct_0198d704-6c00-7000-8000-000000000001" ||
-		envelope.Data.Account.CredentialScheme != "env" || envelope.Data.SchemaVersion != 7 {
+		envelope.Data.Account.CredentialScheme != "env" || envelope.Data.SchemaVersion != 8 {
 		t.Fatalf("unexpected envelope: %+v", envelope)
 	}
 }
@@ -1701,6 +1701,111 @@ func TestMailSyncIncrementalWorkflowAndCompactBudgets(t *testing.T) {
 	}
 	if !strings.Contains(stdout, `"unknown":["$RemoteKeyword"]`) || !strings.Contains(stdout, `"mod_sequence":31`) {
 		t.Fatalf("reconciled structured flags missing: %s", stdout)
+	}
+}
+
+func TestMailSentTailBootstrapAndNewObservationMerge(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "state")
+	t.Setenv("ICLOUD_MAIL_SENT_PASSWORD", "synthetic-mail-sent-secret")
+	commands, _ := newTestAccountCommands()
+	commands.folders = &fakeFolderClient{results: map[string][]transport.FolderDiscoveryResult{
+		"owner@icloud.com": {{Folders: []transport.RemoteFolder{
+			{
+				Name: "INBOX", WireName: "INBOX", Kind: "inbox", KindSource: "inbox",
+				Selectable: true, Subscription: "subscribed",
+				Status: &transport.MailboxStatus{Mailbox: "INBOX", Messages: 1, UIDNext: 22, UIDValidity: 100},
+			},
+			{
+				Name: "Sent Messages", WireName: "Sent Messages", Kind: "sent", KindSource: "special_use",
+				Selectable: true, Subscription: "subscribed",
+				Status: &transport.MailboxStatus{Mailbox: "Sent Messages", Messages: 50, UIDNext: 51, UIDValidity: 200},
+			},
+		}}},
+	}}
+	inboxRaw := syntheticMailFixture(21, "phase10-shared@example.test", "Phase 10 shared", "Inbox representative body", "")
+	sentRaw := syntheticMailFixture(51, "phase10-shared@example.test", "Phase 10 shared", "Sent representative body", "hidden-sent-bcc@example.test")
+	mailClient := &fakeInboxClient{results: []fakeInboxPageResult{
+		{
+			page: transport.InboxPage{
+				Mailbox: "INBOX", UIDValidity: 100, LastCommittedUID: 21, LastScannedUID: 21,
+				Bootstrap: true, Messages: []transport.FetchedMessage{{
+					UID: 21, Flags: []string{`\Seen`}, InternalDate: time.Date(2026, 8, 6, 7, 21, 0, 0, time.UTC),
+				}},
+			},
+			raw: map[uint32]string{21: inboxRaw},
+		},
+		{
+			page: transport.InboxPage{
+				Mailbox: "Sent Messages", UIDValidity: 200, LastCommittedUID: 50, LastScannedUID: 50,
+				Bootstrap: true,
+			},
+		},
+		{
+			page: transport.InboxPage{
+				Mailbox: "Sent Messages", UIDValidity: 200, LastCommittedUID: 51, LastScannedUID: 51,
+				Messages: []transport.FetchedMessage{{
+					UID: 51, Flags: []string{`\Flagged`}, InternalDate: time.Date(2026, 8, 6, 7, 22, 0, 0, time.UTC),
+				}},
+			},
+			raw: map[uint32]string{51: sentRaw},
+		},
+	}}
+	commands.mail = mailClient
+
+	addAndDiscoverInbox(t, commands, home, "ICLOUD_MAIL_SENT_PASSWORD")
+	code, stdout, stderr := runWithAccountCommands(t, commands, "", "--home", home, "mail", "sync", "--limit", "2")
+	if code != 0 || stderr != "" || compactBlockCount(stdout, "mail-sync") != 2 ||
+		!compactContainsAll(stdout, "folder=INBOX", "fetched=1", "created=1") ||
+		!compactContainsAll(stdout, `folder="Sent Messages"`, "fetched=0", "last_uid=50", "bootstrap=true") {
+		t.Fatalf("initial multi-folder sync code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	if len(mailClient.requests) != 2 || mailClient.requests[0].Mailbox != "INBOX" ||
+		!mailClient.requests[0].Bootstrap || mailClient.requests[0].TailOnlyBootstrap ||
+		mailClient.requests[1].Mailbox != "Sent Messages" || !mailClient.requests[1].Bootstrap ||
+		!mailClient.requests[1].TailOnlyBootstrap || mailClient.requests[1].LastCommittedUID != 0 {
+		t.Fatalf("initial folder requests = %+v", mailClient.requests)
+	}
+
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "sync", "--folder", "sent")
+	if code != 0 || stderr != "" || compactBlockCount(stdout, "mail-sync") != 1 ||
+		!compactContainsAll(stdout, `folder="Sent Messages"`, "fetched=1", "created=0", "updated=1", "identity_merges=1", "last_uid=51") {
+		t.Fatalf("incremental Sent sync code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	if len(mailClient.requests) != 3 || mailClient.requests[2].Mailbox != "Sent Messages" ||
+		mailClient.requests[2].Bootstrap || mailClient.requests[2].TailOnlyBootstrap ||
+		mailClient.requests[2].ExpectedUIDValidity != 200 || mailClient.requests[2].LastCommittedUID != 50 {
+		t.Fatalf("incremental Sent request = %+v", mailClient.requests)
+	}
+
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "inbox", "--folder", "sent", "--json")
+	if code != 0 || stderr != "" || !strings.Contains(stdout, `"count":1`) ||
+		!strings.Contains(stdout, `"direction":"outbound"`) || !strings.Contains(stdout, `"unread":false`) ||
+		strings.Count(stdout, `"folder_kind"`) != 2 || !strings.Contains(stdout, `"folder_kind":"sent"`) ||
+		!strings.Contains(stdout, `"folder_kind":"inbox"`) || !strings.Contains(stdout, `"kind":"rfc_message_id"`) ||
+		strings.Count(stdout, `"kind":"provider_location"`) != 2 ||
+		!strings.Contains(stdout, `"content_location_id":"loc_0198d704-6c00-7000-8000-000000000001"`) ||
+		!strings.Contains(stdout, `"snippet":"Inbox representative body uid=21"`) || strings.Contains(stdout, "Sent representative body") {
+		t.Fatalf("Sent local list code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	for _, forbidden := range []string{"synthetic-mail-sent-secret", "raw_storage_key", "raw_content_hash", "hidden-sent-bcc@example.test", `"bcc"`} {
+		if strings.Contains(stdout, forbidden) {
+			t.Fatalf("Sent JSON exposed %q: %s", forbidden, stdout)
+		}
+	}
+
+	messageID := "msg_0198d704-6c00-7000-8000-000000000001"
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "message", "show", messageID, "--full")
+	if code != 0 || stderr != "" || !strings.Contains(stdout, "Inbox representative body uid=21") || strings.Contains(stdout, "Sent representative body") {
+		t.Fatalf("representative content code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "message", "raw", messageID)
+	if code != 0 || stderr != "" || stdout != inboxRaw {
+		t.Fatalf("representative raw code=%d bytes=%d stderr=%q", code, len(stdout), stderr)
+	}
+
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "sync", "status", "--folder", "sent")
+	if code != 0 || stderr != "" || !compactContainsAll(stdout, `folder="Sent Messages"`, "uid_validity=200", "committed=51", "bootstrap=true") {
+		t.Fatalf("Sent status code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 }
 

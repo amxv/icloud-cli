@@ -132,6 +132,7 @@ type InboxFetchRequest struct {
 	LastCommittedUID    uint32
 	LastScannedUID      uint32
 	Bootstrap           bool
+	TailOnlyBootstrap   bool
 	Limit               int
 	ReconcileUIDs       []uint32
 }

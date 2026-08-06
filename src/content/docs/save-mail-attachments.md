@@ -109,4 +109,4 @@ Choose another path or use `--force` for a regular file you intend to replace. F
 
 That is expected when the original filename contained traversal components, unsupported separators, reserved device names, or no usable name. The sanitized filename is chosen for safe export; the original metadata remains visible through `attachments list --json`.
 
-Continue with [Sync and read the Inbox](/docs/sync-and-read-inbox) for message acquisition, [Output and automation](/docs/output-and-automation) for stream contracts, or the [command reference](/docs/command-reference) for exact flags.
+Continue with [Sync and read mail](/docs/sync-and-read-inbox) for message acquisition, [Output and automation](/docs/output-and-automation) for stream contracts, or the [command reference](/docs/command-reference) for exact flags.

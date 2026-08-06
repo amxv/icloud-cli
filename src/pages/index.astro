@@ -29,7 +29,7 @@ const workflows = [
   "Add an offline iCloud Mail profile using the native keyring or an environment/file credential reference.",
   "Select, rename, default, rotate, or remove multiple profiles without exposing credential references or values.",
   "Validate direct-TLS IMAP and mandatory-STARTTLS SMTP safely, then inspect stored health with icloud doctor.",
-  "Discover nested and Unicode mailboxes, then stream bounded Inbox pages into private local state.",
+  "Discover nested and Unicode mailboxes, then synchronize bounded pages from enabled folders into private local state.",
   "Read compact sender, subject, state, attachment-count, and decoded-text previews offline without marking mail read.",
   "Open one stable message ID for complete text, HTML, decoded headers, MIME details, or verified raw RFC822 export.",
   "Inspect supported behavior with icloud capabilities before an agent chooses an output mode.",
@@ -54,7 +54,8 @@ const workflows = [
       </p>
       <p class="hero__annotation">
         The current build validates both iCloud Mail protocols, discovers every folder, synchronizes
-        bounded Inbox pages, reads complete local messages explicitly, and never sends or mutates mail.
+        bounded enabled-folder pages, starts Sent without crawling history, reads complete local messages explicitly,
+        and never sends or mutates mail.
       </p>
       <div class="hero__actions">
         <a class="button button--solid" href="/docs/quickstart">Start with the quickstart</a>
@@ -71,7 +72,7 @@ const workflows = [
         <span>capabilities</span>
         <span>command=icloud</span>
         <span>version=0.1.0</span>
-        <span>schema=5 …</span>
+        <span>schema=8 …</span>
         <span>$ icloud account add --name Personal --email owner@icloud.com</span>
         <span>App-specific password:</span>
         <span>account-added</span>
@@ -126,7 +127,7 @@ const workflows = [
   <section class="shell split-section">
     <div>
       <p class="section-label">Available now</p>
-      <h2>Configure private profiles, validate both mail protocols, synchronize the Inbox, and choose exactly how much message content to read.</h2>
+      <h2>Configure private profiles, validate both mail protocols, synchronize enabled folders, and choose exactly how much message content to read.</h2>
     </div>
     <div class="stack-list">
       {workflows.map((item) => (

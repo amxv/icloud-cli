@@ -8,6 +8,11 @@ summary: Public command, output, installation, and documentation changes.
 
 ## Unreleased
 
+- Added schema version 8 identity provenance and dedupe conflict records for logical messages observed in several provider locations.
+- Added bounded synchronization for every enabled folder, `--folder sent` and stable-folder selectors across sync, status, and local listing, plus one compact or JSON result per selected folder.
+- Added history-free Sent setup: the first run records the current Sent tail without downloading old messages, while later runs ingest only newer Sent copies.
+- Added strong RFC/generated-ID reconciliation, guarded location-less content matching, independent per-location UIDs and flags, outbound direction from confirmed folder/account evidence, and conflict-preserving behavior for ambiguous provider observations.
+- Updated the sync, quickstart, folder-policy, output, troubleshooting, command-reference, landing-page, and README journeys for enabled folders, multi-location messages, and safe Sent expectations.
 - Added structured per-location Seen, Flagged, Answered, Draft, Deleted, unknown-flag, mod-sequence, presence, and last-checked state through schema version 7.
 - Added bounded rotating Inbox flag reconciliation so repeated syncs detect remote state changes and missing locations without re-downloading message bodies or starving older local messages.
 - Added location-aware `mail mark-read`, `mark-unread`, `flag`, and `unflag` commands with explicit folder selection for ambiguous messages, server-returned state persistence, conditional-race detection, targeted verification, and cancellation-safe IMAP STORE timeouts.

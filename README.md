@@ -2,7 +2,7 @@
 
 `icloud` is a local-first command-line client for iCloud services. The project is being built for agent workflows without making the normal terminal experience noisy: compact plain text is the default, and structured or expanded output is always explicit.
 
-The current implementation provides secure multi-account and credential lifecycle, read-only live iCloud compatibility testing, durable all-folder discovery, bounded local Inbox synchronization, complete local message reads, safe inbound attachment export, and explicit read/flag state updates. It can validate IMAP/SMTP authentication, discover nested and Unicode mailboxes, stream raw Inbox messages into private local state, show compact decoded-text excerpts, explicitly return complete text or HTML, inspect decoded headers and MIME metadata, export exact RFC822 bytes, save verified decoded attachments without trusting message filenames as paths, and update one exact current message location without searching or mutating Sent. It does not send, move, copy, archive, trash, or delete mail yet.
+The current implementation provides secure multi-account and credential lifecycle, read-only live iCloud compatibility testing, durable all-folder discovery, bounded synchronization of enabled folders, complete local message reads, safe attachment export, and explicit read/flag state updates. It can validate IMAP/SMTP authentication, discover nested and Unicode mailboxes, stream raw messages into private local state, establish Sent at the current tail without crawling history, reconcile one logical message across independent folder locations, show compact decoded-text excerpts, explicitly return complete text or HTML, inspect decoded headers and MIME metadata, export exact RFC822 bytes, save verified decoded attachments without trusting message filenames as paths, and update one exact current message location. It does not send, move, copy, archive, trash, or delete mail yet.
 
 ## Install
 
@@ -38,9 +38,9 @@ icloud mail folders show <selector> [--verbose] [--json]
 icloud mail folders status [--verbose] [--json]
 icloud mail folders enable <selector> [--json]
 icloud mail folders disable <selector> [--json]
-icloud mail sync [--limit <n>] [--json]
-icloud mail inbox [--limit <n>] [--json]
-icloud mail sync status [--json]
+icloud mail sync [--folder <selector>] [--limit <n>] [--json]
+icloud mail inbox [--folder <selector>] [--limit <n>] [--json]
+icloud mail sync status [--folder <selector>] [--json]
 icloud mail sync checkpoints [--limit <n>] [--json]
 icloud mail message show <message-id> [--full] [--format compact|text|html|raw] [--headers] [--body-only] [--metadata-only] [--verbose] [--json]
 icloud mail message raw <message-id>
@@ -91,6 +91,16 @@ last_uid=184
 more=false
 bootstrap=true
 
+mail-sync
+fld_… account=acct_…
+folder="Sent Messages"
+fetched=0
+created=0
+updated=0
+last_uid=52
+more=false
+bootstrap=true
+
 inbox
 account=acct_…
 count=20
@@ -106,7 +116,7 @@ version
 capabilities
 command=icloud
 version=0.1.0
-schema=7
+schema=8
 account_mode=validated_lifecycle
 credentials=keyring,env,file
 network_validation=true

@@ -129,6 +129,10 @@ type inboxUIDSelection struct {
 
 func selectInboxUIDs(ctx context.Context, conn net.Conn, client *imapclient.Client, selected *imap.SelectData, request transport.InboxFetchRequest, timeout time.Duration) (inboxUIDSelection, error) {
 	if request.Bootstrap {
+		if request.TailOnlyBootstrap {
+			tail := uidTail(selected.UIDNext)
+			return inboxUIDSelection{LastCommittedUID: tail, LastScannedUID: tail}, nil
+		}
 		return selectBootstrapUIDs(ctx, conn, client, selected, request.Limit, timeout)
 	}
 	remoteTail := uidTail(selected.UIDNext)

@@ -194,7 +194,7 @@ Generating completion output does not install it automatically.
 
 ## A local command is not contacting iCloud
 
-That is expected for `account add`, credential replacement, account reads, local folder `list`/`show`, folder policy changes, and `doctor` without `--live`. Use `icloud account test`, `icloud doctor --live`, `icloud mail folders status`, or `icloud mail sync` for explicit network work. Inbox sync is read-only at iCloud; sending and mailbox mutation are not implemented in this build.
+That is expected for `account add`, credential replacement, account reads, local folder `list`/`show`, folder policy changes, and `doctor` without `--live`. Use `icloud account test`, `icloud doctor --live`, `icloud mail folders status`, or `icloud mail sync` for explicit network work. Folder sync is read-only at iCloud; sending and mailbox mutation are not implemented in this build.
 
 ## Folder list is empty
 
@@ -219,34 +219,46 @@ The provider did not advertise a corresponding special-use attribute. The CLI de
 Live folder status retains absent provider folders as `present=no stale=true` so identity and policy are not silently lost. Normal `folders list` hides retained missing records; add `--include-missing` to inspect them.
 
 
-## Inbox sync says the folder is not discovered
+## Sync says the folder is not discovered
 
 Run a folder refresh, then retry:
 
 ```bash
 icloud mail folders status
-icloud mail sync
+icloud mail sync --folder sent
 ```
 
-The CLI requires a confirmed, selectable Inbox identity before fetching messages.
+The CLI requires a confirmed, selectable provider identity before fetching messages. The selected folder must also be enabled.
 
-## Inbox sync failed without advancing
+## Sync failed without advancing
 
 Inspect the saved frontier:
 
 ```bash
-icloud mail sync status
+icloud mail sync status --folder sent
 ```
 
 `state=failed` means the page was not committed and `committed` remains safe to retry. Use a larger `--timeout` only after checking the reported IMAP stage and connectivity.
 
-## Inbox sync requires repair
+## A folder sync requires repair
 
 `state=repair_required` means iCloud returned a different mailbox identity. Ordinary sync stops before resetting or combining message locations. Keep the state directory intact; a dedicated repair command is introduced in a later workflow.
+
+## The first Sent sync fetched zero messages
+
+That is expected and safe. Sent setup records the current remote tail without downloading old Sent history:
+
+```bash
+icloud mail sync status --folder sent
+```
+
+After a new Sent copy is created, run `icloud mail sync --folder sent` again. Only copies newer than the recorded tail are ingested.
 
 ## The Inbox command does not contact iCloud
 
 That is intentional. `icloud mail inbox` reads the latest locally committed page. Run `icloud mail sync` first when new remote mail is expected.
+
+Use `icloud mail inbox --folder sent` to read locally synchronized Sent copies. It also stays offline.
 
 ## Message show returns not found
 
@@ -327,11 +339,11 @@ Folder selectors can be a stable ID, decoded name, exact provider wire name, or 
 
 ## A message has no eligible current location
 
-The synchronized copies are absent, deleted, stale, or in a folder that is no longer current and selectable. Refresh discovery and Inbox state first:
+The synchronized copies are absent, deleted, stale, or in a folder that is no longer current and selectable. Refresh discovery and the relevant folder state first:
 
 ```bash
 icloud mail folders status
-icloud mail sync
+icloud mail sync --folder sent
 icloud mail message show msg_… --metadata-only --json
 ```
 
@@ -346,11 +358,15 @@ icloud mail message show msg_… --metadata-only --json
 icloud mail mark-unread msg_… --folder INBOX
 ```
 
-When the server exposes a mod-sequence, the CLI uses it for conditional updates. Otherwise it verifies the final state with a targeted UID read. Neither path searches Sent or other mailboxes.
+When the server exposes a mod-sequence, the CLI uses it for conditional updates. Otherwise it verifies the final state with a targeted UID read. Neither path searches another mailbox; it updates only the selected synchronized location.
 
 ## Sync reports reconciliation but no new messages
 
-That is expected. `fetched=0` means the new-message frontier did not move; `reconciled` counts existing current locations whose flags were checked, while `state_changes` counts real remote differences. The bounded sweep rotates by oldest check time, so repeated syncs eventually cover older local Inbox locations without re-downloading bodies.
+That is expected. `fetched=0` means the selected folder's new-message frontier did not move; `reconciled` counts existing current locations whose flags were checked, while `state_changes` counts real remote differences. The bounded sweep rotates by oldest check time, so repeated syncs eventually cover older local locations without re-downloading bodies.
+
+## Two similar messages were not merged
+
+The CLI requires strong identity or a uniquely safe local fallback before it joins locations under one `msg_…` ID. Matching subject, body, attachments, and time are not enough to collapse two provider-backed messages. Inspect `mail inbox --folder <folder> --json` or `mail message show <id> --metadata-only --json`; unresolved identity conflicts remain visible instead of deleting one record.
 
 ## Raw message content is missing or corrupt
 

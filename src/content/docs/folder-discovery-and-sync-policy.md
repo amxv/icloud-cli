@@ -113,13 +113,21 @@ icloud mail folders disable Receipts
 
 These commands change local policy only. They do not immediately fetch, move, or modify mail. Non-selectable container folders cannot be enabled.
 
-The current message sync command reads Inbox only:
+The sync command processes every enabled, current, selectable folder:
 
 ```bash
 icloud mail sync
 ```
 
-Enabling another folder preserves the choice for later phases; it does not cause the current Inbox command to broaden its scope. See [Sync and read the Inbox](/docs/sync-and-read-inbox) for the active workflow.
+Select one folder when you want a narrower run:
+
+```bash
+icloud mail sync --folder sent
+icloud mail sync --folder Receipts
+icloud mail sync --folder fld_…
+```
+
+Inbox starts with its newest bounded page. Sent starts differently: the first run records the current tail without downloading old Sent history, then later runs ingest only new Sent copies. Other enabled folders start from their newest bounded page. See [Sync and read mail](/docs/sync-and-read-inbox) for the complete workflow.
 
 ## Missing folders remain visible
 
@@ -146,4 +154,4 @@ icloud mail folders list --include-missing --json
 
 JSON includes the complete folder record and local schema version. Credential references and values remain private.
 
-Continue with [Sync and read the Inbox](/docs/sync-and-read-inbox) after discovery, or use the [command reference](/docs/command-reference) for exact flags.
+Continue with [Sync and read mail](/docs/sync-and-read-inbox) after discovery, or use the [command reference](/docs/command-reference) for exact flags.

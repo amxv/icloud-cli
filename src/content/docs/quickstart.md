@@ -1,9 +1,9 @@
 ---
 title: Quickstart
-description: Install icloud, configure an app-specific password safely, validate the account, discover folders, synchronize the Inbox, read or save content, and update message state explicitly.
+description: Install icloud, configure an app-specific password safely, validate the account, discover folders, synchronize Inbox and Sent safely, read or save content, and update message state explicitly.
 order: 1
 category: Start
-summary: The shortest safe path from installation to a validated account, locally readable Inbox, explicit content access, safe attachment export, and location-aware read or flag updates.
+summary: The shortest safe path from installation to a validated account, locally readable Inbox and new Sent copies, explicit content access, safe attachment export, and location-aware read or flag updates.
 ---
 
 ## Install and inspect the binary
@@ -30,7 +30,7 @@ version
 capabilities
 command=icloud
 version=0.1.0
-schema=7
+schema=8
 account_mode=validated_lifecycle
 credentials=keyring,env,file
 network_validation=true
@@ -137,7 +137,7 @@ icloud doctor
 icloud mail folders status
 ```
 
-This saves the current mailbox tree and counts. It is required before message sync so the CLI can use a confirmed Inbox identity rather than guessing.
+This saves the current mailbox tree and counts. It is required before message sync so the CLI can use confirmed provider folder identities rather than guessing.
 
 Read the saved inventory offline:
 
@@ -147,13 +147,13 @@ icloud mail folders list
 
 See [Folder discovery and sync policy](/docs/folder-discovery-and-sync-policy) for nested and Unicode names, missing folders, provider roles, and optional sync eligibility.
 
-## Synchronize the Inbox
+## Synchronize enabled mail folders
 
 ```bash
 icloud mail sync
 ```
 
-The first run downloads one bounded current-tail page into private local state:
+The command processes Inbox and Sent by default because both begin enabled. Inbox downloads one bounded current-tail page into private local state:
 
 ```text
 mail-sync
@@ -167,7 +167,17 @@ more=true
 bootstrap=true
 ```
 
-Repeat while `more=true`. Later runs fetch only newer Inbox messages. A failed page leaves the previous frontier intact and is safe to retry.
+Sent setup prints a second `mail-sync` block with `fetched=0` and its current `last_uid`. That is intentional: the CLI does not crawl old Sent history. Later runs ingest Sent copies created after that tail.
+
+Repeat a folder while `more=true`. Later runs fetch only newer messages. A failed page leaves that folder's previous frontier intact and is safe to retry.
+
+Select one folder explicitly when useful:
+
+```bash
+icloud mail sync --folder inbox
+icloud mail sync --folder sent
+icloud mail sync --folder fld_…
+```
 
 ## Read compact previews offline
 
@@ -191,6 +201,14 @@ more=false
 ```
 
 The command reads local state only and never marks messages read. It intentionally returns only bounded previews.
+
+Read locally synchronized Sent copies with:
+
+```bash
+icloud mail inbox --folder sent
+```
+
+The same logical `msg_…` record may contain separate Inbox and Sent locations. Each location retains its own UID and flags; an unseen Sent copy does not make outbound mail unread.
 
 ## Read one complete message explicitly
 
@@ -243,16 +261,17 @@ The command updates one exact current provider location and then stores the stat
 icloud mail mark-read msg_… --folder INBOX
 ```
 
-These commands do not search Sent or mutate every copy of a message. A later `mail sync` refreshes bounded location state without downloading message bodies again.
+These commands do not search every mailbox or mutate every copy of a message. Choose `--folder sent` only when that exact synchronized Sent location should change. A later `mail sync` refreshes bounded location state without downloading message bodies again.
 
 Inspect progress:
 
 ```bash
 icloud mail sync status
+icloud mail sync status --folder sent
 icloud mail sync checkpoints
 ```
 
-Read [Sync and read the Inbox](/docs/sync-and-read-inbox) for incremental state reconciliation, location selection, and recovery, or [Save mail attachments](/docs/save-mail-attachments) for filename, collision, batch, and binary-output rules.
+Read [Sync and read mail](/docs/sync-and-read-inbox) for enabled-folder selection, history-free Sent setup, incremental state reconciliation, location selection, and recovery, or [Save mail attachments](/docs/save-mail-attachments) for filename, collision, batch, and binary-output rules.
 
 ## Select another account
 
@@ -275,7 +294,7 @@ JSON is opt-in. Redirecting stdout does not change the compact default. Password
 
 - Credential or validation trouble: [Account validation and doctor](/docs/account-validation-and-doctor)
 - Empty or unexpected folder inventory: [Folder discovery and sync policy](/docs/folder-discovery-and-sync-policy)
-- Interrupted or stale Inbox sync: [Sync and read the Inbox](/docs/sync-and-read-inbox)
+- Interrupted Inbox, Sent, or other enabled-folder sync: [Sync and read mail](/docs/sync-and-read-inbox)
 - Attachment listing, export, or collision handling: [Save mail attachments](/docs/save-mail-attachments)
 - Stable stdout, stderr, JSON, and exits: [Output and automation](/docs/output-and-automation)
 - Every command and flag: [Command reference](/docs/command-reference)

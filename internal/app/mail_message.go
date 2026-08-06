@@ -57,7 +57,7 @@ func (commands accountCommands) MailMessage(ctx context.Context, home, accountSe
 		if err := attachmentSet.Commit(); err != nil {
 			return account.Account{}, maildomain.Message{}, nil, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot commit a decoded message attachment", true, err)
 		}
-		if err := state.Mail().SaveMessageContent(ctx, accountValue.ID, message.ID, normalized, commands.timeNow()); err != nil {
+		if err := state.Mail().SaveMessageContent(ctx, accountValue.ID, message.ID, location.ID, normalized, commands.timeNow()); err != nil {
 			return account.Account{}, maildomain.Message{}, nil, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot persist local message content metadata", true, err)
 		}
 		message, err = state.Mail().Message(ctx, accountValue.ID, message.ID)
@@ -110,6 +110,18 @@ func (source *messageContentSource) WriteBody(ctx context.Context, format maildo
 }
 
 func rawMessageLocation(message maildomain.Message) (maildomain.Location, bool) {
+	if sourceLocationID := strings.TrimSpace(message.ContentLocationID); sourceLocationID != "" {
+		for _, location := range message.Locations {
+			if location.ID == sourceLocationID && location.Present && location.RawStorageKey != "" && location.RawContentHash != "" {
+				return location, true
+			}
+		}
+		for _, location := range message.Locations {
+			if location.ID == sourceLocationID && location.RawStorageKey != "" && location.RawContentHash != "" {
+				return location, true
+			}
+		}
+	}
 	for _, location := range message.Locations {
 		if location.Present && location.RawStorageKey != "" && location.RawContentHash != "" {
 			return location, true

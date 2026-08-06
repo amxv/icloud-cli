@@ -1,11 +1,14 @@
 package mail
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"html"
 	"io"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -84,30 +87,75 @@ type ParsedMessage struct {
 }
 
 type Message struct {
-	ID              string             `json:"id"`
-	AccountID       string             `json:"account_id"`
-	RFCMessageID    string             `json:"rfc_message_id,omitempty"`
-	InReplyTo       string             `json:"in_reply_to,omitempty"`
-	References      []string           `json:"references,omitempty"`
-	Direction       Direction          `json:"direction"`
-	From            Address            `json:"from"`
-	ReplyTo         Address            `json:"reply_to,omitempty"`
-	To              []Address          `json:"to,omitempty"`
-	CC              []Address          `json:"cc,omitempty"`
-	BCC             []Address          `json:"bcc,omitempty"`
-	Subject         string             `json:"subject,omitempty"`
-	Snippet         string             `json:"snippet,omitempty"`
-	HeaderDate      *time.Time         `json:"header_date,omitempty"`
-	InternalDate    *time.Time         `json:"internal_date,omitempty"`
-	SortAt          *time.Time         `json:"sort_at,omitempty"`
-	DateSource      DateSource         `json:"date_source"`
-	AttachmentCount int                `json:"attachment_count,omitempty"`
-	Unread          bool               `json:"unread"`
-	Flagged         bool               `json:"flagged"`
-	CreatedAt       time.Time          `json:"created_at"`
-	UpdatedAt       time.Time          `json:"updated_at"`
-	Locations       []Location         `json:"locations,omitempty"`
-	Content         *NormalizedContent `json:"content,omitempty"`
+	ID                string             `json:"id"`
+	AccountID         string             `json:"account_id"`
+	RFCMessageID      string             `json:"rfc_message_id,omitempty"`
+	InReplyTo         string             `json:"in_reply_to,omitempty"`
+	References        []string           `json:"references,omitempty"`
+	Direction         Direction          `json:"direction"`
+	From              Address            `json:"from"`
+	ReplyTo           Address            `json:"reply_to,omitempty"`
+	To                []Address          `json:"to,omitempty"`
+	CC                []Address          `json:"cc,omitempty"`
+	BCC               []Address          `json:"bcc,omitempty"`
+	Subject           string             `json:"subject,omitempty"`
+	Snippet           string             `json:"snippet,omitempty"`
+	HeaderDate        *time.Time         `json:"header_date,omitempty"`
+	InternalDate      *time.Time         `json:"internal_date,omitempty"`
+	SortAt            *time.Time         `json:"sort_at,omitempty"`
+	DateSource        DateSource         `json:"date_source"`
+	AttachmentCount   int                `json:"attachment_count,omitempty"`
+	Unread            bool               `json:"unread"`
+	Flagged           bool               `json:"flagged"`
+	CreatedAt         time.Time          `json:"created_at"`
+	UpdatedAt         time.Time          `json:"updated_at"`
+	Locations         []Location         `json:"locations,omitempty"`
+	Content           *NormalizedContent `json:"content,omitempty"`
+	ContentLocationID string             `json:"content_location_id,omitempty"`
+	Identity          []IdentityEvidence `json:"identity,omitempty"`
+	DedupeConflicts   []DedupeConflict   `json:"dedupe_conflicts,omitempty"`
+}
+
+type IdentityKind string
+
+const (
+	IdentityRFCMessageID       IdentityKind = "rfc_message_id"
+	IdentityGeneratedMessageID IdentityKind = "generated_message_id"
+	IdentityProviderLocation   IdentityKind = "provider_location"
+	IdentityContentFingerprint IdentityKind = "content_fingerprint"
+)
+
+type IdentityStrength string
+
+const (
+	IdentityStrong  IdentityStrength = "strong"
+	IdentityGuarded IdentityStrength = "guarded"
+)
+
+type IdentityEvidence struct {
+	ID               string           `json:"id"`
+	AccountID        string           `json:"account_id"`
+	MessageID        string           `json:"message_id"`
+	Kind             IdentityKind     `json:"kind"`
+	Value            string           `json:"value"`
+	Strength         IdentityStrength `json:"strength"`
+	SourceLocationID string           `json:"source_location_id,omitempty"`
+	FirstSeenAt      time.Time        `json:"first_seen_at"`
+	LastSeenAt       time.Time        `json:"last_seen_at"`
+}
+
+type DedupeConflict struct {
+	ID                 string       `json:"id"`
+	AccountID          string       `json:"account_id"`
+	EvidenceKind       IdentityKind `json:"evidence_kind"`
+	EvidenceValue      string       `json:"evidence_value"`
+	ExistingMessageID  string       `json:"existing_message_id"`
+	ObservedMessageID  string       `json:"observed_message_id"`
+	ExistingLocationID string       `json:"existing_location_id,omitempty"`
+	ObservedLocationID string       `json:"observed_location_id,omitempty"`
+	Reason             string       `json:"reason"`
+	Status             string       `json:"status"`
+	CreatedAt          time.Time    `json:"created_at"`
 }
 
 type LocationFlags struct {
@@ -229,6 +277,7 @@ type Location struct {
 	MessageID      string        `json:"message_id"`
 	AccountID      string        `json:"account_id"`
 	FolderID       string        `json:"folder_id"`
+	FolderKind     string        `json:"folder_kind,omitempty"`
 	UIDValidity    uint32        `json:"uid_validity"`
 	UID            uint32        `json:"uid"`
 	Flags          LocationFlags `json:"flags"`
@@ -262,21 +311,23 @@ type Checkpoint struct {
 }
 
 type IngestRecord struct {
-	MessageID      string
-	LocationID     string
-	AccountID      string
-	FolderID       string
-	UIDValidity    uint32
-	UID            uint32
-	Flags          []string
-	ModSequence    uint64
-	InternalDate   time.Time
-	RFC822Size     int64
-	RawContentHash string
-	RawStorageKey  string
-	RawByteSize    int64
-	Parsed         ParsedMessage
-	Content        *NormalizedContent
+	MessageID          string
+	LocationID         string
+	AccountID          string
+	FolderID           string
+	UIDValidity        uint32
+	UID                uint32
+	Flags              []string
+	ModSequence        uint64
+	InternalDate       time.Time
+	RFC822Size         int64
+	RawContentHash     string
+	RawStorageKey      string
+	RawByteSize        int64
+	Parsed             ParsedMessage
+	Content            *NormalizedContent
+	Direction          Direction
+	ContentFingerprint string
 }
 
 type ReconcileRecord struct {
@@ -301,27 +352,31 @@ type CommitPage struct {
 }
 
 type CommitResult struct {
-	Created      int        `json:"created"`
-	Updated      int        `json:"updated"`
-	Reconciled   int        `json:"reconciled"`
-	StateChanges int        `json:"state_changes"`
-	Checkpoint   Checkpoint `json:"checkpoint"`
+	Created         int        `json:"created"`
+	Updated         int        `json:"updated"`
+	Reconciled      int        `json:"reconciled"`
+	StateChanges    int        `json:"state_changes"`
+	IdentityMerges  int        `json:"identity_merges"`
+	DedupeConflicts int        `json:"dedupe_conflicts"`
+	Checkpoint      Checkpoint `json:"checkpoint"`
 }
 
 type SyncSummary struct {
-	AccountID     string     `json:"account_id"`
-	FolderID      string     `json:"folder_id"`
-	FolderName    string     `json:"folder_name"`
-	Fetched       int        `json:"fetched"`
-	Created       int        `json:"created"`
-	Updated       int        `json:"updated"`
-	Reconciled    int        `json:"reconciled"`
-	StateChanges  int        `json:"state_changes"`
-	LastUID       uint32     `json:"last_uid,omitempty"`
-	MoreAvailable bool       `json:"more_available"`
-	Bootstrap     bool       `json:"bootstrap"`
-	CompletedAt   time.Time  `json:"completed_at"`
-	Checkpoint    Checkpoint `json:"checkpoint"`
+	AccountID       string     `json:"account_id"`
+	FolderID        string     `json:"folder_id"`
+	FolderName      string     `json:"folder_name"`
+	Fetched         int        `json:"fetched"`
+	Created         int        `json:"created"`
+	Updated         int        `json:"updated"`
+	Reconciled      int        `json:"reconciled"`
+	StateChanges    int        `json:"state_changes"`
+	IdentityMerges  int        `json:"identity_merges"`
+	DedupeConflicts int        `json:"dedupe_conflicts"`
+	LastUID         uint32     `json:"last_uid,omitempty"`
+	MoreAvailable   bool       `json:"more_available"`
+	Bootstrap       bool       `json:"bootstrap"`
+	CompletedAt     time.Time  `json:"completed_at"`
+	Checkpoint      Checkpoint `json:"checkpoint"`
 }
 
 func ParsePreview(reader io.Reader) (ParsedMessage, error) {
@@ -345,6 +400,76 @@ func BuildIngestRecord(messageID, locationID, accountID, folderID string, uidVal
 		RawByteSize:    rawSize,
 		Parsed:         parsed,
 	}
+}
+
+func NormalizeMessageID(value string) string {
+	return strings.ToLower(normalizeMessageID(value))
+}
+
+func ProviderLocationIdentity(folderID string, uidValidity, uid uint32) string {
+	folderID = strings.TrimSpace(folderID)
+	if folderID == "" || uidValidity == 0 || uid == 0 {
+		return ""
+	}
+	return folderID + ":" + strconv.FormatUint(uint64(uidValidity), 10) + ":" + strconv.FormatUint(uint64(uid), 10)
+}
+
+func BuildContentFingerprint(accountID string, parsed ParsedMessage, internalDate time.Time, attachments []Attachment) string {
+	references := canonicalIdentityTokens(parsed.References)
+	recipients := make([]string, 0, len(parsed.To)+len(parsed.CC))
+	for _, address := range append(append([]Address(nil), parsed.To...), parsed.CC...) {
+		if value := strings.ToLower(strings.TrimSpace(address.Email)); value != "" {
+			recipients = append(recipients, value)
+		}
+	}
+	sort.Strings(recipients)
+	hashes := make([]string, 0, len(attachments))
+	for _, attachment := range attachments {
+		if value := strings.ToLower(strings.TrimSpace(attachment.ContentHash)); value != "" {
+			hashes = append(hashes, value)
+		}
+	}
+	sort.Strings(hashes)
+	moment := ""
+	if parsed.HeaderDate != nil && !parsed.HeaderDate.IsZero() {
+		moment = parsed.HeaderDate.UTC().Truncate(time.Minute).Format(time.RFC3339)
+	} else if !internalDate.IsZero() {
+		moment = internalDate.UTC().Truncate(time.Minute).Format(time.RFC3339)
+	}
+	parts := []string{
+		strings.TrimSpace(accountID),
+		strings.ToLower(strings.TrimSpace(parsed.Subject)),
+		strings.ToLower(strings.TrimSpace(parsed.From.Email)),
+		strings.ToLower(strings.TrimSpace(parsed.ReplyTo.Email)),
+		NormalizeMessageID(parsed.InReplyTo),
+		strings.Join(references, ","),
+		strings.Join(recipients, ","),
+		strings.Join(hashes, ","),
+		moment,
+	}
+	blank := true
+	for _, value := range parts[1:] {
+		if value != "" {
+			blank = false
+			break
+		}
+	}
+	if blank {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(strings.Join(parts, "|")))
+	return "content:" + hex.EncodeToString(sum[:])
+}
+
+func canonicalIdentityTokens(values []string) []string {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if normalized := NormalizeMessageID(value); normalized != "" {
+			result = append(result, normalized)
+		}
+	}
+	sort.Strings(result)
+	return result
 }
 
 func NormalizeFlags(values []string) []string {

@@ -134,6 +134,20 @@ func TestFetchInboxPageAgainstMemoryIMAPServer(t *testing.T) {
 			t.Fatalf("raw message %d did not match fixture", index)
 		}
 	}
+
+	tailOnly, err := client.FetchInboxPage(context.Background(), transport.AuthRequest{
+		Username: username,
+		Password: []byte(password),
+	}, transport.InboxFetchRequest{
+		Mailbox: "INBOX", Bootstrap: true, TailOnlyBootstrap: true, Limit: 2,
+	}, blob.New(t.TempDir()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !tailOnly.Bootstrap || len(tailOnly.Messages) != 0 || tailOnly.MoreAvailable ||
+		tailOnly.LastCommittedUID != 3 || tailOnly.LastScannedUID != 3 {
+		t.Fatalf("tail-only bootstrap = %+v", tailOnly)
+	}
 }
 
 func TestReconcileAndUpdateFlagsAgainstMemoryIMAPServer(t *testing.T) {

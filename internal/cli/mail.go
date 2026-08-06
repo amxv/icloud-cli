@@ -13,9 +13,9 @@ import (
 )
 
 type MailService interface {
-	MailSync(context.Context, string, string, int) (account.Account, folder.Folder, maildomain.SyncSummary, int64, error)
-	MailInbox(context.Context, string, string, int) (account.Account, folder.Folder, []maildomain.Message, bool, int64, error)
-	MailSyncStatus(context.Context, string, string) (account.Account, folder.Folder, maildomain.Checkpoint, int64, error)
+	MailSync(context.Context, string, string, string, int) (account.Account, []folder.Folder, []maildomain.SyncSummary, int64, error)
+	MailInbox(context.Context, string, string, string, int) (account.Account, folder.Folder, []maildomain.Message, bool, int64, error)
+	MailSyncStatus(context.Context, string, string, string) (account.Account, folder.Folder, maildomain.Checkpoint, int64, error)
 	MailSyncCheckpoints(context.Context, string, string, int) (account.Account, []maildomain.Checkpoint, bool, int64, error)
 	MailMessage(context.Context, string, string, string) (account.Account, maildomain.Message, maildomain.ContentSource, int64, error)
 	MailAttachments(context.Context, string, string, string, int) (account.Account, maildomain.Message, []maildomain.Attachment, bool, int64, error)
@@ -24,8 +24,11 @@ type MailService interface {
 }
 
 type mailSyncData struct {
-	Summary       maildomain.SyncSummary `json:"summary"`
-	SchemaVersion int64                  `json:"schema_version"`
+	AccountID     string                   `json:"account_id"`
+	Summary       maildomain.SyncSummary   `json:"summary"`
+	Summaries     []maildomain.SyncSummary `json:"summaries"`
+	Count         int                      `json:"count"`
+	SchemaVersion int64                    `json:"schema_version"`
 }
 
 type mailInboxData struct {
@@ -53,33 +56,37 @@ type mailCheckpointData struct {
 }
 
 type publicMessage struct {
-	ID              string                `json:"id"`
-	AccountID       string                `json:"account_id"`
-	RFCMessageID    string                `json:"rfc_message_id,omitempty"`
-	InReplyTo       string                `json:"in_reply_to,omitempty"`
-	References      []string              `json:"references,omitempty"`
-	Direction       maildomain.Direction  `json:"direction"`
-	From            maildomain.Address    `json:"from"`
-	ReplyTo         *maildomain.Address   `json:"reply_to,omitempty"`
-	To              []maildomain.Address  `json:"to,omitempty"`
-	CC              []maildomain.Address  `json:"cc,omitempty"`
-	Subject         string                `json:"subject,omitempty"`
-	Snippet         string                `json:"snippet,omitempty"`
-	HeaderDate      *time.Time            `json:"header_date,omitempty"`
-	InternalDate    *time.Time            `json:"internal_date,omitempty"`
-	SortAt          *time.Time            `json:"sort_at,omitempty"`
-	DateSource      maildomain.DateSource `json:"date_source"`
-	AttachmentCount int                   `json:"attachment_count,omitempty"`
-	Unread          bool                  `json:"unread"`
-	Flagged         bool                  `json:"flagged"`
-	CreatedAt       time.Time             `json:"created_at"`
-	UpdatedAt       time.Time             `json:"updated_at"`
-	Locations       []publicLocation      `json:"locations,omitempty"`
+	ID                string                        `json:"id"`
+	AccountID         string                        `json:"account_id"`
+	RFCMessageID      string                        `json:"rfc_message_id,omitempty"`
+	InReplyTo         string                        `json:"in_reply_to,omitempty"`
+	References        []string                      `json:"references,omitempty"`
+	Direction         maildomain.Direction          `json:"direction"`
+	From              maildomain.Address            `json:"from"`
+	ReplyTo           *maildomain.Address           `json:"reply_to,omitempty"`
+	To                []maildomain.Address          `json:"to,omitempty"`
+	CC                []maildomain.Address          `json:"cc,omitempty"`
+	Subject           string                        `json:"subject,omitempty"`
+	Snippet           string                        `json:"snippet,omitempty"`
+	HeaderDate        *time.Time                    `json:"header_date,omitempty"`
+	InternalDate      *time.Time                    `json:"internal_date,omitempty"`
+	SortAt            *time.Time                    `json:"sort_at,omitempty"`
+	DateSource        maildomain.DateSource         `json:"date_source"`
+	AttachmentCount   int                           `json:"attachment_count,omitempty"`
+	Unread            bool                          `json:"unread"`
+	Flagged           bool                          `json:"flagged"`
+	CreatedAt         time.Time                     `json:"created_at"`
+	UpdatedAt         time.Time                     `json:"updated_at"`
+	Locations         []publicLocation              `json:"locations,omitempty"`
+	ContentLocationID string                        `json:"content_location_id,omitempty"`
+	Identity          []maildomain.IdentityEvidence `json:"identity,omitempty"`
+	DedupeConflicts   []maildomain.DedupeConflict   `json:"dedupe_conflicts,omitempty"`
 }
 
 type publicLocation struct {
 	ID             string                   `json:"id"`
 	FolderID       string                   `json:"folder_id"`
+	FolderKind     string                   `json:"folder_kind,omitempty"`
 	UIDValidity    uint32                   `json:"uid_validity"`
 	UID            uint32                   `json:"uid"`
 	Flags          maildomain.LocationFlags `json:"flags"`
@@ -93,11 +100,12 @@ type publicLocation struct {
 func newMailSyncCommand(state *executionState) *cobra.Command {
 	var jsonOutput bool
 	var limit int
+	var folderSelector string
 	command := &cobra.Command{
 		Use:     "sync",
-		Short:   "Fetch and atomically commit one bounded Inbox page",
+		Short:   "Fetch and atomically commit bounded pages from enabled mail folders",
 		Args:    cobra.NoArgs,
-		Example: "  icloud mail sync\n  icloud mail sync --limit 50 --json\n  icloud mail sync status",
+		Example: "  icloud mail sync\n  icloud mail sync --folder sent\n  icloud mail sync --limit 50 --json\n  icloud mail sync status --folder sent",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput}, OutputSupport{JSON: true}); err != nil {
 				return err
@@ -105,28 +113,43 @@ func newMailSyncCommand(state *executionState) *cobra.Command {
 			if limit < 1 || limit > MaximumPageSize {
 				return NewAppError(ErrorUsage, fmt.Sprintf("--limit must be between 1 and %d", MaximumPageSize), false)
 			}
-			_, _, summary, schemaVersion, err := state.mail.MailSync(cmd.Context(), state.global.Home, state.global.Account, limit)
+			accountValue, _, summaries, schemaVersion, err := state.mail.MailSync(cmd.Context(), state.global.Home, state.global.Account, folderSelector, limit)
 			if err != nil {
 				return err
 			}
-			if jsonOutput {
-				return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: mailSyncData{Summary: summary, SchemaVersion: schemaVersion}, Meta: EnvelopeMeta{RequestID: state.requestID}})
+			if len(summaries) == 0 {
+				return NewAppError(ErrorInternal, "mail synchronization returned no folder summaries", false)
 			}
-			return NewCompactTextRenderer(state.stdout).Record("mail-sync", summary.FolderID,
-				Field("account", summary.AccountID),
-				Field("folder", summary.FolderName),
-				Field("fetched", fmt.Sprintf("%d", summary.Fetched)),
-				Field("created", fmt.Sprintf("%d", summary.Created)),
-				Field("updated", fmt.Sprintf("%d", summary.Updated)),
-				Field("reconciled", fmt.Sprintf("%d", summary.Reconciled)),
-				Field("state_changes", fmt.Sprintf("%d", summary.StateChanges)),
-				Field("last_uid", summary.LastUID),
-				Field("more", fmt.Sprintf("%t", summary.MoreAvailable)),
-				Field("bootstrap", fmt.Sprintf("%t", summary.Bootstrap)),
-			)
+			if jsonOutput {
+				return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: mailSyncData{
+					AccountID: accountValue.ID, Summary: summaries[0], Summaries: summaries,
+					Count: len(summaries), SchemaVersion: schemaVersion,
+				}, Meta: EnvelopeMeta{RequestID: state.requestID}})
+			}
+			renderer := NewCompactTextRenderer(state.stdout)
+			for _, summary := range summaries {
+				if err := renderer.Record("mail-sync", summary.FolderID,
+					Field("account", summary.AccountID),
+					Field("folder", summary.FolderName),
+					Field("fetched", fmt.Sprintf("%d", summary.Fetched)),
+					Field("created", fmt.Sprintf("%d", summary.Created)),
+					Field("updated", fmt.Sprintf("%d", summary.Updated)),
+					Field("reconciled", fmt.Sprintf("%d", summary.Reconciled)),
+					Field("state_changes", fmt.Sprintf("%d", summary.StateChanges)),
+					Field("identity_merges", summary.IdentityMerges),
+					Field("dedupe_conflicts", summary.DedupeConflicts),
+					Field("last_uid", summary.LastUID),
+					Field("more", fmt.Sprintf("%t", summary.MoreAvailable)),
+					Field("bootstrap", fmt.Sprintf("%t", summary.Bootstrap)),
+				); err != nil {
+					return err
+				}
+			}
+			return nil
 		},
 	}
-	command.Flags().IntVar(&limit, "limit", DefaultPageSize, fmt.Sprintf("Maximum Inbox messages to fetch and commit (1-%d)", MaximumPageSize))
+	command.Flags().StringVar(&folderSelector, "folder", "", "Sync one enabled folder by kind, ID, name, or wire name instead of all enabled folders")
+	command.Flags().IntVar(&limit, "limit", DefaultPageSize, fmt.Sprintf("Maximum messages to fetch and commit per folder (1-%d)", MaximumPageSize))
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
 	command.AddCommand(newMailSyncStatusCommand(state))
 	command.AddCommand(newMailSyncCheckpointsCommand(state))
@@ -136,11 +159,12 @@ func newMailSyncCommand(state *executionState) *cobra.Command {
 func newMailInboxCommand(state *executionState) *cobra.Command {
 	var jsonOutput bool
 	var limit int
+	var folderSelector string
 	command := &cobra.Command{
 		Use:     "inbox",
-		Short:   "Read a bounded page from the locally synchronized Inbox",
+		Short:   "Read a bounded page from a locally synchronized mail folder",
 		Args:    cobra.NoArgs,
-		Example: "  icloud mail inbox\n  icloud mail inbox --limit 50\n  icloud mail inbox --json",
+		Example: "  icloud mail inbox\n  icloud mail inbox --folder sent\n  icloud mail inbox --folder fld_… --json",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput}, OutputSupport{JSON: true}); err != nil {
 				return err
@@ -148,7 +172,7 @@ func newMailInboxCommand(state *executionState) *cobra.Command {
 			if limit < 1 || limit > MaximumPageSize {
 				return NewAppError(ErrorUsage, fmt.Sprintf("--limit must be between 1 and %d", MaximumPageSize), false)
 			}
-			accountValue, inbox, messages, more, schemaVersion, err := state.mail.MailInbox(cmd.Context(), state.global.Home, state.global.Account, limit)
+			accountValue, folderValue, messages, more, schemaVersion, err := state.mail.MailInbox(cmd.Context(), state.global.Home, state.global.Account, folderSelector, limit)
 			if err != nil {
 				return err
 			}
@@ -157,7 +181,7 @@ func newMailInboxCommand(state *executionState) *cobra.Command {
 				for _, message := range messages {
 					public = append(public, sanitizeMessage(message))
 				}
-				return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: mailInboxData{AccountID: accountValue.ID, FolderID: inbox.ID, Messages: public, Count: len(public), More: more, SchemaVersion: schemaVersion}, Meta: EnvelopeMeta{RequestID: state.requestID}})
+				return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: mailInboxData{AccountID: accountValue.ID, FolderID: folderValue.ID, Messages: public, Count: len(public), More: more, SchemaVersion: schemaVersion}, Meta: EnvelopeMeta{RequestID: state.requestID}})
 			}
 			renderer := NewCompactTextRenderer(state.stdout)
 			for _, message := range messages {
@@ -165,35 +189,42 @@ func newMailInboxCommand(state *executionState) *cobra.Command {
 					return err
 				}
 			}
-			return renderer.Summary("inbox", Field("account", accountValue.ID), Field("count", fmt.Sprintf("%d", len(messages))), Field("more", fmt.Sprintf("%t", more)))
+			summaryKind := "mailbox"
+			if folderValue.Kind == folder.KindInbox {
+				return renderer.Summary("inbox", Field("account", accountValue.ID), Field("count", fmt.Sprintf("%d", len(messages))), Field("more", fmt.Sprintf("%t", more)))
+			}
+			return renderer.Summary(summaryKind, Field("account", accountValue.ID), Field("folder", folderValue.Name), Field("folder_id", folderValue.ID), Field("count", fmt.Sprintf("%d", len(messages))), Field("more", fmt.Sprintf("%t", more)))
 		},
 	}
-	command.Flags().IntVar(&limit, "limit", DefaultPageSize, fmt.Sprintf("Maximum local Inbox messages to return (1-%d)", MaximumPageSize))
+	command.Flags().StringVar(&folderSelector, "folder", string(folder.KindInbox), "Folder kind, ID, name, or wire name")
+	command.Flags().IntVar(&limit, "limit", DefaultPageSize, fmt.Sprintf("Maximum local folder messages to return (1-%d)", MaximumPageSize))
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
 	return command
 }
 
 func newMailSyncStatusCommand(state *executionState) *cobra.Command {
 	var jsonOutput bool
+	var folderSelector string
 	command := &cobra.Command{
 		Use:     "status",
-		Short:   "Show the local Inbox synchronization frontier",
+		Short:   "Show one local folder synchronization frontier",
 		Args:    cobra.NoArgs,
-		Example: "  icloud mail sync status\n  icloud mail sync status --json",
+		Example: "  icloud mail sync status\n  icloud mail sync status --folder sent --json",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput}, OutputSupport{JSON: true}); err != nil {
 				return err
 			}
-			accountValue, inbox, checkpoint, schemaVersion, err := state.mail.MailSyncStatus(cmd.Context(), state.global.Home, state.global.Account)
+			accountValue, folderValue, checkpoint, schemaVersion, err := state.mail.MailSyncStatus(cmd.Context(), state.global.Home, state.global.Account, folderSelector)
 			if err != nil {
 				return err
 			}
 			if jsonOutput {
-				return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: mailSyncStatusData{AccountID: accountValue.ID, Folder: inbox, Checkpoint: checkpoint, SchemaVersion: schemaVersion}, Meta: EnvelopeMeta{RequestID: state.requestID}})
+				return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: mailSyncStatusData{AccountID: accountValue.ID, Folder: folderValue, Checkpoint: checkpoint, SchemaVersion: schemaVersion}, Meta: EnvelopeMeta{RequestID: state.requestID}})
 			}
-			return renderCheckpoint(NewCompactTextRenderer(state.stdout), "sync-status", accountValue.ID, inbox.Name, checkpoint)
+			return renderCheckpoint(NewCompactTextRenderer(state.stdout), "sync-status", accountValue.ID, folderValue.Name, checkpoint)
 		},
 	}
+	command.Flags().StringVar(&folderSelector, "folder", string(folder.KindInbox), "Folder kind, ID, name, or wire name")
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
 	return command
 }
@@ -286,7 +317,7 @@ func sanitizeMessage(value maildomain.Message) publicMessage {
 	locations := make([]publicLocation, 0, len(value.Locations))
 	for _, location := range value.Locations {
 		locations = append(locations, publicLocation{
-			ID: location.ID, FolderID: location.FolderID, UIDValidity: location.UIDValidity,
+			ID: location.ID, FolderID: location.FolderID, FolderKind: location.FolderKind, UIDValidity: location.UIDValidity,
 			UID: location.UID, Flags: location.Flags, ModSequence: location.ModSequence,
 			FlagsCheckedAt: location.FlagsCheckedAt,
 			InternalDate:   location.InternalDate, RFC822Size: location.RFC822Size, Present: location.Present,
@@ -301,18 +332,21 @@ func sanitizeMessage(value maildomain.Message) publicMessage {
 		InternalDate: value.InternalDate, SortAt: value.SortAt, DateSource: value.DateSource,
 		AttachmentCount: value.AttachmentCount, Unread: value.Unread, Flagged: value.Flagged,
 		CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt, Locations: locations,
+		ContentLocationID: value.ContentLocationID,
+		Identity:          append([]maildomain.IdentityEvidence(nil), value.Identity...),
+		DedupeConflicts:   append([]maildomain.DedupeConflict(nil), value.DedupeConflicts...),
 	}
 }
 
 type unavailableMailService struct{}
 
-func (unavailableMailService) MailSync(context.Context, string, string, int) (account.Account, folder.Folder, maildomain.SyncSummary, int64, error) {
-	return account.Account{}, folder.Folder{}, maildomain.SyncSummary{}, 0, NewAppError(ErrorConfiguration, "mail synchronization is unavailable", false)
+func (unavailableMailService) MailSync(context.Context, string, string, string, int) (account.Account, []folder.Folder, []maildomain.SyncSummary, int64, error) {
+	return account.Account{}, nil, nil, 0, NewAppError(ErrorConfiguration, "mail synchronization is unavailable", false)
 }
-func (unavailableMailService) MailInbox(context.Context, string, string, int) (account.Account, folder.Folder, []maildomain.Message, bool, int64, error) {
+func (unavailableMailService) MailInbox(context.Context, string, string, string, int) (account.Account, folder.Folder, []maildomain.Message, bool, int64, error) {
 	return account.Account{}, folder.Folder{}, nil, false, 0, NewAppError(ErrorConfiguration, "local Inbox is unavailable", false)
 }
-func (unavailableMailService) MailSyncStatus(context.Context, string, string) (account.Account, folder.Folder, maildomain.Checkpoint, int64, error) {
+func (unavailableMailService) MailSyncStatus(context.Context, string, string, string) (account.Account, folder.Folder, maildomain.Checkpoint, int64, error) {
 	return account.Account{}, folder.Folder{}, maildomain.Checkpoint{}, 0, NewAppError(ErrorConfiguration, "mail synchronization status is unavailable", false)
 }
 func (unavailableMailService) MailSyncCheckpoints(context.Context, string, string, int) (account.Account, []maildomain.Checkpoint, bool, int64, error) {

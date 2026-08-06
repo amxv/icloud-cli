@@ -1,9 +1,9 @@
 ---
 title: Command reference
-description: A complete reference for account lifecycle, iCloud validation, folder discovery, Inbox synchronization, message and attachment reads, doctor diagnostics, global controls, output modes, completion, and man generation.
+description: A complete reference for account lifecycle, iCloud validation, folder discovery, enabled-folder synchronization, message and attachment reads, doctor diagnostics, global controls, output modes, completion, and man generation.
 order: 10
 category: Reference
-summary: Every account, credential, validation, folder, Inbox sync/read, message, attachment, doctor, capability, completion, man, help, and global control available now.
+summary: Every account, credential, validation, folder, enabled-folder sync/read, message, attachment, doctor, capability, completion, man, help, and global control available now.
 ---
 
 ## Root command
@@ -205,27 +205,35 @@ Changes local future-sync policy only; no message is fetched or changed. Newly d
 
 ```bash
 icloud mail sync
+icloud mail sync --folder sent
+icloud mail sync --folder fld_…
 icloud mail sync --limit 50
 icloud --account Personal mail sync --json
 ```
 
-Fetches and atomically commits one bounded Inbox page. The default page is 20 messages and the maximum is 100. The first run starts at the current Inbox tail; later runs fetch only newer UIDs. `more=true` means another bounded new-message page is available.
+Fetches and atomically commits one bounded page for each enabled, current, selectable folder. Inbox and Sent begin enabled. The default page is 20 messages per folder and the maximum is 100. Use `--folder` with a role, stable ID, decoded name, or exact wire name to select one folder.
 
-Each run also refreshes up to 100 least-recently checked current Inbox locations using metadata-only UID reads. The rotating sweep detects server-side Seen, Flagged, Answered, Draft, Deleted, unknown flags, disappearance, and mod-sequences when available without downloading bodies again. Sync never changes remote flags, reads Sent, moves mail, or sends a message.
+Inbox first setup downloads the newest bounded page. Sent first setup records the current remote tail and downloads no historical Sent messages; later runs ingest only new Sent copies. Another enabled folder starts from its newest bounded page. `more=true` means another bounded page is available for that folder.
 
-Compact success reports account/folder IDs, fetched/created/updated counts, reconciled locations, actual state changes, committed UID, `more`, and bootstrap state. `--json` returns the same outcome plus the durable checkpoint. An interrupted fetch, reconciliation, parse, blob write, or local commit leaves the prior frontier unchanged.
+Each selected folder also refreshes up to 100 least-recently checked current locations using metadata-only UID reads. The rotating sweep detects server-side Seen, Flagged, Answered, Draft, Deleted, unknown flags, disappearance, and mod-sequences when available without downloading bodies again. Sync never changes remote flags, moves mail, or sends a message.
+
+When a new folder copy has the same strong message identity as an existing local message, it becomes another location on the stable `msg_…` record. Each location retains its own folder, UID identity, flags, and presence. Similar content alone does not collapse two provider-backed messages; ambiguous evidence preserves both records and emits dedupe conflict telemetry.
+
+Compact success prints one block per selected folder with fetched/created/updated counts, reconciled locations, actual state changes, nonzero identity merges or conflicts, committed UID, `more`, and bootstrap state. `--json` returns every folder summary plus its durable checkpoint. An interrupted fetch, reconciliation, parse, blob write, or local commit leaves that folder's prior frontier unchanged.
 
 ## `icloud mail inbox`
 
 ```bash
 icloud mail inbox
+icloud mail inbox --folder sent
+icloud mail inbox --folder fld_…
 icloud mail inbox --limit 50
 icloud mail inbox --json
 ```
 
-Reads a bounded page from local state without contacting iCloud. Compact records include stable ID, sender, subject, best available date, true unread/flagged states, nonzero attachment count, and a bounded decoded-text preview.
+Reads a bounded page from local state without contacting iCloud. The command defaults to Inbox; `--folder` accepts the same selectors as sync. Compact records include stable ID, sender, subject, best available date, true unread/flagged states, nonzero attachment count, and a bounded decoded-text preview.
 
-JSON adds complete locally stored preview metadata and provider location IDs while omitting credentials, BCC, raw storage paths/hashes, and full message bodies.
+JSON adds complete locally stored preview metadata, every provider location, identity provenance, and open dedupe conflicts while omitting credentials, BCC, raw storage paths/hashes, and full message bodies. An unseen Sent location does not make an outbound message unread.
 
 ## `icloud mail mark-read` / `mark-unread`
 
@@ -343,10 +351,11 @@ Every file is prepared and verified before the batch is installed. A conflict or
 
 ```bash
 icloud mail sync status
+icloud mail sync status --folder sent
 icloud mail sync status --json
 ```
 
-Shows the selected Inbox checkpoint locally. `idle` means the latest page committed, `failed` means the frontier did not advance, and `repair_required` means iCloud reported a different mailbox identity and ordinary sync stopped.
+Shows one selected folder checkpoint locally. It defaults to Inbox and accepts a role, stable ID, decoded name, or exact wire name. `idle` means the latest page committed, `failed` means the frontier did not advance, and `repair_required` means iCloud reported a different mailbox identity and ordinary sync stopped.
 
 ## `icloud mail sync checkpoints`
 
@@ -356,7 +365,7 @@ icloud mail sync checkpoints --limit 50
 icloud mail sync checkpoints --json
 ```
 
-Lists bounded account-scoped checkpoints from local state. Inbox is the only message checkpoint in this build.
+Lists bounded account-scoped checkpoints from local state, including Inbox, Sent, and any other enabled folder that has been synchronized.
 
 ## `icloud version`
 
@@ -385,7 +394,7 @@ Compact output:
 capabilities
 command=icloud
 version=0.1.0
-schema=7
+schema=8
 account_mode=validated_lifecycle
 credentials=keyring,env,file
 network_validation=true
@@ -440,6 +449,6 @@ Help goes to stdout. Usage failures go to stderr and exit `2`.
 
 ## Output availability
 
-Every account and credential lifecycle command above, `account test`, every folder command, Inbox sync/read/status/checkpoints, message read and state commands, attachment list/save/save-all, `doctor`, `version`, and `capabilities` supports `--json` where a native byte stream is not requested. Validation, doctor, folder reads/status, and message reads support bounded `--verbose` detail where advertised. `mail message raw`, `message export --output -`, and `attachments save --output - --binary` retain native bytes; completion and man generation retain their native formats. Inbox stays preview-only, while stable-ID message reads provide explicit full-text, HTML, raw, headers, body-only, metadata-only, verbose, and JSON modes.
+Every account and credential lifecycle command above, `account test`, every folder command, enabled-folder sync/read/status/checkpoints, message read and state commands, attachment list/save/save-all, `doctor`, `version`, and `capabilities` supports `--json` where a native byte stream is not requested. Validation, doctor, folder reads/status, and message reads support bounded `--verbose` detail where advertised. `mail message raw`, `message export --output -`, and `attachments save --output - --binary` retain native bytes; completion and man generation retain their native formats. Local folder lists stay preview-only, while stable-ID message reads provide explicit full-text, HTML, raw, headers, body-only, metadata-only, verbose, and JSON modes.
 
 Compact output uses vertical blocks: result type first, stable identity plus the first field next when present, then one remaining field per line. A blank line separates consecutive records or a final summary. Errors use the same block shape on stderr.

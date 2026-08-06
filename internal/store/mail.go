@@ -2,7 +2,9 @@ package store
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -28,6 +30,7 @@ SELECT m.message_id, m.account_id, m.rfc_message_id, m.in_reply_to,
        m.direction, m.from_name, m.from_email, m.reply_to_name,
        m.reply_to_email, m.subject, m.snippet, m.header_date,
        m.internal_date, m.sort_at, m.date_source, m.attachment_count,
+       COALESCE((SELECT source_location_id FROM message_content WHERE message_content.message_id = m.message_id), ''),
        m.created_at, m.updated_at
 FROM messages AS m`
 
@@ -40,6 +43,7 @@ FROM attachments AS a`
 
 const locationColumns = `
 SELECT location_id, message_id, account_id, folder_id, uid_validity, uid,
+       (SELECT kind FROM folders WHERE folders.folder_id = message_locations.folder_id),
        seen, flagged, answered, draft, deleted, unknown_flags_json,
        mod_sequence, flags_checked_at, internal_date, rfc822_size, raw_content_hash,
        raw_storage_key, raw_byte_size, present, created_at, updated_at
@@ -109,13 +113,13 @@ func (repository *MailRepository) CommitInboxPage(ctx context.Context, page mail
 		}
 	}
 
-	created, updated, stateChanges := 0, 0, 0
+	created, updated, stateChanges, identityMerges, dedupeConflicts := 0, 0, 0, 0, 0
 	timestamp := page.AttemptedAt.UTC().Format(time.RFC3339Nano)
 	for _, record := range page.Records {
 		if err := validateIngestRecord(page, record); err != nil {
 			return maildomain.CommitResult{}, err
 		}
-		wasCreated, ingestErr := upsertInboxRecord(ctx, tx, record, timestamp)
+		wasCreated, wasMerged, conflictCount, ingestErr := upsertMailboxRecord(ctx, tx, record, timestamp)
 		if ingestErr != nil {
 			return maildomain.CommitResult{}, ingestErr
 		}
@@ -124,6 +128,10 @@ func (repository *MailRepository) CommitInboxPage(ctx context.Context, page mail
 		} else {
 			updated++
 		}
+		if wasMerged {
+			identityMerges++
+		}
+		dedupeConflicts += conflictCount
 	}
 	seenReconciled := make(map[uint32]struct{}, len(page.Reconciled))
 	for _, record := range page.Reconciled {
@@ -183,7 +191,8 @@ ON CONFLICT(account_id, folder_id) DO UPDATE SET
 	}
 	return maildomain.CommitResult{
 		Created: created, Updated: updated, Reconciled: len(page.Reconciled),
-		StateChanges: stateChanges, Checkpoint: checkpoint,
+		StateChanges: stateChanges, IdentityMerges: identityMerges,
+		DedupeConflicts: dedupeConflicts, Checkpoint: checkpoint,
 	}, nil
 }
 
@@ -257,9 +266,9 @@ ON CONFLICT(account_id, folder_id) DO UPDATE SET
 	return checkpoint, nil
 }
 
-func (repository *MailRepository) Inbox(ctx context.Context, accountID, folderID string, limit int) ([]maildomain.Message, bool, error) {
+func (repository *MailRepository) MessagesInFolder(ctx context.Context, accountID, folderID string, limit int) ([]maildomain.Message, bool, error) {
 	if limit < 1 {
-		return nil, false, errors.New("list inbox: limit must be positive")
+		return nil, false, errors.New("list folder messages: limit must be positive")
 	}
 	rows, err := repository.db.QueryContext(ctx, messageColumns+`
 JOIN message_locations AS l ON l.message_id = m.message_id
@@ -267,7 +276,7 @@ WHERE m.account_id = ? AND l.account_id = ? AND l.folder_id = ? AND l.present = 
 ORDER BY m.sort_at IS NULL, m.sort_at DESC, l.uid DESC, m.message_id DESC
 LIMIT ?`, accountID, accountID, folderID, limit+1)
 	if err != nil {
-		return nil, false, fmt.Errorf("list inbox: %w", err)
+		return nil, false, fmt.Errorf("list folder messages: %w", err)
 	}
 	values := make([]maildomain.Message, 0, limit+1)
 	for rows.Next() {
@@ -280,10 +289,10 @@ LIMIT ?`, accountID, accountID, folderID, limit+1)
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
-		return nil, false, fmt.Errorf("list inbox: %w", err)
+		return nil, false, fmt.Errorf("list folder messages: %w", err)
 	}
 	if err := rows.Close(); err != nil {
-		return nil, false, fmt.Errorf("close inbox rows: %w", err)
+		return nil, false, fmt.Errorf("close folder message rows: %w", err)
 	}
 	for index := range values {
 		if err := repository.loadMessageDetails(ctx, &values[index]); err != nil {
@@ -295,6 +304,10 @@ LIMIT ?`, accountID, accountID, folderID, limit+1)
 		values = values[:limit]
 	}
 	return values, more, nil
+}
+
+func (repository *MailRepository) Inbox(ctx context.Context, accountID, folderID string, limit int) ([]maildomain.Message, bool, error) {
+	return repository.MessagesInFolder(ctx, accountID, folderID, limit)
 }
 
 func (repository *MailRepository) Message(ctx context.Context, accountID, messageID string) (maildomain.Message, error) {
@@ -440,7 +453,7 @@ WHERE m.account_id = ? AND a.attachment_id = ?`, strings.TrimSpace(accountID), s
 	return value, nil
 }
 
-func (repository *MailRepository) SaveMessageContent(ctx context.Context, accountID, messageID string, content maildomain.NormalizedContent, now time.Time) error {
+func (repository *MailRepository) SaveMessageContent(ctx context.Context, accountID, messageID, sourceLocationID string, content maildomain.NormalizedContent, now time.Time) error {
 	tx, err := repository.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin message content save: %w", err)
@@ -456,7 +469,20 @@ SELECT count(*) FROM messages WHERE account_id = ? AND message_id = ?`,
 	if exists == 0 {
 		return maildomain.ErrMessageNotFound
 	}
-	if err := upsertMessageContent(ctx, tx, messageID, content, now.UTC().Format(time.RFC3339Nano)); err != nil {
+	sourceLocationID = strings.TrimSpace(sourceLocationID)
+	if sourceLocationID != "" {
+		if err := tx.QueryRowContext(ctx, `
+SELECT count(*) FROM message_locations
+WHERE account_id = ? AND message_id = ? AND location_id = ?`,
+			strings.TrimSpace(accountID), strings.TrimSpace(messageID), sourceLocationID,
+		).Scan(&exists); err != nil {
+			return fmt.Errorf("resolve source location for content save: %w", err)
+		}
+		if exists == 0 {
+			return maildomain.ErrLocationNotFound
+		}
+	}
+	if err := upsertMessageContent(ctx, tx, messageID, sourceLocationID, content, now.UTC().Format(time.RFC3339Nano)); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
@@ -533,99 +559,44 @@ func validateIngestRecord(page maildomain.CommitPage, record maildomain.IngestRe
 	return nil
 }
 
-func upsertInboxRecord(ctx context.Context, tx *sql.Tx, record maildomain.IngestRecord, timestamp string) (bool, error) {
+func upsertMailboxRecord(ctx context.Context, tx *sql.Tx, record maildomain.IngestRecord, timestamp string) (bool, bool, int, error) {
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO raw_blobs (content_hash, storage_key, byte_size, created_at)
 VALUES (?, ?, ?, ?)
 ON CONFLICT(content_hash) DO NOTHING`,
 		record.RawContentHash, record.RawStorageKey, record.RawByteSize, timestamp,
 	); err != nil {
-		return false, fmt.Errorf("persist raw blob metadata: %w", err)
+		return false, false, 0, fmt.Errorf("persist raw blob metadata: %w", err)
 	}
 	var storedKey string
 	var storedSize int64
 	if err := tx.QueryRowContext(ctx, `SELECT storage_key, byte_size FROM raw_blobs WHERE content_hash = ?`, record.RawContentHash).Scan(&storedKey, &storedSize); err != nil {
-		return false, fmt.Errorf("verify raw blob metadata: %w", err)
+		return false, false, 0, fmt.Errorf("verify raw blob metadata: %w", err)
 	}
 	if storedKey != record.RawStorageKey || storedSize != record.RawByteSize {
-		return false, errors.New("persist raw blob metadata: content-address collision")
+		return false, false, 0, errors.New("persist raw blob metadata: content-address collision")
 	}
 
-	messageID, created, err := resolveMessageIdentity(ctx, tx, record)
+	resolution, err := resolveMessageIdentity(ctx, tx, record)
 	if err != nil {
-		return false, err
+		return false, false, 0, err
 	}
-	record.MessageID = messageID
-	internalDate, sortAt, dateSource := maildomain.MessageTimes(record.Parsed, record.InternalDate)
-	headerDate := nullableTime(record.Parsed.HeaderDate)
-	internalDateValue := nullableTime(internalDate)
-	sortAtValue := nullableTime(sortAt)
-	if _, err := tx.ExecContext(ctx, `
-INSERT INTO messages (
-    message_id, account_id, rfc_message_id, in_reply_to, direction,
-    from_name, from_email, reply_to_name, reply_to_email, subject, snippet,
-    header_date, internal_date, sort_at, date_source, attachment_count,
-    created_at, updated_at
-) VALUES (?, ?, ?, ?, 'inbound', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-ON CONFLICT(message_id) DO UPDATE SET
-    rfc_message_id = excluded.rfc_message_id,
-    in_reply_to = excluded.in_reply_to,
-    from_name = excluded.from_name,
-    from_email = excluded.from_email,
-    reply_to_name = excluded.reply_to_name,
-    reply_to_email = excluded.reply_to_email,
-    subject = excluded.subject,
-    snippet = excluded.snippet,
-    header_date = excluded.header_date,
-    internal_date = excluded.internal_date,
-    sort_at = excluded.sort_at,
-    date_source = excluded.date_source,
-    attachment_count = excluded.attachment_count,
-    updated_at = excluded.updated_at`,
-		record.MessageID, record.AccountID, record.Parsed.RFCMessageID,
-		record.Parsed.InReplyTo, record.Parsed.From.DisplayName, record.Parsed.From.Email,
-		record.Parsed.ReplyTo.DisplayName, record.Parsed.ReplyTo.Email,
-		record.Parsed.Subject, record.Parsed.Snippet, headerDate, internalDateValue,
-		sortAtValue, dateSource, record.Parsed.AttachmentCount, timestamp, timestamp,
-	); err != nil {
-		return false, fmt.Errorf("persist message: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM message_recipients WHERE message_id = ?`, record.MessageID); err != nil {
-		return false, fmt.Errorf("replace message recipients: %w", err)
-	}
-	for _, group := range []struct {
-		kind      maildomain.RecipientKind
-		addresses []maildomain.Address
-	}{
-		{maildomain.RecipientTo, record.Parsed.To},
-		{maildomain.RecipientCC, record.Parsed.CC},
-		{maildomain.RecipientBCC, record.Parsed.BCC},
-	} {
-		for index, address := range group.addresses {
-			if _, err := tx.ExecContext(ctx, `
-INSERT INTO message_recipients (message_id, kind, ordinal, display_name, email_address)
-VALUES (?, ?, ?, ?, ?)`, record.MessageID, group.kind, index, address.DisplayName, address.Email); err != nil {
-				return false, fmt.Errorf("persist message recipient: %w", err)
-			}
+	record.MessageID = resolution.MessageID
+	if !resolution.PreserveLogical {
+		if err := upsertLogicalMessage(ctx, tx, record, timestamp); err != nil {
+			return false, false, 0, err
+		}
+	} else if record.Direction == maildomain.DirectionOutbound {
+		if _, err := tx.ExecContext(ctx, `
+UPDATE messages SET direction = 'outbound', updated_at = ? WHERE message_id = ?`, timestamp, record.MessageID); err != nil {
+			return false, false, 0, fmt.Errorf("promote message direction: %w", err)
 		}
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM message_references WHERE message_id = ?`, record.MessageID); err != nil {
-		return false, fmt.Errorf("replace message references: %w", err)
-	}
-	for index, reference := range record.Parsed.References {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO message_references (message_id, ordinal, reference) VALUES (?, ?, ?)`, record.MessageID, index, reference); err != nil {
-			return false, fmt.Errorf("persist message reference: %w", err)
-		}
-	}
-	if record.Content != nil {
-		if err := upsertMessageContent(ctx, tx, record.MessageID, *record.Content, timestamp); err != nil {
-			return false, err
-		}
-	}
+
 	structuredFlags := maildomain.ParseLocationFlags(record.Flags)
 	unknownFlagsJSON, err := json.Marshal(structuredFlags.Unknown)
 	if err != nil {
-		return false, fmt.Errorf("encode unknown message flags: %w", err)
+		return false, false, 0, fmt.Errorf("encode unknown message flags: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO message_locations (
@@ -659,9 +630,137 @@ ON CONFLICT(account_id, folder_id, uid_validity, uid) DO UPDATE SET
 		record.RFC822Size, record.RawContentHash, record.RawStorageKey,
 		record.RawByteSize, timestamp, timestamp,
 	); err != nil {
-		return false, fmt.Errorf("persist message location: %w", err)
+		return false, false, 0, fmt.Errorf("persist message location: %w", err)
 	}
-	return created, nil
+	var actualLocationID string
+	if err := tx.QueryRowContext(ctx, `
+SELECT location_id FROM message_locations
+WHERE account_id = ? AND folder_id = ? AND uid_validity = ? AND uid = ?`,
+		record.AccountID, record.FolderID, record.UIDValidity, record.UID,
+	).Scan(&actualLocationID); err != nil {
+		return false, false, 0, fmt.Errorf("read persisted message location identity: %w", err)
+	}
+	if err := persistRecordIdentity(ctx, tx, record, actualLocationID, resolution, timestamp); err != nil {
+		return false, false, 0, err
+	}
+	if record.Content != nil && len(resolution.Conflicts) == 0 {
+		shouldReplaceContent := !resolution.PreserveLogical
+		if !shouldReplaceContent {
+			var contentCount int
+			if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM message_content WHERE message_id = ?`, record.MessageID).Scan(&contentCount); err != nil {
+				return false, false, 0, fmt.Errorf("inspect existing message content: %w", err)
+			}
+			shouldReplaceContent = contentCount == 0
+		}
+		if shouldReplaceContent {
+			if err := upsertMessageContent(ctx, tx, record.MessageID, actualLocationID, *record.Content, timestamp); err != nil {
+				return false, false, 0, err
+			}
+		}
+	}
+	return resolution.Created, resolution.Merged, len(resolution.Conflicts), nil
+}
+
+func upsertLogicalMessage(ctx context.Context, tx *sql.Tx, record maildomain.IngestRecord, timestamp string) error {
+	internalDate, sortAt, dateSource := maildomain.MessageTimes(record.Parsed, record.InternalDate)
+	direction := record.Direction
+	if direction != maildomain.DirectionOutbound {
+		direction = maildomain.DirectionInbound
+	}
+	if _, err := tx.ExecContext(ctx, `
+INSERT INTO messages (
+    message_id, account_id, rfc_message_id, in_reply_to, direction,
+    from_name, from_email, reply_to_name, reply_to_email, subject, snippet,
+    header_date, internal_date, sort_at, date_source, attachment_count,
+    created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(message_id) DO UPDATE SET
+    rfc_message_id = CASE WHEN excluded.rfc_message_id <> '' THEN excluded.rfc_message_id ELSE messages.rfc_message_id END,
+    in_reply_to = CASE WHEN excluded.in_reply_to <> '' THEN excluded.in_reply_to ELSE messages.in_reply_to END,
+    direction = CASE WHEN messages.direction = 'outbound' OR excluded.direction = 'outbound' THEN 'outbound' ELSE 'inbound' END,
+    from_name = CASE WHEN excluded.from_name <> '' THEN excluded.from_name ELSE messages.from_name END,
+    from_email = CASE WHEN excluded.from_email <> '' THEN excluded.from_email ELSE messages.from_email END,
+    reply_to_name = CASE WHEN excluded.reply_to_name <> '' THEN excluded.reply_to_name ELSE messages.reply_to_name END,
+    reply_to_email = CASE WHEN excluded.reply_to_email <> '' THEN excluded.reply_to_email ELSE messages.reply_to_email END,
+    subject = CASE WHEN excluded.subject <> '' THEN excluded.subject ELSE messages.subject END,
+    snippet = CASE WHEN excluded.snippet <> '' THEN excluded.snippet ELSE messages.snippet END,
+    header_date = COALESCE(excluded.header_date, messages.header_date),
+    internal_date = COALESCE(excluded.internal_date, messages.internal_date),
+    sort_at = COALESCE(excluded.sort_at, messages.sort_at),
+    date_source = CASE WHEN excluded.date_source <> 'unknown' THEN excluded.date_source ELSE messages.date_source END,
+    attachment_count = MAX(messages.attachment_count, excluded.attachment_count),
+    updated_at = excluded.updated_at`,
+		record.MessageID, record.AccountID, record.Parsed.RFCMessageID,
+		record.Parsed.InReplyTo, direction, record.Parsed.From.DisplayName, record.Parsed.From.Email,
+		record.Parsed.ReplyTo.DisplayName, record.Parsed.ReplyTo.Email,
+		record.Parsed.Subject, record.Parsed.Snippet, nullableTime(record.Parsed.HeaderDate),
+		nullableTime(internalDate), nullableTime(sortAt), dateSource,
+		record.Parsed.AttachmentCount, timestamp, timestamp,
+	); err != nil {
+		return fmt.Errorf("persist message: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM message_recipients WHERE message_id = ?`, record.MessageID); err != nil {
+		return fmt.Errorf("replace message recipients: %w", err)
+	}
+	for _, group := range []struct {
+		kind      maildomain.RecipientKind
+		addresses []maildomain.Address
+	}{
+		{maildomain.RecipientTo, record.Parsed.To},
+		{maildomain.RecipientCC, record.Parsed.CC},
+		{maildomain.RecipientBCC, record.Parsed.BCC},
+	} {
+		for index, address := range group.addresses {
+			if _, err := tx.ExecContext(ctx, `
+INSERT INTO message_recipients (message_id, kind, ordinal, display_name, email_address)
+VALUES (?, ?, ?, ?, ?)`, record.MessageID, group.kind, index, address.DisplayName, address.Email); err != nil {
+				return fmt.Errorf("persist message recipient: %w", err)
+			}
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM message_references WHERE message_id = ?`, record.MessageID); err != nil {
+		return fmt.Errorf("replace message references: %w", err)
+	}
+	for index, reference := range record.Parsed.References {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO message_references (message_id, ordinal, reference) VALUES (?, ?, ?)`, record.MessageID, index, reference); err != nil {
+			return fmt.Errorf("persist message reference: %w", err)
+		}
+	}
+	return nil
+}
+
+func (repository *MailRepository) RegisterGeneratedMessageID(ctx context.Context, accountID, messageID, generatedMessageID string, now time.Time) error {
+	accountID = strings.TrimSpace(accountID)
+	messageID = strings.TrimSpace(messageID)
+	generatedMessageID = maildomain.NormalizeMessageID(generatedMessageID)
+	if accountID == "" || messageID == "" || generatedMessageID == "" {
+		return errors.New("register generated Message-ID: account, message, and Message-ID are required")
+	}
+	tx, err := repository.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin generated Message-ID registration: %w", err)
+	}
+	defer tx.Rollback()
+	var exists int
+	if err := tx.QueryRowContext(ctx, `
+SELECT count(*) FROM messages WHERE account_id = ? AND message_id = ?`, accountID, messageID,
+	).Scan(&exists); err != nil {
+		return fmt.Errorf("resolve generated Message-ID message: %w", err)
+	}
+	if exists == 0 {
+		return maildomain.ErrMessageNotFound
+	}
+	timestamp := now.UTC().Format(time.RFC3339Nano)
+	if err := persistIdentityEvidence(
+		ctx, tx, accountID, messageID, maildomain.IdentityGeneratedMessageID,
+		generatedMessageID, maildomain.IdentityStrong, "", timestamp,
+	); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit generated Message-ID registration: %w", err)
+	}
+	return nil
 }
 
 func reconcileLocationInTx(
@@ -718,7 +817,7 @@ func locationFlagsEqual(left, right maildomain.LocationFlags) bool {
 	return true
 }
 
-func upsertMessageContent(ctx context.Context, tx *sql.Tx, messageID string, content maildomain.NormalizedContent, timestamp string) error {
+func upsertMessageContent(ctx context.Context, tx *sql.Tx, messageID, sourceLocationID string, content maildomain.NormalizedContent, timestamp string) error {
 	headersJSON, err := json.Marshal(content.Headers)
 	if err != nil {
 		return fmt.Errorf("encode message headers: %w", err)
@@ -739,8 +838,9 @@ func upsertMessageContent(ctx context.Context, tx *sql.Tx, messageID string, con
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO message_content (
     message_id, headers_json, diagnostics_json, text_paths_json,
-    html_paths_json, parsed_complete, attachments_indexed, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    html_paths_json, parsed_complete, attachments_indexed, source_location_id,
+    created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(message_id) DO UPDATE SET
     headers_json = excluded.headers_json,
     diagnostics_json = excluded.diagnostics_json,
@@ -748,9 +848,11 @@ ON CONFLICT(message_id) DO UPDATE SET
     html_paths_json = excluded.html_paths_json,
     parsed_complete = excluded.parsed_complete,
     attachments_indexed = excluded.attachments_indexed,
+    source_location_id = excluded.source_location_id,
     updated_at = excluded.updated_at`,
 		messageID, string(headersJSON), string(diagnosticsJSON), string(textPathsJSON),
-		string(htmlPathsJSON), boolInt(parsedComplete), boolInt(content.AttachmentsIndexed), timestamp, timestamp,
+		string(htmlPathsJSON), boolInt(parsedComplete), boolInt(content.AttachmentsIndexed),
+		strings.TrimSpace(sourceLocationID), timestamp, timestamp,
 	); err != nil {
 		return fmt.Errorf("persist message content metadata: %w", err)
 	}
@@ -862,37 +964,304 @@ INSERT INTO attachments (
 	return nil
 }
 
-func resolveMessageIdentity(ctx context.Context, tx *sql.Tx, record maildomain.IngestRecord) (string, bool, error) {
-	var messageID string
+type identityResolution struct {
+	MessageID       string
+	Created         bool
+	Merged          bool
+	PreserveLogical bool
+	MatchKind       maildomain.IdentityKind
+	Conflicts       []pendingIdentityConflict
+}
+
+type pendingIdentityConflict struct {
+	Kind               maildomain.IdentityKind
+	Value              string
+	ExistingMessageID  string
+	ObservedMessageID  string
+	ExistingLocationID string
+	ObservedLocationID string
+	Reason             string
+}
+
+type identityCandidate struct {
+	MessageID  string
+	Locations  int
+	LocationID string
+}
+
+func resolveMessageIdentity(ctx context.Context, tx *sql.Tx, record maildomain.IngestRecord) (identityResolution, error) {
+	proposed := strings.TrimSpace(record.MessageID)
+	if proposed == "" {
+		return identityResolution{}, errors.New("resolve message identity: proposed message ID is required")
+	}
+
+	var locationID, locationMessageID string
 	err := tx.QueryRowContext(ctx, `
-SELECT message_id
+SELECT location_id, message_id
 FROM message_locations
 WHERE account_id = ? AND folder_id = ? AND uid_validity = ? AND uid = ?`,
 		record.AccountID, record.FolderID, record.UIDValidity, record.UID,
-	).Scan(&messageID)
-	if err == nil {
-		return messageID, false, nil
+	).Scan(&locationID, &locationMessageID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return identityResolution{}, fmt.Errorf("resolve message by provider location: %w", err)
 	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return "", false, fmt.Errorf("resolve message by provider location: %w", err)
-	}
-	if rfcMessageID := strings.TrimSpace(record.Parsed.RFCMessageID); rfcMessageID != "" {
-		err = tx.QueryRowContext(ctx, `
-SELECT message_id
-FROM messages
-WHERE account_id = ? AND lower(rfc_message_id) = lower(?)`, record.AccountID, rfcMessageID).Scan(&messageID)
-		if err == nil {
-			return messageID, false, nil
+
+	rfcValue := maildomain.NormalizeMessageID(record.Parsed.RFCMessageID)
+	strongMessageID := ""
+	strongLocations := 0
+	strongKind := maildomain.IdentityKind("")
+	if rfcValue != "" {
+		rfcCandidates, candidateErr := rfcIdentityCandidates(ctx, tx, record.AccountID, rfcValue, 21)
+		if candidateErr != nil {
+			return identityResolution{}, candidateErr
 		}
-		if !errors.Is(err, sql.ErrNoRows) {
-			return "", false, fmt.Errorf("resolve message by RFC Message-ID: %w", err)
+		if len(rfcCandidates) > 1 {
+			selectedMessageID := proposed
+			created := true
+			preserveLogical := false
+			if locationMessageID != "" {
+				selectedMessageID = locationMessageID
+				created = false
+				preserveLogical = true
+			}
+			conflicts := make([]pendingIdentityConflict, 0, len(rfcCandidates))
+			for _, candidate := range rfcCandidates {
+				if candidate.MessageID == selectedMessageID {
+					continue
+				}
+				conflicts = append(conflicts, pendingIdentityConflict{
+					Kind: maildomain.IdentityRFCMessageID, Value: rfcValue,
+					ExistingMessageID: candidate.MessageID, ObservedMessageID: selectedMessageID,
+					ExistingLocationID: candidate.LocationID, ObservedLocationID: locationID,
+					Reason: "duplicate_strong_identity",
+				})
+			}
+			return identityResolution{
+				MessageID: selectedMessageID, Created: created, PreserveLogical: preserveLogical,
+				MatchKind: maildomain.IdentityProviderLocation, Conflicts: conflicts,
+			}, nil
+		}
+		if len(rfcCandidates) == 1 {
+			strongMessageID = rfcCandidates[0].MessageID
+			strongLocations = rfcCandidates[0].Locations
+			strongKind = maildomain.IdentityRFCMessageID
+		}
+		if strongMessageID == "" {
+			err = tx.QueryRowContext(ctx, `
+SELECT e.message_id,
+       (SELECT count(*) FROM message_locations AS l WHERE l.message_id = e.message_id)
+FROM message_identity_evidence AS e
+WHERE e.account_id = ? AND e.kind = 'generated_message_id' AND e.value = ?`,
+				record.AccountID, rfcValue,
+			).Scan(&strongMessageID, &strongLocations)
+			if err == nil {
+				strongKind = maildomain.IdentityGeneratedMessageID
+			} else if !errors.Is(err, sql.ErrNoRows) {
+				return identityResolution{}, fmt.Errorf("resolve message by generated Message-ID: %w", err)
+			}
 		}
 	}
-	messageID = strings.TrimSpace(record.MessageID)
-	if messageID == "" {
-		return "", false, errors.New("resolve message identity: proposed message ID is required")
+
+	if strongMessageID != "" {
+		if locationMessageID == "" || locationMessageID == strongMessageID {
+			return identityResolution{
+				MessageID: strongMessageID, Created: false,
+				Merged:          locationMessageID == "",
+				PreserveLogical: locationMessageID == "" && strongLocations > 0,
+				MatchKind:       strongKind,
+			}, nil
+		}
+		return identityResolution{
+			MessageID: locationMessageID, Created: false, PreserveLogical: true,
+			MatchKind: maildomain.IdentityProviderLocation,
+			Conflicts: []pendingIdentityConflict{{
+				Kind: strongKind, Value: rfcValue,
+				ExistingMessageID: strongMessageID, ObservedMessageID: locationMessageID,
+				ExistingLocationID: "", ObservedLocationID: locationID,
+				Reason: "strong_identity_disagrees_with_provider_location",
+			}},
+		}, nil
 	}
-	return messageID, true, nil
+
+	if locationMessageID != "" {
+		return identityResolution{
+			MessageID: locationMessageID, Created: false,
+			MatchKind: maildomain.IdentityProviderLocation,
+		}, nil
+	}
+
+	fingerprint := strings.TrimSpace(record.ContentFingerprint)
+	if fingerprint != "" {
+		candidates, candidateErr := contentIdentityCandidates(ctx, tx, record.AccountID, fingerprint, 21)
+		if candidateErr != nil {
+			return identityResolution{}, candidateErr
+		}
+		if len(candidates) == 1 && candidates[0].Locations == 0 {
+			return identityResolution{
+				MessageID: candidates[0].MessageID, Created: false, Merged: true,
+				MatchKind: maildomain.IdentityContentFingerprint,
+			}, nil
+		}
+		if len(candidates) > 0 {
+			conflicts := make([]pendingIdentityConflict, 0, len(candidates))
+			reason := "content_fingerprint_ambiguous"
+			if len(candidates) == 1 && candidates[0].Locations > 0 {
+				reason = "content_fingerprint_provider_collision"
+			}
+			for _, candidate := range candidates {
+				conflicts = append(conflicts, pendingIdentityConflict{
+					Kind: maildomain.IdentityContentFingerprint, Value: fingerprint,
+					ExistingMessageID: candidate.MessageID, ObservedMessageID: proposed,
+					ExistingLocationID: candidate.LocationID, ObservedLocationID: record.LocationID,
+					Reason: reason,
+				})
+			}
+			return identityResolution{
+				MessageID: proposed, Created: true,
+				MatchKind: maildomain.IdentityProviderLocation,
+				Conflicts: conflicts,
+			}, nil
+		}
+	}
+	return identityResolution{MessageID: proposed, Created: true, MatchKind: maildomain.IdentityProviderLocation}, nil
+}
+
+func rfcIdentityCandidates(ctx context.Context, tx *sql.Tx, accountID, rfcMessageID string, limit int) ([]identityCandidate, error) {
+	rows, err := tx.QueryContext(ctx, `
+SELECT m.message_id,
+       (SELECT count(*) FROM message_locations AS l WHERE l.message_id = m.message_id),
+       COALESCE((SELECT location_id FROM message_locations AS l WHERE l.message_id = m.message_id ORDER BY present DESC, location_id LIMIT 1), '')
+FROM messages AS m
+WHERE m.account_id = ? AND lower(m.rfc_message_id) = ?
+ORDER BY m.message_id
+LIMIT ?`, strings.TrimSpace(accountID), strings.TrimSpace(rfcMessageID), limit)
+	if err != nil {
+		return nil, fmt.Errorf("resolve message by RFC Message-ID: %w", err)
+	}
+	defer rows.Close()
+	candidates := make([]identityCandidate, 0, limit)
+	for rows.Next() {
+		var candidate identityCandidate
+		if err := rows.Scan(&candidate.MessageID, &candidate.Locations, &candidate.LocationID); err != nil {
+			return nil, fmt.Errorf("read RFC Message-ID candidate: %w", err)
+		}
+		candidates = append(candidates, candidate)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("resolve message by RFC Message-ID: %w", err)
+	}
+	return candidates, nil
+}
+
+func contentIdentityCandidates(ctx context.Context, tx *sql.Tx, accountID, fingerprint string, limit int) ([]identityCandidate, error) {
+	rows, err := tx.QueryContext(ctx, `
+SELECT e.message_id,
+       (SELECT count(*) FROM message_locations AS l WHERE l.message_id = e.message_id),
+       COALESCE((SELECT location_id FROM message_locations AS l WHERE l.message_id = e.message_id ORDER BY present DESC, location_id LIMIT 1), '')
+FROM message_identity_evidence AS e
+WHERE e.account_id = ? AND e.kind = 'content_fingerprint' AND e.value = ?
+GROUP BY e.message_id
+ORDER BY e.message_id
+LIMIT ?`, strings.TrimSpace(accountID), strings.TrimSpace(fingerprint), limit)
+	if err != nil {
+		return nil, fmt.Errorf("resolve message by content fingerprint: %w", err)
+	}
+	defer rows.Close()
+	candidates := make([]identityCandidate, 0, limit)
+	for rows.Next() {
+		var candidate identityCandidate
+		if err := rows.Scan(&candidate.MessageID, &candidate.Locations, &candidate.LocationID); err != nil {
+			return nil, fmt.Errorf("read content fingerprint candidate: %w", err)
+		}
+		candidates = append(candidates, candidate)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("resolve message by content fingerprint: %w", err)
+	}
+	return candidates, nil
+}
+
+func persistRecordIdentity(ctx context.Context, tx *sql.Tx, record maildomain.IngestRecord, actualLocationID string, resolution identityResolution, timestamp string) error {
+	if len(resolution.Conflicts) == 0 {
+		if rfcValue := maildomain.NormalizeMessageID(record.Parsed.RFCMessageID); rfcValue != "" {
+			if err := persistIdentityEvidence(ctx, tx, record.AccountID, record.MessageID, maildomain.IdentityRFCMessageID, rfcValue, maildomain.IdentityStrong, actualLocationID, timestamp); err != nil {
+				return err
+			}
+		}
+	}
+	if providerValue := maildomain.ProviderLocationIdentity(record.FolderID, record.UIDValidity, record.UID); providerValue != "" {
+		if err := persistIdentityEvidence(ctx, tx, record.AccountID, record.MessageID, maildomain.IdentityProviderLocation, providerValue, maildomain.IdentityStrong, actualLocationID, timestamp); err != nil {
+			return err
+		}
+	}
+	if fingerprint := strings.TrimSpace(record.ContentFingerprint); fingerprint != "" && len(resolution.Conflicts) == 0 {
+		if err := persistIdentityEvidence(ctx, tx, record.AccountID, record.MessageID, maildomain.IdentityContentFingerprint, fingerprint, maildomain.IdentityGuarded, actualLocationID, timestamp); err != nil {
+			return err
+		}
+	}
+	for _, conflict := range resolution.Conflicts {
+		if conflict.ObservedLocationID == record.LocationID {
+			conflict.ObservedLocationID = actualLocationID
+		}
+		if err := persistDedupeConflict(ctx, tx, record.AccountID, conflict, timestamp); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func persistIdentityEvidence(ctx context.Context, tx *sql.Tx, accountID, messageID string, kind maildomain.IdentityKind, value string, strength maildomain.IdentityStrength, sourceLocationID, timestamp string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	evidenceID := stableIdentityID("evd", accountID, messageID, string(kind), value, sourceLocationID)
+	if _, err := tx.ExecContext(ctx, `
+INSERT INTO message_identity_evidence (
+    evidence_id, account_id, message_id, kind, value, strength,
+    source_location_id, first_seen_at, last_seen_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(account_id, message_id, kind, value, source_location_id) DO UPDATE SET
+    strength = excluded.strength,
+    last_seen_at = excluded.last_seen_at`,
+		evidenceID, accountID, messageID, kind, value, strength,
+		strings.TrimSpace(sourceLocationID), timestamp, timestamp,
+	); err != nil {
+		return fmt.Errorf("persist message identity evidence: %w", err)
+	}
+	return nil
+}
+
+func persistDedupeConflict(ctx context.Context, tx *sql.Tx, accountID string, conflict pendingIdentityConflict, timestamp string) error {
+	conflictID := stableIdentityID(
+		"dcf", accountID, string(conflict.Kind), conflict.Value,
+		conflict.ExistingMessageID, conflict.ObservedMessageID,
+		conflict.ExistingLocationID, conflict.ObservedLocationID, conflict.Reason,
+	)
+	if _, err := tx.ExecContext(ctx, `
+INSERT INTO message_dedupe_conflicts (
+    conflict_id, account_id, evidence_kind, evidence_value,
+    existing_message_id, observed_message_id,
+    existing_location_id, observed_location_id, reason, status, created_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?)
+ON CONFLICT(
+    account_id, evidence_kind, evidence_value,
+    existing_message_id, observed_message_id,
+    existing_location_id, observed_location_id, reason
+) DO NOTHING`,
+		conflictID, accountID, conflict.Kind, conflict.Value,
+		conflict.ExistingMessageID, conflict.ObservedMessageID,
+		conflict.ExistingLocationID, conflict.ObservedLocationID,
+		conflict.Reason, timestamp,
+	); err != nil {
+		return fmt.Errorf("persist message dedupe conflict: %w", err)
+	}
+	return nil
+}
+
+func stableIdentityID(prefix string, parts ...string) string {
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
+	return prefix + "_" + hex.EncodeToString(sum[:16])
 }
 
 func checkpointInTx(ctx context.Context, queryer interface {
@@ -955,7 +1324,7 @@ func scanMessage(row rowScanner) (maildomain.Message, error) {
 		&direction, &value.From.DisplayName, &value.From.Email,
 		&value.ReplyTo.DisplayName, &value.ReplyTo.Email, &value.Subject,
 		&value.Snippet, &headerDate, &internalDate, &sortAt, &dateSource,
-		&value.AttachmentCount, &createdAt, &updatedAt,
+		&value.AttachmentCount, &value.ContentLocationID, &createdAt, &updatedAt,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return maildomain.Message{}, maildomain.ErrMessageNotFound
@@ -1072,12 +1441,93 @@ ORDER BY present DESC, folder_id, uid`, value.ID)
 		}
 		value.Locations = append(value.Locations, location)
 		if location.Present && location.Flags.Eligible() {
-			value.Unread = value.Unread || !location.Flags.Seen
+			if location.FolderKind != "sent" {
+				value.Unread = value.Unread || !location.Flags.Seen
+			}
 			value.Flagged = value.Flagged || location.Flags.Flagged
 		}
 	}
 	if err := locationRows.Close(); err != nil {
 		return fmt.Errorf("close message locations: %w", err)
+	}
+
+	identityRows, err := repository.db.QueryContext(ctx, `
+SELECT evidence_id, account_id, message_id, kind, value, strength,
+       source_location_id, first_seen_at, last_seen_at
+FROM message_identity_evidence
+WHERE message_id = ?
+ORDER BY CASE kind
+    WHEN 'rfc_message_id' THEN 0
+    WHEN 'generated_message_id' THEN 1
+    WHEN 'provider_location' THEN 2
+    ELSE 3 END,
+    value, source_location_id
+LIMIT 100`, value.ID)
+	if err != nil {
+		return fmt.Errorf("read message identity evidence: %w", err)
+	}
+	for identityRows.Next() {
+		var evidence maildomain.IdentityEvidence
+		var kind, strength, firstSeenAt, lastSeenAt string
+		if err := identityRows.Scan(
+			&evidence.ID, &evidence.AccountID, &evidence.MessageID, &kind,
+			&evidence.Value, &strength, &evidence.SourceLocationID,
+			&firstSeenAt, &lastSeenAt,
+		); err != nil {
+			identityRows.Close()
+			return fmt.Errorf("read message identity evidence: %w", err)
+		}
+		evidence.Kind = maildomain.IdentityKind(kind)
+		evidence.Strength = maildomain.IdentityStrength(strength)
+		evidence.FirstSeenAt, err = time.Parse(time.RFC3339Nano, firstSeenAt)
+		if err != nil {
+			identityRows.Close()
+			return fmt.Errorf("parse identity first-seen time: %w", err)
+		}
+		evidence.LastSeenAt, err = time.Parse(time.RFC3339Nano, lastSeenAt)
+		if err != nil {
+			identityRows.Close()
+			return fmt.Errorf("parse identity last-seen time: %w", err)
+		}
+		value.Identity = append(value.Identity, evidence)
+	}
+	if err := identityRows.Close(); err != nil {
+		return fmt.Errorf("close message identity evidence: %w", err)
+	}
+
+	conflictRows, err := repository.db.QueryContext(ctx, `
+SELECT conflict_id, account_id, evidence_kind, evidence_value,
+       existing_message_id, observed_message_id,
+       existing_location_id, observed_location_id, reason, status, created_at
+FROM message_dedupe_conflicts
+WHERE existing_message_id = ? OR observed_message_id = ?
+ORDER BY created_at, conflict_id
+LIMIT 100`, value.ID, value.ID)
+	if err != nil {
+		return fmt.Errorf("read message dedupe conflicts: %w", err)
+	}
+	for conflictRows.Next() {
+		var conflict maildomain.DedupeConflict
+		var kind, createdAt string
+		if err := conflictRows.Scan(
+			&conflict.ID, &conflict.AccountID, &kind, &conflict.EvidenceValue,
+			&conflict.ExistingMessageID, &conflict.ObservedMessageID,
+			&conflict.ExistingLocationID, &conflict.ObservedLocationID,
+			&conflict.Reason, &conflict.Status, &createdAt,
+		); err != nil {
+			conflictRows.Close()
+			return fmt.Errorf("read message dedupe conflict: %w", err)
+		}
+		conflict.EvidenceKind = maildomain.IdentityKind(kind)
+		conflict.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAt)
+		if err != nil {
+			conflictRows.Close()
+			return fmt.Errorf("parse dedupe conflict time: %w", err)
+		}
+		value.DedupeConflicts = append(value.DedupeConflicts, conflict)
+	}
+	if err := conflictRows.Close(); err != nil {
+		return fmt.Errorf("close message dedupe conflicts: %w", err)
 	}
 	return nil
 }
@@ -1086,14 +1536,15 @@ func (repository *MailRepository) loadMessageContent(ctx context.Context, value 
 	var (
 		headersJSON, diagnosticsJSON       string
 		textPathsJSON, htmlPathsJSON       string
+		sourceLocationID                   string
 		parsedComplete, attachmentsIndexed int
 	)
 	err := repository.db.QueryRowContext(ctx, `
 SELECT headers_json, diagnostics_json, text_paths_json, html_paths_json,
-       parsed_complete, attachments_indexed
+       parsed_complete, attachments_indexed, source_location_id
 FROM message_content WHERE message_id = ?`, value.ID).Scan(
 		&headersJSON, &diagnosticsJSON, &textPathsJSON, &htmlPathsJSON,
-		&parsedComplete, &attachmentsIndexed,
+		&parsedComplete, &attachmentsIndexed, &sourceLocationID,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil
@@ -1156,6 +1607,7 @@ FROM message_parts WHERE message_id = ? ORDER BY ordinal`, value.ID)
 		content.Diagnostics = append(content.Diagnostics, maildomain.ParseDiagnostic{Code: "partial"})
 	}
 	content.AttachmentsIndexed = attachmentsIndexed == 1
+	value.ContentLocationID = sourceLocationID
 	attachmentRows, err := repository.db.QueryContext(ctx, `
 SELECT attachment_id, message_id, part_id, ordinal, part_path, filename,
        media_type, media_params_json, disposition, content_id, inline,
@@ -1206,7 +1658,8 @@ func scanLocation(row rowScanner) (maildomain.Location, error) {
 	)
 	if err := row.Scan(
 		&value.ID, &value.MessageID, &value.AccountID, &value.FolderID,
-		&value.UIDValidity, &value.UID, &seen, &flagged, &answered, &draft, &deleted,
+		&value.UIDValidity, &value.UID, &value.FolderKind,
+		&seen, &flagged, &answered, &draft, &deleted,
 		&unknownFlagsJSON, &modSequence, &flagsCheckedAt, &internalDate,
 		&value.RFC822Size, &value.RawContentHash, &value.RawStorageKey,
 		&value.RawByteSize, &present, &createdAt, &updatedAt,

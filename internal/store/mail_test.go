@@ -160,7 +160,8 @@ func TestMailContentMetadataAndPartIDsPersistAcrossRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 	if message.Content == nil || len(message.Content.Headers) != 2 || len(message.Content.Parts) != 3 ||
-		strings.Join(message.Content.TextPaths, ",") != "1" || strings.Join(message.Content.HTMLPaths, ",") != "2" {
+		strings.Join(message.Content.TextPaths, ",") != "1" || strings.Join(message.Content.HTMLPaths, ",") != "2" ||
+		message.ContentLocationID != record.LocationID {
 		t.Fatalf("content = %+v", message.Content)
 	}
 	originalPartIDs := []string{message.Content.Parts[0].ID, message.Content.Parts[1].ID, message.Content.Parts[2].ID}
@@ -194,6 +195,9 @@ func TestMailContentMetadataAndPartIDsPersistAcrossRetry(t *testing.T) {
 	}
 	if message.Content.Parts[1].DecodedSize != 15 || message.Content.Parts[2].DecodedSize != 22 {
 		t.Fatalf("part metadata was not refreshed: %+v", message.Content.Parts)
+	}
+	if message.ContentLocationID != record.LocationID {
+		t.Fatalf("content source location changed: %s", message.ContentLocationID)
 	}
 }
 
@@ -393,6 +397,305 @@ func TestMailReconcileUIDsRotatesBoundedSweep(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(second, []uint32{1, 3}) {
 		t.Fatalf("rotated reconciliation page=%v err=%v", second, err)
 	}
+}
+
+func TestMailSentIdentityMergeKeepsIndependentLocationsAndUnreadState(t *testing.T) {
+	state, accountID, inboxID := newMailStoreFixture(t)
+	defer state.Close()
+	now := time.Date(2026, 8, 6, 7, 0, 0, 0, time.UTC)
+	sentID := insertMailFolderFixture(t, state, accountID, folder.KindSent, "Sent Messages", 200, now)
+
+	inboxRecord := mailRecordFixture(accountID, inboxID, 100, 71, "shared-location@example.test")
+	inboxRecord.Direction = maildomain.DirectionInbound
+	inboxRecord.Flags = []string{`\Seen`}
+	inboxRecord.ContentFingerprint = "content:" + strings.Repeat("1", 64)
+	if _, err := state.Mail().CommitInboxPage(context.Background(), maildomain.CommitPage{
+		CheckpointID: "chk_0198d704-6c00-7000-8000-000000000901",
+		AccountID:    accountID, FolderID: inboxID, UIDValidity: 100, Bootstrap: true,
+		LastCommittedUID: 71, LastScannedUID: 71, AttemptedAt: now,
+		Records: []maildomain.IngestRecord{inboxRecord},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	sentRecord := mailRecordFixture(accountID, sentID, 200, 9, "shared-location@example.test")
+	sentRecord.Direction = maildomain.DirectionOutbound
+	sentRecord.Flags = []string{`\Flagged`}
+	sentRecord.ContentFingerprint = inboxRecord.ContentFingerprint
+	commit, err := state.Mail().CommitInboxPage(context.Background(), maildomain.CommitPage{
+		CheckpointID: "chk_0198d704-6c00-7000-8000-000000000902",
+		AccountID:    accountID, FolderID: sentID, UIDValidity: 200, Bootstrap: false,
+		LastCommittedUID: 9, LastScannedUID: 9, AttemptedAt: now.Add(time.Minute),
+		Records: []maildomain.IngestRecord{sentRecord},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if commit.Created != 0 || commit.Updated != 1 || commit.IdentityMerges != 1 || commit.DedupeConflicts != 0 {
+		t.Fatalf("sent merge commit = %+v", commit)
+	}
+
+	message, err := state.Mail().Message(context.Background(), accountID, inboxRecord.MessageID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if message.Direction != maildomain.DirectionOutbound || message.Unread || !message.Flagged || len(message.Locations) != 2 {
+		t.Fatalf("merged message = %+v", message)
+	}
+	locations := map[string]maildomain.Location{}
+	for _, location := range message.Locations {
+		locations[location.FolderKind] = location
+	}
+	if locations[string(folder.KindInbox)].UID != 71 || !locations[string(folder.KindInbox)].Flags.Seen ||
+		locations[string(folder.KindSent)].UID != 9 || !locations[string(folder.KindSent)].Flags.Flagged || locations[string(folder.KindSent)].Flags.Seen {
+		t.Fatalf("independent locations = %+v", locations)
+	}
+	sentMessages, more, err := state.Mail().MessagesInFolder(context.Background(), accountID, sentID, 20)
+	if err != nil || more || len(sentMessages) != 1 || sentMessages[0].ID != inboxRecord.MessageID {
+		t.Fatalf("sent messages=%+v more=%v err=%v", sentMessages, more, err)
+	}
+	providerEvidence := 0
+	for _, evidence := range message.Identity {
+		if evidence.Kind == maildomain.IdentityProviderLocation {
+			providerEvidence++
+		}
+	}
+	if providerEvidence != 2 || len(message.DedupeConflicts) != 0 {
+		t.Fatalf("identity evidence=%+v conflicts=%+v", message.Identity, message.DedupeConflicts)
+	}
+}
+
+func TestMailContentFingerprintDoesNotCollapseDistinctProviderLocations(t *testing.T) {
+	state, accountID, folderID := newMailStoreFixture(t)
+	defer state.Close()
+	now := time.Date(2026, 8, 6, 7, 10, 0, 0, time.UTC)
+	fingerprint := "content:" + strings.Repeat("2", 64)
+
+	first := mailRecordFixture(accountID, folderID, 100, 81, "distinct-one@example.test")
+	first.ContentFingerprint = fingerprint
+	if _, err := state.Mail().CommitInboxPage(context.Background(), maildomain.CommitPage{
+		CheckpointID: "chk_0198d704-6c00-7000-8000-000000000911",
+		AccountID:    accountID, FolderID: folderID, UIDValidity: 100, Bootstrap: true,
+		LastCommittedUID: 81, LastScannedUID: 81, AttemptedAt: now,
+		Records: []maildomain.IngestRecord{first},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	second := mailRecordFixture(accountID, folderID, 100, 82, "distinct-two@example.test")
+	second.ContentFingerprint = fingerprint
+	commit, err := state.Mail().CommitInboxPage(context.Background(), maildomain.CommitPage{
+		CheckpointID: "chk_0198d704-6c00-7000-8000-000000000911",
+		AccountID:    accountID, FolderID: folderID, UIDValidity: 100,
+		LastCommittedUID: 82, LastScannedUID: 82, AttemptedAt: now.Add(time.Minute),
+		Records: []maildomain.IngestRecord{second},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if commit.Created != 1 || commit.IdentityMerges != 0 || commit.DedupeConflicts != 1 {
+		t.Fatalf("collision commit = %+v", commit)
+	}
+	messages, more, err := state.Mail().MessagesInFolder(context.Background(), accountID, folderID, 20)
+	if err != nil || more || len(messages) != 2 || messages[0].ID == messages[1].ID {
+		t.Fatalf("messages=%+v more=%v err=%v", messages, more, err)
+	}
+	for _, message := range messages {
+		if len(message.DedupeConflicts) != 1 || message.DedupeConflicts[0].Reason != "content_fingerprint_provider_collision" {
+			t.Fatalf("message conflict telemetry = %+v", message.DedupeConflicts)
+		}
+	}
+}
+
+func TestMailKnownGeneratedMessageIDMergesRemoteSentObservation(t *testing.T) {
+	state, accountID, _ := newMailStoreFixture(t)
+	defer state.Close()
+	now := time.Date(2026, 8, 6, 7, 20, 0, 0, time.UTC)
+	sentID := insertMailFolderFixture(t, state, accountID, folder.KindSent, "Sent Messages", 300, now)
+	localMessageID := "msg_0198d704-6c00-7000-8000-000000000921"
+	timestamp := now.Format(time.RFC3339Nano)
+	if _, err := state.db.Exec(`
+INSERT INTO messages (
+    message_id, account_id, rfc_message_id, direction, from_email,
+    subject, snippet, attachment_count, date_source, created_at, updated_at
+) VALUES (?, ?, '', 'outbound', 'mail-test@icloud.com',
+          'Generated outbound', 'Queued locally', 0, 'unknown', ?, ?)`,
+		localMessageID, accountID, timestamp, timestamp,
+	); err != nil {
+		t.Fatal(err)
+	}
+	generatedID := "generated-phase10@example.test"
+	if err := state.Mail().RegisterGeneratedMessageID(context.Background(), accountID, localMessageID, generatedID, now); err != nil {
+		t.Fatal(err)
+	}
+	remote := mailRecordFixture(accountID, sentID, 300, 11, generatedID)
+	remote.Direction = maildomain.DirectionOutbound
+	remote.Parsed.From.Email = "mail-test@icloud.com"
+	remote.ContentFingerprint = "content:" + strings.Repeat("3", 64)
+	commit, err := state.Mail().CommitInboxPage(context.Background(), maildomain.CommitPage{
+		CheckpointID: "chk_0198d704-6c00-7000-8000-000000000922",
+		AccountID:    accountID, FolderID: sentID, UIDValidity: 300, Bootstrap: false,
+		LastCommittedUID: 11, LastScannedUID: 11, AttemptedAt: now.Add(time.Minute),
+		Records: []maildomain.IngestRecord{remote},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if commit.Created != 0 || commit.Updated != 1 || commit.IdentityMerges != 1 || commit.DedupeConflicts != 0 {
+		t.Fatalf("generated-ID merge commit = %+v", commit)
+	}
+	message, err := state.Mail().Message(context.Background(), accountID, localMessageID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if message.ID != localMessageID || message.RFCMessageID != generatedID || message.Direction != maildomain.DirectionOutbound || len(message.Locations) != 1 {
+		t.Fatalf("generated-ID merged message = %+v", message)
+	}
+	generatedEvidence := false
+	for _, evidence := range message.Identity {
+		if evidence.Kind == maildomain.IdentityGeneratedMessageID && evidence.Value == generatedID {
+			generatedEvidence = true
+		}
+	}
+	if !generatedEvidence {
+		t.Fatalf("generated identity evidence = %+v", message.Identity)
+	}
+}
+
+func TestMailGuardedFingerprintMergesOnlyOneLocationlessCandidate(t *testing.T) {
+	state, accountID, folderID := newMailStoreFixture(t)
+	defer state.Close()
+	now := time.Date(2026, 8, 6, 7, 25, 0, 0, time.UTC)
+	localMessageID := "msg_0198d704-6c00-7000-8000-000000000931"
+	fingerprint := "content:" + strings.Repeat("4", 64)
+	timestamp := now.Format(time.RFC3339Nano)
+	if _, err := state.db.Exec(`
+INSERT INTO messages (
+    message_id, account_id, rfc_message_id, direction, from_email,
+    subject, snippet, attachment_count, date_source, created_at, updated_at
+) VALUES (?, ?, '', 'outbound', 'mail-test@icloud.com',
+          'Locationless candidate', 'Queued locally', 0, 'unknown', ?, ?)`,
+		localMessageID, accountID, timestamp, timestamp,
+	); err != nil {
+		t.Fatal(err)
+	}
+	seedIdentityEvidence(t, state, accountID, localMessageID, maildomain.IdentityContentFingerprint, fingerprint, maildomain.IdentityGuarded, "", now)
+
+	remote := mailRecordFixture(accountID, folderID, 100, 91, "")
+	remote.Parsed.RFCMessageID = ""
+	remote.Direction = maildomain.DirectionOutbound
+	remote.ContentFingerprint = fingerprint
+	commit, err := state.Mail().CommitInboxPage(context.Background(), maildomain.CommitPage{
+		CheckpointID: "chk_0198d704-6c00-7000-8000-000000000932",
+		AccountID:    accountID, FolderID: folderID, UIDValidity: 100, Bootstrap: true,
+		LastCommittedUID: 91, LastScannedUID: 91, AttemptedAt: now.Add(time.Minute),
+		Records: []maildomain.IngestRecord{remote},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if commit.Created != 0 || commit.Updated != 1 || commit.IdentityMerges != 1 || commit.DedupeConflicts != 0 {
+		t.Fatalf("guarded fingerprint merge commit = %+v", commit)
+	}
+	message, err := state.Mail().Message(context.Background(), accountID, localMessageID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if message.ID != localMessageID || len(message.Locations) != 1 || message.Locations[0].UID != 91 {
+		t.Fatalf("guarded fingerprint merged message = %+v", message)
+	}
+}
+
+func TestMailProviderLocationConflictPreservesBothStrongIdentities(t *testing.T) {
+	state, accountID, folderID := newMailStoreFixture(t)
+	defer state.Close()
+	now := time.Date(2026, 8, 6, 7, 27, 0, 0, time.UTC)
+	first := mailRecordFixture(accountID, folderID, 100, 95, "provider-first@example.test")
+	second := mailRecordFixture(accountID, folderID, 100, 96, "provider-second@example.test")
+	if _, err := state.Mail().CommitInboxPage(context.Background(), maildomain.CommitPage{
+		CheckpointID: "chk_0198d704-6c00-7000-8000-000000000946",
+		AccountID:    accountID, FolderID: folderID, UIDValidity: 100, Bootstrap: true,
+		LastCommittedUID: 96, LastScannedUID: 96, AttemptedAt: now,
+		Records: []maildomain.IngestRecord{first, second},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	conflictingRefetch := mailRecordFixture(accountID, folderID, 100, 95, "provider-second@example.test")
+	conflictingRefetch.Parsed.Subject = first.Parsed.Subject
+	conflictingRefetch.ContentFingerprint = "content:" + strings.Repeat("5", 64)
+	commit, err := state.Mail().CommitInboxPage(context.Background(), maildomain.CommitPage{
+		CheckpointID: "chk_0198d704-6c00-7000-8000-000000000946",
+		AccountID:    accountID, FolderID: folderID, UIDValidity: 100,
+		LastCommittedUID: 96, LastScannedUID: 96, AttemptedAt: now.Add(time.Minute),
+		Records: []maildomain.IngestRecord{conflictingRefetch},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if commit.Created != 0 || commit.Updated != 1 || commit.IdentityMerges != 0 || commit.DedupeConflicts != 1 {
+		t.Fatalf("provider conflict commit = %+v", commit)
+	}
+	firstMessage, err := state.Mail().Message(context.Background(), accountID, first.MessageID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondMessage, err := state.Mail().Message(context.Background(), accountID, second.MessageID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstMessage.RFCMessageID != "provider-first@example.test" || secondMessage.RFCMessageID != "provider-second@example.test" ||
+		len(firstMessage.Locations) != 1 || firstMessage.Locations[0].UID != 95 ||
+		len(secondMessage.Locations) != 1 || secondMessage.Locations[0].UID != 96 {
+		t.Fatalf("strong identities changed: first=%+v second=%+v", firstMessage, secondMessage)
+	}
+	if len(firstMessage.DedupeConflicts) != 1 || len(secondMessage.DedupeConflicts) != 1 {
+		t.Fatalf("provider conflict telemetry: first=%+v second=%+v", firstMessage.DedupeConflicts, secondMessage.DedupeConflicts)
+	}
+	conflict := firstMessage.DedupeConflicts[0]
+	if conflict.Reason != "strong_identity_disagrees_with_provider_location" ||
+		conflict.EvidenceKind != maildomain.IdentityRFCMessageID ||
+		conflict.ExistingMessageID != second.MessageID || conflict.ObservedMessageID != first.MessageID {
+		t.Fatalf("provider conflict = %+v", conflict)
+	}
+	for _, evidence := range firstMessage.Identity {
+		if evidence.Kind == maildomain.IdentityContentFingerprint && evidence.Value == conflictingRefetch.ContentFingerprint {
+			t.Fatalf("conflicting fingerprint was attached to first message: %+v", firstMessage.Identity)
+		}
+	}
+}
+
+func seedIdentityEvidence(t *testing.T, state *Store, accountID, messageID string, kind maildomain.IdentityKind, value string, strength maildomain.IdentityStrength, locationID string, now time.Time) {
+	t.Helper()
+	tx, err := state.db.BeginTx(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	if err := persistIdentityEvidence(context.Background(), tx, accountID, messageID, kind, value, strength, locationID, now.UTC().Format(time.RFC3339Nano)); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func insertMailFolderFixture(t *testing.T, state *Store, accountID string, kind folder.Kind, name string, uidValidity uint32, now time.Time) string {
+	t.Helper()
+	folderID := fmt.Sprintf("fld_0198d704-6c00-7000-8000-%012d", uidValidity)
+	timestamp := now.UTC().Format(time.RFC3339Nano)
+	if _, err := state.db.Exec(`
+INSERT INTO folders (
+    folder_id, account_id, name, wire_name, kind, kind_source, selectable,
+    subscription, present, stale, sync_enabled, uid_validity,
+    discovered_at, status_at, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, 'special_use', 1,
+          'subscribed', 1, 0, 1, ?, ?, ?, ?, ?)`,
+		folderID, accountID, name, name, kind, uidValidity,
+		timestamp, timestamp, timestamp, timestamp,
+	); err != nil {
+		t.Fatal(err)
+	}
+	return folderID
 }
 
 func newMailStoreFixture(t *testing.T) (*Store, string, string) {
