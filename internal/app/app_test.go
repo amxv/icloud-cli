@@ -447,11 +447,11 @@ func TestCapabilitiesCompactGoldenBudget(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("exit code = %d, stderr = %q", exitCode, stderr)
 	}
-	const want = "capabilities\ncommand=icloud\nversion=dev\nschema=5\naccount_mode=validated_lifecycle\ncredentials=keyring,env,file\nnetwork_validation=true\ndiagnostics=true\nmail_folders=true\nmail_sync=true\nmail_content=true\ndefault_output=compact\njson=true\ncompletion=bash,zsh,fish,powershell\nman=true\n"
+	const want = "capabilities\ncommand=icloud\nversion=dev\nschema=6\naccount_mode=validated_lifecycle\ncredentials=keyring,env,file\nnetwork_validation=true\ndiagnostics=true\nmail_folders=true\nmail_sync=true\nmail_content=true\nmail_attachments=true\ndefault_output=compact\njson=true\ncompletion=bash,zsh,fish,powershell\nman=true\n"
 	if stdout != want {
 		t.Fatalf("stdout mismatch\nwant: %q\n got: %q", want, stdout)
 	}
-	if lines := strings.Count(stdout, "\n"); lines > 15 {
+	if lines := strings.Count(stdout, "\n"); lines > 16 {
 		t.Fatalf("line budget exceeded: %d", lines)
 	}
 	if len(stdout) > 320 {
@@ -477,7 +477,7 @@ func TestCapabilitiesJSONEnvelope(t *testing.T) {
 		t.Fatalf("ok = %#v", envelope["ok"])
 	}
 	data, ok := envelope["data"].(map[string]any)
-	if !ok || data["data_schema_version"] != float64(5) || data["network_validation"] != true || data["diagnostics"] != true || data["mail_folders"] != true || data["mail_sync"] != true || data["mail_content"] != true {
+	if !ok || data["data_schema_version"] != float64(6) || data["network_validation"] != true || data["diagnostics"] != true || data["mail_folders"] != true || data["mail_sync"] != true || data["mail_content"] != true || data["mail_attachments"] != true {
 		t.Fatalf("data = %#v", envelope["data"])
 	}
 	if strings.Contains(stdout, "\x1b[") {
@@ -600,7 +600,7 @@ func TestAccountListCreatesAndReopensPrivateZeroState(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &envelope); err != nil {
 		t.Fatalf("invalid JSON: %v\n%s", err, stdout)
 	}
-	if !envelope.OK || envelope.Data.Count != 0 || len(envelope.Data.Accounts) != 0 || envelope.Data.SchemaVersion != 5 {
+	if !envelope.OK || envelope.Data.Count != 0 || len(envelope.Data.Accounts) != 0 || envelope.Data.SchemaVersion != 6 {
 		t.Fatalf("unexpected envelope: %+v", envelope)
 	}
 	if envelope.Meta.RequestID != "req_accounts" {
@@ -728,7 +728,7 @@ func TestAccountListAndShowReadStoredAccountCompactly(t *testing.T) {
 		t.Fatalf("invalid JSON: %v\n%s", err, stdout)
 	}
 	if !envelope.OK || envelope.Data.Account.ID != "acct_0198d704-6c00-7000-8000-000000000001" ||
-		envelope.Data.Account.CredentialScheme != "env" || envelope.Data.SchemaVersion != 5 {
+		envelope.Data.Account.CredentialScheme != "env" || envelope.Data.SchemaVersion != 6 {
 		t.Fatalf("unexpected envelope: %+v", envelope)
 	}
 }
@@ -1585,6 +1585,16 @@ func (stager failingBlobStager) Stage(context.Context, io.Reader, int64) (*blob.
 	return nil, stager.err
 }
 
+type failingAttachmentBlobStore struct{ err error }
+
+func (store failingAttachmentBlobStore) StageAttachment(context.Context, io.Reader, int64) (*blob.Staged, error) {
+	return nil, store.err
+}
+
+func (store failingAttachmentBlobStore) OpenVerifiedContext(context.Context, string, string, int64) (io.ReadCloser, error) {
+	return nil, store.err
+}
+
 func TestMailSyncIncrementalWorkflowAndCompactBudgets(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "state")
 	t.Setenv("ICLOUD_MAIL_SYNC_PASSWORD", "synthetic-mail-sync-secret")
@@ -1698,6 +1708,14 @@ func TestMailSyncParseBlobAndUIDValidityFailuresPreserveFrontier(t *testing.T) {
 		{name: "blob", configure: func(commands *accountCommands, _ *fakeInboxClient) {
 			commands.blobs = func(config.AppPaths) blob.Stager { return failingBlobStager{err: errors.New("synthetic blob failure")} }
 		}, result: fakeInboxPageResult{page: transport.InboxPage{Mailbox: "INBOX", UIDValidity: 100, LastCommittedUID: 31, LastScannedUID: 31, Bootstrap: true, Messages: []transport.FetchedMessage{{UID: 31}}}, raw: map[uint32]string{31: syntheticMailFixture(31, "fixture-31@example.test", "Blob fixture", "Blob preview", "")}}, wantCode: cli.ExitUnavailable, wantState: "failed", wantError: "imap_fetch"},
+		{name: "attachment-blob", configure: func(commands *accountCommands, _ *fakeInboxClient) {
+			commands.attachmentBlobs = func(config.AppPaths) attachmentBlobStore {
+				return failingAttachmentBlobStore{err: errors.New("synthetic attachment blob failure")}
+			}
+		}, result: fakeInboxPageResult{page: transport.InboxPage{Mailbox: "INBOX", UIDValidity: 100, LastCommittedUID: 32, LastScannedUID: 32, Bootstrap: true, Messages: []transport.FetchedMessage{{UID: 32}}}, raw: map[uint32]string{32: strings.Join([]string{
+			"From: sender@example.test", "To: owner@icloud.com", "Message-ID: <fixture-32@example.test>",
+			"Content-Type: application/octet-stream", "Content-Disposition: attachment; filename=fixture.bin", "", "bytes",
+		}, "\r\n")}}, wantCode: cli.ExitUnavailable, wantState: "failed", wantError: "attachment_blob_stage"},
 		{name: "uid-validity", result: fakeInboxPageResult{err: &transport.UIDValidityError{Expected: 100, Observed: 200}}, wantCode: cli.ExitConflict, wantState: "repair_required", wantError: "uid_validity_changed"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -1832,6 +1850,70 @@ func TestMailMessageContentWorkflowRawRoundTripAndPrivacy(t *testing.T) {
 		t.Fatalf("verbose code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "attachments", "list", messageID)
+	if code != 0 || stderr != "" || compactBlockCount(stdout, "attachment") != 1 ||
+		!compactContainsAll(stdout, "filename=fixture.txt", "type=text/plain", "bytes=16", "inline=false", "availability=available", "attachments\n", "count=1", "more=false") {
+		t.Fatalf("attachment list code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "attachments", "list", messageID, "--json")
+	if code != 0 || stderr != "" || strings.Contains(stdout, "storage_key") || strings.Contains(stdout, "attachments/sha256/") {
+		t.Fatalf("attachment JSON code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	var attachmentEnvelope struct {
+		Data struct {
+			Attachments []struct {
+				ID          string `json:"id"`
+				Filename    string `json:"filename"`
+				ContentHash string `json:"content_hash"`
+				ByteSize    int64  `json:"byte_size"`
+			} `json:"attachments"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &attachmentEnvelope); err != nil || len(attachmentEnvelope.Data.Attachments) != 1 {
+		t.Fatalf("attachment envelope=%+v err=%v", attachmentEnvelope, err)
+	}
+	attachmentID := attachmentEnvelope.Data.Attachments[0].ID
+	if attachmentID == "" || attachmentEnvelope.Data.Attachments[0].Filename != "fixture.txt" || len(attachmentEnvelope.Data.Attachments[0].ContentHash) != 64 || attachmentEnvelope.Data.Attachments[0].ByteSize != 16 {
+		t.Fatalf("attachment metadata = %+v", attachmentEnvelope.Data.Attachments[0])
+	}
+	code, _, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "attachments", "save", attachmentID, "--output", "-")
+	if code != cli.ExitSafety || !strings.Contains(stderr, "binary stdout requires --binary") {
+		t.Fatalf("binary guard code=%d stderr=%q", code, stderr)
+	}
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "attachments", "save", attachmentID, "--output", "-", "--binary")
+	if code != 0 || stderr != "" || stdout != "attachment bytes" {
+		t.Fatalf("attachment stdout code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	attachmentPath := filepath.Join(t.TempDir(), "fixture.txt")
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "attachments", "save", attachmentID, "--output", attachmentPath)
+	if code != 0 || stderr != "" || !compactContainsAll(stdout, "attachment-save\n", attachmentID, "bytes=16") || strings.Contains(stdout, attachmentPath) {
+		t.Fatalf("attachment save code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	attachmentBytes, err := os.ReadFile(attachmentPath)
+	if err != nil || string(attachmentBytes) != "attachment bytes" {
+		t.Fatalf("attachment file=%q err=%v", attachmentBytes, err)
+	}
+	if err := os.WriteFile(attachmentPath, []byte("changed export"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "attachments", "save", attachmentID, "--output", "-", "--binary")
+	if code != 0 || stderr != "" || stdout != "attachment bytes" {
+		t.Fatalf("canonical attachment changed after export mutation code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	code, _, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "attachments", "save", attachmentID, "--output", attachmentPath)
+	if code != cli.ExitConflict || !strings.Contains(stderr, "already exists") {
+		t.Fatalf("attachment conflict code=%d stderr=%q", code, stderr)
+	}
+	batchDir := filepath.Join(t.TempDir(), "saved")
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "attachments", "save-all", messageID, "--dir", batchDir)
+	if code != 0 || stderr != "" || !compactContainsAll(stdout, "attachments-saved\n", "count=1") {
+		t.Fatalf("save-all code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	attachmentBytes, err = os.ReadFile(filepath.Join(batchDir, "fixture.txt"))
+	if err != nil || string(attachmentBytes) != "attachment bytes" {
+		t.Fatalf("save-all file=%q err=%v", attachmentBytes, err)
+	}
+
 	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "message", "show", messageID, "--json")
 	if code != 0 || stderr != "" || !strings.Contains(stdout, `"text_available":true`) || !strings.Contains(stdout, `"html_available":true`) || !strings.Contains(stdout, `"raw_available":true`) || strings.Contains(stdout, `"text_body"`) || strings.Contains(stdout, `"raw_base64"`) || strings.Contains(stdout, `"headers":[{`) || strings.Contains(stdout, "hidden-bcc") {
 		t.Fatalf("default JSON code=%d stdout=%q stderr=%q", code, stdout, stderr)
@@ -1951,6 +2033,20 @@ func TestMailMessageContentWorkflowRawRoundTripAndPrivacy(t *testing.T) {
 	}
 	if persistedParts != 5 {
 		t.Fatalf("lazy UUIDv7 MIME parts = %d", persistedParts)
+	}
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "attachments", "list", messageID, "--json")
+	if code != 0 || stderr != "" {
+		t.Fatalf("legacy attachment list code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	var rehydratedEnvelope struct {
+		Data struct {
+			Attachments []struct {
+				ID string `json:"id"`
+			} `json:"attachments"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &rehydratedEnvelope); err != nil || len(rehydratedEnvelope.Data.Attachments) != 1 || rehydratedEnvelope.Data.Attachments[0].ID != attachmentID {
+		t.Fatalf("rehydrated attachment IDs=%+v err=%v", rehydratedEnvelope, err)
 	}
 
 	var rawPath string

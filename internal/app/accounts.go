@@ -21,14 +21,15 @@ import (
 )
 
 type accountCommands struct {
-	keyring secret.Keyring
-	imap    transport.IMAPValidator
-	smtp    transport.SMTPValidator
-	folders transport.IMAPFolderClient
-	mail    transport.IMAPInboxClient
-	blobs   func(config.AppPaths) blob.Stager
-	now     func() time.Time
-	newID   func(string) (string, error)
+	keyring         secret.Keyring
+	imap            transport.IMAPValidator
+	smtp            transport.SMTPValidator
+	folders         transport.IMAPFolderClient
+	mail            transport.IMAPInboxClient
+	blobs           func(config.AppPaths) blob.Stager
+	attachmentBlobs func(config.AppPaths) attachmentBlobStore
+	now             func() time.Time
+	newID           func(string) (string, error)
 }
 
 func (commands accountCommands) FolderList(ctx context.Context, home, accountSelector string, limit int, includeMissing bool) (account.Account, []folder.Folder, bool, int64, error) {

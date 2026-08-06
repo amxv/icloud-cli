@@ -1,9 +1,9 @@
 ---
 title: Command reference
-description: A complete reference for account lifecycle, iCloud validation, folder discovery, Inbox synchronization and reading, doctor diagnostics, global controls, output modes, completion, and man generation.
-order: 9
+description: A complete reference for account lifecycle, iCloud validation, folder discovery, Inbox synchronization, message and attachment reads, doctor diagnostics, global controls, output modes, completion, and man generation.
+order: 10
 category: Reference
-summary: Every account, credential, validation, folder, Inbox sync/read, doctor, capability, completion, man, help, and global control available now.
+summary: Every account, credential, validation, folder, Inbox sync/read, message, attachment, doctor, capability, completion, man, help, and global control available now.
 ---
 
 ## Root command
@@ -278,6 +278,43 @@ icloud mail message export msg_… --output - > message.eml
 
 Exports exact RFC822 bytes. File output uses a private temporary file and mode `0600`, refuses existing destinations unless `--force` is supplied, and installs the completed file only after verified streaming succeeds. `--output -` writes raw bytes to stdout and emits no compact wrapper. Successful file output reports the message ID and byte count without echoing the destination path.
 
+## `icloud mail attachments list`
+
+```bash
+icloud mail attachments list msg_…
+icloud mail attachments list msg_… --limit 50
+icloud mail attachments list msg_… --json
+```
+
+Reads bounded attachment metadata from one locally synchronized message. Compact records include stable attachment, message, and MIME-part IDs; filename, media type, decoded size, inline state, disposition, content ID when present, and availability. Attachment bytes and private storage coordinates are never printed.
+
+The default bound is 20 and the maximum is 100. `more=true` means additional attachment records were not printed. JSON adds media parameters and the decoded content hash while still omitting private storage paths.
+
+## `icloud mail attachments save`
+
+```bash
+icloud mail attachments save att_… --output document.pdf
+icloud mail attachments save att_… --output document.pdf --force
+icloud mail attachments save att_… --output - --binary > document.pdf
+icloud mail attachments save att_… --output document.pdf --json
+```
+
+Verifies and streams one decoded local attachment by stable ID. `--output` is required. File output uses a private temporary file, refuses an existing destination unless `--force` is supplied, and rejects directories, symbolic links, and other special files. Successful compact and JSON output do not echo the destination path.
+
+Writing native bytes to stdout requires both `--output -` and `--binary`; the command emits no compact wrapper in that mode. `--json` cannot be combined with binary stdout.
+
+## `icloud mail attachments save-all`
+
+```bash
+icloud mail attachments save-all msg_… --dir ./message-attachments
+icloud mail attachments save-all msg_… --dir ./message-attachments --force
+icloud mail attachments save-all msg_… --dir ./message-attachments --json
+```
+
+Saves the complete supported attachment set for one message. Filenames are treated as untrusted metadata: traversal components, separators, controls, and reserved names are made safe; unnamed files receive deterministic names; Unicode is preserved; and duplicate names receive stable numeric suffixes.
+
+Every file is prepared and verified before the batch is installed. A conflict or failure rolls back installed outputs rather than leaving a partial set. Compact success reports the message ID and count. JSON returns attachment metadata and safe output basenames, not the requested directory path.
+
 ## `icloud mail sync status`
 
 ```bash
@@ -324,7 +361,7 @@ Compact output:
 capabilities
 command=icloud
 version=0.1.0
-schema=5
+schema=6
 account_mode=validated_lifecycle
 credentials=keyring,env,file
 network_validation=true
@@ -332,6 +369,7 @@ diagnostics=true
 mail_folders=true
 mail_sync=true
 mail_content=true
+mail_attachments=true
 default_output=compact
 json=true
 completion=bash,zsh,fish,powershell
@@ -377,6 +415,6 @@ Help goes to stdout. Usage failures go to stderr and exit `2`.
 
 ## Output availability
 
-Every account and credential lifecycle command above, `account test`, every folder command, Inbox sync/read/status/checkpoints, `mail message show`, `doctor`, `version`, and `capabilities` supports `--json`. Validation, doctor, folder reads/status, and message reads support bounded `--verbose` detail where advertised. `mail message raw` and `message export --output -` retain native RFC822 bytes; completion and man generation retain their native formats. Inbox stays preview-only, while stable-ID message reads provide explicit full-text, HTML, raw, headers, body-only, metadata-only, verbose, and JSON modes.
+Every account and credential lifecycle command above, `account test`, every folder command, Inbox sync/read/status/checkpoints, `mail message show`, attachment list/save/save-all, `doctor`, `version`, and `capabilities` supports `--json` where a native byte stream is not requested. Validation, doctor, folder reads/status, and message reads support bounded `--verbose` detail where advertised. `mail message raw`, `message export --output -`, and `attachments save --output - --binary` retain native bytes; completion and man generation retain their native formats. Inbox stays preview-only, while stable-ID message reads provide explicit full-text, HTML, raw, headers, body-only, metadata-only, verbose, and JSON modes.
 
 Compact output uses vertical blocks: result type first, stable identity plus the first field next when present, then one remaining field per line. A blank line separates consecutive records or a final summary. Errors use the same block shape on stderr.

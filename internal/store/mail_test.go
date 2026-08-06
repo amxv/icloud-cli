@@ -196,6 +196,47 @@ func TestMailContentMetadataAndPartIDsPersistAcrossRetry(t *testing.T) {
 	}
 }
 
+func TestMailAttachmentsKeepDistinctMetadataForDuplicateContent(t *testing.T) {
+	state, accountID, folderID := newMailStoreFixture(t)
+	defer state.Close()
+	now := time.Date(2026, 8, 6, 5, 15, 0, 0, time.UTC)
+	record := mailRecordFixture(accountID, folderID, 100, 52, "attachments-52@example.test")
+	hash := strings.Repeat("c", 64)
+	record.Content = &maildomain.NormalizedContent{
+		Preview:            record.Parsed,
+		AttachmentsIndexed: true,
+		Parts: []maildomain.MIMEPart{
+			{ID: "prt_0198d704-6c00-7000-8000-000000000561", Ordinal: 0, Path: "0", MediaType: "multipart/mixed"},
+			{ID: "prt_0198d704-6c00-7000-8000-000000000562", Ordinal: 1, Path: "1", ParentPath: "0", MediaType: "application/pdf", MediaParams: map[string]string{"name": "first.pdf"}, Filename: "first.pdf", Disposition: "attachment", Attachment: true, DecodedSize: 4},
+			{ID: "prt_0198d704-6c00-7000-8000-000000000563", Ordinal: 2, Path: "2", ParentPath: "0", MediaType: "application/pdf", MediaParams: map[string]string{"name": "second.pdf"}, Filename: "second.pdf", Disposition: "attachment", Attachment: true, DecodedSize: 4},
+		},
+		Attachments: []maildomain.Attachment{
+			{ID: "att_0198d704-6c00-7000-8000-000000000564", MessageID: record.MessageID, PartID: "prt_0198d704-6c00-7000-8000-000000000562", Ordinal: 1, PartPath: "1", Filename: "first.pdf", MediaType: "application/pdf", MediaParams: map[string]string{"name": "first.pdf"}, Disposition: "attachment", ContentHash: hash, StorageKey: "attachments/sha256/cc/" + hash + ".blob", ByteSize: 4, Availability: maildomain.AttachmentAvailable},
+			{ID: "att_0198d704-6c00-7000-8000-000000000565", MessageID: record.MessageID, PartID: "prt_0198d704-6c00-7000-8000-000000000563", Ordinal: 2, PartPath: "2", Filename: "second.pdf", MediaType: "application/pdf", MediaParams: map[string]string{"name": "second.pdf"}, Disposition: "attachment", ContentHash: hash, StorageKey: "attachments/sha256/cc/" + hash + ".blob", ByteSize: 4, Availability: maildomain.AttachmentAvailable},
+		},
+	}
+	if _, err := state.Mail().CommitInboxPage(context.Background(), maildomain.CommitPage{
+		CheckpointID: "chk_0198d704-6c00-7000-8000-000000000504",
+		AccountID:    accountID, FolderID: folderID, UIDValidity: 100, Bootstrap: true,
+		LastCommittedUID: 52, LastScannedUID: 52, AttemptedAt: now,
+		Records: []maildomain.IngestRecord{record},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	values, more, err := state.Mail().Attachments(context.Background(), accountID, record.MessageID, 20)
+	if err != nil || more || len(values) != 2 {
+		t.Fatalf("attachments=%+v more=%v err=%v", values, more, err)
+	}
+	if values[0].ID == values[1].ID || values[0].ContentHash != values[1].ContentHash || values[0].Filename == values[1].Filename ||
+		values[0].MediaParams["name"] == values[1].MediaParams["name"] {
+		t.Fatalf("duplicate-content metadata collapsed: %+v", values)
+	}
+	first, err := state.Mail().Attachment(context.Background(), accountID, values[0].ID)
+	if err != nil || first.Filename != values[0].Filename {
+		t.Fatalf("single attachment=%+v err=%v", first, err)
+	}
+}
+
 func newMailStoreFixture(t *testing.T) (*Store, string, string) {
 	t.Helper()
 	state, err := Open(context.Background(), testPaths(t, t.TempDir()))

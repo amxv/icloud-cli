@@ -1,9 +1,9 @@
 ---
 title: Quickstart
-description: Install icloud, configure an app-specific password safely, validate the account, discover folders, synchronize the Inbox, and read complete local messages explicitly.
+description: Install icloud, configure an app-specific password safely, validate the account, discover folders, synchronize the Inbox, and read messages or save attachments explicitly.
 order: 1
 category: Start
-summary: The shortest safe path from installation to a validated account, locally readable Inbox, and explicit full-message access.
+summary: The shortest safe path from installation to a validated account, locally readable Inbox, explicit full-message access, and safe attachment export.
 ---
 
 ## Install and inspect the binary
@@ -30,7 +30,7 @@ version
 capabilities
 command=icloud
 version=0.1.0
-schema=5
+schema=6
 account_mode=validated_lifecycle
 credentials=keyring,env,file
 network_validation=true
@@ -38,6 +38,7 @@ diagnostics=true
 mail_folders=true
 mail_sync=true
 mail_content=true
+mail_attachments=true
 default_output=compact
 json=true
 completion=bash,zsh,fish,powershell
@@ -212,6 +213,18 @@ icloud mail message export msg_… --output message.eml
 
 `--full` and `--format text` stream complete decoded text. HTML, headers, metadata-only, MIME-part detail, and raw RFC822 are separate opt-ins. Raw and exported bytes are verified against the local content address before they are returned.
 
+## Save attachments explicitly
+
+List metadata first, then save by stable attachment ID:
+
+```bash
+icloud mail attachments list msg_…
+icloud mail attachments save att_… --output document.pdf
+icloud mail attachments save-all msg_… --dir ./message-attachments
+```
+
+Attachment filenames are treated as untrusted metadata. Existing files are not replaced without `--force`, binary stdout requires `--binary`, and a batch is prepared before installation so failures do not leave an intentional partial set.
+
 Inspect progress:
 
 ```bash
@@ -219,7 +232,7 @@ icloud mail sync status
 icloud mail sync checkpoints
 ```
 
-Read [Sync and read the Inbox](/docs/sync-and-read-inbox) for incremental behavior, safe retries, JSON, and mailbox-identity recovery.
+Read [Sync and read the Inbox](/docs/sync-and-read-inbox) for incremental behavior and recovery, or [Save mail attachments](/docs/save-mail-attachments) for filename, collision, batch, and binary-output rules.
 
 ## Select another account
 
@@ -243,5 +256,6 @@ JSON is opt-in. Redirecting stdout does not change the compact default. Password
 - Credential or validation trouble: [Account validation and doctor](/docs/account-validation-and-doctor)
 - Empty or unexpected folder inventory: [Folder discovery and sync policy](/docs/folder-discovery-and-sync-policy)
 - Interrupted or stale Inbox sync: [Sync and read the Inbox](/docs/sync-and-read-inbox)
+- Attachment listing, export, or collision handling: [Save mail attachments](/docs/save-mail-attachments)
 - Stable stdout, stderr, JSON, and exits: [Output and automation](/docs/output-and-automation)
 - Every command and flag: [Command reference](/docs/command-reference)

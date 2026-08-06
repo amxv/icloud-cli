@@ -17,6 +17,7 @@ import (
 
 var (
 	ErrMessageNotFound    = errors.New("message not found")
+	ErrAttachmentNotFound = errors.New("attachment not found")
 	ErrCheckpointNotFound = errors.New("sync checkpoint not found")
 	ErrRepairRequired     = errors.New("mailbox synchronization requires repair")
 	ErrInvalidMessage     = errors.New("message cannot be normalized")

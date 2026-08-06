@@ -46,6 +46,7 @@ func newMailCommand(state *executionState) *cobra.Command {
 	command.AddCommand(newMailSyncCommand(state))
 	command.AddCommand(newMailInboxCommand(state))
 	command.AddCommand(newMailMessageCommand(state))
+	command.AddCommand(newMailAttachmentsCommand(state))
 	return command
 }
 

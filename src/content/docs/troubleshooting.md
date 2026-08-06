@@ -1,7 +1,7 @@
 ---
 title: Troubleshooting
-description: Resolve installation, account setup, credential, IMAP/SMTP validation, state, output, completion, and man-generation problems.
-order: 8
+description: Resolve installation, account setup, credential, IMAP/SMTP validation, state, message and attachment output, completion, and man-generation problems.
+order: 9
 category: Guides
 summary: Common errors, privacy-safe diagnosis, and the next command to run.
 ---
@@ -269,6 +269,49 @@ icloud mail message show msg_… --verbose
 ```
 
 Some messages contain only text or only HTML. `--format text` falls back to readable text derived from HTML; `--format html` requires a stored HTML body. Attachments and embedded messages are not treated as the parent message body.
+
+## Attachment list returns not found
+
+Use a stable message ID from the same selected account:
+
+```bash
+icloud mail inbox
+icloud --account Personal mail attachments list msg_…
+```
+
+Attachment IDs are also account-scoped. The CLI does not search another account or contact iCloud when a message or attachment ID is missing.
+
+## Binary attachment stdout was rejected
+
+Native attachment bytes require an explicit acknowledgement:
+
+```bash
+icloud mail attachments save att_… --output - --binary > attachment.bin
+```
+
+Without `--binary`, the command exits before writing stdout. Do not combine native stdout with `--json`.
+
+## Attachment export refuses a destination
+
+An existing regular file requires `--force`:
+
+```bash
+icloud mail attachments save att_… --output attachment.bin --force
+```
+
+Directories, symbolic links, and other special files are always rejected. For `save-all`, resolve unexpected destination files or use `--force` only when every conflicting path is a regular file that may be replaced. The batch is prepared before installation, so a failure does not intentionally leave a partial set.
+
+## An attachment is unavailable or corrupt
+
+Inspect its metadata without requesting bytes:
+
+```bash
+icloud mail attachments list msg_…
+icloud mail message show msg_… --verbose
+icloud mail sync status
+```
+
+A missing or corrupt decoded attachment fails before a successful output file is installed. Keep the local state intact and do not replace cached content manually. Stable message, MIME-part, and attachment IDs remain available for the later repair workflow.
 
 ## Raw message content is missing or corrupt
 

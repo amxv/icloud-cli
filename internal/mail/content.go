@@ -18,6 +18,7 @@ const maxMIMEParts = 2048
 var (
 	ErrContentCorrupt     = errors.New("message content is corrupt")
 	ErrContentUnavailable = errors.New("message content is unavailable")
+	ErrAttachmentStorage  = errors.New("attachment storage failed")
 )
 
 type HeaderField struct {
@@ -31,30 +32,73 @@ type ParseDiagnostic struct {
 }
 
 type MIMEPart struct {
-	ID               string   `json:"id,omitempty"`
-	Ordinal          int      `json:"ordinal"`
-	Path             string   `json:"path"`
-	ParentPath       string   `json:"parent_path,omitempty"`
-	MediaType        string   `json:"media_type"`
-	Charset          string   `json:"charset,omitempty"`
-	TransferEncoding string   `json:"transfer_encoding,omitempty"`
-	Disposition      string   `json:"disposition,omitempty"`
-	Filename         string   `json:"filename,omitempty"`
-	ContentID        string   `json:"content_id,omitempty"`
-	Inline           bool     `json:"inline"`
-	Attachment       bool     `json:"attachment"`
-	EmbeddedMessage  bool     `json:"embedded_message"`
-	DecodedSize      int64    `json:"decoded_size,omitempty"`
-	Diagnostics      []string `json:"diagnostics,omitempty"`
+	ID               string            `json:"id,omitempty"`
+	Ordinal          int               `json:"ordinal"`
+	Path             string            `json:"path"`
+	ParentPath       string            `json:"parent_path,omitempty"`
+	MediaType        string            `json:"media_type"`
+	MediaParams      map[string]string `json:"media_params,omitempty"`
+	Charset          string            `json:"charset,omitempty"`
+	TransferEncoding string            `json:"transfer_encoding,omitempty"`
+	Disposition      string            `json:"disposition,omitempty"`
+	Filename         string            `json:"filename,omitempty"`
+	ContentID        string            `json:"content_id,omitempty"`
+	Inline           bool              `json:"inline"`
+	Attachment       bool              `json:"attachment"`
+	EmbeddedMessage  bool              `json:"embedded_message"`
+	DecodedSize      int64             `json:"decoded_size,omitempty"`
+	Diagnostics      []string          `json:"diagnostics,omitempty"`
 }
 
+type AttachmentAvailability string
+
+const (
+	AttachmentAvailable   AttachmentAvailability = "available"
+	AttachmentUnavailable AttachmentAvailability = "unavailable"
+)
+
+type Attachment struct {
+	ID           string                 `json:"id"`
+	MessageID    string                 `json:"message_id"`
+	PartID       string                 `json:"part_id"`
+	Ordinal      int                    `json:"ordinal"`
+	PartPath     string                 `json:"part_path"`
+	Filename     string                 `json:"filename,omitempty"`
+	MediaType    string                 `json:"media_type,omitempty"`
+	MediaParams  map[string]string      `json:"media_params,omitempty"`
+	Disposition  string                 `json:"disposition,omitempty"`
+	ContentID    string                 `json:"content_id,omitempty"`
+	Inline       bool                   `json:"inline"`
+	ContentHash  string                 `json:"content_hash,omitempty"`
+	StorageKey   string                 `json:"-"`
+	ByteSize     int64                  `json:"byte_size"`
+	Availability AttachmentAvailability `json:"availability"`
+	ErrorCode    string                 `json:"error_code,omitempty"`
+}
+
+type AttachmentBlob struct {
+	ContentHash string
+	StorageKey  string
+	ByteSize    int64
+	Open        func() (io.ReadCloser, error)
+}
+
+type AttachmentSink func(context.Context, MIMEPart, io.Reader) (AttachmentBlob, error)
+
+type attachmentSinkError struct{ err error }
+
+func (err attachmentSinkError) Error() string { return "store decoded attachment: " + err.err.Error() }
+func (err attachmentSinkError) Unwrap() error { return errors.Join(ErrAttachmentStorage, err.err) }
+
 type NormalizedContent struct {
-	Preview     ParsedMessage     `json:"preview"`
-	Headers     []HeaderField     `json:"headers"`
-	Parts       []MIMEPart        `json:"parts"`
-	Diagnostics []ParseDiagnostic `json:"diagnostics,omitempty"`
-	TextPaths   []string          `json:"text_paths,omitempty"`
-	HTMLPaths   []string          `json:"html_paths,omitempty"`
+	Preview            ParsedMessage     `json:"preview"`
+	Headers            []HeaderField     `json:"headers"`
+	Parts              []MIMEPart        `json:"parts"`
+	Attachments        []Attachment      `json:"attachments,omitempty"`
+	AttachmentsIndexed bool              `json:"attachments_indexed"`
+	Diagnostics        []ParseDiagnostic `json:"diagnostics,omitempty"`
+	TextPaths          []string          `json:"text_paths,omitempty"`
+	HTMLPaths          []string          `json:"html_paths,omitempty"`
 }
 
 type ContentFormat string
@@ -70,6 +114,10 @@ type ContentSource interface {
 	WriteBody(context.Context, ContentFormat, io.Writer) error
 }
 
+type AttachmentSource interface {
+	Write(context.Context, io.Writer) error
+}
+
 // ParseNormalized walks one RFC822 message once, retaining bounded previews
 // and complete metadata while draining every decoded part. Raw bytes remain
 // authoritative in the blob store and are never reconstructed from this view.
@@ -78,6 +126,10 @@ func ParseNormalized(reader io.Reader) (NormalizedContent, error) {
 }
 
 func ParseNormalizedContext(ctx context.Context, reader io.Reader) (NormalizedContent, error) {
+	return ParseNormalizedWithAttachmentsContext(ctx, reader, nil)
+}
+
+func ParseNormalizedWithAttachmentsContext(ctx context.Context, reader io.Reader, sink AttachmentSink) (NormalizedContent, error) {
 	if reader == nil {
 		return NormalizedContent{}, fmt.Errorf("%w: raw message is missing", ErrInvalidMessage)
 	}
@@ -103,30 +155,54 @@ func ParseNormalizedContext(ctx context.Context, reader io.Reader) (NormalizedCo
 
 	var textPreview, htmlPreview string
 	partCount := 0
-	err := walkMIMEEntity(entity, "0", "", false, rootErr, func(part MIMEPart, body io.Reader) error {
+	result.AttachmentsIndexed = sink != nil
+	registerPart := func(part MIMEPart) (MIMEPart, error) {
 		partCount++
 		if partCount > maxMIMEParts {
-			return errors.New("MIME part count exceeds the supported bound")
+			return MIMEPart{}, errors.New("MIME part count exceeds the supported bound")
 		}
 		part.Ordinal = partCount - 1
-		if body == nil {
-			result.Parts = append(result.Parts, part)
-			for _, code := range part.Diagnostics {
-				appendDiagnostic(&result.Diagnostics, ParseDiagnostic{Path: part.Path, Code: code})
-			}
-			if part.Attachment {
-				result.Preview.AttachmentCount++
-			}
-			return nil
-		}
-		preview, size, readErr := readPreviewAndCount(body)
-		part.DecodedSize = size
+		return part, nil
+	}
+	recordPart := func(part MIMEPart) {
 		result.Parts = append(result.Parts, part)
 		for _, code := range part.Diagnostics {
 			appendDiagnostic(&result.Diagnostics, ParseDiagnostic{Path: part.Path, Code: code})
 		}
+	}
+	recordAttachment := func(part MIMEPart, blob AttachmentBlob, errorCode string) {
+		result.Preview.AttachmentCount++
+		result.Attachments = append(result.Attachments, attachmentFromPart(part, blob, errorCode))
+	}
+
+	handleLeaf := func(part MIMEPart, body io.Reader) error {
+		var err error
+		part, err = registerPart(part)
+		if err != nil {
+			return err
+		}
+		if body == nil {
+			recordPart(part)
+			if part.Attachment {
+				recordAttachment(part, AttachmentBlob{}, "content_unavailable")
+			}
+			return nil
+		}
+		if part.Attachment && sink != nil {
+			blob, sinkErr := sink(ctx, part, body)
+			part.DecodedSize = blob.ByteSize
+			recordPart(part)
+			if sinkErr != nil {
+				return attachmentSinkError{err: sinkErr}
+			}
+			recordAttachment(part, blob, "")
+			return nil
+		}
+		preview, size, readErr := readPreviewAndCount(body)
+		part.DecodedSize = size
+		recordPart(part)
 		if part.Attachment {
-			result.Preview.AttachmentCount++
+			recordAttachment(part, AttachmentBlob{ByteSize: size}, "content_not_indexed")
 		}
 		if readErr != nil {
 			if errors.Is(readErr, context.Canceled) || errors.Is(readErr, context.DeadlineExceeded) {
@@ -151,10 +227,38 @@ func ParseNormalizedContext(ctx context.Context, reader io.Reader) (NormalizedCo
 			}
 		}
 		return nil
-	})
+	}
+
+	var handleEmbedded mimeEmbeddedHandler
+	if sink != nil {
+		handleEmbedded = func(part MIMEPart, body io.Reader) (io.ReadCloser, error) {
+			var err error
+			part, err = registerPart(part)
+			if err != nil {
+				return nil, err
+			}
+			blob, sinkErr := sink(ctx, part, body)
+			part.DecodedSize = blob.ByteSize
+			recordPart(part)
+			if sinkErr != nil {
+				return nil, attachmentSinkError{err: sinkErr}
+			}
+			recordAttachment(part, blob, "")
+			if blob.Open == nil {
+				return nil, errors.New("attachment sink cannot reopen an embedded message")
+			}
+			return blob.Open()
+		}
+	}
+
+	err := walkMIMEEntity(entity, "0", "", false, rootErr, handleLeaf, handleEmbedded)
 	if err != nil {
 		if ctx.Err() != nil {
 			return NormalizedContent{}, ctx.Err()
+		}
+		var sinkErr attachmentSinkError
+		if errors.As(err, &sinkErr) {
+			return NormalizedContent{}, sinkErr
 		}
 		appendDiagnostic(&result.Diagnostics, ParseDiagnostic{Path: "0", Code: "mime_structure"})
 	}
@@ -164,6 +268,28 @@ func ParseNormalizedContext(ctx context.Context, reader io.Reader) (NormalizedCo
 	}
 	result.Preview.Snippet = excerpt(cleanText(strings.ToValidUTF8(preview, "�")), maxStoredSnippetRunes)
 	return result, nil
+}
+
+func attachmentFromPart(part MIMEPart, blob AttachmentBlob, errorCode string) Attachment {
+	availability := AttachmentUnavailable
+	if blob.StorageKey != "" && blob.ContentHash != "" && errorCode == "" {
+		availability = AttachmentAvailable
+	}
+	return Attachment{
+		Ordinal:      part.Ordinal,
+		PartPath:     part.Path,
+		Filename:     part.Filename,
+		MediaType:    part.MediaType,
+		MediaParams:  cloneStringMap(part.MediaParams),
+		Disposition:  part.Disposition,
+		ContentID:    part.ContentID,
+		Inline:       part.Inline,
+		ContentHash:  blob.ContentHash,
+		StorageKey:   blob.StorageKey,
+		ByteSize:     blob.ByteSize,
+		Availability: availability,
+		ErrorCode:    errorCode,
+	}
 }
 
 func appendDiagnostic(values *[]ParseDiagnostic, candidate ParseDiagnostic) {
@@ -221,8 +347,9 @@ func canonicalHeaders(header *gomail.Header, diagnostics *[]ParseDiagnostic) []H
 }
 
 type mimeLeafHandler func(MIMEPart, io.Reader) error
+type mimeEmbeddedHandler func(MIMEPart, io.Reader) (io.ReadCloser, error)
 
-func walkMIMEEntity(entity *message.Entity, path, parentPath string, embedded bool, entityErr error, handle mimeLeafHandler) error {
+func walkMIMEEntity(entity *message.Entity, path, parentPath string, embedded bool, entityErr error, handle mimeLeafHandler, handleEmbedded mimeEmbeddedHandler) error {
 	part := describePart(entity, path, parentPath, embedded, entityErr)
 	if multipartReader := entity.MultipartReader(); multipartReader != nil {
 		if err := handle(part, nil); err != nil {
@@ -240,13 +367,25 @@ func walkMIMEEntity(entity *message.Entity, path, parentPath string, embedded bo
 			if path == "0" {
 				childPath = fmt.Sprintf("%d", index)
 			}
-			if walkErr := walkMIMEEntity(child, childPath, path, embedded, err, handle); walkErr != nil {
+			if walkErr := walkMIMEEntity(child, childPath, path, embedded, err, handle, handleEmbedded); walkErr != nil {
 				return walkErr
 			}
 		}
 		return nil
 	}
-	if part.EmbeddedMessage {
+	if part.MediaType == "message/rfc822" {
+		if handleEmbedded != nil {
+			reader, err := handleEmbedded(part, entity.Body)
+			if err != nil {
+				return err
+			}
+			defer reader.Close()
+			nested, readErr := message.ReadWithOptions(reader, &message.ReadOptions{MaxHeaderBytes: 1 << 20})
+			if nested == nil {
+				return fmt.Errorf("read embedded message: %w", readErr)
+			}
+			return walkMIMEEntity(nested, path+".1", path, true, readErr, handle, handleEmbedded)
+		}
 		if err := handle(part, nil); err != nil {
 			return err
 		}
@@ -254,7 +393,7 @@ func walkMIMEEntity(entity *message.Entity, path, parentPath string, embedded bo
 		if nested == nil {
 			return fmt.Errorf("read embedded message: %w", err)
 		}
-		return walkMIMEEntity(nested, path+".1", path, true, err, handle)
+		return walkMIMEEntity(nested, path+".1", path, true, err, handle, handleEmbedded)
 	}
 	return handle(part, entity.Body)
 }
@@ -276,6 +415,7 @@ func describePart(entity *message.Entity, path, parentPath string, embedded bool
 		Path:             path,
 		ParentPath:       parentPath,
 		MediaType:        mediaType,
+		MediaParams:      cleanMediaParams(params),
 		Charset:          strings.TrimSpace(params["charset"]),
 		TransferEncoding: strings.ToLower(strings.TrimSpace(entity.Header.Get("Content-Transfer-Encoding"))),
 		Disposition:      disposition,
@@ -289,6 +429,36 @@ func describePart(entity *message.Entity, path, parentPath string, embedded bool
 		part.Diagnostics = append(part.Diagnostics, code)
 	}
 	return part
+}
+
+func cleanMediaParams(values map[string]string) map[string]string {
+	if len(values) == 0 {
+		return nil
+	}
+	result := make(map[string]string, len(values))
+	for key, value := range values {
+		key = strings.ToLower(strings.TrimSpace(key))
+		value = cleanHeaderText(value)
+		if key == "" || value == "" || len(key) > 128 {
+			continue
+		}
+		result[key] = value
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+func cloneStringMap(values map[string]string) map[string]string {
+	if len(values) == 0 {
+		return nil
+	}
+	result := make(map[string]string, len(values))
+	for key, value := range values {
+		result[key] = value
+	}
+	return result
 }
 
 func diagnosticCode(err error) string {
@@ -368,7 +538,7 @@ func WriteSelectedBody(ctx context.Context, reader io.Reader, format ContentForm
 		}
 		_, copyErr := io.Copy(writer, &contextReader{ctx: ctx, reader: body})
 		return copyErr
-	})
+	}, nil)
 	if err != nil {
 		return err
 	}

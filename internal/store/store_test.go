@@ -40,7 +40,7 @@ func TestOpenCreatesAndReopensVersionedPrivateState(t *testing.T) {
 	if state.SchemaVersion() != SchemaVersion {
 		t.Fatalf("schema version = %d", state.SchemaVersion())
 	}
-	for _, table := range []string{"app_metadata", "accounts", "credential_refs", "folders", "raw_blobs", "messages", "message_recipients", "message_references", "message_locations", "message_content", "message_parts", "sync_checkpoints", "goose_db_version"} {
+	for _, table := range []string{"app_metadata", "accounts", "credential_refs", "folders", "raw_blobs", "messages", "message_recipients", "message_references", "message_locations", "message_content", "message_parts", "attachments", "sync_checkpoints", "goose_db_version"} {
 		var count int
 		if err := state.db.QueryRowContext(context.Background(),
 			"SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?", table,
@@ -835,10 +835,84 @@ INSERT INTO message_locations (
 	var contentTables int
 	if err := state.db.QueryRowContext(context.Background(), `
 SELECT count(*) FROM sqlite_master
-WHERE type = 'table' AND name IN ('message_content', 'message_parts')`).Scan(&contentTables); err != nil {
+WHERE type = 'table' AND name IN ('message_content', 'message_parts', 'attachments')`).Scan(&contentTables); err != nil {
 		t.Fatal(err)
 	}
-	if contentTables != 2 {
+	if contentTables != 3 {
 		t.Fatalf("content tables = %d", contentTables)
+	}
+}
+
+func TestOpenUpgradesPhaseSevenContentAsPendingAttachmentIndex(t *testing.T) {
+	t.Parallel()
+	paths := testPaths(t, filepath.Join(t.TempDir(), "state"))
+	if err := config.EnsureAppPaths(paths); err != nil {
+		t.Fatal(err)
+	}
+	database, err := sql.Open("sqlite", paths.Database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := configureSQLite(context.Background(), database); err != nil {
+		t.Fatal(err)
+	}
+	migrationFS, err := fs.Sub(migrations, "migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider, err := goose.NewProvider(goose.DialectSQLite3, database, migrationFS, goose.WithLogger(goose.NopLogger()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.UpTo(context.Background(), 5); err != nil {
+		t.Fatal(err)
+	}
+	timestamp := time.Date(2026, 8, 6, 6, 0, 0, 0, time.UTC).Format(time.RFC3339Nano)
+	accountID := "acct_0198d704-6c00-7000-8000-000000000701"
+	folderID := "fld_0198d704-6c00-7000-8000-000000000702"
+	messageID := "msg_0198d704-6c00-7000-8000-000000000703"
+	partID := "prt_0198d704-6c00-7000-8000-000000000704"
+	hash := strings.Repeat("b", 64)
+	statements := []struct {
+		query string
+		args  []any
+	}{
+		{`INSERT INTO accounts (account_id, friendly_name, email_address, imap_username, status, is_default, created_at, updated_at)
+          VALUES (?, 'Phase Seven', 'phase-seven@icloud.com', 'phase-seven', 'connected', 1, ?, ?)`, []any{accountID, timestamp, timestamp}},
+		{`INSERT INTO credential_refs (credential_ref_id, account_id, scheme, reference, created_at, updated_at)
+          VALUES ('cred_0198d704-6c00-7000-8000-000000000705', ?, 'env', 'env:PHASE_SEVEN_PASSWORD', ?, ?)`, []any{accountID, timestamp, timestamp}},
+		{`INSERT INTO folders (folder_id, account_id, name, wire_name, kind, kind_source, selectable, subscription, present, stale, sync_enabled, uid_validity, discovered_at, status_at, created_at, updated_at)
+          VALUES (?, ?, 'INBOX', 'INBOX', 'inbox', 'inbox', 1, 'subscribed', 1, 0, 1, 100, ?, ?, ?, ?)`, []any{folderID, accountID, timestamp, timestamp, timestamp, timestamp}},
+		{`INSERT INTO raw_blobs (content_hash, storage_key, byte_size, created_at) VALUES (?, ?, 64, ?)`, []any{hash, "raw/sha256/bb/" + hash + ".eml", timestamp}},
+		{`INSERT INTO messages (message_id, account_id, rfc_message_id, direction, from_email, subject, snippet, attachment_count, internal_date, sort_at, date_source, created_at, updated_at)
+          VALUES (?, ?, 'phase-seven@example.test', 'inbound', 'sender@example.test', 'Phase Seven fixture', 'Legacy content', 1, ?, ?, 'internal_date', ?, ?)`, []any{messageID, accountID, timestamp, timestamp, timestamp, timestamp}},
+		{`INSERT INTO message_locations (location_id, message_id, account_id, folder_id, uid_validity, uid, internal_date, rfc822_size, raw_content_hash, raw_storage_key, raw_byte_size, present, created_at, updated_at)
+          VALUES ('loc_0198d704-6c00-7000-8000-000000000706', ?, ?, ?, 100, 7, ?, 64, ?, ?, 64, 1, ?, ?)`, []any{messageID, accountID, folderID, timestamp, hash, "raw/sha256/bb/" + hash + ".eml", timestamp, timestamp}},
+		{`INSERT INTO message_content (message_id, headers_json, diagnostics_json, text_paths_json, html_paths_json, parsed_complete, created_at, updated_at)
+          VALUES (?, '[]', '[]', '[]', '[]', 1, ?, ?)`, []any{messageID, timestamp, timestamp}},
+		{`INSERT INTO message_parts (part_id, message_id, ordinal, path, media_type, disposition, filename, attachment, decoded_size, diagnostics_json, created_at, updated_at)
+          VALUES (?, ?, 0, '0', 'application/pdf', 'attachment', 'legacy.pdf', 1, 12, '[]', ?, ?)`, []any{partID, messageID, timestamp, timestamp}},
+	}
+	for _, statement := range statements {
+		if _, err := database.Exec(statement.query, statement.args...); err != nil {
+			database.Close()
+			t.Fatal(err)
+		}
+	}
+	if err := database.Close(); err != nil {
+		t.Fatal(err)
+	}
+	state, err := Open(context.Background(), paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	message, err := state.Mail().Message(context.Background(), accountID, messageID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if message.Content == nil || message.Content.AttachmentsIndexed || len(message.Content.Attachments) != 0 ||
+		len(message.Content.Parts) != 1 || message.Content.Parts[0].ID != partID || message.Content.Parts[0].Filename != "legacy.pdf" {
+		t.Fatalf("upgraded phase-seven content = %+v", message.Content)
 	}
 }

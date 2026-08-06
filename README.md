@@ -2,7 +2,7 @@
 
 `icloud` is a local-first command-line client for iCloud services. The project is being built for agent workflows without making the normal terminal experience noisy: compact plain text is the default, and structured or expanded output is always explicit.
 
-The current implementation provides secure multi-account and credential lifecycle, read-only live iCloud compatibility testing, durable all-folder discovery, bounded local Inbox synchronization, and complete local message reads. It can validate IMAP/SMTP authentication, discover nested and Unicode mailboxes, stream raw Inbox messages into private local state, show compact decoded-text excerpts, explicitly return complete text or HTML, inspect decoded headers and MIME metadata, and export exact RFC822 bytes. It does not send mail or mutate remote mailbox state.
+The current implementation provides secure multi-account and credential lifecycle, read-only live iCloud compatibility testing, durable all-folder discovery, bounded local Inbox synchronization, complete local message reads, and safe inbound attachment export. It can validate IMAP/SMTP authentication, discover nested and Unicode mailboxes, stream raw Inbox messages into private local state, show compact decoded-text excerpts, explicitly return complete text or HTML, inspect decoded headers and MIME metadata, export exact RFC822 bytes, and save verified decoded attachments without trusting message filenames as paths. It does not send mail or mutate remote mailbox state.
 
 ## Install
 
@@ -45,6 +45,9 @@ icloud mail sync checkpoints [--limit <n>] [--json]
 icloud mail message show <message-id> [--full] [--format compact|text|html|raw] [--headers] [--body-only] [--metadata-only] [--verbose] [--json]
 icloud mail message raw <message-id>
 icloud mail message export <message-id> --output <path|-> [--force]
+icloud mail attachments list <message-id> [--limit <n>] [--json]
+icloud mail attachments save <attachment-id> --output <path|-> [--binary] [--force] [--json]
+icloud mail attachments save-all <message-id> --dir <directory> [--force] [--json]
 icloud doctor [selector] [--all] [--live] [--verbose] [--json]
 icloud version [--json]
 icloud capabilities [--json]
@@ -97,7 +100,7 @@ version
 capabilities
 command=icloud
 version=0.1.0
-schema=5
+schema=6
 account_mode=validated_lifecycle
 credentials=keyring,env,file
 network_validation=true
@@ -105,6 +108,7 @@ diagnostics=true
 mail_folders=true
 mail_sync=true
 mail_content=true
+mail_attachments=true
 default_output=compact
 json=true
 completion=bash,zsh,fish,powershell

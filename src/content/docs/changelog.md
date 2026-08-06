@@ -8,6 +8,10 @@ summary: Public command, output, installation, and documentation changes.
 
 ## Unreleased
 
+- Added first-class inbound attachment records with stable IDs, MIME-part links, decoded sizes and hashes, media parameters, inline/content-ID metadata, and explicit availability state through schema version 6.
+- Added `icloud mail attachments list`, verified single-file save, binary stdout opt-in, and atomic `save-all` with safe Unicode filenames, deterministic collision suffixes, no-clobber defaults, and rollback on batch failure.
+- Preserved exact raw RFC822 authority and stable message, location, MIME-part, and attachment identities while existing schema-5 messages hydrate decoded attachments once from trusted local content.
+- Added compact attachment-output budgets, content-integrity and missing-blob failures, zero/large/inline/unnamed/duplicate/Unicode/nested-message coverage, migration safety, and the Save mail attachments guide.
 - Added `icloud mail message show/raw/export` for bounded message metadata, complete decoded text, HTML, decoded headers, metadata-only and MIME-part views, exact raw RFC822 streaming, and private atomic export.
 - Added charset-aware nested MIME normalization, ordered headers and parts, inline and embedded-message metadata, partial parse diagnostics, stable UUIDv7 MIME-part identities, malformed-Date stability, and schema-5 upgrades from existing synchronized mail.
 - Kept message JSON preview-only by default; complete text/HTML/raw requires an explicit content mode, raw JSON is bounded to 8 MiB, and BCC/raw storage coordinates remain excluded from ordinary output.

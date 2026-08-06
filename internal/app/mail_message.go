@@ -36,12 +36,14 @@ func (commands accountCommands) MailMessage(ctx context.Context, home, accountSe
 		return account.Account{}, maildomain.Message{}, nil, state.SchemaVersion(), cli.NewAppError(cli.ErrorUnavailable, "raw message content is not available locally", false)
 	}
 	blobStore := blob.New(paths.BlobRoot)
-	if message.Content == nil {
+	if message.Content == nil || !message.Content.AttachmentsIndexed {
 		reader, openErr := blobStore.OpenVerifiedContext(ctx, location.RawStorageKey, location.RawContentHash, location.RawByteSize)
 		if openErr != nil {
 			return account.Account{}, maildomain.Message{}, nil, state.SchemaVersion(), mapBlobReadError(openErr)
 		}
-		normalized, parseErr := maildomain.ParseNormalizedContext(ctx, reader)
+		attachmentSet := newStagedAttachmentSet(commands.attachmentBlobStore(paths))
+		defer attachmentSet.Abort()
+		normalized, parseErr := maildomain.ParseNormalizedWithAttachmentsContext(ctx, reader, attachmentSet.Sink)
 		closeErr := reader.Close()
 		if parseErr == nil {
 			parseErr = closeErr
@@ -49,12 +51,11 @@ func (commands accountCommands) MailMessage(ctx context.Context, home, accountSe
 		if parseErr != nil {
 			return account.Account{}, maildomain.Message{}, nil, state.SchemaVersion(), cli.WrapAppError(cli.ErrorUnavailable, "cannot decode the local message", false, parseErr)
 		}
-		for index := range normalized.Parts {
-			partID, idErr := commands.generateID("prt")
-			if idErr != nil {
-				return account.Account{}, maildomain.Message{}, nil, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot allocate a MIME-part ID", false, idErr)
-			}
-			normalized.Parts[index].ID = partID
+		if idErr := assignContentIDs(commands, message.ID, &normalized); idErr != nil {
+			return account.Account{}, maildomain.Message{}, nil, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot allocate message-content IDs", false, idErr)
+		}
+		if err := attachmentSet.Commit(); err != nil {
+			return account.Account{}, maildomain.Message{}, nil, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot commit a decoded message attachment", true, err)
 		}
 		if err := state.Mail().SaveMessageContent(ctx, accountValue.ID, message.ID, normalized, commands.timeNow()); err != nil {
 			return account.Account{}, maildomain.Message{}, nil, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot persist local message content metadata", true, err)

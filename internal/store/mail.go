@@ -30,6 +30,13 @@ SELECT m.message_id, m.account_id, m.rfc_message_id, m.in_reply_to,
        m.created_at, m.updated_at
 FROM messages AS m`
 
+const attachmentColumns = `
+SELECT a.attachment_id, a.message_id, a.part_id, a.ordinal, a.part_path,
+       a.filename, a.media_type, a.media_params_json, a.disposition,
+       a.content_id, a.inline, a.content_hash, a.storage_key, a.byte_size,
+       a.availability, a.error_code
+FROM attachments AS a`
+
 func (repository *MailRepository) Checkpoint(ctx context.Context, accountID, folderID string) (maildomain.Checkpoint, error) {
 	row := repository.db.QueryRowContext(ctx, checkpointColumns+` WHERE account_id = ? AND folder_id = ?`, accountID, folderID)
 	return scanCheckpoint(row)
@@ -277,6 +284,47 @@ WHERE m.account_id = ? AND m.message_id = ?`, strings.TrimSpace(accountID), stri
 	return value, nil
 }
 
+func (repository *MailRepository) Attachments(ctx context.Context, accountID, messageID string, limit int) ([]maildomain.Attachment, bool, error) {
+	if limit < 1 {
+		return nil, false, errors.New("list attachments: limit must be positive")
+	}
+	rows, err := repository.db.QueryContext(ctx, attachmentColumns+`
+JOIN messages AS m ON m.message_id = a.message_id
+WHERE m.account_id = ? AND a.message_id = ?
+ORDER BY a.ordinal, a.attachment_id
+LIMIT ?`, strings.TrimSpace(accountID), strings.TrimSpace(messageID), limit+1)
+	if err != nil {
+		return nil, false, fmt.Errorf("list attachments: %w", err)
+	}
+	defer rows.Close()
+	values := make([]maildomain.Attachment, 0, limit+1)
+	for rows.Next() {
+		value, scanErr := scanAttachment(rows)
+		if scanErr != nil {
+			return nil, false, scanErr
+		}
+		values = append(values, value)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, fmt.Errorf("list attachments: %w", err)
+	}
+	more := len(values) > limit
+	if more {
+		values = values[:limit]
+	}
+	return values, more, nil
+}
+
+func (repository *MailRepository) Attachment(ctx context.Context, accountID, attachmentID string) (maildomain.Attachment, error) {
+	value, err := scanAttachment(repository.db.QueryRowContext(ctx, attachmentColumns+`
+JOIN messages AS m ON m.message_id = a.message_id
+WHERE m.account_id = ? AND a.attachment_id = ?`, strings.TrimSpace(accountID), strings.TrimSpace(attachmentID)))
+	if err != nil {
+		return maildomain.Attachment{}, err
+	}
+	return value, nil
+}
+
 func (repository *MailRepository) SaveMessageContent(ctx context.Context, accountID, messageID string, content maildomain.NormalizedContent, now time.Time) error {
 	tx, err := repository.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -293,13 +341,8 @@ SELECT count(*) FROM messages WHERE account_id = ? AND message_id = ?`,
 	if exists == 0 {
 		return maildomain.ErrMessageNotFound
 	}
-	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM message_content WHERE message_id = ?`, messageID).Scan(&exists); err != nil {
-		return fmt.Errorf("inspect existing message content: %w", err)
-	}
-	if exists == 0 {
-		if err := upsertMessageContent(ctx, tx, messageID, content, now.UTC().Format(time.RFC3339Nano)); err != nil {
-			return err
-		}
+	if err := upsertMessageContent(ctx, tx, messageID, content, now.UTC().Format(time.RFC3339Nano)); err != nil {
+		return err
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit message content save: %w", err)
@@ -322,6 +365,7 @@ func validateIngestRecord(page maildomain.CommitPage, record maildomain.IngestRe
 	}
 	if record.Content != nil {
 		paths := make(map[string]struct{}, len(record.Content.Parts))
+		partIDs := make(map[string]string, len(record.Content.Parts))
 		ordinals := make(map[int]struct{}, len(record.Content.Parts))
 		for _, part := range record.Content.Parts {
 			if strings.TrimSpace(part.Path) == "" {
@@ -341,6 +385,34 @@ func validateIngestRecord(page maildomain.CommitPage, record maildomain.IngestRe
 			if strings.TrimSpace(part.ID) == "" {
 				return errors.New("commit inbox page: MIME part ID is required")
 			}
+			partIDs[part.Path] = part.ID
+		}
+		attachmentPaths := make(map[string]struct{}, len(record.Content.Attachments))
+		attachmentOrdinals := make(map[int]struct{}, len(record.Content.Attachments))
+		for _, attachment := range record.Content.Attachments {
+			if strings.TrimSpace(attachment.ID) == "" || strings.TrimSpace(attachment.PartID) == "" || strings.TrimSpace(attachment.PartPath) == "" {
+				return errors.New("commit inbox page: attachment identity is incomplete")
+			}
+			if _, exists := paths[attachment.PartPath]; !exists {
+				return errors.New("commit inbox page: attachment MIME part is missing")
+			}
+			if attachment.PartID != partIDs[attachment.PartPath] {
+				return errors.New("commit inbox page: attachment MIME part ID does not match its path")
+			}
+			if attachment.MessageID != record.MessageID {
+				return errors.New("commit inbox page: attachment message ID does not match its record")
+			}
+			if _, exists := attachmentPaths[attachment.PartPath]; exists {
+				return errors.New("commit inbox page: duplicate attachment part path")
+			}
+			attachmentPaths[attachment.PartPath] = struct{}{}
+			if attachment.Ordinal < 0 {
+				return errors.New("commit inbox page: attachment ordinal cannot be negative")
+			}
+			if _, exists := attachmentOrdinals[attachment.Ordinal]; exists {
+				return errors.New("commit inbox page: duplicate attachment ordinal")
+			}
+			attachmentOrdinals[attachment.Ordinal] = struct{}{}
 		}
 	}
 	return nil
@@ -486,22 +558,23 @@ func upsertMessageContent(ctx context.Context, tx *sql.Tx, messageID string, con
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO message_content (
     message_id, headers_json, diagnostics_json, text_paths_json,
-    html_paths_json, parsed_complete, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    html_paths_json, parsed_complete, attachments_indexed, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(message_id) DO UPDATE SET
     headers_json = excluded.headers_json,
     diagnostics_json = excluded.diagnostics_json,
     text_paths_json = excluded.text_paths_json,
     html_paths_json = excluded.html_paths_json,
     parsed_complete = excluded.parsed_complete,
+    attachments_indexed = excluded.attachments_indexed,
     updated_at = excluded.updated_at`,
 		messageID, string(headersJSON), string(diagnosticsJSON), string(textPathsJSON),
-		string(htmlPathsJSON), boolInt(parsedComplete), timestamp, timestamp,
+		string(htmlPathsJSON), boolInt(parsedComplete), boolInt(content.AttachmentsIndexed), timestamp, timestamp,
 	); err != nil {
 		return fmt.Errorf("persist message content metadata: %w", err)
 	}
 
-	existing := map[string]string{}
+	existingParts := map[string]string{}
 	rows, err := tx.QueryContext(ctx, `SELECT path, part_id FROM message_parts WHERE message_id = ?`, messageID)
 	if err != nil {
 		return fmt.Errorf("read existing MIME part IDs: %w", err)
@@ -512,36 +585,97 @@ ON CONFLICT(message_id) DO UPDATE SET
 			rows.Close()
 			return fmt.Errorf("read existing MIME part ID: %w", err)
 		}
-		existing[path] = partID
+		existingParts[path] = partID
 	}
 	if err := rows.Close(); err != nil {
 		return fmt.Errorf("close existing MIME part IDs: %w", err)
 	}
+	existingAttachments := map[string]string{}
+	attachmentRows, err := tx.QueryContext(ctx, `SELECT part_path, attachment_id FROM attachments WHERE message_id = ?`, messageID)
+	if err != nil {
+		return fmt.Errorf("read existing attachment IDs: %w", err)
+	}
+	for attachmentRows.Next() {
+		var path, attachmentID string
+		if err := attachmentRows.Scan(&path, &attachmentID); err != nil {
+			attachmentRows.Close()
+			return fmt.Errorf("read existing attachment ID: %w", err)
+		}
+		existingAttachments[path] = attachmentID
+	}
+	if err := attachmentRows.Close(); err != nil {
+		return fmt.Errorf("close existing attachment IDs: %w", err)
+	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM message_parts WHERE message_id = ?`, messageID); err != nil {
 		return fmt.Errorf("replace MIME parts: %w", err)
 	}
+	partIDs := make(map[string]string, len(content.Parts))
 	for _, part := range content.Parts {
 		partID := strings.TrimSpace(part.ID)
-		if stableID := existing[part.Path]; stableID != "" {
+		if stableID := existingParts[part.Path]; stableID != "" {
 			partID = stableID
+		}
+		if partID == "" {
+			return errors.New("persist MIME part: part ID is required")
 		}
 		partDiagnostics, err := json.Marshal(part.Diagnostics)
 		if err != nil {
 			return fmt.Errorf("encode MIME part diagnostics: %w", err)
 		}
+		mediaParams, err := json.Marshal(part.MediaParams)
+		if err != nil {
+			return fmt.Errorf("encode MIME part media parameters: %w", err)
+		}
 		if _, err := tx.ExecContext(ctx, `
 INSERT INTO message_parts (
-    part_id, message_id, ordinal, path, parent_path, media_type, charset,
+    part_id, message_id, ordinal, path, parent_path, media_type, media_params_json, charset,
     transfer_encoding, disposition, filename, content_id, inline,
     attachment, embedded_message, decoded_size, diagnostics_json,
     created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			partID, messageID, part.Ordinal, part.Path, part.ParentPath, part.MediaType, part.Charset,
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			partID, messageID, part.Ordinal, part.Path, part.ParentPath, part.MediaType, string(mediaParams), part.Charset,
 			part.TransferEncoding, part.Disposition, part.Filename, part.ContentID,
 			boolInt(part.Inline), boolInt(part.Attachment), boolInt(part.EmbeddedMessage),
 			part.DecodedSize, string(partDiagnostics), timestamp, timestamp,
 		); err != nil {
 			return fmt.Errorf("persist MIME part: %w", err)
+		}
+		partIDs[part.Path] = partID
+	}
+	for _, attachment := range content.Attachments {
+		partID := partIDs[attachment.PartPath]
+		if partID == "" {
+			return errors.New("persist attachment: MIME part is missing")
+		}
+		attachmentID := strings.TrimSpace(attachment.ID)
+		if stableID := existingAttachments[attachment.PartPath]; stableID != "" {
+			attachmentID = stableID
+		}
+		if attachmentID == "" {
+			return errors.New("persist attachment: attachment ID is required")
+		}
+		availability := attachment.Availability
+		if availability == "" {
+			availability = maildomain.AttachmentUnavailable
+		}
+		mediaParams, err := json.Marshal(attachment.MediaParams)
+		if err != nil {
+			return fmt.Errorf("encode attachment media parameters: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `
+INSERT INTO attachments (
+    attachment_id, message_id, part_id, ordinal, part_path, filename,
+    media_type, media_params_json, disposition, content_id, inline,
+    content_hash, storage_key, byte_size, availability, error_code,
+    created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			attachmentID, messageID, partID, attachment.Ordinal, attachment.PartPath,
+			attachment.Filename, attachment.MediaType, string(mediaParams), attachment.Disposition,
+			attachment.ContentID, boolInt(attachment.Inline), strings.ToLower(strings.TrimSpace(attachment.ContentHash)),
+			strings.TrimSpace(attachment.StorageKey), attachment.ByteSize, availability,
+			strings.TrimSpace(attachment.ErrorCode), timestamp, timestamp,
+		); err != nil {
+			return fmt.Errorf("persist attachment: %w", err)
 		}
 	}
 	return nil
@@ -673,6 +807,32 @@ func scanMessage(row rowScanner) (maildomain.Message, error) {
 	return value, nil
 }
 
+func scanAttachment(row rowScanner) (maildomain.Attachment, error) {
+	var (
+		value           maildomain.Attachment
+		mediaParamsJSON string
+		inline          int
+		availability    string
+	)
+	if err := row.Scan(
+		&value.ID, &value.MessageID, &value.PartID, &value.Ordinal, &value.PartPath,
+		&value.Filename, &value.MediaType, &mediaParamsJSON, &value.Disposition,
+		&value.ContentID, &inline, &value.ContentHash, &value.StorageKey,
+		&value.ByteSize, &availability, &value.ErrorCode,
+	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return maildomain.Attachment{}, maildomain.ErrAttachmentNotFound
+		}
+		return maildomain.Attachment{}, fmt.Errorf("read attachment: %w", err)
+	}
+	value.Inline = inline == 1
+	value.Availability = maildomain.AttachmentAvailability(availability)
+	if err := json.Unmarshal([]byte(mediaParamsJSON), &value.MediaParams); err != nil {
+		return maildomain.Attachment{}, fmt.Errorf("parse attachment media parameters: %w", err)
+	}
+	return value, nil
+}
+
 func (repository *MailRepository) loadMessageDetails(ctx context.Context, value *maildomain.Message) error {
 	recipientRows, err := repository.db.QueryContext(ctx, `
 SELECT kind, display_name, email_address
@@ -746,14 +906,16 @@ ORDER BY present DESC, folder_id, uid`, value.ID)
 
 func (repository *MailRepository) loadMessageContent(ctx context.Context, value *maildomain.Message) error {
 	var (
-		headersJSON, diagnosticsJSON string
-		textPathsJSON, htmlPathsJSON string
-		parsedComplete               int
+		headersJSON, diagnosticsJSON       string
+		textPathsJSON, htmlPathsJSON       string
+		parsedComplete, attachmentsIndexed int
 	)
 	err := repository.db.QueryRowContext(ctx, `
-SELECT headers_json, diagnostics_json, text_paths_json, html_paths_json, parsed_complete
+SELECT headers_json, diagnostics_json, text_paths_json, html_paths_json,
+       parsed_complete, attachments_indexed
 FROM message_content WHERE message_id = ?`, value.ID).Scan(
-		&headersJSON, &diagnosticsJSON, &textPathsJSON, &htmlPathsJSON, &parsedComplete,
+		&headersJSON, &diagnosticsJSON, &textPathsJSON, &htmlPathsJSON,
+		&parsedComplete, &attachmentsIndexed,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil
@@ -775,7 +937,7 @@ FROM message_content WHERE message_id = ?`, value.ID).Scan(
 		return fmt.Errorf("parse message HTML paths: %w", err)
 	}
 	partRows, err := repository.db.QueryContext(ctx, `
-SELECT part_id, ordinal, path, parent_path, media_type, charset, transfer_encoding,
+SELECT part_id, ordinal, path, parent_path, media_type, media_params_json, charset, transfer_encoding,
        disposition, filename, content_id, inline, attachment,
        embedded_message, decoded_size, diagnostics_json
 FROM message_parts WHERE message_id = ? ORDER BY ordinal`, value.ID)
@@ -784,12 +946,12 @@ FROM message_parts WHERE message_id = ? ORDER BY ordinal`, value.ID)
 	}
 	for partRows.Next() {
 		var (
-			part                         maildomain.MIMEPart
-			inline, attachment, embedded int
-			partDiagnosticsJSON          string
+			part                                 maildomain.MIMEPart
+			inline, attachment, embedded         int
+			mediaParamsJSON, partDiagnosticsJSON string
 		)
 		if err := partRows.Scan(
-			&part.ID, &part.Ordinal, &part.Path, &part.ParentPath, &part.MediaType, &part.Charset,
+			&part.ID, &part.Ordinal, &part.Path, &part.ParentPath, &part.MediaType, &mediaParamsJSON, &part.Charset,
 			&part.TransferEncoding, &part.Disposition, &part.Filename, &part.ContentID,
 			&inline, &attachment, &embedded, &part.DecodedSize, &partDiagnosticsJSON,
 		); err != nil {
@@ -799,6 +961,10 @@ FROM message_parts WHERE message_id = ? ORDER BY ordinal`, value.ID)
 		part.Inline = inline == 1
 		part.Attachment = attachment == 1
 		part.EmbeddedMessage = embedded == 1
+		if err := json.Unmarshal([]byte(mediaParamsJSON), &part.MediaParams); err != nil {
+			partRows.Close()
+			return fmt.Errorf("parse MIME part media parameters: %w", err)
+		}
 		if err := json.Unmarshal([]byte(partDiagnosticsJSON), &part.Diagnostics); err != nil {
 			partRows.Close()
 			return fmt.Errorf("parse MIME part diagnostics: %w", err)
@@ -810,6 +976,42 @@ FROM message_parts WHERE message_id = ? ORDER BY ordinal`, value.ID)
 	}
 	if parsedComplete == 0 && len(content.Diagnostics) == 0 {
 		content.Diagnostics = append(content.Diagnostics, maildomain.ParseDiagnostic{Code: "partial"})
+	}
+	content.AttachmentsIndexed = attachmentsIndexed == 1
+	attachmentRows, err := repository.db.QueryContext(ctx, `
+SELECT attachment_id, message_id, part_id, ordinal, part_path, filename,
+       media_type, media_params_json, disposition, content_id, inline,
+       content_hash, storage_key, byte_size, availability, error_code
+FROM attachments WHERE message_id = ? ORDER BY ordinal`, value.ID)
+	if err != nil {
+		return fmt.Errorf("read attachments: %w", err)
+	}
+	for attachmentRows.Next() {
+		var (
+			attachment      maildomain.Attachment
+			mediaParamsJSON string
+			inline          int
+			availability    string
+		)
+		if err := attachmentRows.Scan(
+			&attachment.ID, &attachment.MessageID, &attachment.PartID, &attachment.Ordinal,
+			&attachment.PartPath, &attachment.Filename, &attachment.MediaType, &mediaParamsJSON,
+			&attachment.Disposition, &attachment.ContentID, &inline, &attachment.ContentHash,
+			&attachment.StorageKey, &attachment.ByteSize, &availability, &attachment.ErrorCode,
+		); err != nil {
+			attachmentRows.Close()
+			return fmt.Errorf("read attachment: %w", err)
+		}
+		attachment.Inline = inline == 1
+		attachment.Availability = maildomain.AttachmentAvailability(availability)
+		if err := json.Unmarshal([]byte(mediaParamsJSON), &attachment.MediaParams); err != nil {
+			attachmentRows.Close()
+			return fmt.Errorf("parse attachment media parameters: %w", err)
+		}
+		content.Attachments = append(content.Attachments, attachment)
+	}
+	if err := attachmentRows.Close(); err != nil {
+		return fmt.Errorf("close attachments: %w", err)
 	}
 	value.Content = &content
 	return nil

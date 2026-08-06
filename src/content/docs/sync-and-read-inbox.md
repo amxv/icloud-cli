@@ -93,7 +93,23 @@ icloud mail message show msg_… --verbose
 icloud mail message show msg_… --metadata-only
 ```
 
-`--verbose` adds ordered MIME-part blocks with type, charset, encoding, disposition, filename, inline/attachment state, decoded size, and partial-parse diagnostics. It does not extract attachment bytes; attachment saving is a separate workflow.
+`--verbose` adds ordered MIME-part blocks with type, charset, encoding, disposition, filename, inline/attachment state, decoded size, and partial-parse diagnostics. Use the attachment workflow when you need the decoded files rather than message-body output.
+
+## Inspect and save attachments
+
+```bash
+icloud mail attachments list msg_…
+icloud mail attachments save att_… --output document.pdf
+icloud mail attachments save-all msg_… --dir ./message-attachments
+```
+
+Attachment listing is bounded and metadata-only. Saving verifies the locally stored decoded bytes, refuses accidental overwrites, sanitizes untrusted filenames, and stages a complete batch before installing it. Binary stdout is available only with an explicit acknowledgement:
+
+```bash
+icloud mail attachments save att_… --output - --binary > document.pdf
+```
+
+See [Save mail attachments](/docs/save-mail-attachments) for collision handling, inline files, unnamed attachments, JSON, and recovery.
 
 ## Stream or export exact raw MIME
 
@@ -175,11 +191,12 @@ icloud --request-id inbox-02 mail inbox --json
 icloud mail sync status --json
 icloud mail message show msg_… --json
 icloud mail message show msg_… --full --json
+icloud mail attachments list msg_… --json
 ```
 
 Inbox JSON returns stable message, location, and checkpoint identifiers plus locally stored preview metadata. Default message JSON adds content-availability and parse-status fields without including headers, MIME parts, complete bodies, or raw bytes. Use the same explicit flags to include text, HTML, headers, MIME-part metadata, or base64 raw MIME. Raw JSON is limited to 8 MiB; plain raw/export streaming remains available up to the synchronized message-size limit.
 
-Credential references, raw storage paths, raw content hashes, and BCC recipients remain excluded from JSON. Exact raw MIME can contain a BCC header only when raw output was explicitly requested.
+Credential references, raw storage paths, and BCC recipients remain excluded from JSON. Attachment-list JSON includes a decoded content hash for verification but omits its private storage location. Exact raw MIME can contain a BCC header only when raw output was explicitly requested.
 
 ## Recover from common problems
 
@@ -220,4 +237,8 @@ The first run intentionally starts from the newest bounded page. Repeat `mail sy
 
 `mail message` never contacts iCloud to repair local content implicitly. Run `mail sync status` first. A missing or corrupt raw blob returns an unavailable error and leaves message/location IDs untouched. Keep the state directory intact for the later repair workflow; do not replace a blob manually.
 
-Continue with [Output and automation](/docs/output-and-automation) for stable stream rules or the [command reference](/docs/command-reference) for exact flags.
+### An attachment cannot be saved
+
+Run `icloud mail attachments list msg_…` to distinguish unavailable decoded content from a destination conflict. Missing or corrupt content fails before a successful file is installed. Existing files require `--force`; symbolic links, directories, and other special files are always rejected.
+
+Continue with [Save mail attachments](/docs/save-mail-attachments), [Output and automation](/docs/output-and-automation) for stable stream rules, or the [command reference](/docs/command-reference) for exact flags.

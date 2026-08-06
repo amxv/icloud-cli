@@ -44,6 +44,8 @@ func (commands accountCommands) MailSync(ctx context.Context, home, accountSelec
 	defer zeroBytes(password)
 	attemptedAt := commands.timeNow()
 	stager := commands.blobStager(paths)
+	attachmentSet := newStagedAttachmentSet(commands.attachmentBlobStore(paths))
+	defer attachmentSet.Abort()
 
 	var (
 		page         transport.InboxPage
@@ -101,20 +103,26 @@ func (commands accountCommands) MailSync(ctx context.Context, home, accountSelec
 			_, _ = state.Mail().RecordFailure(ctx, checkpointID, accountValue.ID, inbox.ID, checkpoint.UIDValidity, "blob_open", attemptedAt)
 			return account.Account{}, folder.Folder{}, maildomain.SyncSummary{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot read a staged Inbox message", false, openErr)
 		}
-		normalized, parseErr := maildomain.ParseNormalizedContext(ctx, reader)
+		normalized, parseErr := maildomain.ParseNormalizedWithAttachmentsContext(ctx, reader, attachmentSet.Sink)
 		closeErr := reader.Close()
 		if parseErr == nil {
 			parseErr = closeErr
 		}
 		if parseErr != nil {
-			_, _ = state.Mail().RecordFailure(ctx, checkpointID, accountValue.ID, inbox.ID, checkpoint.UIDValidity, "message_parse", attemptedAt)
+			failureCode := "message_parse"
+			failureMessage := "cannot safely normalize an Inbox message"
+			if errors.Is(parseErr, maildomain.ErrAttachmentStorage) {
+				failureCode = "attachment_blob_stage"
+				failureMessage = "cannot safely stage a decoded Inbox attachment"
+			}
+			_, _ = state.Mail().RecordFailure(ctx, checkpointID, accountValue.ID, inbox.ID, checkpoint.UIDValidity, failureCode, attemptedAt)
 			if errors.Is(parseErr, context.DeadlineExceeded) {
 				return account.Account{}, folder.Folder{}, maildomain.SyncSummary{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorUnavailable, "Inbox message parsing timed out", true, parseErr)
 			}
 			if errors.Is(parseErr, context.Canceled) {
 				return account.Account{}, folder.Folder{}, maildomain.SyncSummary{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorUnavailable, "Inbox message parsing was canceled", false, parseErr)
 			}
-			return account.Account{}, folder.Folder{}, maildomain.SyncSummary{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorUnavailable, "cannot safely normalize an Inbox message", false, parseErr)
+			return account.Account{}, folder.Folder{}, maildomain.SyncSummary{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorUnavailable, failureMessage, false, parseErr)
 		}
 		messageID, idErr := commands.generateID("msg")
 		if idErr != nil {
@@ -124,12 +132,8 @@ func (commands accountCommands) MailSync(ctx context.Context, home, accountSelec
 		if idErr != nil {
 			return account.Account{}, folder.Folder{}, maildomain.SyncSummary{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot allocate a message-location ID", false, idErr)
 		}
-		for index := range normalized.Parts {
-			partID, partIDErr := commands.generateID("prt")
-			if partIDErr != nil {
-				return account.Account{}, folder.Folder{}, maildomain.SyncSummary{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot allocate a MIME-part ID", false, partIDErr)
-			}
-			normalized.Parts[index].ID = partID
+		if idErr := assignContentIDs(commands, messageID, &normalized); idErr != nil {
+			return account.Account{}, folder.Folder{}, maildomain.SyncSummary{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot allocate message-content IDs", false, idErr)
 		}
 		record := maildomain.BuildIngestRecord(
 			messageID, locationID, accountValue.ID, inbox.ID, page.UIDValidity, fetched.UID,
@@ -144,6 +148,10 @@ func (commands accountCommands) MailSync(ctx context.Context, home, accountSelec
 			_, _ = state.Mail().RecordFailure(ctx, checkpointID, accountValue.ID, inbox.ID, checkpoint.UIDValidity, "blob_commit", attemptedAt)
 			return account.Account{}, folder.Folder{}, maildomain.SyncSummary{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot commit a staged Inbox message", true, err)
 		}
+	}
+	if err := attachmentSet.Commit(); err != nil {
+		_, _ = state.Mail().RecordFailure(ctx, checkpointID, accountValue.ID, inbox.ID, checkpoint.UIDValidity, "attachment_blob_commit", attemptedAt)
+		return account.Account{}, folder.Folder{}, maildomain.SyncSummary{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot commit a decoded Inbox attachment", true, err)
 	}
 	commit, err := state.Mail().CommitInboxPage(ctx, maildomain.CommitPage{
 		CheckpointID:     checkpointID,

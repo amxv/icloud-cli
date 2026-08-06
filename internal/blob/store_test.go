@@ -58,6 +58,33 @@ func TestStageCommitIsPrivateContentAddressedAndIdempotent(t *testing.T) {
 	}
 }
 
+func TestStageAttachmentUsesSeparateContentAddressedNamespace(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "blobs")
+	store := NewWithLimit(root, 1024)
+	content := []byte{0, 1, 2, 3}
+	staged, err := store.StageAttachment(context.Background(), bytes.NewReader(content), int64(len(content)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(staged.StorageKey, "attachments/sha256/") || !strings.HasSuffix(staged.StorageKey, ".blob") {
+		t.Fatalf("attachment storage key = %q", staged.StorageKey)
+	}
+	if err := staged.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	reader, err := store.OpenVerified(staged.StorageKey, staged.ContentHash, staged.ByteSize)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, readErr := io.ReadAll(reader)
+	if closeErr := reader.Close(); readErr == nil {
+		readErr = closeErr
+	}
+	if readErr != nil || !bytes.Equal(got, content) {
+		t.Fatalf("attachment=%v err=%v", got, readErr)
+	}
+}
+
 func TestStageRejectsOversizeAndCancellationWithoutLeavingTemporaryFiles(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "blobs")
 	store := NewWithLimit(root, 8)

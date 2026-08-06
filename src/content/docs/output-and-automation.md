@@ -1,7 +1,7 @@
 ---
 title: Output and automation
 description: Understand compact defaults, JSON envelopes, stdin credential safety, stderr, request IDs, timeouts, and stable exit classes.
-order: 7
+order: 8
 category: Guides
 summary: The agent-facing contract for bounded text, explicit JSON, safe input, and stable failures.
 ---
@@ -35,7 +35,7 @@ checked_at=2026-08-06T03:00:00Z
 
 Each compact result is a small vertical block. The first line names the result, the next line carries its stable identity plus the first field when present, and every remaining field appears on its own line. A blank line separates consecutive blocks. Default output still omits empty values, ANSI color, box-drawing tables, JSON punctuation, and repeated prose. Successful output goes to stdout.
 
-`account list`, `mail inbox`, and checkpoint lists return 20 records by default, accept `--limit` through 100, and report `more=true` when truncated. Mutation commands return an outcome and stable account ID rather than echoing submitted names, email addresses, paths, or passwords.
+`account list`, `mail inbox`, attachment lists, and checkpoint lists return 20 records by default, accept `--limit` through 100, and report `more=true` when truncated. Mutation and export commands return an outcome and stable IDs rather than echoing submitted names, email addresses, paths, or passwords.
 
 ## JSON is explicit
 
@@ -46,10 +46,10 @@ icloud --request-id account-01 account show --json
 ```
 
 ```json
-{"ok":true,"data":{"account":{"id":"acct_…","name":"Personal","email":"owner@icloud.com","imap_username":"owner","status":"connected","default":true,"credential_scheme":"keyring","imap_capabilities":["IDLE","IMAP4REV1"],"smtp_capabilities":["AUTH"],"last_healthy_at":"2026-08-06T03:00:00Z","last_tested_at":"2026-08-06T03:00:00Z","created_at":"2026-08-06T02:30:00Z","updated_at":"2026-08-06T03:00:00Z"},"schema_version":5},"meta":{"request_id":"account-01"}}
+{"ok":true,"data":{"account":{"id":"acct_…","name":"Personal","email":"owner@icloud.com","imap_username":"owner","status":"connected","default":true,"credential_scheme":"keyring","imap_capabilities":["IDLE","IMAP4REV1"],"smtp_capabilities":["AUTH"],"last_healthy_at":"2026-08-06T03:00:00Z","last_tested_at":"2026-08-06T03:00:00Z","created_at":"2026-08-06T02:30:00Z","updated_at":"2026-08-06T03:00:00Z"},"schema_version":6},"meta":{"request_id":"account-01"}}
 ```
 
-Account lifecycle, credential, validation, doctor, folder discovery/policy, Inbox sync and reads, account reads, `version`, and `capabilities` support JSON. Folder list/show/status also support bounded `--verbose` provider metadata. Completion and man generation intentionally return native text formats.
+Account lifecycle, credential, validation, doctor, folder discovery/policy, Inbox sync and reads, message reads, attachment list/save/save-all, account reads, `version`, and `capabilities` support JSON when stdout is not carrying native bytes. Folder list/show/status also support bounded `--verbose` provider metadata. Completion and man generation intentionally return native text formats.
 
 Credential metadata JSON omits internal IDs, keyring references, environment names, file paths, and values. Error envelopes omit wrapped provider and storage causes.
 
@@ -117,7 +117,7 @@ Help remains on stdout. A failed command never writes a success payload to stdou
 --request-id <id>     correlate structured output
 ```
 
-Version, capabilities, completion, man, and help remain disk-free. Account reads, `mail inbox`, `mail message`, sync status, checkpoint reads, and local `doctor` never prompt or contact Apple. Mutations and live validation use the same global timeout; streaming message reads also honor the command timeout.
+Version, capabilities, completion, man, and help remain disk-free. Account reads, `mail inbox`, `mail message`, attachment reads, sync status, checkpoint reads, and local `doctor` never prompt or contact Apple. Mutations and live validation use the same global timeout; streaming message and attachment reads also honor the command timeout.
 
 ## Message content is explicit
 
@@ -136,3 +136,20 @@ Version, capabilities, completion, man, and help remain disk-free. Account reads
 Default message JSON reports whether text, HTML, headers, raw MIME, and parts are locally available, but omits their content. Body-bearing JSON requires `--full` or `--format text|html`; raw-bearing JSON requires `--format raw` and is capped at 8 MiB. Larger bodies and raw messages remain available through plain streaming output. BCC is excluded from compact output, message JSON, and decoded-header output; exact raw MIME includes it only because raw was explicitly requested.
 
 Unsupported or contradictory combinations fail visibly. For example, `--headers --body-only`, content flags with `--metadata-only`, and plain `--format raw --verbose` return usage errors rather than guessing.
+
+## Attachment bytes require an explicit destination
+
+Attachment metadata is compact and bounded by default:
+
+```bash
+icloud mail attachments list msg_…
+```
+
+Saving one file requires `--output`; writing native bytes to stdout additionally requires `--binary`:
+
+```bash
+icloud mail attachments save att_… --output document.pdf
+icloud mail attachments save att_… --output - --binary > document.pdf
+```
+
+The native stdout mode contains only attachment bytes. File and batch success output remains concise and omits the destination path. `save-all` stages the complete supported set before installing it, so automation does not need to infer whether a partial batch succeeded.

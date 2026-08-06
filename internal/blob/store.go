@@ -12,7 +12,10 @@ import (
 	"strings"
 )
 
-const DefaultMaxRawMessageBytes int64 = 64 << 20
+const (
+	DefaultMaxRawMessageBytes int64 = 64 << 20
+	DefaultMaxAttachmentBytes int64 = 64 << 20
+)
 
 var (
 	ErrTooLarge = errors.New("blob exceeds the configured size limit")
@@ -55,6 +58,16 @@ type Staged struct {
 }
 
 func (store *Store) Stage(ctx context.Context, reader io.Reader, expectedSize int64) (*Staged, error) {
+	return store.stage(ctx, reader, expectedSize, "raw", ".eml")
+}
+
+// StageAttachment streams one decoded MIME attachment into the same private,
+// content-addressed store as raw messages while keeping a distinct namespace.
+func (store *Store) StageAttachment(ctx context.Context, reader io.Reader, expectedSize int64) (*Staged, error) {
+	return store.stage(ctx, reader, expectedSize, "attachments", ".blob")
+}
+
+func (store *Store) stage(ctx context.Context, reader io.Reader, expectedSize int64, namespace, extension string) (*Staged, error) {
 	if store == nil || strings.TrimSpace(store.root) == "" {
 		return nil, errors.New("blob store root is required")
 	}
@@ -103,7 +116,7 @@ func (store *Store) Stage(ctx context.Context, reader io.Reader, expectedSize in
 	}
 
 	contentHash := hex.EncodeToString(hash.Sum(nil))
-	storageKey := filepath.ToSlash(filepath.Join("raw", "sha256", contentHash[:2], contentHash+".eml"))
+	storageKey := filepath.ToSlash(filepath.Join(namespace, "sha256", contentHash[:2], contentHash+extension))
 	return &Staged{
 		ContentHash: contentHash,
 		StorageKey:  storageKey,
