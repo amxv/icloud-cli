@@ -41,6 +41,12 @@ type mailMessageData struct {
 	SchemaVersion int64              `json:"schema_version"`
 }
 
+type remoteMessageData struct {
+	AccountID     string                     `json:"account_id"`
+	Message       maildomain.RemoteSearchHit `json:"message"`
+	SchemaVersion int64                      `json:"schema_version"`
+}
+
 func newMailMessageCommand(state *executionState) *cobra.Command {
 	command := &cobra.Command{
 		Use:     "message",
@@ -59,11 +65,13 @@ func newMailMessageCommand(state *executionState) *cobra.Command {
 
 func newMailMessageShowCommand(state *executionState) *cobra.Command {
 	var options OutputOptions
+	var remote bool
+	var cache bool
 	command := &cobra.Command{
 		Use:     "show <message-id>",
 		Short:   "Show bounded metadata or explicitly requested complete content",
 		Args:    cobra.ExactArgs(1),
-		Example: "  icloud mail message show msg_…\n  icloud mail message show msg_… --full\n  icloud mail message show msg_… --format html --body-only\n  icloud mail message show msg_… --headers --json",
+		Example: "  icloud mail message show msg_…\n  icloud mail message show rem_… --remote\n  icloud mail message show rem_… --remote --cache --full\n  icloud mail message show msg_… --format html --body-only\n  icloud mail message show msg_… --headers --json",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := ValidateOutputOptions(options, OutputSupport{
 				JSON: true, Full: true, Verbose: true, Text: true, HTML: true, Raw: true,
@@ -75,8 +83,39 @@ func newMailMessageShowCommand(state *executionState) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if cache && !remote {
+				return NewAppError(ErrorUsage, "--cache requires --remote", false)
+			}
+			messageID := args[0]
+			if remote && !cache {
+				if remoteContentExpansionRequested(options, format) {
+					return NewAppError(ErrorUsage, "remote content expansion requires --cache so the verified message can use the normal local read path", false)
+				}
+				accountValue, hit, schemaVersion, err := state.mail.MailRemoteSummary(
+					cmd.Context(), state.global.Home, state.global.Account, args[0],
+				)
+				if err != nil {
+					return err
+				}
+				if options.JSON {
+					return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: remoteMessageData{
+						AccountID: accountValue.ID, Message: hit, SchemaVersion: schemaVersion,
+					}, Meta: EnvelopeMeta{RequestID: state.requestID}})
+				}
+				return renderRemoteMessageSummary(NewCompactTextRenderer(state.stdout), hit)
+			}
+			if remote {
+				_, outcomes, _, err := state.mail.MailHydrate(cmd.Context(), state.global.Home, state.global.Account, []string{args[0]})
+				if err != nil {
+					return err
+				}
+				if len(outcomes) != 1 || strings.TrimSpace(outcomes[0].MessageID) == "" {
+					return NewAppError(ErrorInternal, "remote message hydration returned no stable local message ID", false)
+				}
+				messageID = outcomes[0].MessageID
+			}
 			accountValue, message, source, schemaVersion, err := state.mail.MailMessage(
-				cmd.Context(), state.global.Home, state.global.Account, args[0],
+				cmd.Context(), state.global.Home, state.global.Account, messageID,
 			)
 			if err != nil {
 				return err
@@ -147,7 +186,35 @@ func newMailMessageShowCommand(state *executionState) *cobra.Command {
 	command.Flags().BoolVar(&options.Headers, "headers", false, "Include decoded headers (BCC remains omitted)")
 	command.Flags().BoolVar(&options.BodyOnly, "body-only", false, "Write only the selected body representation")
 	command.Flags().BoolVar(&options.MetadataOnly, "metadata-only", false, "Show metadata without a decoded excerpt or content")
+	command.Flags().BoolVar(&remote, "remote", false, "Treat the argument as a stale-safe rem_… provider reference")
+	command.Flags().BoolVar(&cache, "cache", false, "Persist the referenced remote message through the normal local ingestion path")
 	return command
+}
+
+func remoteContentExpansionRequested(options OutputOptions, format maildomain.ContentFormat) bool {
+	return options.Full || options.Verbose || options.Headers || options.BodyOnly || format != ""
+}
+
+func renderRemoteMessageSummary(renderer *CompactTextRenderer, hit maildomain.RemoteSearchHit) error {
+	state := "read"
+	if !hit.Flags.Seen {
+		state = "unread"
+	}
+	return renderer.Record("remote-message", hit.Reference,
+		Field("folder", hit.FolderName),
+		Field("folder_id", hit.FolderID),
+		Field("uid_validity", hit.UIDValidity),
+		Field("uid", hit.UID),
+		Field("from", formatAddress(hit.From)),
+		Field("to", formatAddresses(hit.To)),
+		Field("cc", formatAddresses(hit.CC)),
+		Field("subject", hit.Subject),
+		Field("at", hit.InternalDate),
+		Field("state", state),
+		Field("flagged", hit.Flags.Flagged),
+		Field("cached_message", hit.CachedMessageID),
+		Field("excerpt", Excerpt(hit.Snippet, DefaultExcerptRunes)),
+	)
 }
 
 func newMailMessageRawCommand(state *executionState) *cobra.Command {

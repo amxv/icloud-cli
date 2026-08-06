@@ -50,6 +50,29 @@ LIMIT ?`, accountID, limit+1)
 	return values, more, nil
 }
 
+func (repository *FolderRepository) ListSelectable(ctx context.Context, accountID string, limit int) ([]folder.Folder, bool, error) {
+	if limit < 1 {
+		return nil, false, fmt.Errorf("list selectable folders: limit must be positive")
+	}
+	rows, err := repository.db.QueryContext(ctx, folderColumns+`
+WHERE account_id = ? AND present = 1 AND stale = 0 AND selectable = 1
+ORDER BY CASE kind WHEN 'inbox' THEN 0 WHEN 'sent' THEN 1 ELSE 2 END,
+         lower(name), folder_id
+LIMIT ?`, strings.TrimSpace(accountID), limit+1)
+	if err != nil {
+		return nil, false, fmt.Errorf("list selectable folders: %w", err)
+	}
+	values, err := scanFolders(rows, limit+1)
+	if err != nil {
+		return nil, false, err
+	}
+	more := len(values) > limit
+	if more {
+		values = values[:limit]
+	}
+	return values, more, nil
+}
+
 func (repository *FolderRepository) Resolve(ctx context.Context, accountID, selector string) (folder.Folder, error) {
 	return resolveFolder(ctx, repository.db, accountID, selector)
 }

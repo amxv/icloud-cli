@@ -26,6 +26,7 @@ type accountCommands struct {
 	smtp            transport.SMTPValidator
 	folders         transport.IMAPFolderClient
 	mail            transport.IMAPInboxClient
+	remote          transport.IMAPRemoteClient
 	flags           transport.IMAPFlagClient
 	blobs           func(config.AppPaths) blob.Stager
 	attachmentBlobs func(config.AppPaths) attachmentBlobStore

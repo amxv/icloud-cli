@@ -1,0 +1,467 @@
+package app
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/amxv/icloud-cli/internal/account"
+	"github.com/amxv/icloud-cli/internal/blob"
+	"github.com/amxv/icloud-cli/internal/cli"
+	"github.com/amxv/icloud-cli/internal/folder"
+	maildomain "github.com/amxv/icloud-cli/internal/mail"
+	"github.com/amxv/icloud-cli/internal/secret"
+	"github.com/amxv/icloud-cli/internal/store"
+	"github.com/amxv/icloud-cli/internal/transport"
+)
+
+const maxRemoteFolderFanout = 10
+
+func (commands accountCommands) MailRemoteSearch(
+	ctx context.Context,
+	home, accountSelector, folderSelector string,
+	allFolders bool,
+	options maildomain.SearchOptions,
+) (account.Account, maildomain.RemoteSearchPage, int64, error) {
+	if err := validateRemoteSearchOptions(options); err != nil {
+		return account.Account{}, maildomain.RemoteSearchPage{}, 0, err
+	}
+	state, err := openState(ctx, home)
+	if err != nil {
+		return account.Account{}, maildomain.RemoteSearchPage{}, 0, err
+	}
+	defer state.Close()
+	accountValue, err := state.Accounts().ResolveSelected(ctx, accountSelector)
+	if err != nil {
+		return account.Account{}, maildomain.RemoteSearchPage{}, state.SchemaVersion(), mapAccountError(err)
+	}
+	folders, err := resolveRemoteSearchFolders(ctx, state, accountValue.ID, folderSelector, allFolders)
+	if err != nil {
+		return account.Account{}, maildomain.RemoteSearchPage{}, state.SchemaVersion(), err
+	}
+	_, credential, err := state.Accounts().Credential(ctx, accountValue.ID)
+	if err != nil {
+		return account.Account{}, maildomain.RemoteSearchPage{}, state.SchemaVersion(), mapAccountError(err)
+	}
+	password, err := secret.NewManager(commands.keyring).Resolve(ctx, credential)
+	if err != nil {
+		return account.Account{}, maildomain.RemoteSearchPage{}, state.SchemaVersion(), mapCredentialError(err)
+	}
+	defer zeroBytes(password)
+
+	criteria := remoteCriteria(options)
+	hits := make([]maildomain.RemoteSearchHit, 0, options.Limit+1)
+	more, partial, candidateUIDs := false, false, 0
+	for _, folderValue := range folders {
+		page, callErr := commands.searchRemoteFolder(ctx, accountValue, password, folderValue, criteria, options.Limit)
+		if callErr != nil {
+			return account.Account{}, maildomain.RemoteSearchPage{}, state.SchemaVersion(), callErr
+		}
+		candidateUIDs += page.CandidateUIDs
+		more = more || page.MoreAvailable
+		partial = partial || page.Partial
+		for _, remote := range page.Messages {
+			if !remoteDateMatches(remote.InternalDate, options.After, options.Before) {
+				continue
+			}
+			reference, encodeErr := maildomain.EncodeRemoteReference(maildomain.RemoteReference{
+				AccountID: accountValue.ID, FolderID: folderValue.ID,
+				UIDValidity: page.UIDValidity, UID: remote.UID,
+			})
+			if encodeErr != nil {
+				return account.Account{}, maildomain.RemoteSearchPage{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot encode a remote message reference", false, encodeErr)
+			}
+			hit := remoteSearchHit(accountValue.ID, folderValue, page.UIDValidity, reference, remote, remoteMatchedField(options))
+			if cached, cachedErr := state.Mail().MessageByProviderLocation(ctx, accountValue.ID, folderValue.ID, page.UIDValidity, remote.UID); cachedErr == nil {
+				hit.CachedMessageID = cached.ID
+			} else if !errors.Is(cachedErr, maildomain.ErrMessageNotFound) {
+				return account.Account{}, maildomain.RemoteSearchPage{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot inspect the local cache for a remote result", false, cachedErr)
+			}
+			hits = append(hits, hit)
+		}
+	}
+	sort.Slice(hits, func(left, right int) bool {
+		if !hits[left].InternalDate.Equal(hits[right].InternalDate) {
+			return hits[left].InternalDate.After(hits[right].InternalDate)
+		}
+		if hits[left].FolderID != hits[right].FolderID {
+			return hits[left].FolderID < hits[right].FolderID
+		}
+		return hits[left].UID > hits[right].UID
+	})
+	if len(hits) > options.Limit {
+		more = true
+		hits = hits[:options.Limit]
+	}
+	return accountValue, maildomain.RemoteSearchPage{
+		Hits: hits, Count: len(hits), More: more, Partial: partial,
+		Folders: len(folders), CandidateUIDs: candidateUIDs,
+	}, state.SchemaVersion(), nil
+}
+
+func (commands accountCommands) MailRemoteSummary(
+	ctx context.Context,
+	home, accountSelector, encodedReference string,
+) (account.Account, maildomain.RemoteSearchHit, int64, error) {
+	state, err := openState(ctx, home)
+	if err != nil {
+		return account.Account{}, maildomain.RemoteSearchHit{}, 0, err
+	}
+	defer state.Close()
+	accountValue, err := state.Accounts().ResolveSelected(ctx, accountSelector)
+	if err != nil {
+		return account.Account{}, maildomain.RemoteSearchHit{}, state.SchemaVersion(), mapAccountError(err)
+	}
+	reference, folderValue, err := resolveRemoteReference(ctx, state, accountValue.ID, encodedReference)
+	if err != nil {
+		return account.Account{}, maildomain.RemoteSearchHit{}, state.SchemaVersion(), err
+	}
+	_, credential, err := state.Accounts().Credential(ctx, accountValue.ID)
+	if err != nil {
+		return account.Account{}, maildomain.RemoteSearchHit{}, state.SchemaVersion(), mapAccountError(err)
+	}
+	password, err := secret.NewManager(commands.keyring).Resolve(ctx, credential)
+	if err != nil {
+		return account.Account{}, maildomain.RemoteSearchHit{}, state.SchemaVersion(), mapCredentialError(err)
+	}
+	defer zeroBytes(password)
+	result, err := commands.fetchRemoteSummary(ctx, accountValue, password, folderValue, reference)
+	if err != nil {
+		return account.Account{}, maildomain.RemoteSearchHit{}, state.SchemaVersion(), err
+	}
+	hit := remoteSearchHit(accountValue.ID, folderValue, result.UIDValidity, encodedReference, result.Message, "remote_reference")
+	if cached, cachedErr := state.Mail().MessageByProviderLocation(ctx, accountValue.ID, folderValue.ID, result.UIDValidity, reference.UID); cachedErr == nil {
+		hit.CachedMessageID = cached.ID
+	} else if !errors.Is(cachedErr, maildomain.ErrMessageNotFound) {
+		return account.Account{}, maildomain.RemoteSearchHit{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot inspect the local cache for a remote message", false, cachedErr)
+	}
+	return accountValue, hit, state.SchemaVersion(), nil
+}
+
+func (commands accountCommands) MailHydrate(
+	ctx context.Context,
+	home, accountSelector string,
+	encodedReferences []string,
+) (account.Account, []maildomain.HydrateOutcome, int64, error) {
+	if len(encodedReferences) < 1 || len(encodedReferences) > 100 {
+		return account.Account{}, nil, 0, cli.NewAppError(cli.ErrorUsage, "--hydrate requires between 1 and 100 remote references", false)
+	}
+	state, paths, unlock, err := commands.openWriteState(ctx, home)
+	if err != nil {
+		return account.Account{}, nil, 0, err
+	}
+	defer state.Close()
+	defer unlock()
+	accountValue, err := state.Accounts().ResolveSelected(ctx, accountSelector)
+	if err != nil {
+		return account.Account{}, nil, state.SchemaVersion(), mapAccountError(err)
+	}
+	_, credential, err := state.Accounts().Credential(ctx, accountValue.ID)
+	if err != nil {
+		return account.Account{}, nil, state.SchemaVersion(), mapAccountError(err)
+	}
+	password, err := secret.NewManager(commands.keyring).Resolve(ctx, credential)
+	if err != nil {
+		return account.Account{}, nil, state.SchemaVersion(), mapCredentialError(err)
+	}
+	defer zeroBytes(password)
+
+	outcomes := make([]maildomain.HydrateOutcome, 0, len(encodedReferences))
+	seen := make(map[string]struct{}, len(encodedReferences))
+	for _, encoded := range encodedReferences {
+		encoded = strings.TrimSpace(encoded)
+		if _, duplicate := seen[encoded]; duplicate {
+			continue
+		}
+		seen[encoded] = struct{}{}
+		reference, folderValue, resolveErr := resolveRemoteReference(ctx, state, accountValue.ID, encoded)
+		if resolveErr != nil {
+			return account.Account{}, nil, state.SchemaVersion(), resolveErr
+		}
+		if cached, cachedErr := state.Mail().MessageByProviderLocation(ctx, accountValue.ID, folderValue.ID, reference.UIDValidity, reference.UID); cachedErr == nil {
+			locationID := providerLocationID(cached, folderValue.ID, reference.UIDValidity, reference.UID)
+			outcomes = append(outcomes, maildomain.HydrateOutcome{Reference: encoded, MessageID: cached.ID, LocationID: locationID})
+			continue
+		} else if !errors.Is(cachedErr, maildomain.ErrMessageNotFound) {
+			return account.Account{}, nil, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot inspect the local cache before hydration", false, cachedErr)
+		}
+
+		stager := commands.blobStager(paths)
+		attachmentSet := newStagedAttachmentSet(commands.attachmentBlobStore(paths))
+		result, fetchErr := commands.fetchRemoteMessage(ctx, accountValue, password, folderValue, reference, stager)
+		if fetchErr != nil {
+			attachmentSet.Abort()
+			return account.Account{}, nil, state.SchemaVersion(), fetchErr
+		}
+		fetched := result.Message
+		defer fetched.Raw.Abort()
+		records, prepareErr := commands.prepareFetchedMailRecords(ctx, accountValue, folderValue, result.UIDValidity, []transport.FetchedMessage{fetched}, attachmentSet)
+		if prepareErr != nil {
+			attachmentSet.Abort()
+			var preparation *fetchedPreparationError
+			if errors.As(prepareErr, &preparation) {
+				return account.Account{}, nil, state.SchemaVersion(), preparation.appError()
+			}
+			return account.Account{}, nil, state.SchemaVersion(), cli.WrapAppError(cli.ErrorUnavailable, "cannot safely prepare the remote message", false, prepareErr)
+		}
+		if err := fetched.Raw.Commit(); err != nil {
+			attachmentSet.Abort()
+			return account.Account{}, nil, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot commit the hydrated raw message", true, err)
+		}
+		if err := attachmentSet.Commit(); err != nil {
+			return account.Account{}, nil, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot commit a hydrated attachment", true, err)
+		}
+		commit, commitErr := state.Mail().CommitHydration(ctx, maildomain.HydratePage{
+			AccountID: accountValue.ID, FolderID: folderValue.ID, UIDValidity: result.UIDValidity,
+			AttemptedAt: commands.timeNow(), Records: records,
+		})
+		if commitErr != nil {
+			return account.Account{}, nil, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot atomically commit the hydrated message", true, commitErr)
+		}
+		message, readErr := state.Mail().MessageByProviderLocation(ctx, accountValue.ID, folderValue.ID, result.UIDValidity, reference.UID)
+		if readErr != nil {
+			return account.Account{}, nil, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot reload the hydrated message", false, readErr)
+		}
+		outcomes = append(outcomes, maildomain.HydrateOutcome{
+			Reference: encoded, MessageID: message.ID,
+			LocationID: providerLocationID(message, folderValue.ID, result.UIDValidity, reference.UID),
+			Created:    commit.Created == 1, Updated: commit.Updated == 1,
+		})
+	}
+	return accountValue, outcomes, state.SchemaVersion(), nil
+}
+
+func validateRemoteSearchOptions(options maildomain.SearchOptions) error {
+	if options.Limit < 1 || options.Limit > 100 {
+		return cli.NewAppError(cli.ErrorUsage, "remote search limit must be between 1 and 100", false)
+	}
+	if options.ResultKind != "" && options.ResultKind != maildomain.SearchMessages {
+		return cli.WrapAppError(cli.ErrorUsage, "remote search returns messages only; cache results before local thread reconstruction", false, maildomain.ErrUnsupportedRemoteFilter)
+	}
+	if strings.TrimSpace(options.Cursor) != "" {
+		return cli.WrapAppError(cli.ErrorUsage, "remote search does not accept local search cursors", false, maildomain.ErrUnsupportedRemoteFilter)
+	}
+	if strings.TrimSpace(options.AttachmentFilename) != "" || strings.TrimSpace(options.AttachmentType) != "" {
+		return cli.WrapAppError(cli.ErrorUsage, "remote search cannot filter attachment metadata; hydrate or synchronize before using attachment filters", false, maildomain.ErrUnsupportedRemoteFilter)
+	}
+	if options.After != nil && options.Before != nil && !options.After.Before(*options.Before) {
+		return cli.NewAppError(cli.ErrorUsage, "--after must precede --before", false)
+	}
+	return nil
+}
+
+func resolveRemoteSearchFolders(ctx context.Context, state *store.Store, accountID, selector string, all bool) ([]folder.Folder, error) {
+	selector = strings.TrimSpace(selector)
+	if all && selector != "" {
+		return nil, cli.NewAppError(cli.ErrorUsage, "--folder and --all-folders cannot be combined", false)
+	}
+	if !all {
+		if selector == "" {
+			selector = string(folder.KindInbox)
+		}
+		value, err := state.Folders().Resolve(ctx, accountID, selector)
+		if err != nil {
+			return nil, mapFolderError(err)
+		}
+		if !value.Present || value.Stale || !value.Selectable {
+			return nil, cli.NewAppError(cli.ErrorConflict, "selected remote-search folder is not current and selectable", false)
+		}
+		return []folder.Folder{value}, nil
+	}
+	values, more, err := state.Folders().ListSelectable(ctx, accountID, maxRemoteFolderFanout)
+	if err != nil {
+		return nil, cli.WrapAppError(cli.ErrorInternal, "cannot list remote-search folders", false, err)
+	}
+	if more {
+		return nil, cli.NewAppError(cli.ErrorUsage, fmt.Sprintf("--all-folders is limited to %d current selectable folders; narrow with --folder", maxRemoteFolderFanout), false)
+	}
+	if len(values) == 0 {
+		return nil, cli.NewAppError(cli.ErrorNotFound, "no current selectable folders are available for remote search", false)
+	}
+	return values, nil
+}
+
+func resolveRemoteReference(ctx context.Context, state *store.Store, accountID, encoded string) (maildomain.RemoteReference, folder.Folder, error) {
+	reference, err := maildomain.DecodeRemoteReference(encoded)
+	if err != nil || reference.AccountID != accountID {
+		return maildomain.RemoteReference{}, folder.Folder{}, cli.WrapAppError(cli.ErrorUsage, "remote message reference is invalid for the selected account", false, maildomain.ErrInvalidRemoteReference)
+	}
+	folderValue, err := state.Folders().Resolve(ctx, accountID, reference.FolderID)
+	if err != nil {
+		return maildomain.RemoteReference{}, folder.Folder{}, mapFolderError(err)
+	}
+	if !folderValue.Present || folderValue.Stale || !folderValue.Selectable {
+		return maildomain.RemoteReference{}, folder.Folder{}, cli.WrapAppError(cli.ErrorConflict, "remote message folder is no longer current and selectable", false, maildomain.ErrStaleRemoteReference)
+	}
+	if folderValue.UIDValidity != 0 && folderValue.UIDValidity != reference.UIDValidity {
+		return maildomain.RemoteReference{}, folder.Folder{}, cli.WrapAppError(cli.ErrorConflict, "remote message reference is stale because the folder identity changed", false, maildomain.ErrStaleRemoteReference)
+	}
+	return reference, folderValue, nil
+}
+
+func (commands accountCommands) searchRemoteFolder(ctx context.Context, accountValue account.Account, password []byte, folderValue folder.Folder, criteria transport.RemoteSearchCriteria, limit int) (transport.RemoteSearchPage, error) {
+	var lastErr error
+	for _, username := range imapUsernameCandidates(accountValue) {
+		page, err := commands.remoteClient().SearchRemote(ctx, transport.AuthRequest{Username: username, Password: password}, transport.RemoteSearchRequest{
+			Mailbox: folderValue.WireName, ExpectedUIDValidity: folderValue.UIDValidity,
+			Criteria: criteria, Limit: limit,
+		})
+		if err == nil {
+			return page, nil
+		}
+		lastErr = err
+		if !isAuthenticationFailure(err) {
+			break
+		}
+	}
+	return transport.RemoteSearchPage{}, mapRemoteTransportError(lastErr, "remote search", folderValue.Name)
+}
+
+func (commands accountCommands) fetchRemoteSummary(ctx context.Context, accountValue account.Account, password []byte, folderValue folder.Folder, reference maildomain.RemoteReference) (transport.RemoteSummaryResult, error) {
+	var lastErr error
+	for _, username := range imapUsernameCandidates(accountValue) {
+		result, err := commands.remoteClient().FetchRemoteSummary(ctx, transport.AuthRequest{Username: username, Password: password}, transport.RemoteFetchRequest{
+			Mailbox: folderValue.WireName, ExpectedUIDValidity: reference.UIDValidity, UID: reference.UID,
+		})
+		if err == nil {
+			return result, nil
+		}
+		lastErr = err
+		if !isAuthenticationFailure(err) {
+			break
+		}
+	}
+	return transport.RemoteSummaryResult{}, mapRemoteTransportError(lastErr, "remote message lookup", folderValue.Name)
+}
+
+func (commands accountCommands) fetchRemoteMessage(ctx context.Context, accountValue account.Account, password []byte, folderValue folder.Folder, reference maildomain.RemoteReference, stager blob.Stager) (transport.RemoteFetchResult, error) {
+	var lastErr error
+	for _, username := range imapUsernameCandidates(accountValue) {
+		result, err := commands.remoteClient().FetchRemoteMessage(ctx, transport.AuthRequest{Username: username, Password: password}, transport.RemoteFetchRequest{
+			Mailbox: folderValue.WireName, ExpectedUIDValidity: reference.UIDValidity, UID: reference.UID,
+		}, stager)
+		if err == nil {
+			return result, nil
+		}
+		lastErr = err
+		if !isAuthenticationFailure(err) {
+			break
+		}
+	}
+	return transport.RemoteFetchResult{}, mapRemoteTransportError(lastErr, "remote message hydration", folderValue.Name)
+}
+
+func remoteCriteria(options maildomain.SearchOptions) transport.RemoteSearchCriteria {
+	return transport.RemoteSearchCriteria{
+		Text: strings.Fields(options.Query), Sender: options.Sender, Participant: options.Participant,
+		Subject: options.Subject, RFCMessageID: options.RFCMessageID,
+		Unread: options.Unread, Flagged: options.Flagged, After: options.After, Before: options.Before,
+	}
+}
+
+func remoteDateMatches(value time.Time, after, before *time.Time) bool {
+	if after != nil && value.Before(after.UTC()) {
+		return false
+	}
+	if before != nil && !value.Before(before.UTC()) {
+		return false
+	}
+	return true
+}
+
+func remoteSearchHit(accountID string, folderValue folder.Folder, uidValidity uint32, reference string, value transport.RemoteMessageSummary, matchedField string) maildomain.RemoteSearchHit {
+	return maildomain.RemoteSearchHit{
+		Reference: reference, AccountID: accountID, FolderID: folderValue.ID, FolderName: folderValue.Name,
+		UIDValidity: uidValidity, UID: value.UID, InternalDate: value.InternalDate,
+		From: firstEnvelopeAddress(value.Envelope.From), To: envelopeAddresses(value.Envelope.To),
+		CC: envelopeAddresses(value.Envelope.CC), Subject: value.Envelope.Subject,
+		RFCMessageID: strings.Trim(strings.TrimSpace(value.Envelope.MessageID), "<>"),
+		Flags:        maildomain.ParseLocationFlags(value.Flags), Snippet: value.Snippet,
+		RFC822Size: value.RFC822Size, MatchedField: matchedField,
+	}
+}
+
+func envelopeAddresses(values []transport.EnvelopeAddress) []maildomain.Address {
+	result := make([]maildomain.Address, 0, len(values))
+	for _, value := range values {
+		if strings.TrimSpace(value.Email) != "" {
+			result = append(result, maildomain.Address{DisplayName: value.Name, Email: value.Email})
+		}
+	}
+	return result
+}
+
+func firstEnvelopeAddress(values []transport.EnvelopeAddress) maildomain.Address {
+	addresses := envelopeAddresses(values)
+	if len(addresses) == 0 {
+		return maildomain.Address{}
+	}
+	return addresses[0]
+}
+
+func remoteMatchedField(options maildomain.SearchOptions) string {
+	switch {
+	case strings.TrimSpace(options.Query) != "":
+		return "provider_text"
+	case strings.TrimSpace(options.Sender) != "":
+		return "sender"
+	case strings.TrimSpace(options.Participant) != "":
+		return "participant"
+	case strings.TrimSpace(options.Subject) != "":
+		return "subject"
+	case strings.TrimSpace(options.RFCMessageID) != "":
+		return "rfc_message_id"
+	case options.Unread != nil:
+		return "unread"
+	case options.Flagged != nil:
+		return "flagged"
+	case options.After != nil || options.Before != nil:
+		return "date"
+	default:
+		return "remote"
+	}
+}
+
+func providerLocationID(message maildomain.Message, folderID string, uidValidity, uid uint32) string {
+	for _, location := range message.Locations {
+		if location.FolderID == folderID && location.UIDValidity == uidValidity && location.UID == uid {
+			return location.ID
+		}
+	}
+	return ""
+}
+
+func isAuthenticationFailure(err error) bool {
+	failure, ok := transport.AsFailure(err)
+	return ok && failure.Kind == transport.FailureAuthentication
+}
+
+func mapRemoteTransportError(err error, operation, folderName string) error {
+	var validity *transport.UIDValidityError
+	if errors.As(err, &validity) {
+		return cli.WrapAppError(cli.ErrorConflict, "remote message reference is stale because the folder identity changed", false, maildomain.ErrStaleRemoteReference)
+	}
+	failure, ok := transport.AsFailure(err)
+	if !ok {
+		return cli.WrapAppError(cli.ErrorUnavailable, operation+" failed", false, err)
+	}
+	code := cli.ErrorUnavailable
+	if failure.Kind == transport.FailureAuthentication {
+		code = cli.ErrorAuthentication
+	} else if failure.Kind == transport.FailureConfiguration {
+		code = cli.ErrorConfiguration
+	}
+	message := operation + " failed"
+	if name := strings.TrimSpace(folderName); name != "" {
+		message += " for " + name
+	}
+	if failure.Stage != "" {
+		message += " at " + string(failure.Stage)
+	}
+	appErr := cli.WrapAppError(code, message, failure.Retryable, err)
+	appErr.Details = map[string]any{"stage": failure.Stage}
+	return appErr
+}

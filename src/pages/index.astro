@@ -30,6 +30,7 @@ const workflows = [
   "Select, rename, default, rotate, or remove multiple profiles without exposing credential references or values.",
   "Validate direct-TLS IMAP and mandatory-STARTTLS SMTP safely, then inspect stored health with icloud doctor.",
   "Discover nested and Unicode mailboxes, then synchronize bounded pages from enabled folders into private local state.",
+  "Search synchronized mail offline, or query bounded iCloud metadata explicitly and hydrate only the remote messages you choose.",
   "Read compact sender, subject, state, attachment-count, and decoded-text previews offline without marking mail read.",
   "Browse stable locally reconstructed RFC conversations and follow durable aliases after late evidence merges provisional threads.",
   "Open one stable message ID for complete text, HTML, decoded headers, MIME details, or verified raw RFC822 export.",
@@ -55,7 +56,8 @@ const workflows = [
       </p>
       <p class="hero__annotation">
         The current build validates both iCloud Mail protocols, discovers every folder, synchronizes
-        bounded enabled-folder pages, starts Sent without crawling history, reconstructs RFC conversations locally,
+        bounded enabled-folder pages, starts Sent without crawling history, searches locally or through explicit bounded iCloud queries,
+        hydrates selected remote messages without advancing sync, reconstructs RFC conversations locally,
         reads complete local messages explicitly, and never sends or mutates mail.
       </p>
       <div class="hero__actions">
@@ -73,7 +75,7 @@ const workflows = [
         <span>capabilities</span>
         <span>command=icloud</span>
         <span>version=0.1.0</span>
-        <span>schema=9 …</span>
+        <span>schema=10 …</span>
         <span>$ icloud account add --name Personal --email owner@icloud.com</span>
         <span>App-specific password:</span>
         <span>account-added</span>
@@ -99,6 +101,13 @@ const workflows = [
         <span>message</span>
         <span>msg_… from=sender@example.com</span>
         <span>subject="Project update"</span>
+        <span>$ icloud mail search invoice --remote</span>
+        <span>remote-hit</span>
+        <span>rem_… folder=INBOX</span>
+        <span>subject="August invoice"</span>
+        <span>$ icloud mail sync --hydrate rem_…</span>
+        <span>mail-hydrate</span>
+        <span>msg_… status=created</span>
         <span>$ icloud mail latest</span>
         <span>thread</span>
         <span>thr_… subject="Project update"</span>
@@ -133,7 +142,7 @@ const workflows = [
   <section class="shell split-section">
     <div>
       <p class="section-label">Available now</p>
-      <h2>Configure private profiles, validate both mail protocols, synchronize enabled folders, and choose exactly how much message content to read.</h2>
+      <h2>Configure private profiles, validate both mail protocols, synchronize or search deliberately, and choose exactly what remote content to cache and read.</h2>
     </div>
     <div class="stack-list">
       {workflows.map((item) => (

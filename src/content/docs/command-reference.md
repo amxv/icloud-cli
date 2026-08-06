@@ -207,6 +207,8 @@ Changes local future-sync policy only; no message is fetched or changed. Newly d
 icloud mail sync
 icloud mail sync --folder sent
 icloud mail sync --folder fld_…
+icloud mail sync --hydrate rem_…
+icloud mail sync --hydrate rem_…,rem_… --json
 icloud mail sync --limit 50
 icloud --account Personal mail sync --json
 ```
@@ -220,6 +222,8 @@ Each selected folder also refreshes up to 100 least-recently checked current loc
 When a new folder copy has the same strong message identity as an existing local message, it becomes another location on the stable `msg_…` record. Each location retains its own folder, UID identity, flags, and presence. Similar content alone does not collapse two provider-backed messages; ambiguous evidence preserves both records and emits dedupe conflict telemetry.
 
 Compact success prints one block per selected folder with fetched/created/updated counts, reconciled locations, actual state changes, nonzero identity merges or conflicts, committed UID, `more`, and bootstrap state. `--json` returns every folder summary plus its durable checkpoint. An interrupted fetch, reconciliation, parse, blob write, or local commit leaves that folder's prior frontier unchanged.
+
+`--hydrate <rem_…,...>` switches to targeted remote caching and cannot be combined with `--folder`. It accepts 1-100 stale-safe remote references, deduplicates repeated arguments, verifies each account/folder/UIDVALIDITY/UID, and routes the fetched message through the same parser, blob, identity, attachment, search, and thread ingestion path. It does not create or advance a sync checkpoint. Compact output reports stable message/location IDs plus `created`, `updated`, or `cached`; JSON omits the submitted remote references.
 
 ## `icloud mail inbox`
 
@@ -245,6 +249,9 @@ icloud mail search --from billing@example.com --unread
 icloud mail search launch --result threads
 icloud mail search --attachment-type application/pdf --after 2026-08-01
 icloud mail search invoice --limit 50 --cursor cur_…
+icloud mail search invoice --remote
+icloud mail search --remote --folder archive --from billing@example.com --unread
+icloud mail search invoice --remote --all-folders
 icloud mail search invoice --json
 ```
 
@@ -272,6 +279,10 @@ Common filters:
 Free text and structured filters combine with AND. A cursor used with a changed query, filter, account, or result kind exits with usage rather than silently changing the result boundary.
 
 JSON returns sanitized message or thread hits, rank, matched field, bounded excerpt, page metadata, and index status. It omits credentials, BCC, private raw-storage coordinates, complete bodies, HTML, raw MIME, and attachment bytes.
+
+`--remote` contacts iCloud and returns bounded uncached provider-message summaries with `rem_…` references. It defaults to Inbox; `--folder` selects one current selectable folder, while `--all-folders` explicitly fans out to at most 10 current selectable folders. Remote results are newest-first and report folder/UID identity, envelope sender/To/CC, subject, internal date, read/flag state, RFC822 size, a bounded decoded provider preview, matched field, and a stable local message ID only when the provider location is already cached.
+
+Remote search supports positional provider text, `--from`, `--participant`, `--subject`, `--rfc-id`, read/flag state, and date filters. It returns messages only. `--result threads`, attachment filename/type filters, and `--cursor` return usage errors because those require the local indexed/reconstructed model. Remote `more=true` means matching provider results were truncated by `--limit`; `partial=true` means the bounded recent provider range ended before the folder's older UID space and the caller should narrow the query. JSON retains the same privacy exclusions as local search.
 
 ## `icloud mail search repair`
 
@@ -359,6 +370,8 @@ icloud mail message show msg_… --format html
 icloud mail message show msg_… --headers
 icloud mail message show msg_… --metadata-only
 icloud mail message show msg_… --verbose
+icloud mail message show rem_… --remote
+icloud mail message show rem_… --remote --cache --full
 icloud mail message show msg_… --json
 ```
 
@@ -377,10 +390,14 @@ Content is opt-in:
 | `--metadata-only` | Metadata without excerpt or content; conflicts with content flags. |
 | `--verbose` | Ordered MIME-part metadata and parse diagnostics. |
 | `--json` | One envelope; content appears only when the corresponding content flag is also present. |
+| `--remote` | Treat the selector as a stale-safe `rem_…` provider reference and read a bounded current provider summary. |
+| `--cache` | With `--remote`, persist the exact provider message through normal local ingestion before applying content flags. |
 
 Default JSON reports text/HTML/raw/header/part availability, part count, and whether parsing was complete. `--full --json` adds decoded text; `--format html --json` adds HTML; `--headers --json` adds headers; `--verbose --json` adds MIME parts; `--format raw --json` adds base64 raw MIME up to 8 MiB. Use plain streaming modes for larger content.
 
 Contradictory combinations return usage errors rather than choosing silently. Examples include `--headers --body-only`, content flags with `--metadata-only`, `--full --format html`, and plain `--format raw --verbose`.
+
+An uncached remote summary allows compact or JSON metadata only. Complete text, HTML, headers, raw MIME, body-only output, and verbose MIME details require `--remote --cache`. Caching returns to the ordinary stable local `msg_…` read path and does not advance the folder sync checkpoint. A remote reference whose account, folder, or UIDVALIDITY no longer matches exits with usage or conflict before fetching another message at a reused UID.
 
 ## `icloud mail message raw`
 
@@ -496,6 +513,8 @@ mail_attachments=true
 mail_flags=true
 mail_threads=true
 mail_search=true
+mail_remote_search=true
+mail_hydration=true
 default_output=compact
 json=true
 completion=bash,zsh,fish,powershell
@@ -541,6 +560,6 @@ Help goes to stdout. Usage failures go to stderr and exit `2`.
 
 ## Output availability
 
-Every account and credential lifecycle command above, `account test`, every folder command, enabled-folder sync/read/search/status/checkpoints, latest/thread reads, message read and state commands, attachment list/save/save-all, `doctor`, `version`, and `capabilities` supports `--json` where a native byte stream is not requested. Validation, doctor, folder reads/status, thread reads, and message reads support bounded `--verbose` detail where advertised. `mail message raw`, `message export --output -`, and `attachments save --output - --binary` retain native bytes; completion and man generation retain their native formats. Local folder, search, and thread lists stay preview-only, while stable-ID thread/message reads provide explicit full-text, HTML, raw, headers, metadata-only, verbose, and JSON modes.
+Every account and credential lifecycle command above, `account test`, every folder command, enabled-folder sync/read/local-or-remote-search/status/checkpoints, targeted hydration, latest/thread reads, message read and state commands, attachment list/save/save-all, `doctor`, `version`, and `capabilities` supports `--json` where a native byte stream is not requested. Validation, doctor, folder reads/status, thread reads, and message reads support bounded `--verbose` detail where advertised. `mail message raw`, `message export --output -`, and `attachments save --output - --binary` retain native bytes; completion and man generation retain their native formats. Local folder, search, and thread lists stay preview-only. Remote summaries stay metadata-only until `--cache`; stable local thread/message reads then provide explicit full-text, HTML, raw, headers, metadata-only, verbose, and JSON modes.
 
 Compact output uses vertical blocks: result type first, stable identity plus the first field next when present, then one remaining field per line. A blank line separates consecutive records or a final summary. Errors use the same block shape on stderr.

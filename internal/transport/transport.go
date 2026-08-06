@@ -193,6 +193,68 @@ type IMAPInboxClient interface {
 	FetchInboxPage(context.Context, AuthRequest, InboxFetchRequest, blob.Stager) (InboxPage, error)
 }
 
+type RemoteSearchCriteria struct {
+	Text         []string
+	Sender       string
+	Participant  string
+	Subject      string
+	RFCMessageID string
+	Unread       *bool
+	Flagged      *bool
+	After        *time.Time
+	Before       *time.Time
+}
+
+type RemoteSearchRequest struct {
+	Mailbox             string
+	ExpectedUIDValidity uint32
+	Criteria            RemoteSearchCriteria
+	Limit               int
+	MaxCandidateUIDs    int
+}
+
+type RemoteMessageSummary struct {
+	UID          uint32
+	Flags        []string
+	InternalDate time.Time
+	RFC822Size   int64
+	Envelope     MessageEnvelope
+	Snippet      string
+}
+
+type RemoteSearchPage struct {
+	Mailbox       string
+	UIDValidity   uint32
+	Messages      []RemoteMessageSummary
+	MoreAvailable bool
+	Partial       bool
+	CandidateUIDs int
+}
+
+type RemoteFetchRequest struct {
+	Mailbox             string
+	ExpectedUIDValidity uint32
+	UID                 uint32
+}
+
+type RemoteFetchResult struct {
+	Mailbox     string
+	UIDValidity uint32
+	Message     FetchedMessage
+}
+
+type RemoteSummaryResult struct {
+	Mailbox     string
+	UIDValidity uint32
+	Message     RemoteMessageSummary
+}
+
+type IMAPRemoteClient interface {
+	SearchRemote(context.Context, AuthRequest, RemoteSearchRequest) (RemoteSearchPage, error)
+	FetchRemoteSummary(context.Context, AuthRequest, RemoteFetchRequest) (RemoteSummaryResult, error)
+	FetchRemoteMessage(context.Context, AuthRequest, RemoteFetchRequest, blob.Stager) (RemoteFetchResult, error)
+}
+
 type FlagMutationRequest struct {
 	Mailbox             string
 	ExpectedUIDValidity uint32

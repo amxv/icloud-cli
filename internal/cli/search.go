@@ -47,6 +47,17 @@ type mailSearchData struct {
 	SchemaVersion int64                      `json:"schema_version"`
 }
 
+type mailRemoteSearchData struct {
+	AccountID     string                       `json:"account_id"`
+	Hits          []maildomain.RemoteSearchHit `json:"hits"`
+	Count         int                          `json:"count"`
+	More          bool                         `json:"more"`
+	Partial       bool                         `json:"partial"`
+	Folders       int                          `json:"folders"`
+	CandidateUIDs int                          `json:"candidate_uids"`
+	SchemaVersion int64                        `json:"schema_version"`
+}
+
 type mailSearchRepairData struct {
 	Summary       maildomain.SearchRepairSummary `json:"summary"`
 	SchemaVersion int64                          `json:"schema_version"`
@@ -57,13 +68,16 @@ func newMailSearchCommand(state *executionState) *cobra.Command {
 	var jsonOutput bool
 	var resultKind string
 	var limit int
+	var remote bool
+	var allFolders bool
 	command := &cobra.Command{
 		Use:   "search [query]",
-		Short: "Search locally synchronized mail with indexed text and filters",
+		Short: "Search synchronized mail locally or query bounded provider metadata explicitly",
 		Args:  cobra.MaximumNArgs(1),
 		Example: "  icloud mail search invoice\n" +
 			"  icloud mail search --from billing@example.com --unread\n" +
 			"  icloud mail search launch --result threads --limit 20\n" +
+			"  icloud mail search invoice --remote --folder inbox\n" +
 			"  icloud mail search --attachment-type application/pdf --json",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput}, OutputSupport{JSON: true}); err != nil {
@@ -83,6 +97,31 @@ func newMailSearchCommand(state *executionState) *cobra.Command {
 			options, err := flags.options(query, kind, limit)
 			if err != nil {
 				return err
+			}
+			if allFolders && !remote {
+				return NewAppError(ErrorUsage, "--all-folders requires --remote", false)
+			}
+			if remote {
+				accountValue, page, schemaVersion, err := state.mail.MailRemoteSearch(
+					cmd.Context(), state.global.Home, state.global.Account, flags.Folder, allFolders, options,
+				)
+				if err != nil {
+					return err
+				}
+				if jsonOutput {
+					return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: mailRemoteSearchData{
+						AccountID: accountValue.ID, Hits: page.Hits, Count: page.Count,
+						More: page.More, Partial: page.Partial, Folders: page.Folders,
+						CandidateUIDs: page.CandidateUIDs, SchemaVersion: schemaVersion,
+					}, Meta: EnvelopeMeta{RequestID: state.requestID}})
+				}
+				renderer := NewCompactTextRenderer(state.stdout)
+				for _, hit := range page.Hits {
+					if err := renderRemoteSearchHit(renderer, hit); err != nil {
+						return err
+					}
+				}
+				return renderRemoteSearchSummary(renderer, accountValue.ID, page)
 			}
 			accountValue, _, page, schemaVersion, err := state.mail.MailSearch(
 				cmd.Context(), state.global.Home, state.global.Account, flags.Folder, options,
@@ -111,10 +150,46 @@ func newMailSearchCommand(state *executionState) *cobra.Command {
 	}
 	addMailSearchFlags(command, &flags, true, false)
 	command.Flags().StringVar(&resultKind, "result", string(maildomain.SearchMessages), "Result kind: messages or threads")
-	command.Flags().IntVar(&limit, "limit", DefaultPageSize, fmt.Sprintf("Maximum local hits to return (1-%d)", MaximumPageSize))
+	command.Flags().BoolVar(&remote, "remote", false, "Query bounded provider metadata instead of local synchronized state")
+	command.Flags().BoolVar(&allFolders, "all-folders", false, "Search every current selectable folder, up to the documented fan-out bound")
+	command.Flags().IntVar(&limit, "limit", DefaultPageSize, fmt.Sprintf("Maximum hits to return (1-%d)", MaximumPageSize))
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
 	command.AddCommand(newMailSearchRepairCommand(state))
 	return command
+}
+
+func renderRemoteSearchHit(renderer *CompactTextRenderer, hit maildomain.RemoteSearchHit) error {
+	state := "read"
+	if !hit.Flags.Seen {
+		state = "unread"
+	}
+	return renderer.Record("remote-hit", hit.Reference,
+		Field("folder", hit.FolderName),
+		Field("folder_id", hit.FolderID),
+		Field("uid_validity", hit.UIDValidity),
+		Field("uid", hit.UID),
+		Field("from", formatAddress(hit.From)),
+		Field("to", formatAddresses(hit.To)),
+		Field("cc", formatAddresses(hit.CC)),
+		Field("subject", hit.Subject),
+		Field("at", hit.InternalDate),
+		Field("state", state),
+		Field("flagged", hit.Flags.Flagged),
+		Field("match", hit.MatchedField),
+		Field("cached_message", hit.CachedMessageID),
+		Field("excerpt", Excerpt(hit.Snippet, DefaultExcerptRunes)),
+	)
+}
+
+func renderRemoteSearchSummary(renderer *CompactTextRenderer, accountID string, page maildomain.RemoteSearchPage) error {
+	return renderer.Summary("remote-results",
+		Field("account", accountID),
+		Field("count", fmt.Sprintf("%d", page.Count)),
+		Field("more", fmt.Sprintf("%t", page.More)),
+		Field("partial", fmt.Sprintf("%t", page.Partial)),
+		Field("folders", fmt.Sprintf("%d", page.Folders)),
+		Field("candidate_uids", fmt.Sprintf("%d", page.CandidateUIDs)),
+	)
 }
 
 func newMailSearchRepairCommand(state *executionState) *cobra.Command {

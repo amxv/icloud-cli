@@ -8,6 +8,9 @@ summary: Public command, output, installation, and documentation changes.
 
 ## Unreleased
 
+- Added explicit bounded iCloud search with stale-safe `rem_…` provider references, one-folder default, opt-in all-folder fan-out, current envelope/flag summaries, decoded bounded previews, visible `more`/`partial` bounds, and honest unsupported-filter errors.
+- Added targeted remote hydration through `mail sync --hydrate` and `mail message show --remote --cache`, reusing the canonical parser/blob/identity/search/attachment/thread path without advancing ordinary synchronization checkpoints.
+- Added `mail_remote_search` and `mail_hydration` capability flags and expanded the search, sync, output, troubleshooting, quickstart, README, and reference journeys.
 - Added schema version 10 indexed local mail search across subject, sender, To/CC participants, decoded text, attachment metadata, and RFC Message-ID, with BCC excluded.
 - Added `icloud mail search`, filterable `mail inbox` and `mail latest`, message or thread results, bounded relevance/newest paging, and cursors bound to the complete account and query.
 - Added transactional search updates during sync, content reparse, rethreading, and deletion, plus bounded `mail search repair` for incomplete legacy or interrupted local body indexing.

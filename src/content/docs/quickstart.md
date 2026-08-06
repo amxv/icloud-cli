@@ -3,7 +3,7 @@ title: Quickstart
 description: Install icloud, configure an app-specific password safely, validate the account, discover and synchronize mail, search or read it offline, save content, and update message state explicitly.
 order: 1
 category: Start
-summary: The shortest safe path from installation to a validated account, synchronized Inbox and new Sent copies, indexed offline search, explicit content access, safe attachment export, and location-aware state updates.
+summary: The shortest safe path from installation to a validated account, synchronized Inbox and new Sent copies, local or explicit remote search, targeted hydration, content access, safe attachment export, and location-aware state updates.
 ---
 
 ## Install and inspect the binary
@@ -42,6 +42,8 @@ mail_attachments=true
 mail_flags=true
 mail_threads=true
 mail_search=true
+mail_remote_search=true
+mail_hydration=true
 default_output=compact
 json=true
 completion=bash,zsh,fish,powershell
@@ -228,6 +230,21 @@ icloud mail search launch --result threads
 ```
 
 When `more=true`, continue with the returned `next_cursor` and the same search. See [Search synchronized mail](/docs/search-synchronized-mail) for filters, JSON, cursor rules, and local index repair.
+
+When you need a fresh iCloud check without moving the normal sync frontier, search explicitly:
+
+```bash
+icloud mail search invoice --remote
+```
+
+The result uses a stale-safe `rem_…` reference until you choose to cache it:
+
+```bash
+icloud mail message show rem_… --remote
+icloud mail message show rem_… --remote --cache --full
+```
+
+Targeted caching returns stable local IDs and leaves the ordinary folder checkpoint unchanged. See [Search synchronized mail](/docs/search-synchronized-mail) for provider filter limits, `partial`, all-folder fan-out, and batch hydration.
 
 ## Browse reconstructed conversations
 

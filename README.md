@@ -2,7 +2,7 @@
 
 `icloud` is a local-first command-line client for iCloud services. The project is being built for agent workflows without making the normal terminal experience noisy: compact plain text is the default, and structured or expanded output is always explicit.
 
-The current implementation provides secure multi-account and credential lifecycle, read-only live iCloud compatibility testing, durable all-folder discovery, bounded synchronization of enabled folders, indexed offline mail search, local RFC conversation reconstruction, complete local message reads, safe attachment export, and explicit read/flag state updates. It can validate IMAP/SMTP authentication, discover nested and Unicode mailboxes, stream raw messages into private local state, establish Sent at the current tail without crawling history, reconcile one logical message across independent folder locations, search synchronized headers, participants, decoded text, and attachment metadata, browse stable reconstructed conversations offline, preserve aliases when late RFC evidence merges provisional threads, show compact decoded-text excerpts, explicitly return complete text or HTML, inspect decoded headers and MIME metadata, export exact RFC822 bytes, save verified decoded attachments without trusting message filenames as paths, and update one exact current message location. It does not send, move, copy, archive, trash, or delete mail yet.
+The current implementation provides secure multi-account and credential lifecycle, read-only live iCloud compatibility testing, durable all-folder discovery, bounded synchronization of enabled folders, indexed offline mail search, explicit bounded remote search and targeted hydration, local RFC conversation reconstruction, complete local message reads, safe attachment export, and explicit read/flag state updates. It can validate IMAP/SMTP authentication, discover nested and Unicode mailboxes, stream raw messages into private local state, establish Sent at the current tail without crawling history, reconcile one logical message across independent folder locations, search synchronized headers, participants, decoded text, and attachment metadata, query current iCloud envelope/flag metadata without advancing sync, cache selected stale-safe remote references through the canonical ingestion path, browse stable reconstructed conversations offline, preserve aliases when late RFC evidence merges provisional threads, show compact decoded-text excerpts, explicitly return complete text or HTML, inspect decoded headers and MIME metadata, export exact RFC822 bytes, save verified decoded attachments without trusting message filenames as paths, and update one exact current message location. It does not send, move, copy, archive, trash, or delete mail yet.
 
 ## Install
 
@@ -39,14 +39,17 @@ icloud mail folders status [--verbose] [--json]
 icloud mail folders enable <selector> [--json]
 icloud mail folders disable <selector> [--json]
 icloud mail sync [--folder <selector>] [--limit <n>] [--json]
+icloud mail sync --hydrate <rem_…[,rem_…]> [--json]
 icloud mail inbox [--folder <selector>] [--query <text>] [filters] [--cursor <cursor>] [--limit <n>] [--json]
 icloud mail search [query] [filters] [--result messages|threads] [--cursor <cursor>] [--limit <n>] [--json]
+icloud mail search [query] --remote [--folder <selector>|--all-folders] [provider-filters] [--limit <n>] [--json]
 icloud mail search repair [--limit <n>] [--json]
 icloud mail sync status [--folder <selector>] [--json]
 icloud mail sync checkpoints [--limit <n>] [--json]
 icloud mail latest [--query <text>] [filters] [--cursor <cursor>] [--limit <n>] [--json]
 icloud mail thread show <thread-id|message-id> [--limit <n>] [--cursor <cursor>] [--full] [--format compact|text|html|raw] [--headers] [--body-only] [--metadata-only] [--verbose] [--json]
 icloud mail message show <message-id> [--full] [--format compact|text|html|raw] [--headers] [--body-only] [--metadata-only] [--verbose] [--json]
+icloud mail message show <rem_…> --remote [--cache] [content flags] [--json]
 icloud mail message raw <message-id>
 icloud mail message export <message-id> --output <path|-> [--force]
 icloud mail attachments list <message-id> [--limit <n>] [--json]
@@ -146,6 +149,8 @@ mail_attachments=true
 mail_flags=true
 mail_threads=true
 mail_search=true
+mail_remote_search=true
+mail_hydration=true
 default_output=compact
 json=true
 completion=bash,zsh,fish,powershell

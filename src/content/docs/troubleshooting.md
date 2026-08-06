@@ -271,6 +271,43 @@ icloud mail search invoice
 
 Use `--folder sent` or another confirmed folder selector when the expected copy is not in Inbox.
 
+For a fresh provider check without advancing sync, use explicit remote search:
+
+```bash
+icloud mail search invoice --remote --folder inbox
+```
+
+Remote search is bounded and is not local FTS parity. If it reports `partial=true`, narrow the folder, date range, sender, subject, or RFC Message-ID. Attachment metadata and reconstructed-thread filters require synchronization or targeted hydration first.
+
+## A remote reference is stale
+
+A `rem_…` reference is bound to one account, folder, UIDVALIDITY, and UID. If the mailbox identity changed, the command returns conflict before fetching an unrelated reused UID.
+
+Refresh folder status and repeat the remote search:
+
+```bash
+icloud mail folders status
+icloud mail search invoice --remote --folder inbox
+```
+
+Do not edit or reuse an older remote reference after a UIDVALIDITY change.
+
+## Remote content requires caching
+
+An uncached remote summary intentionally does not fetch or print complete bodies, HTML, headers, raw MIME, or MIME details. Cache through the normal local ingestion path:
+
+```bash
+icloud mail message show rem_… --remote --cache --full
+```
+
+For several selected results:
+
+```bash
+icloud mail sync --hydrate rem_…,rem_…
+```
+
+Hydration does not advance the ordinary folder checkpoint. Repeating the same reference reports `cached`.
+
 ## Search reports a pending or error index
 
 Metadata and previews remain searchable while some decoded bodies are incomplete. Rebuild a bounded local batch:

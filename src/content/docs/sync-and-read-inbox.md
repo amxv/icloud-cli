@@ -93,6 +93,19 @@ icloud mail inbox --from billing@example.com --after 2026-08-01
 
 The same indexed filters are available through `icloud mail search` across synchronized folders. See [Search synchronized mail](/docs/search-synchronized-mail) for message or thread results, attachment filters, and cursors.
 
+## Cache a selected remote message without advancing sync
+
+When explicit remote search returns a `rem_…` reference, hydrate only that provider location:
+
+```bash
+icloud mail sync --hydrate rem_…
+icloud mail sync --hydrate rem_…,rem_… --json
+```
+
+This is not a normal folder sync. It verifies the remote account/folder/UID identity, caches the exact message through the standard local parser and dedupe path, and returns stable message/location IDs. The existing folder checkpoint remains unchanged, including committed/scanned UIDs and bootstrap state.
+
+Use `icloud mail message show rem_… --remote --cache --full` when you want to cache and immediately read complete content. See [Search synchronized mail](/docs/search-synchronized-mail) for supported remote filters, `partial`, stale-reference recovery, and privacy behavior.
+
 Each compact record contains a stable message ID, sender, subject, best available date, true unread or flagged state, nonzero attachment count, and a bounded decoded-text preview:
 
 ```text

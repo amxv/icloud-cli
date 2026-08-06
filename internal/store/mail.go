@@ -116,32 +116,13 @@ func (repository *MailRepository) CommitInboxPage(ctx context.Context, page mail
 		}
 	}
 
-	created, updated, stateChanges, identityMerges, dedupeConflicts := 0, 0, 0, 0, 0
-	affectedMessages := make(map[string]struct{}, len(page.Records)+len(page.Reconciled))
 	timestamp := page.AttemptedAt.UTC().Format(time.RFC3339Nano)
-	for _, record := range page.Records {
-		if err := validateIngestRecord(page, record); err != nil {
-			return maildomain.CommitResult{}, err
-		}
-		wasCreated, wasMerged, conflictCount, ingestErr := upsertMailboxRecord(ctx, tx, record, timestamp)
-		if ingestErr != nil {
-			return maildomain.CommitResult{}, ingestErr
-		}
-		messageID, ingestErr := messageIDForProviderLocation(ctx, tx, page.AccountID, page.FolderID, page.UIDValidity, record.UID)
-		if ingestErr != nil {
-			return maildomain.CommitResult{}, ingestErr
-		}
-		affectedMessages[messageID] = struct{}{}
-		if wasCreated {
-			created++
-		} else {
-			updated++
-		}
-		if wasMerged {
-			identityMerges++
-		}
-		dedupeConflicts += conflictCount
+	ingested, err := ingestRecordsInTx(ctx, tx, page.AccountID, page.FolderID, page.UIDValidity, page.LastCommittedUID, page.Records, timestamp)
+	if err != nil {
+		return maildomain.CommitResult{}, err
 	}
+	stateChanges := 0
+	affectedMessages := ingested.Affected
 	seenReconciled := make(map[uint32]struct{}, len(page.Reconciled))
 	for _, record := range page.Reconciled {
 		if record.UID == 0 {
@@ -207,9 +188,35 @@ ON CONFLICT(account_id, folder_id) DO UPDATE SET
 		return maildomain.CommitResult{}, fmt.Errorf("commit inbox page: %w", err)
 	}
 	return maildomain.CommitResult{
-		Created: created, Updated: updated, Reconciled: len(page.Reconciled),
-		StateChanges: stateChanges, IdentityMerges: identityMerges,
-		DedupeConflicts: dedupeConflicts, Checkpoint: checkpoint,
+		Created: ingested.Created, Updated: ingested.Updated, Reconciled: len(page.Reconciled),
+		StateChanges: stateChanges, IdentityMerges: ingested.IdentityMerges,
+		DedupeConflicts: ingested.DedupeConflicts, Checkpoint: checkpoint,
+	}, nil
+}
+
+func (repository *MailRepository) CommitHydration(ctx context.Context, page maildomain.HydratePage) (maildomain.HydrateResult, error) {
+	if strings.TrimSpace(page.AccountID) == "" || strings.TrimSpace(page.FolderID) == "" || page.UIDValidity == 0 || len(page.Records) == 0 || len(page.Records) > 100 {
+		return maildomain.HydrateResult{}, errors.New("commit hydration: account, folder, UID validity, and 1-100 records are required")
+	}
+	tx, err := repository.db.BeginTx(ctx, nil)
+	if err != nil {
+		return maildomain.HydrateResult{}, fmt.Errorf("begin hydration commit: %w", err)
+	}
+	defer tx.Rollback()
+	timestamp := page.AttemptedAt.UTC().Format(time.RFC3339Nano)
+	ingested, err := ingestRecordsInTx(ctx, tx, page.AccountID, page.FolderID, page.UIDValidity, 0, page.Records, timestamp)
+	if err != nil {
+		return maildomain.HydrateResult{}, err
+	}
+	if err := rebuildAffectedThreadGraph(ctx, tx, page.AccountID, mapKeysSorted(ingested.Affected), page.AttemptedAt); err != nil {
+		return maildomain.HydrateResult{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return maildomain.HydrateResult{}, fmt.Errorf("commit hydration: %w", err)
+	}
+	return maildomain.HydrateResult{
+		Created: ingested.Created, Updated: ingested.Updated,
+		IdentityMerges: ingested.IdentityMerges, DedupeConflicts: ingested.DedupeConflicts,
 	}, nil
 }
 
@@ -340,6 +347,21 @@ WHERE m.account_id = ? AND m.message_id = ?`, strings.TrimSpace(accountID), stri
 		return maildomain.Message{}, err
 	}
 	return value, nil
+}
+
+func (repository *MailRepository) MessageByProviderLocation(ctx context.Context, accountID, folderID string, uidValidity, uid uint32) (maildomain.Message, error) {
+	var messageID string
+	if err := repository.db.QueryRowContext(ctx, `
+SELECT message_id FROM message_locations
+WHERE account_id = ? AND folder_id = ? AND uid_validity = ? AND uid = ? AND present = 1`,
+		strings.TrimSpace(accountID), strings.TrimSpace(folderID), uidValidity, uid,
+	).Scan(&messageID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return maildomain.Message{}, maildomain.ErrMessageNotFound
+		}
+		return maildomain.Message{}, fmt.Errorf("resolve provider message location: %w", err)
+	}
+	return repository.Message(ctx, accountID, messageID)
 }
 
 func (repository *MailRepository) ReconcileUIDs(ctx context.Context, accountID, folderID string, uidValidity uint32, limit int) ([]uint32, error) {
@@ -515,14 +537,62 @@ WHERE account_id = ? AND message_id = ? AND location_id = ?`,
 	return nil
 }
 
-func validateIngestRecord(page maildomain.CommitPage, record maildomain.IngestRecord) error {
-	if record.AccountID != page.AccountID || record.FolderID != page.FolderID || record.UIDValidity != page.UIDValidity {
+type ingestTransactionResult struct {
+	Created         int
+	Updated         int
+	IdentityMerges  int
+	DedupeConflicts int
+	Affected        map[string]struct{}
+}
+
+func ingestRecordsInTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	accountID, folderID string,
+	uidValidity, maxUID uint32,
+	records []maildomain.IngestRecord,
+	timestamp string,
+) (ingestTransactionResult, error) {
+	result := ingestTransactionResult{Affected: make(map[string]struct{}, len(records))}
+	seenUIDs := make(map[uint32]struct{}, len(records))
+	for _, record := range records {
+		if err := validateIngestRecordScope(accountID, folderID, uidValidity, maxUID, record); err != nil {
+			return ingestTransactionResult{}, err
+		}
+		if _, duplicate := seenUIDs[record.UID]; duplicate {
+			return ingestTransactionResult{}, errors.New("commit mail records: duplicate provider UID")
+		}
+		seenUIDs[record.UID] = struct{}{}
+		created, merged, conflictCount, err := upsertMailboxRecord(ctx, tx, record, timestamp)
+		if err != nil {
+			return ingestTransactionResult{}, err
+		}
+		messageID, err := messageIDForProviderLocation(ctx, tx, accountID, folderID, uidValidity, record.UID)
+		if err != nil {
+			return ingestTransactionResult{}, err
+		}
+		result.Affected[messageID] = struct{}{}
+		if created {
+			result.Created++
+		} else {
+			result.Updated++
+		}
+		if merged {
+			result.IdentityMerges++
+		}
+		result.DedupeConflicts += conflictCount
+	}
+	return result, nil
+}
+
+func validateIngestRecordScope(accountID, folderID string, uidValidity, maxUID uint32, record maildomain.IngestRecord) error {
+	if record.AccountID != accountID || record.FolderID != folderID || record.UIDValidity != uidValidity {
 		return errors.New("commit inbox page: record scope does not match page")
 	}
 	if strings.TrimSpace(record.MessageID) == "" || strings.TrimSpace(record.LocationID) == "" || record.UID == 0 {
 		return errors.New("commit inbox page: record identity is incomplete")
 	}
-	if record.UID > page.LastCommittedUID || record.UID > page.LastScannedUID {
+	if maxUID != 0 && record.UID > maxUID {
 		return errors.New("commit inbox page: record UID exceeds checkpoint frontier")
 	}
 	if len(record.RawContentHash) != 64 || strings.TrimSpace(record.RawStorageKey) == "" || record.RawByteSize < 0 {

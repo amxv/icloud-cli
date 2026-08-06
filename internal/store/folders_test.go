@@ -134,6 +134,37 @@ func TestFolderSelectionIsAccountScopedAndAmbiguousNamesFail(t *testing.T) {
 	}
 }
 
+func TestListSelectableIgnoresContainerFoldersBeforeApplyingBound(t *testing.T) {
+	state, accountValue := newFolderTestState(t)
+	defer state.Close()
+	counter := 0
+	newID := func() (string, error) {
+		counter++
+		return fmt.Sprintf("fld_0198d704-6c00-7000-a000-%012d", counter), nil
+	}
+	observations := make([]folder.RemoteObservation, 0, 14)
+	for index := 0; index < 12; index++ {
+		observations = append(observations, folder.RemoteObservation{
+			Name: fmt.Sprintf("Container %02d", index), WireName: fmt.Sprintf("Container %02d", index),
+			Kind: folder.KindOther, Selectable: false, Subscription: folder.SubscriptionUnknown,
+		})
+	}
+	observations = append(observations,
+		folder.RemoteObservation{Name: "INBOX", WireName: "INBOX", Kind: folder.KindInbox, KindSource: "inbox", Selectable: true, Subscription: folder.SubscriptionSubscribed, UIDValidity: 100, StatusKnown: true},
+		folder.RemoteObservation{Name: "Archive", WireName: "Archive", Kind: folder.KindArchive, KindSource: "attribute", Selectable: true, Subscription: folder.SubscriptionSubscribed, UIDValidity: 101, StatusKnown: true},
+	)
+	if _, err := state.Folders().Reconcile(context.Background(), accountValue.ID, observations, time.Now().UTC(), newID); err != nil {
+		t.Fatal(err)
+	}
+	values, more, err := state.Folders().ListSelectable(context.Background(), accountValue.ID, 10)
+	if err != nil || more || len(values) != 2 {
+		t.Fatalf("selectable list len=%d more=%v err=%v", len(values), more, err)
+	}
+	if values[0].Kind != folder.KindInbox || values[1].Kind != folder.KindArchive {
+		t.Fatalf("selectable folders = %+v", values)
+	}
+}
+
 func newFolderTestState(t *testing.T) (*Store, account.Account) {
 	t.Helper()
 	paths, err := config.ResolveAppPaths(filepath.Join(t.TempDir(), "state"))

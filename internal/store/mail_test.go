@@ -105,6 +105,118 @@ END;`); err != nil {
 	}
 }
 
+func TestMailHydrationUsesCanonicalIngestionWithoutChangingCheckpoint(t *testing.T) {
+	state, accountID, folderID := newMailStoreFixture(t)
+	defer state.Close()
+	now := time.Date(2026, 8, 6, 4, 52, 0, 0, time.UTC)
+	if _, err := state.Mail().CommitInboxPage(context.Background(), maildomain.CommitPage{
+		CheckpointID: "chk_0198d704-6c00-7000-8000-000000000504",
+		AccountID:    accountID, FolderID: folderID, UIDValidity: 100, Bootstrap: true,
+		LastCommittedUID: 20, LastScannedUID: 20, AttemptedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	record := mailRecordFixture(accountID, folderID, 100, 5, "hydrated@example.test")
+	result, err := state.Mail().CommitHydration(context.Background(), maildomain.HydratePage{
+		AccountID: accountID, FolderID: folderID, UIDValidity: 100,
+		AttemptedAt: now.Add(time.Minute), Records: []maildomain.IngestRecord{record},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Created != 1 || result.Updated != 0 {
+		t.Fatalf("hydration result = %+v", result)
+	}
+	message, err := state.Mail().MessageByProviderLocation(context.Background(), accountID, folderID, 100, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if message.ID != record.MessageID || len(message.Locations) != 1 || message.Locations[0].ID != record.LocationID {
+		t.Fatalf("hydrated message = %+v", message)
+	}
+	checkpoint, err := state.Mail().Checkpoint(context.Background(), accountID, folderID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if checkpoint.LastCommittedUID != 20 || checkpoint.LastScannedUID != 20 || !checkpoint.BootstrapComplete || checkpoint.State != maildomain.CheckpointIdle {
+		t.Fatalf("hydration changed checkpoint: %+v", checkpoint)
+	}
+
+	retry := mailRecordFixture(accountID, folderID, 100, 5, "hydrated@example.test")
+	retry.MessageID = "msg_0198d704-6c00-7000-8000-000000009998"
+	retry.LocationID = "loc_0198d704-6c00-7000-8000-000000009998"
+	retry.Flags = []string{`\Seen`}
+	result, err = state.Mail().CommitHydration(context.Background(), maildomain.HydratePage{
+		AccountID: accountID, FolderID: folderID, UIDValidity: 100,
+		AttemptedAt: now.Add(2 * time.Minute), Records: []maildomain.IngestRecord{retry},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Created != 0 || result.Updated != 1 {
+		t.Fatalf("retry hydration result = %+v", result)
+	}
+	message, err = state.Mail().MessageByProviderLocation(context.Background(), accountID, folderID, 100, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if message.ID != record.MessageID || message.Locations[0].ID != record.LocationID || message.Unread {
+		t.Fatalf("retry changed identity or flags: %+v", message)
+	}
+	checkpointAfter, err := state.Mail().Checkpoint(context.Background(), accountID, folderID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(checkpoint, checkpointAfter) {
+		t.Fatalf("retry hydration changed checkpoint: before=%+v after=%+v", checkpoint, checkpointAfter)
+	}
+}
+
+func TestMailHydrationFailureRollsBackWithoutChangingCheckpoint(t *testing.T) {
+	state, accountID, folderID := newMailStoreFixture(t)
+	defer state.Close()
+	now := time.Date(2026, 8, 6, 4, 53, 0, 0, time.UTC)
+	if _, err := state.Mail().CommitInboxPage(context.Background(), maildomain.CommitPage{
+		CheckpointID: "chk_0198d704-6c00-7000-8000-000000000504",
+		AccountID:    accountID, FolderID: folderID, UIDValidity: 100, Bootstrap: true,
+		LastCommittedUID: 20, LastScannedUID: 20, AttemptedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	before, err := state.Mail().Checkpoint(context.Background(), accountID, folderID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.db.Exec(`
+CREATE TRIGGER synthetic_hydration_failure
+BEFORE INSERT ON message_search_documents
+WHEN NEW.subject = 'Hydration rollback'
+BEGIN
+    SELECT RAISE(ABORT, 'synthetic hydration failure');
+END;`); err != nil {
+		t.Fatal(err)
+	}
+	record := mailRecordFixture(accountID, folderID, 100, 6, "hydration-failure@example.test")
+	record.Parsed.Subject = "Hydration rollback"
+	_, err = state.Mail().CommitHydration(context.Background(), maildomain.HydratePage{
+		AccountID: accountID, FolderID: folderID, UIDValidity: 100,
+		AttemptedAt: now.Add(time.Minute), Records: []maildomain.IngestRecord{record},
+	})
+	if err == nil || !strings.Contains(err.Error(), "synthetic hydration failure") {
+		t.Fatalf("hydration failure = %v", err)
+	}
+	if _, err := state.Mail().MessageByProviderLocation(context.Background(), accountID, folderID, 100, 6); !errors.Is(err, maildomain.ErrMessageNotFound) {
+		t.Fatalf("rolled-back hydration message error = %v", err)
+	}
+	after, err := state.Mail().Checkpoint(context.Background(), accountID, folderID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(before, after) {
+		t.Fatalf("failed hydration changed checkpoint: before=%+v after=%+v", before, after)
+	}
+}
+
 func TestMailUIDValidityMismatchRequiresVisibleRepairWithoutCursorReset(t *testing.T) {
 	state, accountID, folderID := newMailStoreFixture(t)
 	defer state.Close()

@@ -25,6 +25,9 @@ type MailService interface {
 	MailUpdateFlag(context.Context, string, string, string, string, maildomain.FlagMutation) (account.Account, folder.Folder, maildomain.Message, maildomain.Location, int64, error)
 	MailSearch(context.Context, string, string, string, maildomain.SearchOptions) (account.Account, folder.Folder, maildomain.SearchPage, int64, error)
 	MailSearchRepair(context.Context, string, string, int) (account.Account, maildomain.SearchRepairSummary, int64, error)
+	MailRemoteSearch(context.Context, string, string, string, bool, maildomain.SearchOptions) (account.Account, maildomain.RemoteSearchPage, int64, error)
+	MailRemoteSummary(context.Context, string, string, string) (account.Account, maildomain.RemoteSearchHit, int64, error)
+	MailHydrate(context.Context, string, string, []string) (account.Account, []maildomain.HydrateOutcome, int64, error)
 }
 
 type mailSyncData struct {
@@ -33,6 +36,13 @@ type mailSyncData struct {
 	Summaries     []maildomain.SyncSummary `json:"summaries"`
 	Count         int                      `json:"count"`
 	SchemaVersion int64                    `json:"schema_version"`
+}
+
+type mailHydrateData struct {
+	AccountID     string                      `json:"account_id"`
+	Outcomes      []maildomain.HydrateOutcome `json:"outcomes"`
+	Count         int                         `json:"count"`
+	SchemaVersion int64                       `json:"schema_version"`
 }
 
 type mailInboxData struct {
@@ -107,17 +117,51 @@ func newMailSyncCommand(state *executionState) *cobra.Command {
 	var jsonOutput bool
 	var limit int
 	var folderSelector string
+	var hydrate []string
 	command := &cobra.Command{
 		Use:     "sync",
 		Short:   "Fetch and atomically commit bounded pages from enabled mail folders",
 		Args:    cobra.NoArgs,
-		Example: "  icloud mail sync\n  icloud mail sync --folder sent\n  icloud mail sync --limit 50 --json\n  icloud mail sync status --folder sent",
+		Example: "  icloud mail sync\n  icloud mail sync --folder sent\n  icloud mail sync --hydrate rem_…\n  icloud mail sync --limit 50 --json\n  icloud mail sync status --folder sent",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput}, OutputSupport{JSON: true}); err != nil {
 				return err
 			}
 			if limit < 1 || limit > MaximumPageSize {
 				return NewAppError(ErrorUsage, fmt.Sprintf("--limit must be between 1 and %d", MaximumPageSize), false)
+			}
+			if len(hydrate) > 0 {
+				if strings.TrimSpace(folderSelector) != "" {
+					return NewAppError(ErrorUsage, "--hydrate cannot be combined with --folder", false)
+				}
+				accountValue, outcomes, schemaVersion, err := state.mail.MailHydrate(cmd.Context(), state.global.Home, state.global.Account, hydrate)
+				if err != nil {
+					return err
+				}
+				if jsonOutput {
+					return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: mailHydrateData{
+						AccountID: accountValue.ID, Outcomes: outcomes, Count: len(outcomes), SchemaVersion: schemaVersion,
+					}, Meta: EnvelopeMeta{RequestID: state.requestID}})
+				}
+				renderer := NewCompactTextRenderer(state.stdout)
+				for _, outcome := range outcomes {
+					status := "cached"
+					if outcome.Created {
+						status = "created"
+					} else if outcome.Updated {
+						status = "updated"
+					}
+					if err := renderer.Record("mail-hydrate", outcome.MessageID,
+						Field("location_id", outcome.LocationID),
+						Field("status", status),
+					); err != nil {
+						return err
+					}
+				}
+				return renderer.Summary("hydrate-results",
+					Field("account", accountValue.ID),
+					Field("count", fmt.Sprintf("%d", len(outcomes))),
+				)
 			}
 			accountValue, _, summaries, schemaVersion, err := state.mail.MailSync(cmd.Context(), state.global.Home, state.global.Account, folderSelector, limit)
 			if err != nil {
@@ -155,6 +199,7 @@ func newMailSyncCommand(state *executionState) *cobra.Command {
 		},
 	}
 	command.Flags().StringVar(&folderSelector, "folder", "", "Sync one enabled folder by kind, ID, name, or wire name instead of all enabled folders")
+	command.Flags().StringSliceVar(&hydrate, "hydrate", nil, "Cache one or more comma-separated rem_… references without advancing folder checkpoints")
 	command.Flags().IntVar(&limit, "limit", DefaultPageSize, fmt.Sprintf("Maximum messages to fetch and commit per folder (1-%d)", MaximumPageSize))
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
 	command.AddCommand(newMailSyncStatusCommand(state))
@@ -400,4 +445,13 @@ func (unavailableMailService) MailSearch(context.Context, string, string, string
 }
 func (unavailableMailService) MailSearchRepair(context.Context, string, string, int) (account.Account, maildomain.SearchRepairSummary, int64, error) {
 	return account.Account{}, maildomain.SearchRepairSummary{}, 0, NewAppError(ErrorConfiguration, "local mail search repair is unavailable", false)
+}
+func (unavailableMailService) MailRemoteSearch(context.Context, string, string, string, bool, maildomain.SearchOptions) (account.Account, maildomain.RemoteSearchPage, int64, error) {
+	return account.Account{}, maildomain.RemoteSearchPage{}, 0, NewAppError(ErrorConfiguration, "remote mail search is unavailable", false)
+}
+func (unavailableMailService) MailRemoteSummary(context.Context, string, string, string) (account.Account, maildomain.RemoteSearchHit, int64, error) {
+	return account.Account{}, maildomain.RemoteSearchHit{}, 0, NewAppError(ErrorConfiguration, "remote message lookup is unavailable", false)
+}
+func (unavailableMailService) MailHydrate(context.Context, string, string, []string) (account.Account, []maildomain.HydrateOutcome, int64, error) {
+	return account.Account{}, nil, 0, NewAppError(ErrorConfiguration, "remote message hydration is unavailable", false)
 }

@@ -389,6 +389,7 @@ type imapServerOptions struct {
 	AuthOK                   bool
 	StallGreeting            bool
 	StallUIDStore            bool
+	StallUIDSearch           bool
 	CondStore                bool
 	ConditionalStoreConflict bool
 	UIDValidity              uint32
@@ -494,7 +495,7 @@ func (server *imapTestServer) handle(conn net.Conn, options imapServerOptions) {
 			wireName := encodeMailboxWireName(mailbox)
 			_, _ = writer.WriteString(fmt.Sprintf("* STATUS %s (MESSAGES %d UNSEEN %d UIDNEXT %d UIDVALIDITY %d)\r\n%s OK status\r\n",
 				strconv.Quote(wireName), status.Messages, status.Unseen, status.UIDNext, status.UIDValidity, tag))
-		case "SELECT":
+		case "SELECT", "EXAMINE":
 			uidValidity := options.UIDValidity
 			if uidValidity == 0 {
 				uidValidity = 77
@@ -506,6 +507,9 @@ func (server *imapTestServer) handle(conn net.Conn, options imapServerOptions) {
 			response += tag + " OK [READ-WRITE] selected\r\n"
 			_, _ = writer.WriteString(response)
 		case "UID":
+			if len(fields) > 2 && strings.EqualFold(fields[2], "SEARCH") && options.StallUIDSearch {
+				continue
+			}
 			if len(fields) > 2 && strings.EqualFold(fields[2], "STORE") {
 				if options.StallUIDStore {
 					continue

@@ -182,61 +182,18 @@ func (commands accountCommands) syncMailbox(
 	}
 	defer abortInboxPage(page)
 
-	records := make([]maildomain.IngestRecord, 0, len(page.Messages))
-	for _, fetched := range page.Messages {
-		if fetched.Raw == nil {
-			_, _ = state.Mail().RecordFailure(ctx, checkpointID, accountValue.ID, folderValue.ID, checkpoint.UIDValidity, "raw_message_missing", attemptedAt)
-			return maildomain.SyncSummary{}, "", cli.WrapAppError(cli.ErrorInternal, "iCloud returned a message without durable raw content", false, nil)
+	records, prepareErr := commands.prepareFetchedMailRecords(ctx, accountValue, folderValue, page.UIDValidity, page.Messages, attachmentSet)
+	if prepareErr != nil {
+		failureCode := "message_prepare"
+		var preparation *fetchedPreparationError
+		if errors.As(prepareErr, &preparation) {
+			failureCode = preparation.code
 		}
-		reader, openErr := fetched.Raw.Open()
-		if openErr != nil {
-			_, _ = state.Mail().RecordFailure(ctx, checkpointID, accountValue.ID, folderValue.ID, checkpoint.UIDValidity, "blob_open", attemptedAt)
-			return maildomain.SyncSummary{}, "", cli.WrapAppError(cli.ErrorInternal, "cannot read a staged mail message", false, openErr)
+		_, _ = state.Mail().RecordFailure(ctx, checkpointID, accountValue.ID, folderValue.ID, checkpoint.UIDValidity, failureCode, attemptedAt)
+		if preparation != nil {
+			return maildomain.SyncSummary{}, "", preparation.appError()
 		}
-		normalized, parseErr := maildomain.ParseNormalizedWithAttachmentsContext(ctx, reader, attachmentSet.Sink)
-		closeErr := reader.Close()
-		if parseErr == nil {
-			parseErr = closeErr
-		}
-		if parseErr != nil {
-			failureCode := "message_parse"
-			failureMessage := "cannot safely normalize a mail message"
-			if errors.Is(parseErr, maildomain.ErrAttachmentStorage) {
-				failureCode = "attachment_blob_stage"
-				failureMessage = "cannot safely stage a decoded mail attachment"
-			}
-			_, _ = state.Mail().RecordFailure(ctx, checkpointID, accountValue.ID, folderValue.ID, checkpoint.UIDValidity, failureCode, attemptedAt)
-			if errors.Is(parseErr, context.DeadlineExceeded) {
-				return maildomain.SyncSummary{}, "", cli.WrapAppError(cli.ErrorUnavailable, "mail message parsing timed out", true, parseErr)
-			}
-			if errors.Is(parseErr, context.Canceled) {
-				return maildomain.SyncSummary{}, "", cli.WrapAppError(cli.ErrorUnavailable, "mail message parsing was canceled", false, parseErr)
-			}
-			return maildomain.SyncSummary{}, "", cli.WrapAppError(cli.ErrorUnavailable, failureMessage, false, parseErr)
-		}
-		messageID, idErr := commands.generateID("msg")
-		if idErr != nil {
-			return maildomain.SyncSummary{}, "", cli.WrapAppError(cli.ErrorInternal, "cannot allocate a message ID", false, idErr)
-		}
-		locationID, idErr := commands.generateID("loc")
-		if idErr != nil {
-			return maildomain.SyncSummary{}, "", cli.WrapAppError(cli.ErrorInternal, "cannot allocate a message-location ID", false, idErr)
-		}
-		if idErr := assignContentIDs(commands, messageID, &normalized); idErr != nil {
-			return maildomain.SyncSummary{}, "", cli.WrapAppError(cli.ErrorInternal, "cannot allocate message-content IDs", false, idErr)
-		}
-		record := maildomain.BuildIngestRecord(
-			messageID, locationID, accountValue.ID, folderValue.ID, page.UIDValidity, fetched.UID,
-			fetched.Flags, fetched.InternalDate, fetched.RFC822Size,
-			fetched.Raw.ContentHash, fetched.Raw.StorageKey, fetched.Raw.ByteSize, normalized.Preview,
-		)
-		record.Content = &normalized
-		record.ModSequence = fetched.ModSequence
-		record.Direction = messageDirection(accountValue, folderValue, normalized.Preview)
-		record.ContentFingerprint = maildomain.BuildContentFingerprint(
-			accountValue.ID, normalized.Preview, fetched.InternalDate, normalized.Attachments,
-		)
-		records = append(records, record)
+		return maildomain.SyncSummary{}, "", cli.WrapAppError(cli.ErrorUnavailable, "cannot safely prepare a mail message", false, prepareErr)
 	}
 	reconciled := make([]maildomain.ReconcileRecord, 0, len(page.LocationStates))
 	for _, remote := range page.LocationStates {

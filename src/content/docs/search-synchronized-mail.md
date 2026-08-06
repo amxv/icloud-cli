@@ -1,9 +1,9 @@
 ---
 title: Search synchronized mail
-description: Find messages or conversations from private local mail state with indexed text, precise filters, stable cursors, and visible recovery.
+description: Search private synchronized state quickly, or query bounded iCloud metadata explicitly and cache only the remote messages you choose.
 order: 8
 category: Guides
-summary: Offline full-text search, structured filters, message or thread results, bounded pages, query-bound cursors, and local index repair.
+summary: Offline full-text search, structured filters, message or thread results, bounded iCloud search, stale-safe remote references, targeted hydration, cursors, and local index repair.
 ---
 
 ## Find mail without contacting iCloud
@@ -39,6 +39,71 @@ index=complete
 ```
 
 Search is offline and does not change read state. Run `icloud mail sync` when you expect newer remote mail.
+
+## Search iCloud explicitly when freshness matters
+
+Use `--remote` when you need to check iCloud without first advancing the normal synchronization frontier:
+
+```bash
+icloud mail search invoice --remote
+icloud mail search --remote --folder archive --from billing@example.com --unread
+```
+
+Remote search defaults to Inbox and contacts iCloud. It returns bounded provider locations marked with `rem_…` references rather than pretending an uncached result already has a stable local message ID:
+
+```text
+remote-hit
+rem_… folder=INBOX
+folder_id=fld_…
+uid_validity=1
+uid=184
+from="Billing <billing@example.com>"
+subject="August invoice"
+at=2026-08-06T09:30:00Z
+state=unread
+match=provider_text
+excerpt="Your invoice is ready…"
+
+remote-results
+account=acct_…
+count=1
+more=false
+partial=false
+folders=1
+candidate_uids=184
+```
+
+The provider path supports text, sender, participant, subject, RFC Message-ID, read/flag state, and date filters. It does not provide local FTS ranking, reconstructed-thread results, attachment filename/type filters, or local cursors. Those choices return a usage error rather than silently changing meaning.
+
+Use `--all-folders` only when you deliberately want every current selectable folder. The fan-out is capped at 10 folders. Each folder examines a bounded recent provider range; `partial=true` means older provider positions were not examined, so narrow the folder, dates, sender, subject, or Message-ID. `more=true` means additional matches were truncated by the result limit.
+
+Remote text previews are bounded and decoded from the provider response when possible. They are useful for selection, not a substitute for the verified local MIME parser.
+
+## Inspect or cache one remote result
+
+Read the current bounded provider summary without caching:
+
+```bash
+icloud mail message show rem_… --remote
+```
+
+Complete text, HTML, headers, raw MIME, MIME details, and body-only output require caching first:
+
+```bash
+icloud mail message show rem_… --remote --cache --full
+icloud mail message show rem_… --remote --cache --format html
+```
+
+Cache several selected references without performing an ordinary forward sync:
+
+```bash
+icloud mail sync --hydrate rem_…
+icloud mail sync --hydrate rem_…,rem_… --json
+```
+
+Hydration verifies that the account, folder, UIDVALIDITY, and UID still identify the same provider location, then sends the raw message through the normal parser, blob, identity, search, attachment, and thread path. It returns stable `msg_…` and `loc_…` IDs without echoing the remote reference. Repeating the same hydration reports `cached` and performs no duplicate ingestion.
+
+Targeted hydration does not create, advance, reset, or repair the ordinary folder checkpoint. A later normal sync recognizes the cached provider location and remains idempotent.
 
 ## Narrow the result deliberately
 
@@ -96,7 +161,7 @@ icloud mail latest --query launch --participant teammate@example.com
 
 Without filters, `mail inbox` and `mail latest` keep their familiar compact records.
 
-## Continue a bounded result page
+## Continue a bounded local result page
 
 The default limit is 20 and the maximum is 100:
 
@@ -110,7 +175,7 @@ When the summary reports `more=true`, pass its `next_cursor` back with the exact
 icloud mail search invoice --limit 50 --cursor cur_…
 ```
 
-A cursor belongs to one complete search. Changing a filter, account, or result kind returns a usage error rather than skipping or repeating records silently.
+A cursor belongs to one complete local search. Changing a filter, account, or result kind returns a usage error rather than skipping or repeating records silently. Remote search does not accept `--cursor`; use a narrower remote query when `partial=true` or `more=true`.
 
 Use `--json` when automation needs the cursor, numeric rank, matched field, bounded excerpt, query summary, and sanitized message or thread object:
 

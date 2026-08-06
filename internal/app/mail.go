@@ -113,6 +113,19 @@ func (commands accountCommands) inboxClient() transport.IMAPInboxClient {
 	return unavailableInboxClient{}
 }
 
+func (commands accountCommands) remoteClient() transport.IMAPRemoteClient {
+	if commands.remote != nil {
+		return commands.remote
+	}
+	if candidate, ok := commands.imap.(transport.IMAPRemoteClient); ok {
+		return candidate
+	}
+	if candidate, ok := commands.mail.(transport.IMAPRemoteClient); ok {
+		return candidate
+	}
+	return unavailableRemoteClient{}
+}
+
 func (commands accountCommands) blobStager(paths config.AppPaths) blob.Stager {
 	if commands.blobs != nil {
 		return commands.blobs(paths)
@@ -124,6 +137,20 @@ type unavailableInboxClient struct{}
 
 func (unavailableInboxClient) FetchInboxPage(context.Context, transport.AuthRequest, transport.InboxFetchRequest, blob.Stager) (transport.InboxPage, error) {
 	return transport.InboxPage{}, transport.NewFailure(transport.StageIMAPFetch, transport.FailureConfiguration, false, errors.New("mail synchronization unavailable"))
+}
+
+type unavailableRemoteClient struct{}
+
+func (unavailableRemoteClient) SearchRemote(context.Context, transport.AuthRequest, transport.RemoteSearchRequest) (transport.RemoteSearchPage, error) {
+	return transport.RemoteSearchPage{}, transport.NewFailure(transport.StageConnect, transport.FailureConfiguration, false, errors.New("remote mail search unavailable"))
+}
+
+func (unavailableRemoteClient) FetchRemoteSummary(context.Context, transport.AuthRequest, transport.RemoteFetchRequest) (transport.RemoteSummaryResult, error) {
+	return transport.RemoteSummaryResult{}, transport.NewFailure(transport.StageConnect, transport.FailureConfiguration, false, errors.New("remote message summary unavailable"))
+}
+
+func (unavailableRemoteClient) FetchRemoteMessage(context.Context, transport.AuthRequest, transport.RemoteFetchRequest, blob.Stager) (transport.RemoteFetchResult, error) {
+	return transport.RemoteFetchResult{}, transport.NewFailure(transport.StageConnect, transport.FailureConfiguration, false, errors.New("remote message fetch unavailable"))
 }
 
 func abortInboxPage(page transport.InboxPage) {

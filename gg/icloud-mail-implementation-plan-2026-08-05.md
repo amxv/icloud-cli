@@ -1948,6 +1948,15 @@ Regression scope is the entire repository: Go formatting/vet/test/race/fuzz wher
 
 ## Amendments
 
+### 2026-08-06 — Bound remote search before metadata fetch and keep targeted hydration outside sync frontiers
+
+- **Trigger:** the reference implementation issues one unbounded UID SEARCH and then fetches every match. Phase 13 must expose current provider search without reproducing Landmine 3, scanning every folder implicitly, or acknowledging any message through the ordinary bootstrap/incremental checkpoint.
+- **Change:** explicit remote search walks newest-first UID ranges of at most 256 positions and stops after at most 2,048 candidate UID positions per selected folder. Results remain capped at 20 by default and 100 maximum. Inbox is the default single folder; `--all-folders` is explicit and capped at 10 current selectable folders. Remote output reports `more` when matches exceed the result limit and `partial` when older UID space was intentionally not examined; remote search has no cursor and callers narrow provider criteria instead.
+- **Remote identity:** every `rem_…` reference carries the selected account ID, stable local folder ID, observed UIDVALIDITY, and UID. The application validates account/folder scope and current discovered UIDVALIDITY before the transport reselects the mailbox and verifies UIDVALIDITY again. A stale reference fails before an unrelated message at a reused UID can be fetched.
+- **Hydration boundary:** targeted hydration reuses the existing streamed raw-message staging, MIME normalization, attachment staging, ranked identity reconciliation, indexed search update, and affected-thread rebuild transaction. It commits no `sync_checkpoints` row and cannot create, advance, reset, or repair the ordinary folder frontier. An already cached provider location short-circuits without another provider fetch.
+- **Privacy and output:** uncached remote results expose only the opaque reference, folder/UID identity, sanitized envelope fields excluding BCC, flags, size, bounded decoded provider preview, and optional cached stable message ID. Hydration output omits the submitted remote reference and returns stable local message/location IDs plus created/updated/cached status.
+- **Affected phases:** Phase 13 remote search/hydration, Phase 20 repair/rebaseline, Phase 24 documentation/reference consolidation, and Phase 25 bounded-provider/failure/privacy acceptance.
+
 ### 2026-08-06 — Bound local decoded-body indexing and repair legacy rows from saved raw mail
 
 - **Trigger:** schema 9 stores bounded previews and MIME selection metadata, but it does not persist a complete decoded-text projection that schema 10 can backfill transactionally without reopening the saved raw message. Search also needs an explicit memory/disk bound independent of the smaller default display preview.
