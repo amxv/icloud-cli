@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -114,6 +115,7 @@ func (repository *MailRepository) CommitInboxPage(ctx context.Context, page mail
 	}
 
 	created, updated, stateChanges, identityMerges, dedupeConflicts := 0, 0, 0, 0, 0
+	affectedMessages := make(map[string]struct{}, len(page.Records)+len(page.Reconciled))
 	timestamp := page.AttemptedAt.UTC().Format(time.RFC3339Nano)
 	for _, record := range page.Records {
 		if err := validateIngestRecord(page, record); err != nil {
@@ -123,6 +125,11 @@ func (repository *MailRepository) CommitInboxPage(ctx context.Context, page mail
 		if ingestErr != nil {
 			return maildomain.CommitResult{}, ingestErr
 		}
+		messageID, ingestErr := messageIDForProviderLocation(ctx, tx, page.AccountID, page.FolderID, page.UIDValidity, record.UID)
+		if ingestErr != nil {
+			return maildomain.CommitResult{}, ingestErr
+		}
+		affectedMessages[messageID] = struct{}{}
 		if wasCreated {
 			created++
 		} else {
@@ -146,11 +153,16 @@ func (repository *MailRepository) CommitInboxPage(ctx context.Context, page mail
 		if reconcileErr != nil {
 			return maildomain.CommitResult{}, reconcileErr
 		}
+		messageID, reconcileErr := messageIDForProviderLocation(ctx, tx, page.AccountID, page.FolderID, page.UIDValidity, record.UID)
+		if reconcileErr != nil {
+			return maildomain.CommitResult{}, reconcileErr
+		}
+		affectedMessages[messageID] = struct{}{}
 		if changed {
 			stateChanges++
 		}
 	}
-	if err := rebuildAccountThreadGraph(ctx, tx, page.AccountID, page.AttemptedAt); err != nil {
+	if err := rebuildAffectedThreadGraph(ctx, tx, page.AccountID, mapKeysSorted(affectedMessages), page.AttemptedAt); err != nil {
 		return maildomain.CommitResult{}, err
 	}
 
@@ -409,7 +421,7 @@ WHERE account_id = ? AND location_id = ?`,
 	if err != nil {
 		return maildomain.Location{}, err
 	}
-	if err := rebuildAccountThreadGraph(ctx, tx, accountID, now); err != nil {
+	if err := rebuildAffectedThreadGraph(ctx, tx, accountID, []string{current.MessageID}, now); err != nil {
 		return maildomain.Location{}, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -808,6 +820,35 @@ WHERE account_id = ? AND folder_id = ? AND uid_validity = ? AND uid = ?`,
 		return false, fmt.Errorf("reconcile message location: %w", err)
 	}
 	return true, nil
+}
+
+func messageIDForProviderLocation(
+	ctx context.Context,
+	tx *sql.Tx,
+	accountID, folderID string,
+	uidValidity, uid uint32,
+) (string, error) {
+	var messageID string
+	if err := tx.QueryRowContext(ctx, `
+SELECT message_id
+FROM message_locations
+WHERE account_id = ? AND folder_id = ? AND uid_validity = ? AND uid = ?`,
+		strings.TrimSpace(accountID), strings.TrimSpace(folderID), uidValidity, uid,
+	).Scan(&messageID); err != nil {
+		return "", fmt.Errorf("read message for provider location: %w", err)
+	}
+	return messageID, nil
+}
+
+func mapKeysSorted(values map[string]struct{}) []string {
+	result := make([]string, 0, len(values))
+	for value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			result = append(result, value)
+		}
+	}
+	sort.Strings(result)
+	return result
 }
 
 func locationFlagsEqual(left, right maildomain.LocationFlags) bool {

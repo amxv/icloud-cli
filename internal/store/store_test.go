@@ -1170,7 +1170,7 @@ VALUES (?, 0, 'migration-root@example.test')`, replyID); err != nil {
 	if state.SchemaVersion() != 9 {
 		t.Fatalf("schema version = %d", state.SchemaVersion())
 	}
-	page, err := state.Threads().Show(context.Background(), accountID, replyID, 20)
+	page, err := state.Threads().Show(context.Background(), accountID, replyID, "", 20)
 	if err != nil {
 		t.Fatal(err)
 	}

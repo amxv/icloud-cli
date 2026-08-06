@@ -35,7 +35,7 @@ checked_at=2026-08-06T03:00:00Z
 
 Each compact result is a small vertical block. The first line names the result, the next line carries its stable identity plus the first field when present, and every remaining field appears on its own line. A blank line separates consecutive blocks. Default output still omits empty values, ANSI color, box-drawing tables, JSON punctuation, and repeated prose. Successful output goes to stdout.
 
-`account list`, `mail inbox`, `mail latest`, `mail thread show`, attachment lists, and checkpoint lists return 20 records by default, accept `--limit` through 100, and report `more=true` when truncated. Sync applies its bound separately to each selected enabled folder and reconciles at most 100 least-recently checked current locations per folder per run. Mutation and export commands return an outcome and stable IDs rather than echoing submitted names, email addresses, subjects, paths, or passwords.
+`account list`, `mail inbox`, `mail latest`, `mail thread show`, attachment lists, and checkpoint lists return 20 records by default, accept `--limit` through 100, and report `more=true` when truncated. Thread pages also return `next_cursor`; pass it through `--cursor` to continue chronologically without repeating earlier messages. Sync applies its bound separately to each selected enabled folder and reconciles at most 100 least-recently checked current locations per folder per run. Mutation and export commands return an outcome and stable IDs rather than echoing submitted names, email addresses, subjects, paths, or passwords.
 
 ## JSON is explicit
 
@@ -51,7 +51,7 @@ icloud --request-id account-01 account show --json
 
 Account lifecycle, credential, validation, doctor, folder discovery/policy, enabled-folder sync and local folder reads, latest/thread reads, message reads and state mutations, attachment list/save/save-all, account reads, `version`, and `capabilities` support JSON when stdout is not carrying native bytes. Folder list/show/status and thread reads also support bounded `--verbose` evidence. Completion and man generation intentionally return native text formats.
 
-Thread JSON remains local reconstruction data. `mail latest --json` returns aggregates only. `mail thread show --metadata-only --verbose --json` returns chronological messages and bounded RFC graph evidence without excerpts, BCC, raw-storage coordinates, or bodies. `--format raw --json` is explicit and bounded; plain multi-message raw output is rejected.
+Thread JSON remains local reconstruction data. `mail latest --json` returns aggregates only. `mail thread show --metadata-only --verbose --json` returns chronological messages and bounded RFC graph evidence without excerpts, BCC, raw-storage coordinates, bodies, or internal edge IDs. `--format raw --json` is explicit and bounded; plain multi-message raw output is rejected.
 
 Credential metadata JSON omits internal IDs, keyring references, environment names, file paths, and values. Error envelopes omit wrapped provider and storage causes.
 
@@ -119,7 +119,7 @@ Help remains on stdout. A failed command never writes a success payload to stdou
 --request-id <id>     correlate structured output
 ```
 
-Version, capabilities, completion, man, and help remain disk-free. Account reads, `mail inbox` with any folder selector, `mail latest`, `mail thread show`, `mail message`, attachment reads, sync status, checkpoint reads, and local `doctor` never prompt or contact Apple. A thread read may lazily complete missing local MIME metadata from already synchronized raw bytes, but it never performs remote hydration. Sync, read/flag mutations, and live validation contact Apple and use the same global timeout; streaming message and attachment reads also honor the command timeout.
+Version, capabilities, completion, man, and help remain disk-free. Account reads, `mail inbox` with any folder selector, `mail latest`, `mail thread show`, `mail message`, attachment reads, sync status, checkpoint reads, and local `doctor` never prompt or contact Apple. Compact thread reads and plain `--metadata-only` use stored summaries without opening raw message files. Explicit content, header expansion, or verbose MIME detail may complete missing local metadata from already synchronized raw bytes, but it never performs remote hydration. Sync, read/flag mutations, and live validation contact Apple and use the same global timeout; streaming message and attachment reads also honor the command timeout.
 
 ## Message content is explicit
 
@@ -138,6 +138,8 @@ Version, capabilities, completion, man, and help remain disk-free. Account reads
 Default message JSON reports whether text, HTML, headers, raw MIME, and parts are locally available, but omits their content. Body-bearing JSON requires `--full` or `--format text|html`; raw-bearing JSON requires `--format raw` and is capped at 8 MiB. Larger bodies and raw messages remain available through plain streaming output. BCC is excluded from compact output, message JSON, and decoded-header output; exact raw MIME includes it only because raw was explicitly requested.
 
 Unsupported or contradictory combinations fail visibly. For example, `--headers --body-only`, content flags with `--metadata-only`, and plain `--format raw --verbose` return usage errors rather than guessing.
+
+`mail thread show` supports the same content choices plus `--cursor`. Plain `--body-only` writes each selected body chronologically with a blank line between messages. Because a body-only stream intentionally contains no pagination metadata, automation should read `next_cursor` from a compact or JSON page first when a thread may exceed the chosen limit.
 
 ## Attachment bytes require an explicit destination
 

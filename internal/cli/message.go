@@ -295,7 +295,7 @@ func renderMIMEPart(renderer *CompactTextRenderer, part maildomain.MIMEPart) err
 }
 
 func buildJSONMessageContent(ctx context.Context, message maildomain.Message, source maildomain.ContentSource, options OutputOptions, format maildomain.ContentFormat) (messageContentData, error) {
-	content := messageContentData{RawAvailable: source != nil}
+	content := messageContentData{RawAvailable: source != nil || messageHasRawSource(message)}
 	if message.Content != nil {
 		content.TextAvailable = len(message.Content.TextPaths) > 0 || len(message.Content.HTMLPaths) > 0
 		content.HTMLAvailable = len(message.Content.HTMLPaths) > 0
@@ -313,6 +313,9 @@ func buildJSONMessageContent(ctx context.Context, message maildomain.Message, so
 	}
 	if format == "" {
 		return content, nil
+	}
+	if source == nil {
+		return messageContentData{}, NewAppError(ErrorUnavailable, "requested message content is not available locally", false)
 	}
 	buffer := &boundedContentBuffer{max: maxJSONMessageContentBytes}
 	switch format {
@@ -334,6 +337,15 @@ func buildJSONMessageContent(ctx context.Context, message maildomain.Message, so
 		}
 	}
 	return content, nil
+}
+
+func messageHasRawSource(message maildomain.Message) bool {
+	for _, location := range message.Locations {
+		if location.Present && location.RawStorageKey != "" && location.RawContentHash != "" && location.RawByteSize >= 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func publicHeaders(content *maildomain.NormalizedContent) []maildomain.HeaderField {

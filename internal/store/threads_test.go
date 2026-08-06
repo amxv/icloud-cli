@@ -2,9 +2,11 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -24,7 +26,7 @@ func TestThreadGraphDirectReplyAndLatestAggregates(t *testing.T) {
 	reply.Flags = []string{`\Seen`}
 	commitThreadRecords(t, state, accountID, folderID, "chk_thread_direct", 100, base.Add(2*time.Minute), root, reply)
 
-	page, err := state.Threads().Show(context.Background(), accountID, root.MessageID, 20)
+	page, err := state.Threads().Show(context.Background(), accountID, root.MessageID, "", 20)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +73,7 @@ func TestThreadGraphLateBridgeRetainsCanonicalIDAndRedirectAlias(t *testing.T) {
 	bridge.Parsed.InReplyTo = "right-bridge@example.test"
 	commitThreadRecords(t, state, accountID, folderID, "chk_thread_bridge_c", 100, base.Add(5*time.Minute), bridge)
 
-	page, err := state.Threads().Show(context.Background(), accountID, rightThread, 20)
+	page, err := state.Threads().Show(context.Background(), accountID, rightThread, "", 20)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +108,7 @@ func TestThreadGraphMissingParentLaterRootAndLongReferences(t *testing.T) {
 	second.Parsed.InReplyTo = "late-child-one@example.test"
 	commitThreadRecords(t, state, accountID, folderID, "chk_thread_late_children", 100, base.Add(2*time.Minute), first, second)
 
-	before, err := state.Threads().Show(context.Background(), accountID, first.MessageID, 100)
+	before, err := state.Threads().Show(context.Background(), accountID, first.MessageID, "", 100)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +127,7 @@ func TestThreadGraphMissingParentLaterRootAndLongReferences(t *testing.T) {
 
 	root := threadRecordFixture(accountID, folderID, 100, 123, missing, "Late root", "alice@example.test", "owner@example.test", base.Add(-time.Minute))
 	commitThreadRecords(t, state, accountID, folderID, "chk_thread_late_root", 100, base.Add(3*time.Minute), root)
-	after, err := state.Threads().Show(context.Background(), accountID, first.MessageID, 100)
+	after, err := state.Threads().Show(context.Background(), accountID, first.MessageID, "", 100)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +158,7 @@ func TestThreadGraphCyclesMalformedEvidenceAndFallbackBoundaries(t *testing.T) {
 		right := threadRecordFixture(accountID, folderID, 100, 132, "cycle-right@example.test", "Re: Cycle", "owner@example.test", "alice@example.test", base.Add(time.Minute))
 		right.Parsed.InReplyTo = "cycle-left@example.test"
 		commitThreadRecords(t, state, accountID, folderID, "chk_thread_cycle", 100, base.Add(2*time.Minute), left, right)
-		page, err := state.Threads().Show(context.Background(), accountID, left.MessageID, 20)
+		page, err := state.Threads().Show(context.Background(), accountID, left.MessageID, "", 20)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -188,7 +190,7 @@ func TestThreadGraphCyclesMalformedEvidenceAndFallbackBoundaries(t *testing.T) {
 			t.Fatalf("malformed evidence falsely merged threads: %+v", latest)
 		}
 		for _, record := range []maildomain.IngestRecord{first, second} {
-			page, err := state.Threads().Show(context.Background(), accountID, record.MessageID, 20)
+			page, err := state.Threads().Show(context.Background(), accountID, record.MessageID, "", 20)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -235,7 +237,7 @@ func TestThreadGraphSplitFoldersAndUnreadAggregateRefresh(t *testing.T) {
 	sent.Flags = nil
 	commitThreadRecords(t, state, accountID, sentID, "chk_thread_split_sent", 200, base.Add(3*time.Minute), sent)
 
-	page, err := state.Threads().Show(context.Background(), accountID, inbox.MessageID, 20)
+	page, err := state.Threads().Show(context.Background(), accountID, inbox.MessageID, "", 20)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -247,12 +249,131 @@ func TestThreadGraphSplitFoldersAndUnreadAggregateRefresh(t *testing.T) {
 	if _, err := state.Mail().UpdateLocationState(context.Background(), accountID, inbox.LocationID, 0, maildomain.LocationFlags{Seen: true}, 1, true, base.Add(4*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	refreshed, err := state.Threads().Show(context.Background(), accountID, page.Thread.ID, 20)
+	refreshed, err := state.Threads().Show(context.Background(), accountID, page.Thread.ID, "", 20)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if refreshed.Thread.UnreadCount != 0 || refreshed.Thread.MessageCount != 1 || !reflect.DeepEqual(refreshed.Thread.FolderIDs, wantFolders) {
 		t.Fatalf("refreshed aggregate = %+v", refreshed.Thread)
+	}
+}
+
+func TestThreadGraphAffectedScopeExcludesUnrelatedMessages(t *testing.T) {
+	state, accountID, folderID := newMailStoreFixture(t)
+	defer state.Close()
+	base := time.Date(2026, 8, 6, 9, 10, 0, 0, time.UTC)
+	root := threadRecordFixture(accountID, folderID, 100, 171, "scope-root@example.test", "Scoped thread", "alice@example.test", "owner@example.test", base)
+	reply := threadRecordFixture(accountID, folderID, 100, 172, "scope-reply@example.test", "Re: Scoped thread", "owner@example.test", "alice@example.test", base.Add(time.Minute))
+	reply.Parsed.InReplyTo = "scope-root@example.test"
+	reply.Parsed.References = []string{"scope-root@example.test"}
+	commitThreadRecords(t, state, accountID, folderID, "chk_thread_scope", 100, base.Add(2*time.Minute), root, reply)
+
+	timestamp := base.UTC().Format(time.RFC3339Nano)
+	for index := 0; index < 250; index++ {
+		messageID := fmt.Sprintf("msg_018f%028d", index)
+		if _, err := state.db.Exec(`
+INSERT INTO messages (
+    message_id, account_id, rfc_message_id, in_reply_to, direction,
+    from_name, from_email, reply_to_name, reply_to_email, subject, snippet,
+    date_source, attachment_count, created_at, updated_at
+) VALUES (?, ?, ?, '', 'inbound', '', 'other@example.test', '', '', ?, '', 'unknown', 0, ?, ?)`,
+			messageID, accountID, fmt.Sprintf("unrelated-%03d@example.test", index), fmt.Sprintf("Unrelated %03d", index), timestamp, timestamp); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	tx, err := state.db.BeginTx(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	nodes, err := loadAffectedThreadNodes(context.Background(), tx, accountID, []string{reply.MessageID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(nodes) != 2 || nodes[root.MessageID] == nil || nodes[reply.MessageID] == nil {
+		t.Fatalf("affected scope loaded %d nodes: %v", len(nodes), sortedNodeIDs(nodes))
+	}
+}
+
+func TestThreadGraphSplitPreservesRetiredAliasAndAllocatesFreshID(t *testing.T) {
+	state, accountID, folderID := newMailStoreFixture(t)
+	defer state.Close()
+	base := time.Date(2026, 8, 6, 9, 20, 0, 0, time.UTC)
+	left := threadRecordFixture(accountID, folderID, 100, 181, "split-left@example.test", "Split anchor", "alice@example.test", "owner@example.test", base)
+	right := threadRecordFixture(accountID, folderID, 100, 182, "split-right@example.test", "Separate subject", "owner@example.test", "alice@example.test", base.Add(time.Minute))
+	commitThreadRecords(t, state, accountID, folderID, "chk_thread_split_left", 100, base.Add(2*time.Minute), left)
+	commitThreadRecords(t, state, accountID, folderID, "chk_thread_split_right", 100, base.Add(3*time.Minute), right)
+	leftThread := provisionalThreadID(left.MessageID)
+	retiredRightThread := provisionalThreadID(right.MessageID)
+
+	mergedRight := right
+	mergedRight.Parsed.Subject = "Re: Split anchor"
+	commitThreadRecords(t, state, accountID, folderID, "chk_thread_split_merge", 100, base.Add(4*time.Minute), mergedRight)
+	merged, err := state.Threads().Show(context.Background(), accountID, retiredRightThread, "", 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if merged.Thread.ID != leftThread || merged.Thread.RedirectedFrom != retiredRightThread || merged.Thread.MessageCount != 2 {
+		t.Fatalf("merged alias = %+v", merged.Thread)
+	}
+
+	splitRight := mergedRight
+	splitRight.Parsed.InReplyTo = "missing-split-parent@example.test"
+	splitRight.Parsed.References = []string{"missing-split-parent@example.test"}
+	commitThreadRecords(t, state, accountID, folderID, "chk_thread_split_again", 100, base.Add(5*time.Minute), splitRight)
+
+	rightPage, err := state.Threads().Show(context.Background(), accountID, right.MessageID, "", 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rightPage.Thread.ID == leftThread || rightPage.Thread.ID == retiredRightThread || rightPage.Thread.MessageCount != 1 {
+		t.Fatalf("split right thread = %+v", rightPage.Thread)
+	}
+	if !strings.HasPrefix(rightPage.Thread.ID, "thr_") {
+		t.Fatalf("fresh split ID = %q", rightPage.Thread.ID)
+	}
+	aliasPage, err := state.Threads().Show(context.Background(), accountID, retiredRightThread, "", 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if aliasPage.Thread.ID != leftThread || aliasPage.Thread.RedirectedFrom != retiredRightThread || aliasPage.Thread.MessageCount != 1 {
+		t.Fatalf("retired alias changed target after split: %+v", aliasPage.Thread)
+	}
+}
+
+func TestThreadShowCursorResumesChronologicallyAndIsThreadBound(t *testing.T) {
+	state, accountID, folderID := newMailStoreFixture(t)
+	defer state.Close()
+	base := time.Date(2026, 8, 6, 9, 30, 0, 0, time.UTC)
+	root := threadRecordFixture(accountID, folderID, 100, 191, "cursor-root@example.test", "Cursor thread", "alice@example.test", "owner@example.test", base)
+	reply := threadRecordFixture(accountID, folderID, 100, 192, "cursor-reply@example.test", "Re: Cursor thread", "owner@example.test", "alice@example.test", base.Add(time.Minute))
+	reply.Parsed.InReplyTo = "cursor-root@example.test"
+	reply.Parsed.References = []string{"cursor-root@example.test"}
+	other := threadRecordFixture(accountID, folderID, 100, 193, "cursor-other@example.test", "Other thread", "carol@example.test", "owner@example.test", base.Add(2*time.Minute))
+	commitThreadRecords(t, state, accountID, folderID, "chk_thread_cursor", 100, base.Add(3*time.Minute), root, reply, other)
+
+	first, err := state.Threads().Show(context.Background(), accountID, root.MessageID, "", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !first.More || first.NextCursor == "" || len(first.Thread.Messages) != 1 || first.Thread.Messages[0].ID != root.MessageID {
+		t.Fatalf("first cursor page = %+v", first)
+	}
+	again, err := state.Threads().Show(context.Background(), accountID, root.MessageID, "", 1)
+	if err != nil || again.NextCursor != first.NextCursor {
+		t.Fatalf("cursor stability page=%+v err=%v", again, err)
+	}
+	second, err := state.Threads().Show(context.Background(), accountID, root.MessageID, first.NextCursor, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.More || second.NextCursor != "" || len(second.Thread.Messages) != 1 || second.Thread.Messages[0].ID != reply.MessageID {
+		t.Fatalf("second cursor page = %+v", second)
+	}
+	_, err = state.Threads().Show(context.Background(), accountID, other.MessageID, first.NextCursor, 1)
+	if !errors.Is(err, maildomain.ErrInvalidThreadCursor) {
+		t.Fatalf("cross-thread cursor error = %v", err)
 	}
 }
 

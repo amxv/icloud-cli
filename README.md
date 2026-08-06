@@ -43,7 +43,7 @@ icloud mail inbox [--folder <selector>] [--limit <n>] [--json]
 icloud mail sync status [--folder <selector>] [--json]
 icloud mail sync checkpoints [--limit <n>] [--json]
 icloud mail latest [--limit <n>] [--json]
-icloud mail thread show <thread-id|message-id> [--limit <n>] [--full] [--format compact|text|html|raw] [--headers] [--metadata-only] [--verbose] [--json]
+icloud mail thread show <thread-id|message-id> [--limit <n>] [--cursor <cursor>] [--full] [--format compact|text|html|raw] [--headers] [--body-only] [--metadata-only] [--verbose] [--json]
 icloud mail message show <message-id> [--full] [--format compact|text|html|raw] [--headers] [--body-only] [--metadata-only] [--verbose] [--json]
 icloud mail message raw <message-id>
 icloud mail message export <message-id> --output <path|-> [--force]

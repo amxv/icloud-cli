@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -13,6 +14,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/amxv/icloud-cli/internal/id"
 	maildomain "github.com/amxv/icloud-cli/internal/mail"
 )
 
@@ -127,25 +129,46 @@ func rebuildAccountThreadGraph(ctx context.Context, tx *sql.Tx, accountID string
 	if err != nil {
 		return err
 	}
+	return persistReconstructedThreadGraph(ctx, tx, accountID, nodes, now)
+}
+
+// rebuildAffectedThreadGraph reconstructs only the graph closure touched by a
+// bounded sync page or one location mutation. The closure includes prior
+// memberships and direct RFC/fallback neighbors, so late roots and bridges can
+// merge or split threads without materializing every local message.
+func rebuildAffectedThreadGraph(ctx context.Context, tx *sql.Tx, accountID string, seedMessageIDs []string, now time.Time) error {
+	accountID = strings.TrimSpace(accountID)
+	if accountID == "" {
+		return errors.New("rebuild affected thread graph: account ID is required")
+	}
+	nodes, err := loadAffectedThreadNodes(ctx, tx, accountID, seedMessageIDs)
+	if err != nil {
+		return err
+	}
+	return persistReconstructedThreadGraph(ctx, tx, accountID, nodes, now)
+}
+
+func persistReconstructedThreadGraph(ctx context.Context, tx *sql.Tx, accountID string, nodes map[string]*threadNode, now time.Time) error {
 	if len(nodes) == 0 {
 		return nil
 	}
-	existingMembership, threadCreated, err := loadExistingThreadMembership(ctx, tx, accountID)
+	messageIDs := sortedNodeIDs(nodes)
+	existingMembership, threadCreated, err := loadExistingThreadMembershipForMessages(ctx, tx, accountID, messageIDs)
 	if err != nil {
 		return err
 	}
 	components, edges := buildThreadComponents(nodes)
-	aggregates, retired := aggregateThreadComponents(nodes, components, existingMembership, threadCreated)
+	aggregates, retired, err := aggregateThreadComponents(ctx, tx, accountID, nodes, components, existingMembership, threadCreated)
+	if err != nil {
+		return err
+	}
 	timestamp := now.UTC().Format(time.RFC3339Nano)
 
-	if _, err := tx.ExecContext(ctx, `
-DELETE FROM thread_edges WHERE account_id = ?`, accountID); err != nil {
-		return fmt.Errorf("replace thread edges: %w", err)
+	if err := deleteThreadRowsForMessages(ctx, tx, accountID, "thread_edges", "child_message_id", messageIDs); err != nil {
+		return fmt.Errorf("replace affected thread edges: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, `
-DELETE FROM thread_messages
-WHERE thread_id IN (SELECT thread_id FROM threads WHERE account_id = ?)`, accountID); err != nil {
-		return fmt.Errorf("replace thread memberships: %w", err)
+	if err := deleteThreadRowsForMessages(ctx, tx, "", "thread_messages", "message_id", messageIDs); err != nil {
+		return fmt.Errorf("replace affected thread memberships: %w", err)
 	}
 
 	active := make(map[string]struct{}, len(aggregates))
@@ -225,29 +248,19 @@ ON CONFLICT(alias_thread_id) DO UPDATE SET
 			return fmt.Errorf("persist retired thread alias: %w", err)
 		}
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT thread_id FROM threads WHERE account_id = ?`, accountID)
-	if err != nil {
-		return fmt.Errorf("list obsolete reconstructed threads: %w", err)
+
+	affectedThreadIDs := map[string]struct{}{}
+	for _, threadID := range existingMembership {
+		affectedThreadIDs[threadID] = struct{}{}
 	}
-	obsolete := []string{}
-	for rows.Next() {
-		var threadID string
-		if err := rows.Scan(&threadID); err != nil {
-			rows.Close()
-			return fmt.Errorf("read obsolete reconstructed thread: %w", err)
-		}
-		if _, ok := active[threadID]; !ok {
-			obsolete = append(obsolete, threadID)
-		}
-	}
-	if err := rows.Close(); err != nil {
-		return fmt.Errorf("close obsolete reconstructed threads: %w", err)
-	}
-	for _, threadID := range obsolete {
-		if canonicalID, ok := retired[threadID]; ok && canonicalID != threadID {
+	for threadID := range affectedThreadIDs {
+		if _, ok := active[threadID]; ok {
 			continue
 		}
-		if _, err := tx.ExecContext(ctx, `DELETE FROM threads WHERE thread_id = ?`, threadID); err != nil {
+		if _, ok := retired[threadID]; ok {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM threads WHERE account_id = ? AND thread_id = ?`, accountID, threadID); err != nil {
 			return fmt.Errorf("delete obsolete reconstructed thread: %w", err)
 		}
 	}
@@ -267,13 +280,31 @@ INSERT INTO thread_edges (
 	return nil
 }
 
+const (
+	threadScopeTable              = "temp.thread_rebuild_scope"
+	maxAffectedThreadMessages     = 10000
+	threadReconstructionBatchSize = 300
+)
+
 func loadThreadNodes(ctx context.Context, tx *sql.Tx, accountID string) (map[string]*threadNode, error) {
+	return loadThreadNodesQuery(ctx, tx, accountID, false)
+}
+
+func loadThreadNodesFromScope(ctx context.Context, tx *sql.Tx, accountID string) (map[string]*threadNode, error) {
+	return loadThreadNodesQuery(ctx, tx, accountID, true)
+}
+
+func loadThreadNodesQuery(ctx context.Context, tx *sql.Tx, accountID string, scoped bool) (map[string]*threadNode, error) {
+	messageJoin := ""
+	if scoped {
+		messageJoin = " JOIN " + threadScopeTable + " AS scoped ON scoped.message_id = m.message_id"
+	}
 	rows, err := tx.QueryContext(ctx, `
-SELECT message_id, account_id, rfc_message_id, in_reply_to, subject, snippet,
-       from_email, reply_to_email, sort_at, attachment_count, created_at, updated_at
-FROM messages
-WHERE account_id = ?
-ORDER BY COALESCE(sort_at, created_at), message_id`, accountID)
+SELECT m.message_id, m.account_id, m.rfc_message_id, m.in_reply_to, m.subject, m.snippet,
+       m.from_email, m.reply_to_email, m.sort_at, m.attachment_count, m.created_at, m.updated_at
+FROM messages AS m`+messageJoin+`
+WHERE m.account_id = ?
+ORDER BY COALESCE(m.sort_at, m.created_at), m.message_id`, accountID)
 	if err != nil {
 		return nil, fmt.Errorf("load messages for thread reconstruction: %w", err)
 	}
@@ -310,12 +341,20 @@ ORDER BY COALESCE(sort_at, created_at), message_id`, accountID)
 		return nodes, nil
 	}
 
+	referenceJoin := "JOIN messages AS m ON m.message_id = r.message_id"
+	referenceWhere := "WHERE m.account_id = ?"
+	referenceArgs := []any{accountID}
+	if scoped {
+		referenceJoin = "JOIN " + threadScopeTable + " AS scoped ON scoped.message_id = r.message_id"
+		referenceWhere = ""
+		referenceArgs = nil
+	}
 	referenceRows, err := tx.QueryContext(ctx, `
 SELECT r.message_id, r.reference
 FROM message_references AS r
-JOIN messages AS m ON m.message_id = r.message_id
-WHERE m.account_id = ?
-ORDER BY r.message_id, r.ordinal`, accountID)
+`+referenceJoin+`
+`+referenceWhere+`
+ORDER BY r.message_id, r.ordinal`, referenceArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("load references for thread reconstruction: %w", err)
 	}
@@ -332,13 +371,24 @@ ORDER BY r.message_id, r.ordinal`, accountID)
 	if err := referenceRows.Close(); err != nil {
 		return nil, fmt.Errorf("close references for thread reconstruction: %w", err)
 	}
+	if err := referenceRows.Err(); err != nil {
+		return nil, fmt.Errorf("load references for thread reconstruction: %w", err)
+	}
 
+	recipientJoin := "JOIN messages AS m ON m.message_id = r.message_id"
+	recipientWhere := "WHERE m.account_id = ? AND r.kind IN ('to', 'cc')"
+	recipientArgs := []any{accountID}
+	if scoped {
+		recipientJoin = "JOIN " + threadScopeTable + " AS scoped ON scoped.message_id = r.message_id"
+		recipientWhere = "WHERE r.kind IN ('to', 'cc')"
+		recipientArgs = nil
+	}
 	recipientRows, err := tx.QueryContext(ctx, `
 SELECT r.message_id, r.email_address
 FROM message_recipients AS r
-JOIN messages AS m ON m.message_id = r.message_id
-WHERE m.account_id = ? AND r.kind IN ('to', 'cc')
-ORDER BY r.message_id, r.kind, r.ordinal`, accountID)
+`+recipientJoin+`
+`+recipientWhere+`
+ORDER BY r.message_id, r.kind, r.ordinal`, recipientArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("load participants for thread reconstruction: %w", err)
 	}
@@ -355,11 +405,19 @@ ORDER BY r.message_id, r.kind, r.ordinal`, accountID)
 	if err := recipientRows.Close(); err != nil {
 		return nil, fmt.Errorf("close participants for thread reconstruction: %w", err)
 	}
+	if err := recipientRows.Err(); err != nil {
+		return nil, fmt.Errorf("load participants for thread reconstruction: %w", err)
+	}
 
+	locationScopeJoin := ""
+	if scoped {
+		locationScopeJoin = "JOIN " + threadScopeTable + " AS scoped ON scoped.message_id = l.message_id"
+	}
 	locationRows, err := tx.QueryContext(ctx, `
 SELECT l.message_id, l.folder_id,
        MAX(CASE WHEN f.kind <> 'sent' AND l.seen = 0 THEN 1 ELSE 0 END)
 FROM message_locations AS l
+`+locationScopeJoin+`
 JOIN folders AS f ON f.folder_id = l.folder_id
 WHERE l.account_id = ? AND l.present = 1 AND l.deleted = 0
 GROUP BY l.message_id, l.folder_id
@@ -382,35 +440,237 @@ ORDER BY l.message_id, l.folder_id`, accountID)
 	if err := locationRows.Close(); err != nil {
 		return nil, fmt.Errorf("close locations for thread reconstruction: %w", err)
 	}
+	if err := locationRows.Err(); err != nil {
+		return nil, fmt.Errorf("load locations for thread reconstruction: %w", err)
+	}
 	return nodes, nil
 }
 
-func loadExistingThreadMembership(ctx context.Context, tx *sql.Tx, accountID string) (map[string]string, map[string]time.Time, error) {
-	rows, err := tx.QueryContext(ctx, `
+func loadAffectedThreadNodes(ctx context.Context, tx *sql.Tx, accountID string, seedMessageIDs []string) (map[string]*threadNode, error) {
+	if _, err := tx.ExecContext(ctx, `CREATE TEMP TABLE IF NOT EXISTS thread_rebuild_scope (
+    message_id TEXT PRIMARY KEY
+) WITHOUT ROWID`); err != nil {
+		return nil, fmt.Errorf("create affected thread scope: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM `+threadScopeTable); err != nil {
+		return nil, fmt.Errorf("clear affected thread scope: %w", err)
+	}
+	for _, messageID := range uniqueSortedStrings(seedMessageIDs) {
+		if _, err := tx.ExecContext(ctx, `
+INSERT OR IGNORE INTO `+threadScopeTable+` (message_id)
+SELECT message_id FROM messages WHERE account_id = ? AND message_id = ?`, accountID, messageID); err != nil {
+			return nil, fmt.Errorf("seed affected thread scope: %w", err)
+		}
+	}
+	for {
+		before, err := threadScopeCount(ctx, tx)
+		if err != nil {
+			return nil, err
+		}
+		if before == 0 {
+			return map[string]*threadNode{}, nil
+		}
+		if before > maxAffectedThreadMessages {
+			return nil, fmt.Errorf("affected thread reconstruction exceeds %d messages", maxAffectedThreadMessages)
+		}
+		if _, err := tx.ExecContext(ctx, `
+INSERT OR IGNORE INTO `+threadScopeTable+` (message_id)
+SELECT related.message_id
+FROM thread_messages AS seed
+JOIN `+threadScopeTable+` AS scoped ON scoped.message_id = seed.message_id
+JOIN threads AS t ON t.thread_id = seed.thread_id AND t.account_id = ?
+JOIN thread_messages AS related ON related.thread_id = t.thread_id`, accountID); err != nil {
+			return nil, fmt.Errorf("expand affected prior thread membership: %w", err)
+		}
+
+		nodes, err := loadThreadNodesFromScope(ctx, tx, accountID)
+		if err != nil {
+			return nil, err
+		}
+		rfcTokens, relationTokens, fallbackTokens := threadNeighborTokens(nodes)
+		if err := addThreadIdentityNeighbors(ctx, tx, accountID, relationTokens); err != nil {
+			return nil, err
+		}
+		edgeTokens := append(append([]string{}, rfcTokens...), relationTokens...)
+		edgeTokens = append(edgeTokens, fallbackTokens...)
+		if err := addThreadEdgeNeighbors(ctx, tx, accountID, uniqueSortedStrings(edgeTokens)); err != nil {
+			return nil, err
+		}
+		after, err := threadScopeCount(ctx, tx)
+		if err != nil {
+			return nil, err
+		}
+		if after == before {
+			return loadThreadNodesFromScope(ctx, tx, accountID)
+		}
+	}
+}
+
+func threadScopeCount(ctx context.Context, tx *sql.Tx) (int, error) {
+	var count int
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM `+threadScopeTable).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count affected thread scope: %w", err)
+	}
+	return count, nil
+}
+
+func threadNeighborTokens(nodes map[string]*threadNode) ([]string, []string, []string) {
+	rfcTokens := []string{}
+	relationTokens := []string{}
+	fallbackTokens := []string{}
+	for _, node := range nodes {
+		if token, valid := normalizeThreadToken(node.RFCMessageID); valid {
+			rfcTokens = append(rfcTokens, token)
+		}
+		for _, value := range append(append([]string{}, node.References...), node.InReplyTo) {
+			if token, valid := normalizeThreadToken(value); valid {
+				relationTokens = append(relationTokens, token)
+			}
+		}
+		if strings.TrimSpace(node.InReplyTo) == "" && len(node.References) == 0 {
+			if key := fallbackThreadKey(node); key != "" {
+				fallbackTokens = append(fallbackTokens, key)
+			}
+		}
+	}
+	return uniqueSortedStrings(rfcTokens), uniqueSortedStrings(relationTokens), uniqueSortedStrings(fallbackTokens)
+}
+
+func addThreadIdentityNeighbors(ctx context.Context, tx *sql.Tx, accountID string, tokens []string) error {
+	for _, batch := range stringBatches(uniqueSortedStrings(tokens), threadReconstructionBatchSize) {
+		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(batch)), ",")
+		arguments := make([]any, 0, len(batch)+1)
+		arguments = append(arguments, accountID)
+		for _, token := range batch {
+			arguments = append(arguments, token)
+		}
+		if _, err := tx.ExecContext(ctx, `
+INSERT OR IGNORE INTO `+threadScopeTable+` (message_id)
+SELECT m.message_id
+FROM messages AS m
+WHERE m.account_id = ?
+  AND lower(trim(trim(m.rfc_message_id), '<>')) IN (`+placeholders+`)`, arguments...); err != nil {
+			return fmt.Errorf("expand affected RFC parents: %w", err)
+		}
+	}
+	return nil
+}
+
+func addThreadEdgeNeighbors(ctx context.Context, tx *sql.Tx, accountID string, tokens []string) error {
+	for _, batch := range stringBatches(uniqueSortedStrings(tokens), threadReconstructionBatchSize) {
+		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(batch)), ",")
+		arguments := make([]any, 0, len(batch)+1)
+		arguments = append(arguments, accountID)
+		for _, token := range batch {
+			arguments = append(arguments, token)
+		}
+		if _, err := tx.ExecContext(ctx, `
+INSERT OR IGNORE INTO `+threadScopeTable+` (message_id)
+SELECT child_message_id
+FROM thread_edges
+WHERE account_id = ? AND token IN (`+placeholders+`)
+  AND (relation = 'fallback' OR status <> 'malformed')`, arguments...); err != nil {
+			return fmt.Errorf("expand affected thread-edge neighbors: %w", err)
+		}
+	}
+	return nil
+}
+
+func loadExistingThreadMembershipForMessages(ctx context.Context, tx *sql.Tx, accountID string, messageIDs []string) (map[string]string, map[string]time.Time, error) {
+	membership := map[string]string{}
+	created := map[string]time.Time{}
+	for _, batch := range stringBatches(uniqueSortedStrings(messageIDs), threadReconstructionBatchSize) {
+		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(batch)), ",")
+		arguments := make([]any, 0, len(batch)+1)
+		arguments = append(arguments, accountID)
+		for _, messageID := range batch {
+			arguments = append(arguments, messageID)
+		}
+		rows, err := tx.QueryContext(ctx, `
 SELECT tm.message_id, t.thread_id, t.created_at
 FROM thread_messages AS tm
 JOIN threads AS t ON t.thread_id = tm.thread_id
-WHERE t.account_id = ?`, accountID)
-	if err != nil {
-		return nil, nil, fmt.Errorf("load existing thread memberships: %w", err)
-	}
-	membership := map[string]string{}
-	created := map[string]time.Time{}
-	for rows.Next() {
-		var messageID, threadID, createdAt string
-		if err := rows.Scan(&messageID, &threadID, &createdAt); err != nil {
-			rows.Close()
-			return nil, nil, fmt.Errorf("read existing thread membership: %w", err)
+WHERE t.account_id = ? AND tm.message_id IN (`+placeholders+`)`, arguments...)
+		if err != nil {
+			return nil, nil, fmt.Errorf("load affected thread memberships: %w", err)
 		}
-		membership[messageID] = threadID
-		if value, err := time.Parse(time.RFC3339Nano, createdAt); err == nil {
-			created[threadID] = value
+		for rows.Next() {
+			var messageID, threadID, createdAt string
+			if err := rows.Scan(&messageID, &threadID, &createdAt); err != nil {
+				rows.Close()
+				return nil, nil, fmt.Errorf("read affected thread membership: %w", err)
+			}
+			membership[messageID] = threadID
+			if value, err := time.Parse(time.RFC3339Nano, createdAt); err == nil {
+				created[threadID] = value
+			}
 		}
-	}
-	if err := rows.Close(); err != nil {
-		return nil, nil, fmt.Errorf("close existing thread memberships: %w", err)
+		if err := rows.Close(); err != nil {
+			return nil, nil, fmt.Errorf("close affected thread memberships: %w", err)
+		}
+		if err := rows.Err(); err != nil {
+			return nil, nil, fmt.Errorf("load affected thread memberships: %w", err)
+		}
 	}
 	return membership, created, nil
+}
+
+func deleteThreadRowsForMessages(ctx context.Context, tx *sql.Tx, accountID, table, column string, messageIDs []string) error {
+	for _, batch := range stringBatches(uniqueSortedStrings(messageIDs), threadReconstructionBatchSize) {
+		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(batch)), ",")
+		arguments := make([]any, 0, len(batch)+1)
+		statement := `DELETE FROM ` + table + ` WHERE ` + column + ` IN (` + placeholders + `)`
+		for _, messageID := range batch {
+			arguments = append(arguments, messageID)
+		}
+		if accountID != "" {
+			statement += ` AND account_id = ?`
+			arguments = append(arguments, accountID)
+		}
+		if _, err := tx.ExecContext(ctx, statement, arguments...); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func sortedNodeIDs(nodes map[string]*threadNode) []string {
+	values := make([]string, 0, len(nodes))
+	for messageID := range nodes {
+		values = append(values, messageID)
+	}
+	sort.Slice(values, func(i, j int) bool { return threadNodeLess(nodes[values[i]], nodes[values[j]]) })
+	return values
+}
+
+func uniqueSortedStrings(values []string) []string {
+	set := map[string]struct{}{}
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			set[value] = struct{}{}
+		}
+	}
+	result := make([]string, 0, len(set))
+	for value := range set {
+		result = append(result, value)
+	}
+	sort.Strings(result)
+	return result
+}
+
+func stringBatches(values []string, size int) [][]string {
+	if size < 1 {
+		size = 1
+	}
+	result := make([][]string, 0, (len(values)+size-1)/size)
+	for start := 0; start < len(values); start += size {
+		end := start + size
+		if end > len(values) {
+			end = len(values)
+		}
+		result = append(result, values[start:end])
+	}
+	return result
 }
 
 func buildThreadComponents(nodes map[string]*threadNode) (map[string][]string, []graphEdge) {
@@ -541,30 +801,109 @@ func buildThreadComponents(nodes map[string]*threadNode) (map[string][]string, [
 	return components, edges
 }
 
-func aggregateThreadComponents(nodes map[string]*threadNode, components map[string][]string, existing map[string]string, created map[string]time.Time) ([]threadAggregate, map[string]string) {
-	aggregates := make([]threadAggregate, 0, len(components))
-	retired := map[string]string{}
-	for _, messageIDs := range components {
-		existingIDs := map[string]struct{}{}
-		for _, messageID := range messageIDs {
+func aggregateThreadComponents(
+	ctx context.Context,
+	tx *sql.Tx,
+	accountID string,
+	nodes map[string]*threadNode,
+	components map[string][]string,
+	existing map[string]string,
+	created map[string]time.Time,
+) ([]threadAggregate, map[string]string, error) {
+	type componentPlan struct {
+		key        string
+		messageIDs []string
+	}
+	plans := make([]componentPlan, 0, len(components))
+	for key, messageIDs := range components {
+		plans = append(plans, componentPlan{key: key, messageIDs: append([]string(nil), messageIDs...)})
+	}
+	sort.Slice(plans, func(i, j int) bool {
+		left, right := nodes[plans[i].messageIDs[0]], nodes[plans[j].messageIDs[0]]
+		if threadNodeLess(left, right) {
+			return true
+		}
+		if threadNodeLess(right, left) {
+			return false
+		}
+		return plans[i].key < plans[j].key
+	})
+
+	// One old thread ID may appear in multiple new components after stronger RFC
+	// evidence replaces an earlier fallback. Preserve it for exactly one owner:
+	// the component containing its original provisional anchor when possible,
+	// otherwise the earliest component. Other split components receive new IDs.
+	threadComponents := map[string]map[string]struct{}{}
+	for _, plan := range plans {
+		for _, messageID := range plan.messageIDs {
 			if threadID := existing[messageID]; threadID != "" {
-				existingIDs[threadID] = struct{}{}
+				if threadComponents[threadID] == nil {
+					threadComponents[threadID] = map[string]struct{}{}
+				}
+				threadComponents[threadID][plan.key] = struct{}{}
 			}
 		}
-		threadID := ""
-		for candidate := range existingIDs {
-			if threadID == "" || threadIdentityLess(candidate, threadID, created) {
-				threadID = candidate
+	}
+	owners := map[string]string{}
+	for threadID, candidates := range threadComponents {
+		owner := ""
+		for _, plan := range plans {
+			if _, ok := candidates[plan.key]; !ok {
+				continue
 			}
+			for _, messageID := range plan.messageIDs {
+				if provisionalThreadID(messageID) == threadID {
+					owner = plan.key
+					break
+				}
+			}
+			if owner != "" {
+				break
+			}
+		}
+		if owner == "" {
+			for _, plan := range plans {
+				if _, ok := candidates[plan.key]; ok {
+					owner = plan.key
+					break
+				}
+			}
+		}
+		owners[threadID] = owner
+	}
+
+	aggregates := make([]threadAggregate, 0, len(plans))
+	retired := map[string]string{}
+	allocated := map[string]struct{}{}
+	for _, plan := range plans {
+		ownedExisting := []string{}
+		for threadID, owner := range owners {
+			if owner == plan.key {
+				ownedExisting = append(ownedExisting, threadID)
+			}
+		}
+		sort.Slice(ownedExisting, func(i, j int) bool {
+			return threadIdentityLess(ownedExisting[i], ownedExisting[j], created)
+		})
+		threadID := ""
+		if len(ownedExisting) > 0 {
+			threadID = ownedExisting[0]
 		}
 		if threadID == "" {
-			threadID = provisionalThreadID(messageIDs[0])
+			var err error
+			threadID, err = allocateThreadID(ctx, tx, accountID, plan.messageIDs, allocated)
+			if err != nil {
+				return nil, nil, err
+			}
 		}
-		for candidate := range existingIDs {
+		allocated[threadID] = struct{}{}
+		for _, candidate := range ownedExisting {
 			if candidate != threadID {
 				retired[candidate] = threadID
 			}
 		}
+
+		messageIDs := plan.messageIDs
 		aggregate := threadAggregate{ID: threadID, MessageIDs: append([]string(nil), messageIDs...)}
 		participants := map[string]struct{}{}
 		folders := map[string]struct{}{}
@@ -618,7 +957,53 @@ func aggregateThreadComponents(nodes map[string]*threadNode, components map[stri
 		}
 		return aggregates[i].LastMessageAt.Before(aggregates[j].LastMessageAt)
 	})
-	return aggregates, retired
+	return aggregates, retired, nil
+}
+
+func allocateThreadID(ctx context.Context, tx *sql.Tx, accountID string, messageIDs []string, allocated map[string]struct{}) (string, error) {
+	for _, messageID := range messageIDs {
+		candidate := provisionalThreadID(messageID)
+		if _, used := allocated[candidate]; used {
+			continue
+		}
+		available, err := threadIDAvailable(ctx, tx, accountID, candidate)
+		if err != nil {
+			return "", err
+		}
+		if available {
+			return candidate, nil
+		}
+	}
+	for attempts := 0; attempts < 8; attempts++ {
+		candidate, err := id.New("thr")
+		if err != nil {
+			return "", fmt.Errorf("allocate reconstructed thread ID: %w", err)
+		}
+		if _, used := allocated[candidate]; used {
+			continue
+		}
+		available, err := threadIDAvailable(ctx, tx, accountID, candidate)
+		if err != nil {
+			return "", err
+		}
+		if available {
+			return candidate, nil
+		}
+	}
+	return "", errors.New("allocate reconstructed thread ID: exhausted collision retries")
+}
+
+func threadIDAvailable(ctx context.Context, tx *sql.Tx, accountID, threadID string) (bool, error) {
+	var count int
+	if err := tx.QueryRowContext(ctx, `
+SELECT (
+    SELECT count(*) FROM threads WHERE thread_id = ?
+) + (
+    SELECT count(*) FROM thread_aliases WHERE alias_thread_id = ?
+)`, threadID, threadID).Scan(&count); err != nil {
+		return false, fmt.Errorf("inspect reconstructed thread ID availability for %s: %w", accountID, err)
+	}
+	return count == 0, nil
 }
 
 func (repository *ThreadRepository) Latest(ctx context.Context, accountID string, limit int) ([]maildomain.Thread, bool, error) {
@@ -651,7 +1036,7 @@ LIMIT ?`, strings.TrimSpace(accountID), limit+1)
 	return values, more, nil
 }
 
-func (repository *ThreadRepository) Show(ctx context.Context, accountID, selector string, limit int) (maildomain.ThreadPage, error) {
+func (repository *ThreadRepository) Show(ctx context.Context, accountID, selector, cursor string, limit int) (maildomain.ThreadPage, error) {
 	if limit < 1 {
 		return maildomain.ThreadPage{}, errors.New("show thread: limit must be positive")
 	}
@@ -664,11 +1049,27 @@ func (repository *ThreadRepository) Show(ctx context.Context, accountID, selecto
 		return maildomain.ThreadPage{}, err
 	}
 	thread.RedirectedFrom = redirectedFrom
+	cursorValue, err := decodeThreadCursor(cursor, threadID)
+	if err != nil {
+		return maildomain.ThreadPage{}, err
+	}
+	arguments := []any{strings.TrimSpace(accountID), threadID}
+	cursorClause := ""
+	if cursorValue.MessageID != "" {
+		cursorClause = `
+AND (
+    COALESCE(m.sort_at, m.created_at) > ?
+    OR (COALESCE(m.sort_at, m.created_at) = ? AND m.message_id > ?)
+)`
+		arguments = append(arguments, cursorValue.SortAt, cursorValue.SortAt, cursorValue.MessageID)
+	}
+	arguments = append(arguments, limit+1)
 	rows, err := repository.db.QueryContext(ctx, messageColumns+`
 JOIN thread_messages AS tm ON tm.message_id = m.message_id
 WHERE m.account_id = ? AND tm.thread_id = ?
+`+cursorClause+`
 ORDER BY COALESCE(m.sort_at, m.created_at), m.message_id
-LIMIT ?`, strings.TrimSpace(accountID), threadID, limit+1)
+LIMIT ?`, arguments...)
 	if err != nil {
 		return maildomain.ThreadPage{}, fmt.Errorf("read thread messages: %w", err)
 	}
@@ -703,7 +1104,66 @@ LIMIT ?`, strings.TrimSpace(accountID), threadID, limit+1)
 		return maildomain.ThreadPage{}, err
 	}
 	thread.Edges = edges
-	return maildomain.ThreadPage{Thread: thread, More: more, Edges: edges}, nil
+	nextCursor := ""
+	if more && len(messages) > 0 {
+		last := messages[len(messages)-1]
+		sortAt := last.CreatedAt
+		if last.SortAt != nil {
+			sortAt = *last.SortAt
+		}
+		nextCursor, err = encodeThreadCursor(threadID, sortAt, last.ID)
+		if err != nil {
+			return maildomain.ThreadPage{}, err
+		}
+	}
+	return maildomain.ThreadPage{Thread: thread, More: more, NextCursor: nextCursor, Edges: edges}, nil
+}
+
+type storedThreadCursor struct {
+	Version   int    `json:"v"`
+	ThreadID  string `json:"thread"`
+	SortAt    string `json:"sort_at"`
+	MessageID string `json:"message"`
+}
+
+func encodeThreadCursor(threadID string, sortAt time.Time, messageID string) (string, error) {
+	if strings.TrimSpace(threadID) == "" || sortAt.IsZero() || strings.TrimSpace(messageID) == "" {
+		return "", maildomain.ErrInvalidThreadCursor
+	}
+	payload, err := json.Marshal(storedThreadCursor{
+		Version: 1, ThreadID: threadID, SortAt: sortAt.UTC().Format(time.RFC3339Nano), MessageID: messageID,
+	})
+	if err != nil {
+		return "", fmt.Errorf("encode mail thread cursor: %w", err)
+	}
+	return "cur_" + base64.RawURLEncoding.EncodeToString(payload), nil
+}
+
+func decodeThreadCursor(value, threadID string) (storedThreadCursor, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return storedThreadCursor{}, nil
+	}
+	if !strings.HasPrefix(value, "cur_") {
+		return storedThreadCursor{}, maildomain.ErrInvalidThreadCursor
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(value, "cur_"))
+	if err != nil {
+		return storedThreadCursor{}, maildomain.ErrInvalidThreadCursor
+	}
+	var cursor storedThreadCursor
+	if err := json.Unmarshal(payload, &cursor); err != nil {
+		return storedThreadCursor{}, maildomain.ErrInvalidThreadCursor
+	}
+	if cursor.Version != 1 || cursor.ThreadID != threadID || !strings.HasPrefix(cursor.MessageID, "msg_") {
+		return storedThreadCursor{}, maildomain.ErrInvalidThreadCursor
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, cursor.SortAt)
+	if err != nil || parsed.IsZero() {
+		return storedThreadCursor{}, maildomain.ErrInvalidThreadCursor
+	}
+	cursor.SortAt = parsed.UTC().Format(time.RFC3339Nano)
+	return cursor, nil
 }
 
 func (repository *ThreadRepository) resolve(ctx context.Context, accountID, selector string) (string, string, error) {

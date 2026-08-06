@@ -1784,6 +1784,63 @@ func TestMailThreadReconstructionWorkflowAndCompactBudgets(t *testing.T) {
 	if strings.Contains(stdout, "hidden-thread-bcc") || strings.Contains(stdout, "raw_storage_key") || strings.Count(stdout, "\n") > 32 || len(stdout) > 2100 {
 		t.Fatalf("thread compact privacy/budget failure: %q", stdout)
 	}
+	if !strings.Contains(stdout, "\n\nthread-page\n") {
+		t.Fatalf("thread compact summary is not separated from message blocks: %q", stdout)
+	}
+
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "thread", "show", thread.ID, "--body-only")
+	if code != 0 || stderr != "" || !strings.Contains(stdout, "Root chronological body uid=201") ||
+		!strings.Contains(stdout, "Reply chronological body uid=202") || strings.Contains(stdout, "message=") || strings.Contains(stdout, "thread-page") ||
+		strings.Index(stdout, "Root chronological body") > strings.Index(stdout, "Reply chronological body") {
+		t.Fatalf("thread body-only code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "thread", "show", thread.ID, "--limit", "1", "--metadata-only", "--json")
+	if code != 0 || stderr != "" {
+		t.Fatalf("thread first cursor page code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	var firstCursorPage struct {
+		Data struct {
+			Count      int    `json:"count"`
+			More       bool   `json:"more"`
+			NextCursor string `json:"next_cursor"`
+			Thread     struct {
+				Messages []struct {
+					Message struct {
+						ID string `json:"id"`
+					} `json:"message"`
+				} `json:"messages"`
+			} `json:"thread"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &firstCursorPage); err != nil || firstCursorPage.Data.Count != 1 ||
+		!firstCursorPage.Data.More || firstCursorPage.Data.NextCursor == "" || len(firstCursorPage.Data.Thread.Messages) != 1 {
+		t.Fatalf("decode first cursor page err=%v page=%+v", err, firstCursorPage)
+	}
+	firstCursorMessageID := firstCursorPage.Data.Thread.Messages[0].Message.ID
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "thread", "show", thread.ID, "--limit", "1", "--cursor", firstCursorPage.Data.NextCursor, "--metadata-only", "--json")
+	if code != 0 || stderr != "" {
+		t.Fatalf("thread second cursor page code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	var secondCursorPage struct {
+		Data struct {
+			Count      int    `json:"count"`
+			More       bool   `json:"more"`
+			NextCursor string `json:"next_cursor"`
+			Thread     struct {
+				Messages []struct {
+					Message struct {
+						ID string `json:"id"`
+					} `json:"message"`
+				} `json:"messages"`
+			} `json:"thread"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &secondCursorPage); err != nil || secondCursorPage.Data.Count != 1 ||
+		secondCursorPage.Data.More || secondCursorPage.Data.NextCursor != "" || len(secondCursorPage.Data.Thread.Messages) != 1 ||
+		secondCursorPage.Data.Thread.Messages[0].Message.ID == firstCursorMessageID {
+		t.Fatalf("decode second cursor page err=%v page=%+v", err, secondCursorPage)
+	}
 
 	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "thread", "show", thread.ID, "--full")
 	if code != 0 || stderr != "" || !strings.Contains(stdout, "Root chronological body uid=201") ||
@@ -1796,6 +1853,9 @@ func TestMailThreadReconstructionWorkflowAndCompactBudgets(t *testing.T) {
 		!strings.Contains(stdout, `"root_rfc_message_id":"phase11-root@example.test"`) ||
 		!strings.Contains(stdout, `"message_count":2`) || !strings.Contains(stdout, `"count":2`) {
 		t.Fatalf("thread metadata JSON code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	if strings.Contains(stdout, `"id":"ted_`) {
+		t.Fatalf("thread metadata JSON exposed internal edge IDs: %s", stdout)
 	}
 	for _, forbidden := range []string{"synthetic-mail-thread-secret", "hidden-thread-bcc@example.test", `"bcc"`, "raw_storage_key", "raw_content_hash", "Root chronological body", "Reply chronological body"} {
 		if strings.Contains(stdout, forbidden) {
@@ -1825,6 +1885,44 @@ func TestMailThreadReconstructionWorkflowAndCompactBudgets(t *testing.T) {
 	code, _, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "thread", "show", thread.ID, "--format", "raw")
 	if code != cli.ExitUsage || !strings.Contains(stderr, "plain multi-message raw output is ambiguous") {
 		t.Fatalf("thread raw guard code=%d stderr=%q", code, stderr)
+	}
+
+	paths, err := config.ResolveAppPaths(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	localState, err := store.Open(context.Background(), paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selectedAccount, err := localState.Accounts().ResolveSelected(context.Background(), "")
+	if err != nil {
+		localState.Close()
+		t.Fatal(err)
+	}
+	rootMessage, err := localState.Mail().Message(context.Background(), selectedAccount.ID, rootMessageID)
+	if err != nil {
+		localState.Close()
+		t.Fatal(err)
+	}
+	rootLocation, ok := rawMessageLocation(rootMessage)
+	if !ok {
+		localState.Close()
+		t.Fatal("thread root has no raw location")
+	}
+	if err := localState.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(paths.BlobRoot, filepath.FromSlash(rootLocation.RawStorageKey))); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "thread", "show", thread.ID, "--metadata-only")
+	if code != 0 || stderr != "" || !strings.Contains(stdout, thread.ID) || compactBlockCount(stdout, "message") != 2 {
+		t.Fatalf("lazy compact thread read code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	code, _, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "thread", "show", thread.ID, "--full")
+	if code == 0 || !strings.Contains(stderr, "content") {
+		t.Fatalf("missing raw full-thread read code=%d stderr=%q", code, stderr)
 	}
 }
 

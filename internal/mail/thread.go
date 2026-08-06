@@ -6,6 +6,7 @@ import (
 )
 
 var ErrThreadNotFound = errors.New("mail thread not found")
+var ErrInvalidThreadCursor = errors.New("invalid mail thread cursor")
 
 type Thread struct {
 	ID               string       `json:"id"`
@@ -41,7 +42,15 @@ type ThreadEdge struct {
 }
 
 type ThreadPage struct {
-	Thread Thread       `json:"thread"`
-	More   bool         `json:"more"`
-	Edges  []ThreadEdge `json:"edges,omitempty"`
+	Thread     Thread       `json:"thread"`
+	More       bool         `json:"more"`
+	NextCursor string       `json:"next_cursor,omitempty"`
+	Edges      []ThreadEdge `json:"edges,omitempty"`
+}
+
+type ThreadReadOptions struct {
+	Cursor         string
+	Limit          int
+	RequireSource  bool
+	HydrateContent bool
 }

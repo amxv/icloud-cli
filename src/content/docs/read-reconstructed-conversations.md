@@ -94,6 +94,14 @@ more=false
 
 The default is bounded and preview-only. It never prints BCC, private blob paths, complete bodies, HTML, raw MIME, or decoded attachments.
 
+When a page ends with `more=true`, continue from the returned cursor instead of rereading earlier messages:
+
+```bash
+icloud mail thread show thr_… --limit 20 --cursor cur_…
+```
+
+Compact output reports the value as `next_cursor`; JSON uses the same field. A cursor belongs to one reconstructed thread, so passing it to another thread fails instead of silently skipping messages. The final page has no next cursor.
+
 ## Expand content deliberately
 
 Use the same content choices as a single-message read:
@@ -102,13 +110,16 @@ Use the same content choices as a single-message read:
 icloud mail thread show thr_… --full
 icloud mail thread show thr_… --format text
 icloud mail thread show thr_… --format html
+icloud mail thread show thr_… --body-only
 icloud mail thread show thr_… --headers
 icloud mail thread show thr_… --metadata-only
 icloud mail thread show thr_… --verbose
 icloud mail thread show thr_… --json
 ```
 
-`--full` returns complete decoded text for each selected message in chronological order. HTML, decoded public headers, MIME-part detail, and JSON remain separate opt-ins.
+`--full` returns complete decoded text for each selected message in chronological order. `--body-only` removes thread and message wrappers and writes only the selected bodies, separated by a blank line, which is useful for redirection. HTML, decoded public headers, MIME-part detail, and JSON remain separate opt-ins.
+
+Compact reads and plain `--metadata-only` use stored summaries and do not require raw message files to be opened. Complete text, HTML, headers that still need decoding, verbose MIME detail that has not yet been indexed, and raw MIME require the corresponding synchronized raw content to remain available locally.
 
 Plain multi-message raw output is rejected because concatenated RFC822 streams are ambiguous. Use one of these explicit forms instead:
 
@@ -125,7 +136,7 @@ Raw JSON remains subject to the existing per-message size bound. Exact raw strea
 icloud mail thread show thr_… --metadata-only --verbose --json
 ```
 
-The response includes bounded edge evidence for the selected messages. Each edge identifies:
+The response includes bounded edge evidence for the selected messages. Internal evidence-row identifiers are not part of the public response. Each edge identifies:
 
 - the child message;
 - whether the source was `reference`, `in_reply_to`, or conservative `fallback`;
@@ -138,7 +149,7 @@ Metadata-only output removes thread and message excerpts. BCC, private raw-stora
 
 ## Understand late merges and aliases
 
-A reply can arrive before its root, or a later message can bridge two provisional conversations. The CLI recomputes the account-local graph in the same transaction as synchronized message and flag changes.
+A reply can arrive before its root, or a later message can bridge two provisional conversations. Newly synchronized evidence can merge or split the affected local conversations while preserving every stable message ID.
 
 When two provisional threads merge, one existing `thr_…` ID remains canonical. Retired IDs become durable aliases:
 

@@ -253,14 +253,18 @@ Thread identity is local. The CLI uses ordered normalized `References`, then `In
 icloud mail thread show thr_…
 icloud mail thread show msg_…
 icloud mail thread show thr_… --limit 50
+icloud mail thread show thr_… --cursor cur_…
 icloud mail thread show thr_… --full
+icloud mail thread show thr_… --body-only
 icloud mail thread show thr_… --format html
 icloud mail thread show thr_… --headers
 icloud mail thread show thr_… --metadata-only --verbose --json
 icloud mail thread show thr_… --format raw --json
 ```
 
-Resolves a canonical thread ID, retired alias, or stable message ID and returns a bounded chronological page. Compact output prints the aggregate once, then one bounded message record per logical message. `--full` expands complete decoded text for every selected message; HTML, decoded public headers, MIME metadata, and JSON remain explicit choices.
+Resolves a canonical thread ID, retired alias, or stable message ID and returns a bounded chronological page. Compact output prints the aggregate once, then one bounded message record per logical message. When `more=true`, pass the reported `next_cursor` back through `--cursor`; cursors are bound to the selected thread and the final page omits one. `--full` expands complete decoded text for every selected message, while `--body-only` writes chronological bodies without metadata wrappers. HTML, decoded public headers, MIME metadata, and JSON remain explicit choices.
+
+Compact reads and plain `--metadata-only` do not open raw message files. Explicit body, header-decoding, HTML, raw, or not-yet-indexed verbose MIME modes fail visibly when their synchronized source content is unavailable. Verbose graph evidence exposes child, relationship, token, parent, and status fields but not internal evidence-row IDs.
 
 Plain multi-message raw output is rejected because concatenated RFC822 streams are ambiguous. Use raw JSON for bounded per-message payloads or `mail message raw <message-id>` for exact streaming.
 

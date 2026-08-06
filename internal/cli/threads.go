@@ -18,23 +18,32 @@ type mailLatestData struct {
 }
 
 type publicThread struct {
-	ID               string                  `json:"id"`
-	AccountID        string                  `json:"account_id"`
-	RootRFCMessageID string                  `json:"root_rfc_message_id,omitempty"`
-	Subject          string                  `json:"subject,omitempty"`
-	Snippet          string                  `json:"snippet,omitempty"`
-	Participants     []string                `json:"participants,omitempty"`
-	FolderIDs        []string                `json:"folder_ids,omitempty"`
-	MessageCount     int                     `json:"message_count"`
-	UnreadCount      int                     `json:"unread_count"`
-	AttachmentCount  int                     `json:"attachment_count"`
-	FirstMessageAt   any                     `json:"first_message_at,omitempty"`
-	LastMessageAt    any                     `json:"last_message_at,omitempty"`
-	Status           string                  `json:"status"`
-	Reconstruction   string                  `json:"reconstruction"`
-	RedirectedFrom   string                  `json:"redirected_from,omitempty"`
-	Messages         []publicThreadMessage   `json:"messages"`
-	Edges            []maildomain.ThreadEdge `json:"edges,omitempty"`
+	ID               string                `json:"id"`
+	AccountID        string                `json:"account_id"`
+	RootRFCMessageID string                `json:"root_rfc_message_id,omitempty"`
+	Subject          string                `json:"subject,omitempty"`
+	Snippet          string                `json:"snippet,omitempty"`
+	Participants     []string              `json:"participants,omitempty"`
+	FolderIDs        []string              `json:"folder_ids,omitempty"`
+	MessageCount     int                   `json:"message_count"`
+	UnreadCount      int                   `json:"unread_count"`
+	AttachmentCount  int                   `json:"attachment_count"`
+	FirstMessageAt   any                   `json:"first_message_at,omitempty"`
+	LastMessageAt    any                   `json:"last_message_at,omitempty"`
+	Status           string                `json:"status"`
+	Reconstruction   string                `json:"reconstruction"`
+	RedirectedFrom   string                `json:"redirected_from,omitempty"`
+	Messages         []publicThreadMessage `json:"messages"`
+	Edges            []publicThreadEdge    `json:"edges,omitempty"`
+}
+
+type publicThreadEdge struct {
+	ChildMessageID  string `json:"child_message_id"`
+	Relation        string `json:"relation"`
+	Ordinal         int    `json:"ordinal"`
+	Token           string `json:"token"`
+	ParentMessageID string `json:"parent_message_id,omitempty"`
+	Status          string `json:"status"`
 }
 
 type publicThreadMessage struct {
@@ -47,6 +56,7 @@ type mailThreadData struct {
 	Thread        publicThread `json:"thread"`
 	Count         int          `json:"count"`
 	More          bool         `json:"more,omitempty"`
+	NextCursor    string       `json:"next_cursor,omitempty"`
 	SchemaVersion int64        `json:"schema_version"`
 }
 
@@ -100,18 +110,19 @@ func newMailThreadCommand(state *executionState) *cobra.Command {
 func newMailThreadShowCommand(state *executionState) *cobra.Command {
 	var options OutputOptions
 	var limit int
+	var cursor string
 	command := &cobra.Command{
 		Use:     "show <thread-id|message-id>",
 		Short:   "Show a bounded chronological page from a reconstructed conversation",
 		Args:    cobra.ExactArgs(1),
-		Example: "  icloud mail thread show thr_…\n  icloud mail thread show msg_… --full\n  icloud mail thread show thr_… --format html --json\n  icloud mail thread show thr_… --headers --verbose",
+		Example: "  icloud mail thread show thr_…\n  icloud mail thread show msg_… --full\n  icloud mail thread show thr_… --limit 20 --cursor cur_…\n  icloud mail thread show thr_… --format html --json\n  icloud mail thread show thr_… --headers --verbose",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if limit < 1 || limit > MaximumPageSize {
 				return NewAppError(ErrorUsage, fmt.Sprintf("--limit must be between 1 and %d", MaximumPageSize), false)
 			}
 			if err := ValidateOutputOptions(options, OutputSupport{
 				JSON: true, Full: true, Verbose: true, Text: true, HTML: true, Raw: true,
-				Headers: true, MetadataOnly: true,
+				Headers: true, BodyOnly: true, MetadataOnly: true,
 			}); err != nil {
 				return err
 			}
@@ -123,7 +134,11 @@ func newMailThreadShowCommand(state *executionState) *cobra.Command {
 				return NewAppError(ErrorUsage, "plain multi-message raw output is ambiguous; use --format raw --json or `mail message raw <message-id>`", false)
 			}
 			accountValue, page, sources, schemaVersion, err := state.mail.MailThread(
-				cmd.Context(), state.global.Home, state.global.Account, args[0], limit,
+				cmd.Context(), state.global.Home, state.global.Account, args[0], maildomain.ThreadReadOptions{
+					Cursor: cursor, Limit: limit,
+					RequireSource:  format == maildomain.ContentRaw || format == maildomain.ContentText || format == maildomain.ContentHTML,
+					HydrateContent: options.Headers || options.Verbose || format == maildomain.ContentText || format == maildomain.ContentHTML,
+				},
 			)
 			if err != nil {
 				return err
@@ -135,7 +150,24 @@ func newMailThreadShowCommand(state *executionState) *cobra.Command {
 				}
 				return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: mailThreadData{
 					AccountID: accountValue.ID, Thread: public, Count: len(public.Messages), More: page.More, SchemaVersion: schemaVersion,
+					NextCursor: page.NextCursor,
 				}, Meta: EnvelopeMeta{RequestID: state.requestID}})
+			}
+			if options.BodyOnly {
+				for index := range page.Thread.Messages {
+					if sources[index] == nil {
+						return NewAppError(ErrorUnavailable, "decoded thread message content is not available locally", false)
+					}
+					if index > 0 {
+						if _, err := io.WriteString(state.stdout, "\n\n"); err != nil {
+							return err
+						}
+					}
+					if err := sources[index].WriteBody(cmd.Context(), format, state.stdout); err != nil {
+						return messageContentError(err)
+					}
+				}
+				return nil
 			}
 			renderer := NewCompactTextRenderer(state.stdout)
 			if err := renderThreadSummary(renderer, page.Thread); err != nil {
@@ -158,6 +190,9 @@ func newMailThreadShowCommand(state *executionState) *cobra.Command {
 					}
 				}
 				if format == maildomain.ContentText || format == maildomain.ContentHTML {
+					if sources[index] == nil {
+						return NewAppError(ErrorUnavailable, "decoded thread message content is not available locally", false)
+					}
 					if _, err := fmt.Fprintf(state.stdout, "\nbody\nmessage=%s\n", message.ID); err != nil {
 						return err
 					}
@@ -171,7 +206,7 @@ func newMailThreadShowCommand(state *executionState) *cobra.Command {
 			}
 			if options.Verbose {
 				for _, edge := range page.Thread.Edges {
-					if err := renderer.Record("thread-edge", edge.ID,
+					if err := renderer.Record("thread-edge", "",
 						Field("child", edge.ChildMessageID),
 						Field("relation", edge.Relation),
 						Field("ordinal", edge.Ordinal),
@@ -183,15 +218,17 @@ func newMailThreadShowCommand(state *executionState) *cobra.Command {
 					}
 				}
 			}
-			return NewCompactTextRenderer(state.stdout).Summary("thread-page", Field("thread", page.Thread.ID), Field("count", len(page.Thread.Messages)), Field("more", fmt.Sprintf("%t", page.More)))
+			return renderer.Summary("thread-page", Field("thread", page.Thread.ID), Field("count", len(page.Thread.Messages)), Field("more", fmt.Sprintf("%t", page.More)), Field("next_cursor", page.NextCursor))
 		},
 	}
 	command.Flags().IntVar(&limit, "limit", DefaultPageSize, fmt.Sprintf("Maximum chronological messages to return (1-%d)", MaximumPageSize))
+	command.Flags().StringVar(&cursor, "cursor", "", "Continue from a next_cursor returned by an earlier page")
 	command.Flags().BoolVar(&options.JSON, "json", false, "Emit one stable JSON success envelope")
 	command.Flags().BoolVar(&options.Full, "full", false, "Include complete decoded text for every selected message")
 	command.Flags().BoolVar(&options.Verbose, "verbose", false, "Include MIME part metadata and RFC graph edge evidence")
 	command.Flags().StringVar(&options.Format, "format", "compact", "Content format: compact, text, html, or raw (raw requires --json)")
 	command.Flags().BoolVar(&options.Headers, "headers", false, "Include decoded public headers for every selected message")
+	command.Flags().BoolVar(&options.BodyOnly, "body-only", false, "Write only chronological decoded message bodies")
 	command.Flags().BoolVar(&options.MetadataOnly, "metadata-only", false, "Show thread and message metadata without excerpts or bodies")
 	return command
 }
@@ -245,9 +282,14 @@ func buildPublicThread(ctx context.Context, thread maildomain.Thread, sources []
 	if !thread.LastMessageAt.IsZero() {
 		last = thread.LastMessageAt
 	}
-	edges := []maildomain.ThreadEdge(nil)
+	edges := []publicThreadEdge(nil)
 	if options.Verbose || options.MetadataOnly {
-		edges = append(edges, thread.Edges...)
+		for _, edge := range thread.Edges {
+			edges = append(edges, publicThreadEdge{
+				ChildMessageID: edge.ChildMessageID, Relation: edge.Relation, Ordinal: edge.Ordinal,
+				Token: edge.Token, ParentMessageID: edge.ParentMessageID, Status: edge.Status,
+			})
+		}
 	}
 	snippet := thread.Snippet
 	if options.MetadataOnly {
