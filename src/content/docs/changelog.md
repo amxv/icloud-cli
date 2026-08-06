@@ -8,6 +8,11 @@ summary: Public command, output, installation, and documentation changes.
 
 ## Unreleased
 
+- Added exact provider-location `move`, `copy`, `archive`, `unarchive`, `trash`, `restore`, and permanent `delete` commands with local dry-run resolution, non-interactive `--yes`, and stable idempotency keys.
+- Added durable `mut_…` intents and bounded `mail status --mutations` output for pending, confirmed, failed, and unresolved provider outcomes.
+- Added atomic MOVE preference, safe COPY plus exact UID EXPUNGE fallback, provider UID mapping capture, refusal of mailbox-wide EXPUNGE, and cancellation-safe IMAP cleanup.
+- Preserved stable logical message, content, attachment, search, and thread identity across location changes; deleting one provider copy no longer risks purging another location.
+- Added the [Move, copy, archive, and delete mail](/docs/manage-mail-locations) workflow plus Quickstart, automation, troubleshooting, reference, capability, schema, and landing-page updates.
 - Added `icloud mail forward <msg_…>` as an exact-source, new-conversation workflow with normalized `Fwd:` subjects and no reply relationship headers.
 - Added explicit `--original quoted|eml|none` source representation, verified attached EML, selective `--include-attachment att_…` original attachments, and ordinary new filesystem attachments through the existing streamed send path.
 - Added schema version 14 forward-source provenance on outbound attempts, payload-free forward outcomes/status, idempotent replay, independent local thread creation, and source-message/thread immutability proofs.

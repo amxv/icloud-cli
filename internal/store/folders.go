@@ -77,6 +77,36 @@ func (repository *FolderRepository) Resolve(ctx context.Context, accountID, sele
 	return resolveFolder(ctx, repository.db, accountID, selector)
 }
 
+// ResolveKind selects a folder by its provider-derived semantic role only.
+// Unlike Resolve, it never treats a decoded or wire mailbox name as role
+// evidence. Convenience workflows such as archive/trash rely on this so an
+// ordinary mailbox literally named "Archive" cannot masquerade as a
+// SPECIAL-USE Archive folder.
+func (repository *FolderRepository) ResolveKind(ctx context.Context, accountID string, kind folder.Kind) (folder.Folder, error) {
+	if kind == "" || kind == folder.KindOther {
+		return folder.Folder{}, folder.ErrNotFound
+	}
+	rows, err := repository.db.QueryContext(ctx, folderColumns+`
+WHERE account_id = ? AND kind = ?
+ORDER BY present DESC, stale ASC, folder_id
+LIMIT 2`, strings.TrimSpace(accountID), kind)
+	if err != nil {
+		return folder.Folder{}, fmt.Errorf("resolve folder kind: %w", err)
+	}
+	values, err := scanFolders(rows, 2)
+	if err != nil {
+		return folder.Folder{}, err
+	}
+	switch len(values) {
+	case 0:
+		return folder.Folder{}, folder.ErrNotFound
+	case 1:
+		return values[0], nil
+	default:
+		return folder.Folder{}, folder.ErrAmbiguous
+	}
+}
+
 func (repository *FolderRepository) SetSync(ctx context.Context, accountID, selector string, enabled bool, now time.Time) (folder.Folder, error) {
 	tx, err := repository.db.BeginTx(ctx, nil)
 	if err != nil {

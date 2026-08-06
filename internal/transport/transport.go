@@ -28,6 +28,9 @@ const (
 	StageIMAPFetch      Stage = "imap_fetch"
 	StageIMAPAppend     Stage = "imap_append"
 	StageIMAPStore      Stage = "imap_store"
+	StageIMAPCopy       Stage = "imap_copy"
+	StageIMAPMove       Stage = "imap_move"
+	StageIMAPExpunge    Stage = "imap_expunge"
 	StageIMAPLogout     Stage = "imap_logout"
 	StageSMTPGreeting   Stage = "smtp_greeting"
 	StageSMTPStartTLS   Stage = "smtp_starttls"
@@ -299,6 +302,54 @@ type FlagMutationResult struct {
 
 type IMAPFlagClient interface {
 	UpdateFlags(context.Context, AuthRequest, FlagMutationRequest) (FlagMutationResult, error)
+}
+
+type LocationMutationOperation string
+
+const (
+	LocationMutationMove   LocationMutationOperation = "move"
+	LocationMutationCopy   LocationMutationOperation = "copy"
+	LocationMutationDelete LocationMutationOperation = "delete"
+)
+
+type LocationMutationRequest struct {
+	Operation                 LocationMutationOperation
+	SourceMailbox             string
+	DestinationMailbox        string
+	ExpectedSourceUIDValidity uint32
+	SourceUID                 uint32
+	ExpectedSourceModSequence uint64
+}
+
+type LocationMutationResult struct {
+	Operation                LocationMutationOperation
+	ProviderMethod           string
+	SourceMailbox            string
+	SourceUIDValidity        uint32
+	SourceUID                uint32
+	SourceFlags              []string
+	SourceModSequence        uint64
+	SourcePresent            bool
+	DestinationMailbox       string
+	DestinationUIDValidity   uint32
+	DestinationUID           uint32
+	DestinationFlags         []string
+	DestinationModSequence   uint64
+	DestinationKnown         bool
+	ReconciliationRequired   bool
+	ProviderMutationObserved bool
+}
+
+type LocationStateConflictError struct {
+	ExpectedModSequence uint64
+	ObservedModSequence uint64
+	Present             bool
+}
+
+func (err *LocationStateConflictError) Error() string { return "message location state changed" }
+
+type IMAPLocationClient interface {
+	MutateLocation(context.Context, AuthRequest, LocationMutationRequest) (LocationMutationResult, error)
 }
 
 type IMAPFolderClient interface {

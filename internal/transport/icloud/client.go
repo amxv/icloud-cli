@@ -292,5 +292,13 @@ func runValueWithDeadline[T any](ctx context.Context, conn net.Conn, timeout tim
 
 func closeIMAPClient(conn net.Conn, client *imapclient.Client) {
 	_ = conn.Close()
-	_ = client.Close()
+	done := make(chan struct{})
+	go func() {
+		_ = client.Close()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(100 * time.Millisecond):
+	}
 }

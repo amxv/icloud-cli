@@ -217,6 +217,8 @@ func TestMailMessageHelpAdvertisesEveryExplicitContentModeWithoutCreatingState(t
 		{[]string{"--home", home, "mail", "sync", "--help"}, []string{"--hydrate", "--folder", "--limit"}},
 		{[]string{"--home", home, "mail", "send", "--help"}, []string{"--to", "--cc", "--bcc", "--reply-to", "--subject", "--body", "--body-file", "--html-body", "--html-body-file", "--header", "--idempotency-key", "--dry-run", "--yes", "--headers", "--verbose", "--format", "--json"}},
 		{[]string{"--home", home, "mail", "forward", "--help"}, []string{"forward <msg_…>", "--original", "--include-attachment", "--attach", "--idempotency-key", "--dry-run", "--yes", "--headers", "--verbose", "--format", "--json"}},
+		{[]string{"--home", home, "mail", "move", "--help"}, []string{"move <message-id>", "--from", "--to", "--idempotency-key", "--dry-run", "--yes", "--json"}},
+		{[]string{"--home", home, "mail", "status", "--help"}, []string{"--outbound", "--mutations", "--limit", "--json"}},
 		{[]string{"--home", home, "mail", "message", "raw", "--help"}, []string{"exact locally stored RFC822"}},
 		{[]string{"--home", home, "mail", "message", "export", "--help"}, []string{"--output", "--force", "atomically"}},
 	} {
@@ -454,11 +456,11 @@ func TestCapabilitiesCompactGoldenBudget(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("exit code = %d, stderr = %q", exitCode, stderr)
 	}
-	const want = "capabilities\ncommand=icloud\nversion=dev\nschema=14\naccount_mode=validated_lifecycle\ncredentials=keyring,env,file\nnetwork_validation=true\ndiagnostics=true\nmail_folders=true\nmail_sync=true\nmail_content=true\nmail_attachments=true\nmail_flags=true\nmail_threads=true\nmail_search=true\nmail_remote_search=true\nmail_hydration=true\nmail_send=true\nmail_reply=true\nmail_forward=true\ndefault_output=compact\njson=true\ncompletion=bash,zsh,fish,powershell\nman=true\n"
+	const want = "capabilities\ncommand=icloud\nversion=dev\nschema=15\naccount_mode=validated_lifecycle\ncredentials=keyring,env,file\nnetwork_validation=true\ndiagnostics=true\nmail_folders=true\nmail_sync=true\nmail_content=true\nmail_attachments=true\nmail_flags=true\nmail_threads=true\nmail_search=true\nmail_remote_search=true\nmail_hydration=true\nmail_send=true\nmail_reply=true\nmail_forward=true\nmail_location_mutations=true\ndefault_output=compact\njson=true\ncompletion=bash,zsh,fish,powershell\nman=true\n"
 	if stdout != want {
 		t.Fatalf("stdout mismatch\nwant: %q\n got: %q", want, stdout)
 	}
-	if lines := strings.Count(stdout, "\n"); lines > 24 {
+	if lines := strings.Count(stdout, "\n"); lines > 25 {
 		t.Fatalf("line budget exceeded: %d", lines)
 	}
 	if len(stdout) > 525 {
@@ -484,7 +486,7 @@ func TestCapabilitiesJSONEnvelope(t *testing.T) {
 		t.Fatalf("ok = %#v", envelope["ok"])
 	}
 	data, ok := envelope["data"].(map[string]any)
-	if !ok || data["data_schema_version"] != float64(store.SchemaVersion) || data["network_validation"] != true || data["diagnostics"] != true || data["mail_folders"] != true || data["mail_sync"] != true || data["mail_content"] != true || data["mail_attachments"] != true || data["mail_flags"] != true || data["mail_threads"] != true || data["mail_search"] != true || data["mail_remote_search"] != true || data["mail_hydration"] != true || data["mail_send"] != true || data["mail_reply"] != true || data["mail_forward"] != true {
+	if !ok || data["data_schema_version"] != float64(store.SchemaVersion) || data["network_validation"] != true || data["diagnostics"] != true || data["mail_folders"] != true || data["mail_sync"] != true || data["mail_content"] != true || data["mail_attachments"] != true || data["mail_flags"] != true || data["mail_threads"] != true || data["mail_search"] != true || data["mail_remote_search"] != true || data["mail_hydration"] != true || data["mail_send"] != true || data["mail_reply"] != true || data["mail_forward"] != true || data["mail_location_mutations"] != true {
 		t.Fatalf("data = %#v", envelope["data"])
 	}
 	if strings.Contains(stdout, "\x1b[") {

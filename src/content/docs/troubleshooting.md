@@ -133,6 +133,33 @@ The default is `--original quoted`. Use `--original eml` only for exact verified
 
 If decoded quoted text is unavailable or exceeds the body bound, choose EML or omit the original. If an original attachment is unavailable or corrupt, resynchronize or repair that source before forwarding it. Forward does not mutate the source and does not join its reconstructed thread.
 
+## A move, copy, or delete is unresolved
+
+Do not repeat the provider operation automatically. An unresolved result means iCloud may have accepted COPY, MOVE, STORE, or EXPUNGE before the CLI received final confirmation.
+
+```bash
+icloud mail status --mutations
+icloud mail message show msg_… --metadata-only
+icloud mail sync --folder <source-folder>
+icloud mail sync --folder <destination-folder>
+```
+
+After synchronization, inspect the current locations and decide whether a new deliberate action is needed. Reusing the original idempotency key returns the existing `mut_…` record without contacting iCloud. A `failed` mutation is different: no provider change was observed, so fix the authentication, stale UIDVALIDITY, missing folder, or location conflict before issuing a new request.
+
+## Archive or Trash cannot be resolved
+
+The shortcut commands rely on provider-advertised special-use roles. They do not guess that an English folder named `Archive` or `Trash` has that role.
+
+```bash
+icloud mail folders status --verbose
+```
+
+When the role is absent or stale, refresh folder discovery. Use explicit `move --from … --to …` only when the selected destination is intentional. Archive never moves a Sent location; a message with several eligible source locations requires `--from`.
+
+## Permanent delete is unavailable
+
+Permanent deletion requires safe exact UID EXPUNGE support before it changes the provider. The CLI never falls back to mailbox-wide EXPUNGE. Synchronize current capabilities and location state, then retry only as a new deliberate operation. Deleting one provider location does not purge the logical message while another location remains.
+
 ## Mail send reports an idempotency conflict
 
 The same account and idempotency key were already used for a different normalized request. Do not change recipients, subject, body, Reply-To, headers, or the account identity while reusing a key.
@@ -288,7 +315,7 @@ Generating completion output does not install it automatically.
 
 ## A local command is not contacting iCloud
 
-That is expected for `account add`, credential replacement, account reads, local folder `list`/`show`, folder policy changes, outbound status, and `doctor` without `--live`. Use `icloud account test`, `icloud doctor --live`, `icloud mail folders status`, `icloud mail sync`, or a real `icloud mail send`, `reply`, or `forward` for explicit network work. Folder sync and outbound status never resend a message; move, copy, archive, trash, and delete are not implemented yet.
+That is expected for `account add`, credential replacement, account reads, local folder `list`/`show`, folder policy changes, outbound or mutation status, dry-run previews, and `doctor` without `--live`. Use `icloud account test`, `icloud doctor --live`, `icloud mail folders status`, `icloud mail sync`, a real outbound operation, or a real location mutation for explicit network work. Folder sync and status commands never resend or move a message.
 
 ## Folder list is empty
 

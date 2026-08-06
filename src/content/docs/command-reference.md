@@ -1,9 +1,9 @@
 ---
 title: Command reference
-description: A complete reference for account lifecycle, iCloud validation, safe send, reply, and forward workflows, folder discovery, synchronization, search, message and attachment reads, diagnostics, output modes, completion, and man generation.
+description: A complete reference for account lifecycle, iCloud validation, safe send/reply/forward workflows, exact provider-location changes, folder discovery, synchronization, search, message and attachment reads, diagnostics, output modes, completion, and man generation.
 order: 11
 category: Reference
-summary: Every account, credential, validation, send, reply, forward, folder, sync/read/search, message, attachment, doctor, capability, completion, man, help, and global control available now.
+summary: Every account, credential, validation, outbound, location-mutation, folder, sync/read/search, message, attachment, doctor, capability, completion, man, help, and global control available now.
 ---
 
 ## Root command
@@ -503,6 +503,66 @@ Adds or removes `Flagged` at one location with the same resolution and ambiguity
 
 Compact success reports the action plus stable message, location, and folder IDs and the recomputed unread/flagged summaries. JSON additionally includes UID identity, structured flags, mod-sequence, last flag-check time, and schema version. No command in this phase offers implicit all-locations or thread-wide mutation.
 
+## `icloud mail move` / `copy`
+
+```bash
+icloud mail move msg_… --from inbox --to Projects --dry-run
+icloud mail move msg_… --from inbox --to Projects --idempotency-key move-01 --yes
+icloud mail copy msg_… --from inbox --to Receipts --idempotency-key copy-01 --yes
+```
+
+Changes one exact current provider location. Both commands require `--from` and `--to`; selectors accept a stable folder ID, decoded name, wire name, or unambiguous discovered kind. The destination must be current, present, selectable, and distinct from the source.
+
+`move` prefers UID MOVE. Without MOVE, it uses COPY followed by exact UID STORE/UID EXPUNGE only when the provider advertises a safe capability. It never runs mailbox-wide EXPUNGE. `copy` retains the source. Provider UID mappings create the exact destination location immediately; missing or ambiguous mapping evidence produces an `unresolved` mutation for later folder synchronization.
+
+| Flag | Purpose |
+| --- | --- |
+| `--from <folder>` | Select one exact current source location. Required. |
+| `--to <folder>` | Select one current destination folder. Required. |
+| `--idempotency-key <key>` | Return the existing `mut_…` result for the same exact request without another provider write. |
+| `--dry-run` | Resolve and preview the location operation without IMAP or durable intent. |
+| `--yes` | Authorize non-interactive provider mutation. |
+| `--json` | Emit a stable structured preview or sanitized outcome. |
+
+## `icloud mail archive` / `unarchive`
+
+```bash
+icloud mail archive msg_… --dry-run
+icloud mail archive msg_… --from inbox --idempotency-key archive-01 --yes
+icloud mail unarchive msg_… --idempotency-key unarchive-01 --yes
+```
+
+`archive` moves one eligible non-Sent location to the currently discovered Archive role. It never selects a Sent, Archive, or Trash source. When several eligible locations exist, `--from` is required. `unarchive` accepts only one current Archive source and moves it to the discovered Inbox. The commands fail instead of inferring roles from English folder names when iCloud has not advertised the necessary metadata.
+
+## `icloud mail trash` / `restore`
+
+```bash
+icloud mail trash msg_… --from inbox --idempotency-key trash-01 --yes
+icloud mail restore msg_… --to inbox --idempotency-key restore-01 --yes
+```
+
+`trash` moves one eligible location to the discovered Trash role. `restore` accepts only a current Trash source and requires `--to`; the CLI does not invent a previous folder. Both use the same durable intent, MOVE/fallback, UID mapping, idempotency, dry-run, confirmation, and unresolved-recovery contract as general move.
+
+## `icloud mail delete`
+
+```bash
+icloud mail delete msg_… --from trash --dry-run
+icloud mail delete msg_… --from trash --idempotency-key delete-01 --yes
+```
+
+Permanently deletes one exact provider location. `--from` is mandatory. Safe UID EXPUNGE support is required before the provider write begins; ordinary mailbox-wide EXPUNGE is never used. The logical message, content, attachments, search identity, and thread remain available while another current location exists. The selected location becomes absent evidence rather than being silently removed from local history.
+
+## `icloud mail status --mutations`
+
+```bash
+icloud mail status --mutations
+icloud mail status --mutations --limit 50 --json
+```
+
+Lists bounded, payload-free location mutation intents and outcomes. Each record includes stable mutation/message/source/destination IDs, action, status, provider method, source presence, mapping and reconciliation state, error code, update time, and next action. Submitted folder names, subject, participants, body, attachment metadata, credentials, idempotency keys, request hashes, and private storage coordinates are omitted.
+
+`confirmed` means local location state follows provider evidence. `failed` means no provider-side change was observed. `unresolved` means the provider may have copied, moved, deleted, or expunged content without complete confirmation; synchronize the affected folders and do not repeat the provider operation automatically. Repeating the same command with its original idempotency key returns the existing result without IMAP.
+
 ## `icloud mail message show`
 
 ```bash
@@ -644,7 +704,7 @@ Compact output:
 capabilities
 command=icloud
 version=0.1.0
-schema=14
+schema=15
 account_mode=validated_lifecycle
 credentials=keyring,env,file
 network_validation=true
@@ -661,6 +721,7 @@ mail_hydration=true
 mail_send=true
 mail_reply=true
 mail_forward=true
+mail_location_mutations=true
 default_output=compact
 json=true
 completion=bash,zsh,fish,powershell

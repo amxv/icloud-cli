@@ -30,7 +30,7 @@ version
 capabilities
 command=icloud
 version=0.1.0
-schema=14
+schema=15
 account_mode=validated_lifecycle
 credentials=keyring,env,file
 network_validation=true
@@ -47,6 +47,7 @@ mail_hydration=true
 mail_send=true
 mail_reply=true
 mail_forward=true
+mail_location_mutations=true
 default_output=compact
 json=true
 completion=bash,zsh,fish,powershell
@@ -364,6 +365,29 @@ icloud mail mark-read msg_… --folder INBOX
 
 These commands do not search every mailbox or mutate every copy of a message. Choose `--folder sent` only when that exact synchronized Sent location should change. A later `mail sync` refreshes bounded location state without downloading message bodies again.
 
+## Move or copy one exact message location
+
+Review the current message locations, then dry-run the exact provider change:
+
+```bash
+icloud mail message show msg_… --metadata-only
+icloud mail move msg_… --from inbox --to Projects --dry-run
+```
+
+For a real non-interactive operation, add a stable idempotency key and `--yes`:
+
+```bash
+icloud mail move msg_… \
+  --from inbox \
+  --to Projects \
+  --idempotency-key project-move-01 \
+  --yes
+```
+
+`move` prefers atomic UID MOVE and otherwise uses only a safe exact-UID fallback. `copy` keeps the source. Archive, unarchive, trash, restore, and permanent delete are also location-scoped; they never mutate an entire reconstructed thread. Check `icloud mail status --mutations` when a provider write becomes unresolved, then synchronize the exact affected folders instead of retrying automatically.
+
+Read [Move, copy, archive, and delete mail](/docs/manage-mail-locations) before permanent deletion or when a message has several provider locations.
+
 Inspect progress:
 
 ```bash
@@ -372,7 +396,7 @@ icloud mail sync status --folder sent
 icloud mail sync checkpoints
 ```
 
-Read [Sync and read mail](/docs/sync-and-read-inbox) for enabled-folder selection, history-free Sent setup, incremental state reconciliation, location selection, and recovery, or [Save mail attachments](/docs/save-mail-attachments) for filename, collision, batch, and binary-output rules.
+Read [Sync and read mail](/docs/sync-and-read-inbox) for enabled-folder selection, history-free Sent setup, incremental state reconciliation, location selection, and recovery, [Move, copy, archive, and delete mail](/docs/manage-mail-locations) for provider location changes, or [Save mail attachments](/docs/save-mail-attachments) for filename, collision, batch, and binary-output rules.
 
 ## Select another account
 

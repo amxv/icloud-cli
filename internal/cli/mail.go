@@ -35,6 +35,9 @@ type MailService interface {
 	MailForwardPreview(context.Context, string, string, maildomain.ForwardRequest) (account.Account, maildomain.ForwardPreview, int64, error)
 	MailForward(context.Context, string, string, maildomain.ForwardRequest) (account.Account, maildomain.OutboundAttempt, bool, int64, error)
 	MailOutboundStatus(context.Context, string, string, int) (account.Account, []maildomain.OutboundAttempt, bool, int64, error)
+	MailLocationPreview(context.Context, string, string, maildomain.LocationMutationRequest) (account.Account, maildomain.LocationMutationPlan, int64, error)
+	MailMutateLocation(context.Context, string, string, maildomain.LocationMutationRequest) (account.Account, maildomain.LocationMutationPlan, maildomain.Message, maildomain.LocationMutation, bool, int64, error)
+	MailLocationMutationStatus(context.Context, string, string, int) (account.Account, []maildomain.LocationMutation, bool, int64, error)
 }
 
 type mailSyncData struct {
@@ -512,4 +515,13 @@ func (unavailableMailService) MailForward(context.Context, string, string, maild
 }
 func (unavailableMailService) MailOutboundStatus(context.Context, string, string, int) (account.Account, []maildomain.OutboundAttempt, bool, int64, error) {
 	return account.Account{}, nil, false, 0, NewAppError(ErrorConfiguration, "outbound mail status is unavailable", false)
+}
+func (unavailableMailService) MailLocationPreview(context.Context, string, string, maildomain.LocationMutationRequest) (account.Account, maildomain.LocationMutationPlan, int64, error) {
+	return account.Account{}, maildomain.LocationMutationPlan{}, 0, NewAppError(ErrorConfiguration, "mail location mutation preview is unavailable", false)
+}
+func (unavailableMailService) MailMutateLocation(context.Context, string, string, maildomain.LocationMutationRequest) (account.Account, maildomain.LocationMutationPlan, maildomain.Message, maildomain.LocationMutation, bool, int64, error) {
+	return account.Account{}, maildomain.LocationMutationPlan{}, maildomain.Message{}, maildomain.LocationMutation{}, false, 0, NewAppError(ErrorConfiguration, "mail location mutation is unavailable", false)
+}
+func (unavailableMailService) MailLocationMutationStatus(context.Context, string, string, int) (account.Account, []maildomain.LocationMutation, bool, int64, error) {
+	return account.Account{}, nil, false, 0, NewAppError(ErrorConfiguration, "mail location mutation status is unavailable", false)
 }

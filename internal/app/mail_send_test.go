@@ -701,8 +701,15 @@ func TestMailPhaseFifteenHelpAndOutboundStatusRemainCompactAndPayloadFree(t *tes
 		{args: []string{"mail", "reply", "--help"}, want: []string{"reply <msg_…>", "--replace-to", "--replace-cc", "prior Bcc recipients are never inferred", "--dry-run", "--yes"}},
 		{args: []string{"mail", "reply-all", "--help"}, want: []string{"reply-all <msg_…>", "visible participants", "--replace-to", "--replace-cc", "--attach"}},
 		{args: []string{"mail", "forward", "--help"}, want: []string{"forward <msg_…>", "--original", "quoted, eml, or none", "--include-attachment", "new conversation", "--dry-run", "--yes"}},
+		{args: []string{"mail", "move", "--help"}, want: []string{"move <message-id>", "--from", "--to", "--idempotency-key", "--dry-run", "--yes"}},
+		{args: []string{"mail", "copy", "--help"}, want: []string{"copy <message-id>", "--from", "--to", "--idempotency-key", "--dry-run", "--yes"}},
+		{args: []string{"mail", "archive", "--help"}, want: []string{"archive <message-id>", "non-Sent", "--from", "--dry-run", "--yes"}},
+		{args: []string{"mail", "unarchive", "--help"}, want: []string{"unarchive <message-id>", "Archive location", "--dry-run", "--yes"}},
+		{args: []string{"mail", "trash", "--help"}, want: []string{"trash <message-id>", "Trash folder", "--from", "--dry-run", "--yes"}},
+		{args: []string{"mail", "restore", "--help"}, want: []string{"restore <message-id>", "--to", "Trash location", "--dry-run", "--yes"}},
+		{args: []string{"mail", "delete", "--help"}, want: []string{"delete <message-id>", "Permanently", "--from", "--dry-run", "--yes"}},
 		{args: []string{"mail", "sync", "--help"}, want: []string{"--reconcile-outbound"}},
-		{args: []string{"mail", "status", "--help"}, want: []string{"--outbound", "--limit", "--json"}},
+		{args: []string{"mail", "status", "--help"}, want: []string{"--outbound", "--mutations", "--limit", "--json"}},
 	} {
 		code, stdout, stderr := runWithAccountCommands(t, commands, "", test.args...)
 		if code != 0 || stderr != "" {
@@ -741,7 +748,7 @@ func TestMailPhaseFifteenHelpAndOutboundStatusRemainCompactAndPayloadFree(t *tes
 		}
 	}
 	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "status", "--outbound", "--limit", "1", "--json")
-	if code != 0 || stderr != "" || !strings.Contains(stdout, `"schema_version":14`) || !strings.Contains(stdout, `"count":1`) || !strings.Contains(stdout, `"status":"sent"`) || !strings.Contains(stdout, `"kind":"send"`) {
+	if code != 0 || stderr != "" || !strings.Contains(stdout, `"schema_version":15`) || !strings.Contains(stdout, `"count":1`) || !strings.Contains(stdout, `"status":"sent"`) || !strings.Contains(stdout, `"kind":"send"`) {
 		t.Fatalf("outbound status JSON code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 	for _, forbidden := range []string{"primary@example.com", "Outbound status private subject", "outbound-status-private-body", "outbound-status-private-key", "synthetic-send-secret"} {

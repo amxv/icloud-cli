@@ -134,6 +134,33 @@ func TestFolderSelectionIsAccountScopedAndAmbiguousNamesFail(t *testing.T) {
 	}
 }
 
+func TestFolderRoleSelectionNeverTreatsMailboxNameAsSpecialUseEvidence(t *testing.T) {
+	state, accountValue := newFolderTestState(t)
+	defer state.Close()
+	counter := 0
+	newID := func() (string, error) {
+		counter++
+		return fmt.Sprintf("fld_0198d704-6c00-7000-9100-%012d", counter), nil
+	}
+	_, err := state.Folders().Reconcile(context.Background(), accountValue.ID, []folder.RemoteObservation{
+		{Name: "Archive", WireName: "Archive", Kind: folder.KindOther, Selectable: true, Subscription: folder.SubscriptionSubscribed, UIDValidity: 300, StatusKnown: true},
+		{Name: "Archivio", WireName: "Archivio", Kind: folder.KindArchive, KindSource: "attribute", Selectable: true, Subscription: folder.SubscriptionSubscribed, UIDValidity: 301, StatusKnown: true},
+	}, time.Now().UTC(), newID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.Folders().Resolve(context.Background(), accountValue.ID, "Archive"); !errors.Is(err, folder.ErrAmbiguous) {
+		t.Fatalf("generic Archive selector should be ambiguous across name/role evidence: %v", err)
+	}
+	byRole, err := state.Folders().ResolveKind(context.Background(), accountValue.ID, folder.KindArchive)
+	if err != nil || byRole.Name != "Archivio" || byRole.Kind != folder.KindArchive {
+		t.Fatalf("Archive role selection = %+v err=%v", byRole, err)
+	}
+	if _, err := state.Folders().ResolveKind(context.Background(), accountValue.ID, folder.KindTrash); !errors.Is(err, folder.ErrNotFound) {
+		t.Fatalf("missing Trash role = %v", err)
+	}
+}
+
 func TestListSelectableIgnoresContainerFoldersBeforeApplyingBound(t *testing.T) {
 	state, accountValue := newFolderTestState(t)
 	defer state.Close()

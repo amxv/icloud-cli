@@ -92,28 +92,29 @@ type capabilityOutput struct {
 }
 
 type capabilitiesData struct {
-	Command           string           `json:"command"`
-	Version           string           `json:"version"`
-	DataSchemaVersion int64            `json:"data_schema_version"`
-	AccountMode       string           `json:"account_mode"`
-	CredentialSchemes []string         `json:"credential_schemes"`
-	NetworkValidation bool             `json:"network_validation"`
-	Diagnostics       bool             `json:"diagnostics"`
-	MailFolders       bool             `json:"mail_folders"`
-	MailSync          bool             `json:"mail_sync"`
-	MailContent       bool             `json:"mail_content"`
-	MailAttachments   bool             `json:"mail_attachments"`
-	MailFlags         bool             `json:"mail_flags"`
-	MailThreads       bool             `json:"mail_threads"`
-	MailSearch        bool             `json:"mail_search"`
-	MailRemoteSearch  bool             `json:"mail_remote_search"`
-	MailHydration     bool             `json:"mail_hydration"`
-	MailSend          bool             `json:"mail_send"`
-	MailReply         bool             `json:"mail_reply"`
-	MailForward       bool             `json:"mail_forward"`
-	Output            capabilityOutput `json:"output"`
-	Completion        []string         `json:"completion"`
-	Man               bool             `json:"man"`
+	Command               string           `json:"command"`
+	Version               string           `json:"version"`
+	DataSchemaVersion     int64            `json:"data_schema_version"`
+	AccountMode           string           `json:"account_mode"`
+	CredentialSchemes     []string         `json:"credential_schemes"`
+	NetworkValidation     bool             `json:"network_validation"`
+	Diagnostics           bool             `json:"diagnostics"`
+	MailFolders           bool             `json:"mail_folders"`
+	MailSync              bool             `json:"mail_sync"`
+	MailContent           bool             `json:"mail_content"`
+	MailAttachments       bool             `json:"mail_attachments"`
+	MailFlags             bool             `json:"mail_flags"`
+	MailThreads           bool             `json:"mail_threads"`
+	MailSearch            bool             `json:"mail_search"`
+	MailRemoteSearch      bool             `json:"mail_remote_search"`
+	MailHydration         bool             `json:"mail_hydration"`
+	MailSend              bool             `json:"mail_send"`
+	MailReply             bool             `json:"mail_reply"`
+	MailForward           bool             `json:"mail_forward"`
+	MailLocationMutations bool             `json:"mail_location_mutations"`
+	Output                capabilityOutput `json:"output"`
+	Completion            []string         `json:"completion"`
+	Man                   bool             `json:"man"`
 }
 
 type accountListData struct {
@@ -209,8 +210,8 @@ func newRootCommand(state *executionState) *cobra.Command {
 	root := &cobra.Command{
 		Use:           commandName,
 		Short:         "Control iCloud services from the command line",
-		Long:          "icloud controls iCloud services from the command line. This build provides secure account setup, live read-only IMAP and SMTP validation, deliberate text, HTML, and attachment sending plus exact-message reply, reply-all, and forward with dry-run review, idempotency, explicit retry linkage, and Sent reconciliation, durable folder discovery, bounded folder synchronization and flag reconciliation, indexed local search, explicit bounded remote search and targeted hydration, complete local message reads, verified attachment export, location-aware read and flag updates, account health diagnostics, version and capability reporting, shell completions, and man-page generation.",
-		Example:       "  icloud account add --name Personal --email owner@icloud.com --password-stdin\n  icloud account test\n  icloud mail send --to client@example.com --subject Update --body-file message.txt --dry-run\n  icloud mail reply msg_… --body-file reply.txt --dry-run\n  icloud mail forward msg_… --to teammate@example.com --dry-run\n  icloud mail sync\n  icloud mail message show msg_…\n  icloud mail mark-read msg_…\n  icloud doctor",
+		Long:          "icloud controls iCloud services from the command line. This build provides secure account setup, live read-only IMAP and SMTP validation, deliberate text, HTML, and attachment sending plus exact-message reply, reply-all, and forward with dry-run review, idempotency, explicit retry linkage, and Sent reconciliation, durable folder discovery, bounded folder synchronization and flag reconciliation, indexed local search, explicit bounded remote search and targeted hydration, complete local message reads, verified attachment export, location-aware read/flag updates, exact message-location move/copy/archive/trash/restore/delete with durable intent and unresolved-state recovery, account health diagnostics, version and capability reporting, shell completions, and man-page generation.",
+		Example:       "  icloud account add --name Personal --email owner@icloud.com --password-stdin\n  icloud account test\n  icloud mail send --to client@example.com --subject Update --body-file message.txt --dry-run\n  icloud mail reply msg_… --body-file reply.txt --dry-run\n  icloud mail forward msg_… --to teammate@example.com --dry-run\n  icloud mail move msg_… --from inbox --to Projects --dry-run\n  icloud mail sync\n  icloud mail message show msg_…\n  icloud doctor",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		Args:          cobra.NoArgs,
@@ -310,25 +311,26 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				return err
 			}
 			data := capabilitiesData{
-				Command:           commandName,
-				Version:           state.version,
-				DataSchemaVersion: state.schemaVersion,
-				AccountMode:       "validated_lifecycle",
-				CredentialSchemes: []string{"keyring", "env", "file"},
-				NetworkValidation: true,
-				Diagnostics:       true,
-				MailFolders:       true,
-				MailSync:          true,
-				MailContent:       true,
-				MailAttachments:   true,
-				MailFlags:         true,
-				MailThreads:       true,
-				MailSearch:        true,
-				MailRemoteSearch:  true,
-				MailHydration:     true,
-				MailSend:          true,
-				MailReply:         true,
-				MailForward:       true,
+				Command:               commandName,
+				Version:               state.version,
+				DataSchemaVersion:     state.schemaVersion,
+				AccountMode:           "validated_lifecycle",
+				CredentialSchemes:     []string{"keyring", "env", "file"},
+				NetworkValidation:     true,
+				Diagnostics:           true,
+				MailFolders:           true,
+				MailSync:              true,
+				MailContent:           true,
+				MailAttachments:       true,
+				MailFlags:             true,
+				MailThreads:           true,
+				MailSearch:            true,
+				MailRemoteSearch:      true,
+				MailHydration:         true,
+				MailSend:              true,
+				MailReply:             true,
+				MailForward:           true,
+				MailLocationMutations: true,
 				Output: capabilityOutput{
 					Default: "compact",
 					JSON:    true,
@@ -364,6 +366,7 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				Field("mail_send", data.MailSend),
 				Field("mail_reply", data.MailReply),
 				Field("mail_forward", data.MailForward),
+				Field("mail_location_mutations", data.MailLocationMutations),
 				Field("default_output", data.Output.Default),
 				Field("json", data.Output.JSON),
 				Field("completion", data.Completion),

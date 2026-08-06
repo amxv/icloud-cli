@@ -396,6 +396,7 @@ type imapServerOptions struct {
 	AuthOK                   bool
 	StallGreeting            bool
 	StallUIDStore            bool
+	StallUIDCopy             bool
 	StallUIDSearch           bool
 	CondStore                bool
 	ConditionalStoreConflict bool
@@ -517,6 +518,9 @@ func (server *imapTestServer) handle(conn net.Conn, options imapServerOptions) {
 			if len(fields) > 2 && strings.EqualFold(fields[2], "SEARCH") && options.StallUIDSearch {
 				continue
 			}
+			if len(fields) > 2 && strings.EqualFold(fields[2], "COPY") && options.StallUIDCopy {
+				continue
+			}
 			if len(fields) > 2 && strings.EqualFold(fields[2], "STORE") {
 				if options.StallUIDStore {
 					continue
@@ -526,8 +530,14 @@ func (server *imapTestServer) handle(conn net.Conn, options imapServerOptions) {
 					break
 				}
 			}
-			if len(fields) > 2 && strings.EqualFold(fields[2], "FETCH") && options.ConditionalStoreConflict {
-				_, _ = writer.WriteString("* 1 FETCH (UID 1 FLAGS (\\Flagged $Remote) MODSEQ (12))\r\n" + tag + " OK fetch\r\n")
+			if len(fields) > 2 && strings.EqualFold(fields[2], "FETCH") {
+				if options.ConditionalStoreConflict {
+					_, _ = writer.WriteString("* 1 FETCH (UID 1 FLAGS (\\Flagged $Remote) MODSEQ (12))\r\n" + tag + " OK fetch\r\n")
+				} else if options.CondStore {
+					_, _ = writer.WriteString("* 1 FETCH (UID 1 FLAGS (\\Seen) MODSEQ (12))\r\n" + tag + " OK fetch\r\n")
+				} else {
+					_, _ = writer.WriteString("* 1 FETCH (UID 1 FLAGS (\\Seen))\r\n" + tag + " OK fetch\r\n")
+				}
 				break
 			}
 			_, _ = writer.WriteString(tag + " BAD unsupported UID command\r\n")

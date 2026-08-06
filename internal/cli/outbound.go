@@ -16,21 +16,63 @@ type mailOutboundStatusData struct {
 	SchemaVersion int64                   `json:"schema_version"`
 }
 
+type mailLocationMutationStatusData struct {
+	AccountID     string                        `json:"account_id"`
+	Mutations     []maildomain.LocationMutation `json:"mutations"`
+	Count         int                           `json:"count"`
+	More          bool                          `json:"more,omitempty"`
+	SchemaVersion int64                         `json:"schema_version"`
+}
+
 func newMailStatusCommand(state *executionState) *cobra.Command {
 	var outbound bool
+	var mutations bool
 	var jsonOutput bool
 	var limit int
 	command := &cobra.Command{
 		Use:     "status",
 		Short:   "Show bounded local mail operation status",
 		Args:    cobra.NoArgs,
-		Example: "  icloud mail status --outbound\n  icloud mail status --outbound --limit 50 --json",
+		Example: "  icloud mail status --outbound\n  icloud mail status --mutations\n  icloud mail status --mutations --limit 50 --json",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if !outbound {
-				return NewAppError(ErrorUsage, "mail status currently requires --outbound", false)
+			if outbound == mutations {
+				return NewAppError(ErrorUsage, "mail status requires exactly one of --outbound or --mutations", false)
 			}
 			if limit < 1 || limit > MaximumPageSize {
 				return NewAppError(ErrorUsage, fmt.Sprintf("--limit must be between 1 and %d", MaximumPageSize), false)
+			}
+			if mutations {
+				accountValue, values, more, schemaVersion, err := state.mail.MailLocationMutationStatus(cmd.Context(), state.global.Home, state.global.Account, limit)
+				if err != nil {
+					return err
+				}
+				if jsonOutput {
+					return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: mailLocationMutationStatusData{
+						AccountID: accountValue.ID, Mutations: values, Count: len(values), More: more, SchemaVersion: schemaVersion,
+					}, Meta: EnvelopeMeta{RequestID: state.requestID}})
+				}
+				renderer := NewCompactTextRenderer(state.stdout)
+				for _, mutation := range values {
+					if err := renderer.Record("mutation", mutation.ID,
+						Field("action", mutation.Action),
+						Field("message_id", mutation.MessageID),
+						Field("source_location_id", mutation.SourceLocationID),
+						Field("source_folder_id", mutation.SourceFolderID),
+						Field("destination_location_id", mutation.DestinationLocationID),
+						Field("destination_folder_id", mutation.DestinationFolderID),
+						Field("status", mutation.Status),
+						Field("provider_method", mutation.ProviderMethod),
+						Field("source_present", fmt.Sprintf("%t", mutation.SourcePresent)),
+						Field("mapping_known", fmt.Sprintf("%t", mutation.MappingKnown)),
+						Field("reconciliation_required", fmt.Sprintf("%t", mutation.ReconciliationRequired)),
+						Field("error_code", mutation.ErrorCode),
+						Field("updated_at", mutation.UpdatedAt),
+						Field("next", locationMutationNext(mutation)),
+					); err != nil {
+						return err
+					}
+				}
+				return renderer.Summary("mutation-status", Field("account", accountValue.ID), Field("count", len(values)), Field("more", more))
 			}
 			accountValue, attempts, more, schemaVersion, err := state.mail.MailOutboundStatus(cmd.Context(), state.global.Home, state.global.Account, limit)
 			if err != nil {
@@ -74,6 +116,7 @@ func newMailStatusCommand(state *executionState) *cobra.Command {
 		},
 	}
 	command.Flags().BoolVar(&outbound, "outbound", false, "List recent outbound send attempts")
+	command.Flags().BoolVar(&mutations, "mutations", false, "List recent message location mutation intents and outcomes")
 	command.Flags().IntVar(&limit, "limit", DefaultPageSize, fmt.Sprintf("Maximum attempts to return (1-%d)", MaximumPageSize))
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
 	return command

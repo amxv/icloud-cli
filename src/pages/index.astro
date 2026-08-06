@@ -29,7 +29,7 @@ const workflows = [
   "Add an offline iCloud Mail profile using the native keyring or an environment/file credential reference.",
   "Select, rename, default, rotate, or remove multiple profiles without exposing credential references or values.",
   "Validate direct-TLS IMAP and mandatory-STARTTLS SMTP safely, then inspect stored health with icloud doctor.",
-  "Preview a normalized outbound request without network or attempt creation, then send, reply to one exact parent, or forward one exact source with explicit confirmation and idempotency.",
+  "Preview a normalized outbound or location-changing request without network side effects, then send, reply, forward, move, copy, archive, trash, restore, or delete one exact provider location deliberately.",
   "Discover nested and Unicode mailboxes, then synchronize bounded pages from enabled folders into private local state.",
   "Search synchronized mail offline, or query bounded iCloud metadata explicitly and hydrate only the remote messages you choose.",
   "Read compact sender, subject, state, attachment-count, and decoded-text previews offline without marking mail read.",
@@ -56,7 +56,7 @@ const workflows = [
         and one public executable across local builds, npm installs, and release assets.
       </p>
       <p class="hero__annotation">
-        The current build validates both iCloud Mail protocols, previews and sends deliberate text or HTML messages, replies to one exact synchronized message, forwards one exact source as a new conversation, discovers every folder, synchronizes
+        The current build validates both iCloud Mail protocols, previews and sends deliberate text or HTML messages, replies to one exact synchronized message, forwards one exact source as a new conversation, changes one exact provider location safely, discovers every folder, synchronizes
         bounded enabled-folder pages, starts Sent without crawling history, searches locally or through explicit bounded iCloud queries,
         hydrates selected remote messages without advancing sync, reconstructs RFC conversations locally,
         reads complete local messages explicitly, and keeps every mutation scoped and explicit.
@@ -76,7 +76,7 @@ const workflows = [
         <span>capabilities</span>
         <span>command=icloud</span>
         <span>version=0.1.0</span>
-        <span>schema=14 …</span>
+        <span>schema=15 …</span>
         <span>$ icloud account add --name Personal --email owner@icloud.com</span>
         <span>App-specific password:</span>
         <span>account-added</span>
@@ -151,7 +151,7 @@ const workflows = [
   <section class="shell split-section">
     <div>
       <p class="section-label">Available now</p>
-      <h2>Configure private profiles, validate both mail protocols, send, reply, or forward deliberately, synchronize or search safely, and choose exactly what remote content to cache and read.</h2>
+      <h2>Configure private profiles, validate both mail protocols, send or reorganize mail deliberately, synchronize or search safely, and choose exactly what remote content to cache and read.</h2>
     </div>
     <div class="stack-list">
       {workflows.map((item) => (

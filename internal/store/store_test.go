@@ -1455,3 +1455,137 @@ INSERT INTO outbound_attempts (
 		t.Fatalf("upgraded schema-13 attempt = %+v", value)
 	}
 }
+
+func TestOpenUpgradesSchemaFourteenForwardAndLocationStateIntoEmptyMutationLedger(t *testing.T) {
+	t.Parallel()
+	paths := testPaths(t, filepath.Join(t.TempDir(), "state"))
+	if err := config.EnsureAppPaths(paths); err != nil {
+		t.Fatal(err)
+	}
+	database, err := sql.Open("sqlite", paths.Database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := configureSQLite(context.Background(), database); err != nil {
+		t.Fatal(err)
+	}
+	migrationFS, err := fs.Sub(migrations, "migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider, err := goose.NewProvider(goose.DialectSQLite3, database, migrationFS, goose.WithLogger(goose.NopLogger()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.UpTo(context.Background(), 14); err != nil {
+		t.Fatal(err)
+	}
+	timestamp := time.Date(2026, 8, 7, 5, 45, 0, 0, time.UTC).Format(time.RFC3339Nano)
+	accountID := "acct_0198d704-6c00-7000-8000-000000001501"
+	folderID := "fld_0198d704-6c00-7000-8000-000000001502"
+	messageID := "msg_0198d704-6c00-7000-8000-000000001503"
+	locationID := "loc_0198d704-6c00-7000-8000-000000001504"
+	attemptID := "send_0198d704-6c00-7000-8000-000000001505"
+	proposedID := "msg_0198d704-6c00-7000-8000-000000001506"
+	rawHash := strings.Repeat("a", 64)
+	statements := []struct {
+		query string
+		args  []any
+	}{
+		{`INSERT INTO accounts (
+              account_id, friendly_name, email_address, imap_username,
+              status, is_default, created_at, updated_at
+          ) VALUES (?, 'Schema Fourteen', 'schema-fourteen@icloud.com',
+                    'schema-fourteen', 'connected', 1, ?, ?)`, []any{accountID, timestamp, timestamp}},
+		{`INSERT INTO folders (
+              folder_id, account_id, name, wire_name, kind, kind_source,
+              selectable, subscription, present, stale, sync_enabled,
+              uid_validity, discovered_at, status_at, created_at, updated_at
+          ) VALUES (?, ?, 'INBOX', 'INBOX', 'inbox', 'inbox',
+                    1, 'subscribed', 1, 0, 1, 700, ?, ?, ?, ?)`, []any{
+			folderID, accountID, timestamp, timestamp, timestamp, timestamp,
+		}},
+		{`INSERT INTO raw_blobs (content_hash, storage_key, byte_size, created_at)
+          VALUES (?, ?, 128, ?)`, []any{rawHash, "raw/sha256/aa/" + rawHash + ".eml", timestamp}},
+		{`INSERT INTO messages (
+              message_id, account_id, rfc_message_id, direction,
+              from_email, subject, snippet, attachment_count,
+              internal_date, sort_at, date_source, created_at, updated_at
+          ) VALUES (?, ?, 'schema-fourteen-source@example.test', 'inbound',
+                    'sender@example.test', 'Schema Fourteen source', 'Preserve location', 0,
+                    ?, ?, 'internal_date', ?, ?)`, []any{
+			messageID, accountID, timestamp, timestamp, timestamp, timestamp,
+		}},
+		{`INSERT INTO message_locations (
+              location_id, message_id, account_id, folder_id, uid_validity, uid,
+              seen, flagged, answered, draft, deleted, unknown_flags_json,
+              mod_sequence, flags_checked_at, internal_date, rfc822_size,
+              raw_content_hash, raw_storage_key, raw_byte_size, present,
+              created_at, updated_at
+          ) VALUES (?, ?, ?, ?, 700, 17,
+                    1, 1, 0, 0, 0, '["$SchemaFourteen"]',
+                    '19', ?, ?, 128,
+                    ?, ?, 128, 1, ?, ?)`, []any{
+			locationID, messageID, accountID, folderID,
+			timestamp, timestamp, rawHash, "raw/sha256/aa/" + rawHash + ".eml",
+			timestamp, timestamp,
+		}},
+		{`INSERT INTO outbound_attempts (
+              attempt_id, account_id, proposed_message_id, request_hash,
+              idempotency_key, status, rfc_message_id,
+              raw_content_hash, raw_storage_key, raw_byte_size,
+              to_count, cc_count, bcc_count, body_part_count,
+              attachment_count, attachment_byte_size,
+              outbound_kind, parent_message_id, source_message_id,
+              retry_of_attempt_id, reconciliation, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, 'schema-14-forward', 'pending',
+                    'schema-fourteen-forward@example.test', ?, ?, 128,
+                    1, 0, 0, 1, 0, 0,
+                    'send', '', ?, '', 'none', ?, ?)`, []any{
+			attemptID, accountID, proposedID, strings.Repeat("b", 64),
+			rawHash, "raw/sha256/aa/" + rawHash + ".eml", messageID,
+			timestamp, timestamp,
+		}},
+	}
+	for _, statement := range statements {
+		if _, err := database.Exec(statement.query, statement.args...); err != nil {
+			_ = database.Close()
+			t.Fatal(err)
+		}
+	}
+	if err := database.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	state, err := Open(context.Background(), paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	if state.SchemaVersion() != 15 {
+		t.Fatalf("schema version = %d", state.SchemaVersion())
+	}
+	attempt, err := state.Outbound().Attempt(context.Background(), attemptID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attempt.Kind != maildomain.OutboundKindForward || attempt.SourceMessageID != messageID ||
+		attempt.ParentMessageID != "" || attempt.ProposedMessageID != proposedID {
+		t.Fatalf("upgraded forward attempt = %+v", attempt)
+	}
+	message, err := state.Mail().Message(context.Background(), accountID, messageID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(message.Locations) != 1 || message.Locations[0].ID != locationID ||
+		message.Locations[0].UIDValidity != 700 || message.Locations[0].UID != 17 ||
+		message.Locations[0].ModSequence != 19 || !message.Locations[0].Present ||
+		!message.Locations[0].Flags.Seen || !message.Locations[0].Flags.Flagged ||
+		!reflect.DeepEqual(message.Locations[0].Flags.Unknown, []string{"$SchemaFourteen"}) {
+		t.Fatalf("upgraded location = %+v", message.Locations)
+	}
+	mutations, more, err := state.LocationMutations().List(context.Background(), accountID, 20)
+	if err != nil || more || len(mutations) != 0 {
+		t.Fatalf("upgraded mutation ledger = %+v more=%v err=%v", mutations, more, err)
+	}
+}

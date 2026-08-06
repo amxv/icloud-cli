@@ -106,7 +106,7 @@ icloud --request-id inventory-01 account list --json
 ```
 
 ```json
-{"ok":true,"data":{"accounts":[],"count":0,"schema_version":14},"meta":{"request_id":"inventory-01"}}
+{"ok":true,"data":{"accounts":[],"count":0,"schema_version":15},"meta":{"request_id":"inventory-01"}}
 ```
 
 JSON remains explicit. Redirection and non-TTY execution do not change the output mode. Structured account and credential output applies the same reference/value redaction as compact text.
@@ -135,7 +135,9 @@ Let the other process finish and retry. Do not remove lock files to bypass a run
 
 ## Privacy and cleanup
 
-The database stores account metadata, credential references, and durable folder observations/policy, never plaintext app-specific passwords. Folder records retain decoded/wire names, provider attributes and counts, presence/stale state, and local sync enablement. A keyring password lives in the operating-system credential store. Environment values and file contents remain external to the CLI state root.
+The database stores account metadata, credential references, durable folder observations/policy, synchronized logical messages and provider locations, outbound attempts, and compact location-mutation evidence, never plaintext app-specific passwords. Folder records retain decoded/wire names, provider attributes and counts, presence/stale state, and local sync enablement. Location mutation records keep stable mutation/message/location/folder IDs, idempotency evidence, provider method, UID mapping, confirmed or unresolved state, and recovery markers. They do not place subject, participants, body, attachment names, credentials, or private blob coordinates into ordinary status output. A keyring password lives in the operating-system credential store. Environment values and file contents remain external to the CLI state root.
+
+Provider locations remain durable evidence after a move or permanent deletion marks them absent. The logical message, decoded content, attachment records, search identity, and reconstructed thread remain stable while another location exists.
 
 Removing an account deletes its native keyring entry when present. It does not delete an environment variable or external credential file. Uninstalling the npm package does not remove the selected state root or external credentials.
 
