@@ -30,7 +30,7 @@ version
 capabilities
 command=icloud
 version=0.1.0
-schema=13
+schema=14
 account_mode=validated_lifecycle
 credentials=keyring,env,file
 network_validation=true
@@ -46,6 +46,7 @@ mail_remote_search=true
 mail_hydration=true
 mail_send=true
 mail_reply=true
+mail_forward=true
 default_output=compact
 json=true
 completion=bash,zsh,fish,powershell
@@ -163,6 +164,15 @@ icloud mail send \
 ```
 
 Success returns only stable attempt, message, and thread IDs plus attachment counts and reconciliation state. BCC addresses remain in the SMTP envelope and are omitted from the composed message. An `unknown` result means acceptance could not be proved either way and must not be retried automatically. Run `icloud mail sync --reconcile-outbound` before considering an explicit linked retry. Read [Send mail safely](/docs/send-mail-safely) for text/HTML input, attachments, display names, Reply-To, custom headers, dry-run expansions, idempotency, Sent confirmation, and recovery.
+
+Reply or forward only after selecting the exact local message ID you intend:
+
+```bash
+icloud mail reply msg_… --body-file reply.txt --dry-run
+icloud mail forward msg_… --to teammate@example.com --body 'For context' --dry-run
+```
+
+Reply preserves RFC relationship headers when the selected parent has usable identity. Forward always starts a new conversation: quoted decoded text is the default, exact EML requires `--original eml`, and original attachments are included only through explicit `--include-attachment att_…` selections. Both workflows reuse the same confirmation, idempotency, attachment, and Sent-reconciliation safeguards.
 
 ## Discover folders
 

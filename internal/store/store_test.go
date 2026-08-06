@@ -1381,3 +1381,77 @@ INSERT INTO credential_refs (
 		}
 	}
 }
+
+func TestOpenUpgradesSchemaThirteenOutboundAttemptWithEmptyForwardSource(t *testing.T) {
+	t.Parallel()
+	paths := testPaths(t, filepath.Join(t.TempDir(), "state"))
+	if err := config.EnsureAppPaths(paths); err != nil {
+		t.Fatal(err)
+	}
+	database, err := sql.Open("sqlite", paths.Database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := configureSQLite(context.Background(), database); err != nil {
+		t.Fatal(err)
+	}
+	migrationFS, err := fs.Sub(migrations, "migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider, err := goose.NewProvider(goose.DialectSQLite3, database, migrationFS, goose.WithLogger(goose.NopLogger()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.UpTo(context.Background(), 13); err != nil {
+		t.Fatal(err)
+	}
+	timestamp := time.Date(2026, 8, 7, 0, 30, 0, 0, time.UTC).Format(time.RFC3339Nano)
+	accountID := "acct_0198d704-6c00-7000-8000-000000001411"
+	attemptID := "send_0198d704-6c00-7000-8000-000000001412"
+	rawHash := strings.Repeat("e", 64)
+	if _, err := database.Exec(`
+INSERT INTO accounts (
+    account_id, friendly_name, email_address, imap_username,
+    status, is_default, created_at, updated_at
+) VALUES (?, 'Schema Thirteen', 'schema-thirteen@icloud.com',
+          'schema-thirteen', 'connected', 1, ?, ?)`, accountID, timestamp, timestamp); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(`
+INSERT INTO raw_blobs (content_hash, storage_key, byte_size, created_at)
+VALUES (?, ?, 20, ?)`, rawHash, "raw/sha256/ee/"+rawHash+".eml", timestamp); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(`
+INSERT INTO outbound_attempts (
+    attempt_id, account_id, proposed_message_id, request_hash,
+    idempotency_key, status, rfc_message_id,
+    raw_content_hash, raw_storage_key, raw_byte_size,
+    to_count, cc_count, bcc_count, body_part_count,
+    attachment_count, attachment_byte_size, outbound_kind, parent_message_id,
+    retry_of_attempt_id, reconciliation, created_at, updated_at
+) VALUES (?, ?, 'msg_0198d704-6c00-7000-8000-000000001413', ?,
+          'schema-13-send', 'pending', 'schema-13@example.test',
+          ?, ?, 20, 1, 0, 0, 1, 0, 0, 'send', '', '', 'none', ?, ?)`,
+		attemptID, accountID, strings.Repeat("f", 64), rawHash,
+		"raw/sha256/ee/"+rawHash+".eml", timestamp, timestamp); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	state, err := Open(context.Background(), paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	value, err := state.Outbound().Attempt(context.Background(), attemptID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value.Kind != maildomain.OutboundKindSend || value.SourceMessageID != "" || value.ParentMessageID != "" {
+		t.Fatalf("upgraded schema-13 attempt = %+v", value)
+	}
+}

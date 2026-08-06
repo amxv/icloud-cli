@@ -32,6 +32,8 @@ type MailService interface {
 	MailSend(context.Context, string, string, maildomain.SendRequest) (account.Account, maildomain.OutboundAttempt, bool, int64, error)
 	MailReplyPreview(context.Context, string, string, maildomain.ReplyRequest) (account.Account, maildomain.ReplyPreview, int64, error)
 	MailReply(context.Context, string, string, maildomain.ReplyRequest) (account.Account, maildomain.OutboundAttempt, bool, int64, error)
+	MailForwardPreview(context.Context, string, string, maildomain.ForwardRequest) (account.Account, maildomain.ForwardPreview, int64, error)
+	MailForward(context.Context, string, string, maildomain.ForwardRequest) (account.Account, maildomain.OutboundAttempt, bool, int64, error)
 	MailOutboundStatus(context.Context, string, string, int) (account.Account, []maildomain.OutboundAttempt, bool, int64, error)
 }
 
@@ -501,6 +503,12 @@ func (unavailableMailService) MailReplyPreview(context.Context, string, string, 
 }
 func (unavailableMailService) MailReply(context.Context, string, string, maildomain.ReplyRequest) (account.Account, maildomain.OutboundAttempt, bool, int64, error) {
 	return account.Account{}, maildomain.OutboundAttempt{}, false, 0, NewAppError(ErrorConfiguration, "mail reply is unavailable", false)
+}
+func (unavailableMailService) MailForwardPreview(context.Context, string, string, maildomain.ForwardRequest) (account.Account, maildomain.ForwardPreview, int64, error) {
+	return account.Account{}, maildomain.ForwardPreview{}, 0, NewAppError(ErrorConfiguration, "mail forward preview is unavailable", false)
+}
+func (unavailableMailService) MailForward(context.Context, string, string, maildomain.ForwardRequest) (account.Account, maildomain.OutboundAttempt, bool, int64, error) {
+	return account.Account{}, maildomain.OutboundAttempt{}, false, 0, NewAppError(ErrorConfiguration, "mail forward is unavailable", false)
 }
 func (unavailableMailService) MailOutboundStatus(context.Context, string, string, int) (account.Account, []maildomain.OutboundAttempt, bool, int64, error) {
 	return account.Account{}, nil, false, 0, NewAppError(ErrorConfiguration, "outbound mail status is unavailable", false)

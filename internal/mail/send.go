@@ -61,6 +61,7 @@ const (
 	OutboundKindSend     OutboundKind = "send"
 	OutboundKindReply    OutboundKind = "reply"
 	OutboundKindReplyAll OutboundKind = "reply_all"
+	OutboundKindForward  OutboundKind = "forward"
 )
 
 type CustomHeader struct {
@@ -81,6 +82,7 @@ type OutboundAttachment struct {
 type SendRequest struct {
 	Kind                  OutboundKind         `json:"kind,omitempty"`
 	ParentMessageID       string               `json:"parent_message_id,omitempty"`
+	SourceMessageID       string               `json:"source_message_id,omitempty"`
 	From                  Address              `json:"from"`
 	To                    []Address            `json:"to"`
 	CC                    []Address            `json:"cc,omitempty"`
@@ -101,6 +103,7 @@ type SendRequest struct {
 type SendPreview struct {
 	Kind            OutboundKind         `json:"kind,omitempty"`
 	ParentMessageID string               `json:"parent_message_id,omitempty"`
+	SourceMessageID string               `json:"source_message_id,omitempty"`
 	AccountID       string               `json:"account_id"`
 	From            Address              `json:"from"`
 	To              []Address            `json:"to"`
@@ -135,6 +138,7 @@ type OutboundAttempt struct {
 	AttachmentBytes         int64               `json:"attachment_bytes"`
 	Kind                    OutboundKind        `json:"kind"`
 	ParentMessageID         string              `json:"parent_message_id,omitempty"`
+	SourceMessageID         string              `json:"source_message_id,omitempty"`
 	MessageID               string              `json:"message_id,omitempty"`
 	ThreadID                string              `json:"thread_id,omitempty"`
 	RetryOfAttemptID        string              `json:"retry_of_attempt_id,omitempty"`
@@ -169,6 +173,7 @@ type BeginOutboundAttempt struct {
 	Attachments       []OutboundAttachmentRecord
 	Kind              OutboundKind
 	ParentMessageID   string
+	SourceMessageID   string
 	RetryOfAttemptID  string
 	Now               time.Time
 }
@@ -206,6 +211,7 @@ type OutboundReconcileSummary struct {
 func NormalizeSendRequest(value SendRequest) (SendRequest, error) {
 	value.Kind = normalizeOutboundKind(value.Kind)
 	value.ParentMessageID = strings.TrimSpace(value.ParentMessageID)
+	value.SourceMessageID = strings.TrimSpace(value.SourceMessageID)
 	if err := validateOutboundThreading(&value); err != nil {
 		return SendRequest{}, err
 	}
@@ -452,9 +458,9 @@ func normalizeOutboundKind(value OutboundKind) OutboundKind {
 	switch value {
 	case "", OutboundKindSend:
 		// Keep ordinary send as the zero value so request hashes created before
-		// reply support remain stable across the schema upgrade.
+		// relationship-aware outbound workflows remain stable across upgrades.
 		return ""
-	case OutboundKindReply, OutboundKindReplyAll:
+	case OutboundKindReply, OutboundKindReplyAll, OutboundKindForward:
 		return value
 	default:
 		return value
@@ -467,13 +473,24 @@ func validateOutboundThreading(value *SendRequest) error {
 	}
 	switch value.Kind {
 	case "":
-		if value.ParentMessageID != "" || strings.TrimSpace(value.InReplyTo) != "" || len(value.References) > 0 {
-			return fmt.Errorf("%w: reply metadata requires a reply operation", ErrInvalidSendRequest)
+		if value.ParentMessageID != "" || value.SourceMessageID != "" || strings.TrimSpace(value.InReplyTo) != "" || len(value.References) > 0 {
+			return fmt.Errorf("%w: relationship metadata requires the matching outbound operation", ErrInvalidSendRequest)
 		}
 	case OutboundKindReply, OutboundKindReplyAll:
 		if !strings.HasPrefix(value.ParentMessageID, "msg_") {
 			return fmt.Errorf("%w: reply parent message is required", ErrInvalidSendRequest)
 		}
+		if value.SourceMessageID != "" {
+			return fmt.Errorf("%w: reply cannot name a forward source", ErrInvalidSendRequest)
+		}
+	case OutboundKindForward:
+		if !strings.HasPrefix(value.SourceMessageID, "msg_") {
+			return fmt.Errorf("%w: forward source message is required", ErrInvalidSendRequest)
+		}
+		if value.ParentMessageID != "" || strings.TrimSpace(value.InReplyTo) != "" || len(value.References) > 0 {
+			return fmt.Errorf("%w: forward cannot contain reply relationship metadata", ErrInvalidSendRequest)
+		}
+		return nil
 	default:
 		return fmt.Errorf("%w: unsupported outbound operation", ErrInvalidSendRequest)
 	}

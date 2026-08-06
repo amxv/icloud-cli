@@ -35,10 +35,10 @@ type folderPolicyData struct {
 func newMailCommand(state *executionState) *cobra.Command {
 	command := &cobra.Command{
 		Use:     "mail",
-		Short:   "Send, inspect, and synchronize iCloud Mail",
+		Short:   "Send, reply, forward, inspect, and synchronize iCloud Mail",
 		GroupID: "mail",
 		Args:    cobra.NoArgs,
-		Example: "  icloud mail send --to client@example.com --subject Update --body-file message.txt --dry-run\n  icloud mail reply msg_… --body-file reply.txt --dry-run\n  icloud mail sync\n  icloud mail inbox\n  icloud mail message show msg_…\n  icloud mail folders status",
+		Example: "  icloud mail send --to client@example.com --subject Update --body-file message.txt --dry-run\n  icloud mail reply msg_… --body-file reply.txt --dry-run\n  icloud mail forward msg_… --to teammate@example.com --dry-run\n  icloud mail sync\n  icloud mail inbox\n  icloud mail message show msg_…\n  icloud mail folders status",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
 		},
@@ -54,6 +54,7 @@ func newMailCommand(state *executionState) *cobra.Command {
 	command.AddCommand(newMailSendCommand(state))
 	command.AddCommand(newMailReplyCommand(state, false))
 	command.AddCommand(newMailReplyCommand(state, true))
+	command.AddCommand(newMailForwardCommand(state))
 	command.AddCommand(newMailStatusCommand(state))
 	command.AddCommand(newMailFlagMutationCommand(state, "mark-read", "Mark one selected message location as read", maildomain.FlagMutationMarkRead))
 	command.AddCommand(newMailFlagMutationCommand(state, "mark-unread", "Mark one selected message location as unread", maildomain.FlagMutationMarkUnread))

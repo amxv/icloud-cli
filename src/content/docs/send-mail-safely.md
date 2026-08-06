@@ -1,9 +1,9 @@
 ---
 title: Send mail safely
-description: Preview, send, and reply through iCloud Mail with explicit message selection, confirmation, idempotency, BCC privacy, streamed attachments, and honest delivery outcomes.
+description: Preview, send, reply, and forward through iCloud Mail with explicit message selection, confirmation, idempotency, BCC privacy, streamed attachments, and honest delivery outcomes.
 order: 8
 category: Guides
-summary: Dry-run review, exact-message replies, reply-all recipient review, confirmation, attachments, privacy, idempotency, Sent reconciliation, and unknown-outcome recovery.
+summary: Dry-run review, exact-message replies and forwards, recipient and original-content review, attachments, privacy, idempotency, Sent reconciliation, and unknown-outcome recovery.
 ---
 
 ## Preview the exact request first
@@ -111,6 +111,60 @@ icloud mail reply-all msg_… \
 ```
 
 If the parent's Message-ID is absent or malformed, the preview reports `threading=false` and sends without inventing relationship headers. The local child may then remain a separate reconstructed conversation; use the preview rather than assuming a thread merge.
+
+## Forward one exact message as a new conversation
+
+Forwarding starts from one stable local `msg_…` ID, but unlike reply it always creates a new conversation. The source thread is recorded as provenance only; the outgoing message contains no `In-Reply-To` or `References` headers:
+
+```bash
+icloud mail forward msg_… \
+  --to teammate@example.com \
+  --body 'For context:' \
+  --dry-run --headers
+```
+
+The default `--original quoted` representation adds a bounded decoded-text copy below a safe forwarded-message header containing From, Date, Subject, To, and Cc. It never quotes the source BCC list. Repeated `Fwd:` or `Fw:` prefixes collapse to one normalized `Fwd:` subject.
+
+Use an exact attached RFC message only when the recipient needs the original wire representation:
+
+```bash
+icloud mail forward msg_… \
+  --to teammate@example.com \
+  --original eml \
+  --dry-run
+```
+
+`--original eml` attaches the verified source bytes as `forwarded-message.eml`. Because exact raw mail can contain sensitive headers that are intentionally absent from ordinary previews, EML forwarding is never implicit. `--original none` omits the original content and requires your own text or HTML body.
+
+Original attachments are also explicit. List the source message first, then include only the stable attachment IDs you intend to resend:
+
+```bash
+icloud mail attachments list msg_…
+
+icloud mail forward msg_… \
+  --to teammate@example.com \
+  --include-attachment att_… \
+  --attach new-note.txt \
+  --idempotency-key teammate-forward-2026-08-07 \
+  --yes
+```
+
+`--include-attachment` verifies the saved decoded bytes and confirms that each `att_…` belongs to the selected source message. It does not copy every original attachment automatically. New filesystem attachments continue to use `--attach` and the same changed-file checks as `mail send`.
+
+The compact result is payload-free and preserves source provenance without implying RFC thread identity:
+
+```text
+mail-forward
+send_… kind=forward
+source_message_id=msg_…
+status=sent
+message_id=msg_…
+thread_id=thr_…
+reconciliation=pending
+reused=false
+```
+
+Forward uses the same confirmation, idempotency, retry, size, SMTP, local acceptance, Sent append, and reconciliation behavior as send and reply. Repeating an identical forward with the same key returns the existing attempt without contacting SMTP. The source message, its flags, locations, attachments, and reconstructed thread are not mutated.
 
 ## Choose one safe body source
 
@@ -247,8 +301,13 @@ A dry-run `--json` response is different: it is an explicit review mode and ther
 
 - `non-interactive mail send requires --yes`: review with `--dry-run`, then add `--yes` to the deliberate send.
 - `non-interactive mail reply requires --yes`: review the exact parent and resolved recipients with `--dry-run`, then add `--yes`.
+- `non-interactive mail forward requires --yes`: review the exact source, original representation, and attachment selection with `--dry-run`, then add `--yes`.
 - `reply parent message not found`: synchronize or cache the intended message, then use its stable local `msg_…` ID.
+- `forward source message not found`: synchronize or cache the intended message, then use its stable local `msg_…` ID.
 - `cannot construct a safe reply from the selected message`: inspect the exact parent. If every derived recipient is one of the selected account's own identities, supply a deliberate `--to` address or use `--replace-to --to ...`.
+- `cannot construct a safe forward from the selected message`: supply a recipient, use a supported `--original` mode, and provide a body when using `--original none`.
+- `decoded forward source text is unavailable`: use `--original eml` for the verified exact source or `--original none` with your own body.
+- `selected attachment does not belong to the forward source message`: list attachments for the exact source `msg_…` and choose IDs from that result.
 - `mail body consumed stdin`: stdin cannot also answer an interactive prompt; rerun with `--yes` after review.
 - `idempotency key was already used`: keep the original request or choose a new key for an intentionally different message.
 - `mail send outcome is unknown`: preserve the attempt ID, run `mail sync --reconcile-outbound`, inspect `mail status --outbound`, and verify the recipient before considering `--retry-unknown`.

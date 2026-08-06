@@ -23,22 +23,23 @@ type ThreadRepository struct {
 }
 
 type threadNode struct {
-	ID              string
-	AccountID       string
-	RFCMessageID    string
-	InReplyTo       string
-	References      []string
-	Subject         string
-	Snippet         string
-	FromEmail       string
-	ReplyToEmail    string
-	Recipients      []string
-	FolderIDs       []string
-	SortAt          time.Time
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
-	Unread          bool
-	AttachmentCount int
+	ID               string
+	AccountID        string
+	RFCMessageID     string
+	InReplyTo        string
+	References       []string
+	Subject          string
+	Snippet          string
+	FromEmail        string
+	ReplyToEmail     string
+	Recipients       []string
+	FolderIDs        []string
+	SortAt           time.Time
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	Unread           bool
+	AttachmentCount  int
+	SuppressFallback bool
 }
 
 type graphEdge struct {
@@ -301,7 +302,14 @@ func loadThreadNodesQuery(ctx context.Context, tx *sql.Tx, accountID string, sco
 	}
 	rows, err := tx.QueryContext(ctx, `
 SELECT m.message_id, m.account_id, m.rfc_message_id, m.in_reply_to, m.subject, m.snippet,
-       m.from_email, m.reply_to_email, m.sort_at, m.attachment_count, m.created_at, m.updated_at
+       m.from_email, m.reply_to_email, m.sort_at, m.attachment_count, m.created_at, m.updated_at,
+       EXISTS (
+           SELECT 1
+           FROM outbound_attempts AS oa
+           WHERE oa.account_id = m.account_id
+             AND oa.proposed_message_id = m.message_id
+             AND oa.source_message_id <> ''
+       )
 FROM messages AS m`+messageJoin+`
 WHERE m.account_id = ?
 ORDER BY COALESCE(m.sort_at, m.created_at), m.message_id`, accountID)
@@ -316,7 +324,7 @@ ORDER BY COALESCE(m.sort_at, m.created_at), m.message_id`, accountID)
 		if err := rows.Scan(
 			&node.ID, &node.AccountID, &node.RFCMessageID, &node.InReplyTo,
 			&node.Subject, &node.Snippet, &node.FromEmail, &node.ReplyToEmail,
-			&sortAt, &node.AttachmentCount, &createdAt, &updatedAt,
+			&sortAt, &node.AttachmentCount, &createdAt, &updatedAt, &node.SuppressFallback,
 		); err != nil {
 			rows.Close()
 			return nil, fmt.Errorf("read message for thread reconstruction: %w", err)
@@ -744,6 +752,9 @@ func buildThreadComponents(nodes map[string]*threadNode) (map[string][]string, [
 
 	fallbackBuckets := map[string][]*threadNode{}
 	for _, node := range nodes {
+		if node.SuppressFallback {
+			continue
+		}
 		if strings.TrimSpace(node.InReplyTo) != "" || len(node.References) > 0 {
 			continue
 		}
@@ -1347,6 +1358,9 @@ func normalizedThreadReferences(values []string) []string {
 }
 
 func fallbackThreadKey(node *threadNode) string {
+	if node == nil || node.SuppressFallback {
+		return ""
+	}
 	subject := normalizeThreadSubject(node.Subject)
 	if subject == "" {
 		return ""

@@ -118,6 +118,21 @@ icloud mail send \
 
 In a terminal, omitting `--yes` prints the normalized compact preview and asks `Send this message? [y/N]`. When `--body-file -` or `--html-body-file -` consumed stdin, the same stream cannot also answer the prompt. Review with `--dry-run`, then rerun with `--yes`.
 
+Reply and forward use the same authorization boundary. A non-interactive `mail reply`, `reply-all`, or `forward` requires `--yes` after an exact-message dry run.
+
+## A forward has the wrong original content or attachments
+
+Forward never copies everything implicitly. Review the source representation and selection first:
+
+```bash
+icloud mail attachments list msg_…
+icloud mail forward msg_… --to teammate@example.com --dry-run
+```
+
+The default is `--original quoted`. Use `--original eml` only for exact verified RFC822 bytes, or `--original none` with your own body. Add original files one at a time with `--include-attachment att_…`; each ID must belong to the selected source message. Use ordinary `--attach` for new local files.
+
+If decoded quoted text is unavailable or exceeds the body bound, choose EML or omit the original. If an original attachment is unavailable or corrupt, resynchronize or repair that source before forwarding it. Forward does not mutate the source and does not join its reconstructed thread.
+
 ## Mail send reports an idempotency conflict
 
 The same account and idempotency key were already used for a different normalized request. Do not change recipients, subject, body, Reply-To, headers, or the account identity while reusing a key.
@@ -273,7 +288,7 @@ Generating completion output does not install it automatically.
 
 ## A local command is not contacting iCloud
 
-That is expected for `account add`, credential replacement, account reads, local folder `list`/`show`, folder policy changes, outbound status, and `doctor` without `--live`. Use `icloud account test`, `icloud doctor --live`, `icloud mail folders status`, `icloud mail sync`, or a real `icloud mail send` for explicit network work. Folder sync and outbound status never resend a message; move, copy, archive, trash, and delete are not implemented yet.
+That is expected for `account add`, credential replacement, account reads, local folder `list`/`show`, folder policy changes, outbound status, and `doctor` without `--live`. Use `icloud account test`, `icloud doctor --live`, `icloud mail folders status`, `icloud mail sync`, or a real `icloud mail send`, `reply`, or `forward` for explicit network work. Folder sync and outbound status never resend a message; move, copy, archive, trash, and delete are not implemented yet.
 
 ## Folder list is empty
 

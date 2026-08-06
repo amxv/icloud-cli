@@ -61,8 +61,24 @@ func prepareOutboundAttachmentsWithStager(ctx context.Context, stager attachment
 		}
 		path := strings.TrimSpace(requested.SourcePath)
 		if path == "" {
-			staged.Abort()
-			return nil, nil, errors.New("attachment path is required")
+			prepared, value, err := prepareVerifiedOutboundAttachment(ctx, stager, requested)
+			if err != nil {
+				staged.Abort()
+				return nil, nil, err
+			}
+			total += prepared.ByteSize
+			if total > maildomain.MaxSendAttachmentTotalBytes {
+				if value != nil {
+					_ = value.Abort()
+				}
+				staged.Abort()
+				return nil, nil, fmt.Errorf("attachment total exceeds %d bytes", maildomain.MaxSendAttachmentTotalBytes)
+			}
+			if value != nil {
+				staged.values = append(staged.values, value)
+			}
+			result = append(result, prepared)
+			continue
 		}
 		file, err := os.Open(path)
 		if err != nil {
@@ -150,6 +166,66 @@ func prepareOutboundAttachmentsWithStager(ctx context.Context, stager attachment
 		result = append(result, prepared)
 	}
 	return result, staged, nil
+}
+
+func prepareVerifiedOutboundAttachment(
+	ctx context.Context,
+	stager attachmentBlobStore,
+	requested maildomain.OutboundAttachment,
+) (maildomain.OutboundAttachment, *blob.Staged, error) {
+	if requested.Open == nil {
+		return maildomain.OutboundAttachment{}, nil, errors.New("attachment path or verified content source is required")
+	}
+	filename := strings.TrimSpace(requested.Filename)
+	mediaType, _, mediaErr := mime.ParseMediaType(strings.TrimSpace(requested.MediaType))
+	if filename == "" || mediaErr != nil || !strings.Contains(mediaType, "/") {
+		return maildomain.OutboundAttachment{}, nil, errors.New("verified attachment metadata is incomplete")
+	}
+	if requested.ByteSize < 0 || requested.ByteSize > maildomain.MaxSendAttachmentBytes || len(strings.TrimSpace(requested.ContentHash)) != sha256.Size*2 {
+		return maildomain.OutboundAttachment{}, nil, errors.New("verified attachment size or hash is invalid")
+	}
+	source, err := requested.Open()
+	if err != nil {
+		return maildomain.OutboundAttachment{}, nil, fmt.Errorf("open verified attachment: %w", err)
+	}
+	prepared := requested
+	prepared.Filename = filename
+	prepared.MediaType = strings.ToLower(mediaType)
+	prepared.ContentHash = strings.ToLower(strings.TrimSpace(requested.ContentHash))
+	prepared.SourcePath = ""
+	if stager == nil {
+		hash, size, readErr := hashOutboundAttachment(ctx, source)
+		closeErr := source.Close()
+		if readErr == nil {
+			readErr = closeErr
+		}
+		if readErr != nil {
+			return maildomain.OutboundAttachment{}, nil, fmt.Errorf("read verified attachment: %w", readErr)
+		}
+		if size != requested.ByteSize || !strings.EqualFold(hash, requested.ContentHash) {
+			return maildomain.OutboundAttachment{}, nil, errors.New("verified attachment content changed")
+		}
+		return prepared, nil, nil
+	}
+	value, stageErr := stager.StageAttachment(ctx, source, requested.ByteSize)
+	closeErr := source.Close()
+	if stageErr == nil {
+		stageErr = closeErr
+	}
+	if stageErr != nil {
+		if value != nil {
+			_ = value.Abort()
+		}
+		return maildomain.OutboundAttachment{}, nil, fmt.Errorf("stage verified attachment: %w", stageErr)
+	}
+	if value.ByteSize != requested.ByteSize || !strings.EqualFold(value.ContentHash, requested.ContentHash) {
+		_ = value.Abort()
+		return maildomain.OutboundAttachment{}, nil, errors.New("verified attachment content changed after review")
+	}
+	prepared.ContentHash = value.ContentHash
+	prepared.ByteSize = value.ByteSize
+	prepared.Open = value.Open
+	return prepared, value, nil
 }
 
 func outboundAttachmentMediaType(file *os.File, filename, override string) (string, error) {

@@ -58,6 +58,7 @@ type publicOutboundAttempt struct {
 	AttachmentBytes         int64                          `json:"attachment_bytes"`
 	Kind                    maildomain.OutboundKind        `json:"kind"`
 	ParentMessageID         string                         `json:"parent_message_id,omitempty"`
+	SourceMessageID         string                         `json:"source_message_id,omitempty"`
 	RetryOfAttemptID        string                         `json:"retry_of_attempt_id,omitempty"`
 	ReconciledLocationID    string                         `json:"reconciled_location_id,omitempty"`
 	ReconciliationErrorCode string                         `json:"reconciliation_error_code,omitempty"`
@@ -454,7 +455,7 @@ func sanitizeOutboundAttempt(value maildomain.OutboundAttempt) publicOutboundAtt
 		ID: value.ID, Status: value.Status, MessageID: value.MessageID,
 		ThreadID: value.ThreadID, Reconciliation: value.Reconciliation,
 		AttachmentCount: value.AttachmentCount, AttachmentBytes: value.AttachmentBytes,
-		Kind: value.Kind, ParentMessageID: value.ParentMessageID,
+		Kind: value.Kind, ParentMessageID: value.ParentMessageID, SourceMessageID: value.SourceMessageID,
 		RetryOfAttemptID: value.RetryOfAttemptID, ReconciledLocationID: value.ReconciledLocationID,
 		ReconciliationErrorCode: value.ReconciliationErrorCode,
 		ErrorCode:               value.ErrorCode, AcceptedAt: value.AcceptedAt,
@@ -476,7 +477,7 @@ func confirmMailSend(reader io.Reader, stderr io.Writer) (bool, error) {
 
 func previewToRequest(preview maildomain.SendPreview) maildomain.SendRequest {
 	return maildomain.SendRequest{
-		Kind: preview.Kind, ParentMessageID: preview.ParentMessageID,
+		Kind: preview.Kind, ParentMessageID: preview.ParentMessageID, SourceMessageID: preview.SourceMessageID,
 		From: preview.From, To: preview.To, CC: preview.CC, BCC: preview.BCC,
 		ReplyTo: preview.ReplyTo, Subject: preview.Subject,
 		TextBody: preview.TextBody, HTMLBody: preview.HTMLBody, Headers: preview.Headers,

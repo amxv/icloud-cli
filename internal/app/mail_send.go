@@ -43,7 +43,8 @@ func (commands accountCommands) MailSendPreview(
 	}
 	preview := maildomain.SendPreview{
 		Kind: normalized.Kind, ParentMessageID: normalized.ParentMessageID,
-		AccountID: accountValue.ID, From: normalized.From,
+		SourceMessageID: normalized.SourceMessageID,
+		AccountID:       accountValue.ID, From: normalized.From,
 		To: normalized.To, CC: normalized.CC, BCC: normalized.BCC,
 		ReplyTo: normalized.ReplyTo, Subject: normalized.Subject,
 		TextBody: normalized.TextBody, HTMLBody: normalized.HTMLBody,
@@ -142,6 +143,7 @@ func (commands accountCommands) MailSend(
 		Attachments:      outboundAttemptAttachmentRecords(content.Attachments),
 		Kind:             normalized.Operation(),
 		ParentMessageID:  normalized.ParentMessageID,
+		SourceMessageID:  normalized.SourceMessageID,
 		RetryOfAttemptID: normalized.RetryOfAttemptID,
 	})
 	if err != nil {

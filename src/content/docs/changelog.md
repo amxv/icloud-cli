@@ -8,6 +8,10 @@ summary: Public command, output, installation, and documentation changes.
 
 ## Unreleased
 
+- Added `icloud mail forward <msg_…>` as an exact-source, new-conversation workflow with normalized `Fwd:` subjects and no reply relationship headers.
+- Added explicit `--original quoted|eml|none` source representation, verified attached EML, selective `--include-attachment att_…` original attachments, and ordinary new filesystem attachments through the existing streamed send path.
+- Added schema version 14 forward-source provenance on outbound attempts, payload-free forward outcomes/status, idempotent replay, independent local thread creation, and source-message/thread immutability proofs.
+- Expanded the send, Quickstart, output/automation, troubleshooting, command-reference, README, capabilities, landing, completion, man, migration, privacy, and compact-output journeys for forwarding.
 - Added repeated filesystem `--attach` inputs with optional filename/media-type overrides, pre-confirmation SHA-256 review, changed-file detection, durable local attachment bytes, streamed multipart composition, and a 20 MiB composed-message guard before SMTP.
 - Added schema version 12 outbound attachment records, linked failed/unknown retries, bounded payload-free `mail status --outbound`, focused `mail sync --reconcile-outbound`, exact generated Message-ID confirmation, and ambiguity-preserving unknown outcomes.
 - Added streamed provider Sent-copy creation after SMTP acceptance, complete local attachment access before provider reconciliation, and live small/9 MiB two-way attachment round-trip evidence with one logical Inbox/Sent message.

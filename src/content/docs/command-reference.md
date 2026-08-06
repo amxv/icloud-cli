@@ -1,9 +1,9 @@
 ---
 title: Command reference
-description: A complete reference for account lifecycle, iCloud validation, safe send and reply workflows, folder discovery, synchronization, search, message and attachment reads, diagnostics, output modes, completion, and man generation.
+description: A complete reference for account lifecycle, iCloud validation, safe send, reply, and forward workflows, folder discovery, synchronization, search, message and attachment reads, diagnostics, output modes, completion, and man generation.
 order: 11
 category: Reference
-summary: Every account, credential, validation, send, reply, folder, sync/read/search, message, attachment, doctor, capability, completion, man, help, and global control available now.
+summary: Every account, credential, validation, send, reply, forward, folder, sync/read/search, message, attachment, doctor, capability, completion, man, help, and global control available now.
 ---
 
 ## Root command
@@ -313,6 +313,47 @@ reused=false
 
 `kind` is `reply_all` for reply-all. The stored outbound attempt preserves the exact parent ID so status and audit output can distinguish a new send from a reply without exposing submitted content.
 
+## `icloud mail forward`
+
+Forward one exact locally synchronized message as a new conversation:
+
+```bash
+icloud mail forward msg_… --to teammate@example.com --body 'For context' --dry-run --headers
+icloud mail forward msg_… --to teammate@example.com --original eml --idempotency-key forward-01 --yes
+icloud mail forward msg_… --to teammate@example.com --include-attachment att_… --attach new-note.txt --dry-run
+```
+
+The positional `msg_…` is mandatory and records source provenance. A forward never emits `In-Reply-To` or `References`, never joins the source thread, and never mutates the source message. Repeated `Fwd:` and `Fw:` prefixes normalize to one `Fwd:` subject.
+
+| Flag | Purpose |
+| --- | --- |
+| `--to`, `--cc`, `--bcc`, `--reply-to` | Supply the new message recipients. BCC remains envelope-only. |
+| `--original quoted|eml|none` | Choose the source representation. `quoted` is the default decoded-text form; `eml` attaches exact verified RFC822 bytes; `none` requires your own text or HTML body. |
+| `--include-attachment <att_…>` | Include one verified decoded attachment belonging to the selected source message. Repeat to select more; no original attachment is implicit. |
+| `--body`, `--body-file`, `--html-body`, `--html-body-file` | Add introductory content, or provide the complete body with `--original none`. |
+| `--attach`, `--attach-name`, `--attach-type` | Add new reviewed filesystem attachments. |
+| `--header 'Name: Value'` | Add a safe custom header. Reply relationship fields remain reserved and absent. |
+| `--idempotency-key`, `--retry-of`, `--retry-unknown` | Use the same durable attempt and explicit retry controls as send/reply. |
+| `--dry-run` / `--yes` | Review without SMTP, or authorize a real non-interactive forward. |
+| `--headers`, `--verbose`, `--format text|html|raw`, `--json` | Expand only a dry-run preview, except `--json`, which also supports sanitized real outcomes. |
+
+The compact dry run reports the source message/thread IDs, selected original representation, EML size when applicable, counts for selected original and new attachments, recipients, normalized subject, body/attachment counts, a bounded text excerpt, request hash, and explicit no-network/no-attempt/source-unchanged safety fields. `--format text` emits the complete quoted representation; `--format raw` emits the composed new message. Exact EML bytes appear only as the explicitly selected attachment.
+
+A real compact outcome is payload-free:
+
+```text
+mail-forward
+send_… kind=forward
+source_message_id=msg_…
+status=sent
+message_id=msg_…
+thread_id=thr_…
+reconciliation=pending
+reused=false
+```
+
+The stored outbound attempt links the new message to the source `msg_…` for audit and status without treating that source as an RFC reply parent.
+
 ## `icloud mail status --outbound`
 
 ```bash
@@ -323,7 +364,7 @@ icloud mail status --outbound --json
 
 Lists the most recent bounded outbound attempts for the selected account without contacting iCloud. Compact records include stable attempt/message/thread IDs, status, attachment counts/bytes, reconciliation and error codes, retry linkage, update time, and one next action. JSON adds accepted/created timestamps and a reconciled location ID when known. Both forms omit submitted recipients, BCC, subject, bodies, custom headers, idempotency keys, attachment paths, hashes, and private blob coordinates.
 
-Each attempt also reports `kind=send|reply|reply_all`. Reply attempts include only the stable `parent_message_id`; they do not expose recipient or body payloads.
+Each attempt also reports `kind=send|reply|reply_all|forward`. Reply attempts include only the stable `parent_message_id`; forward attempts include only the stable `source_message_id`. Neither exposes recipient or body payloads.
 
 Use `icloud mail sync --reconcile-outbound` to fetch current Sent evidence. Exact unique generated Message-ID evidence confirms a pending sent attempt or resolves an unknown attempt. Missing evidence stays unmatched; conflicting exact evidence stays unknown with `ambiguous_sent_evidence`. Failed attempts can be retried only with `--retry-of` and a new idempotency key. Unknown attempts additionally require `--retry-unknown --yes` after checking Sent and the recipient.
 
@@ -603,7 +644,7 @@ Compact output:
 capabilities
 command=icloud
 version=0.1.0
-schema=13
+schema=14
 account_mode=validated_lifecycle
 credentials=keyring,env,file
 network_validation=true
@@ -619,6 +660,7 @@ mail_remote_search=true
 mail_hydration=true
 mail_send=true
 mail_reply=true
+mail_forward=true
 default_output=compact
 json=true
 completion=bash,zsh,fish,powershell
@@ -664,6 +706,6 @@ Help goes to stdout. Usage failures go to stderr and exit `2`.
 
 ## Output availability
 
-Every account and credential lifecycle command above, `account test`, every folder command, enabled-folder sync/read/local-or-remote-search/status/checkpoints, targeted hydration, send preview/outcome, latest/thread reads, message read and state commands, attachment list/save/save-all, `doctor`, `version`, and `capabilities` supports `--json` where a native byte stream is not requested. Validation, doctor, folder reads/status, thread reads, message reads, and dry-run send review support bounded `--verbose` detail where advertised. `mail message raw`, `message export --output -`, `attachments save --output - --binary`, and dry-run send `--format text|html|raw` retain their explicit native formats; completion and man generation do likewise. Local folder, search, and thread lists stay preview-only. Remote summaries stay metadata-only until `--cache`; stable local thread/message reads then provide explicit full-text, HTML, raw, headers, metadata-only, verbose, and JSON modes.
+Every account and credential lifecycle command above, `account test`, every folder command, enabled-folder sync/read/local-or-remote-search/status/checkpoints, targeted hydration, outbound send/reply/forward preview and outcomes, latest/thread reads, message read and state commands, attachment list/save/save-all, `doctor`, `version`, and `capabilities` supports `--json` where a native byte stream is not requested. Validation, doctor, folder reads/status, thread reads, message reads, and outbound dry-run review support bounded `--verbose` detail where advertised. `mail message raw`, `message export --output -`, `attachments save --output - --binary`, and outbound dry-run `--format text|html|raw` retain their explicit native formats; completion and man generation do likewise. Local folder, search, and thread lists stay preview-only. Remote summaries stay metadata-only until `--cache`; stable local thread/message reads then provide explicit full-text, HTML, raw, headers, metadata-only, verbose, and JSON modes.
 
 Compact output uses vertical blocks: result type first, stable identity plus the first field next when present, then one remaining field per line. A blank line separates consecutive records or a final summary. Errors use the same block shape on stderr.

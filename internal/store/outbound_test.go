@@ -196,6 +196,89 @@ func TestOutboundReplyPersistsExactParentAndJoinsExistingThread(t *testing.T) {
 	}
 }
 
+func TestOutboundForwardPersistsSourceAndCreatesIndependentThread(t *testing.T) {
+	state, accountID, inboxID := newMailStoreFixture(t)
+	defer state.Close()
+	ctx := context.Background()
+	base := time.Date(2026, 8, 7, 0, 15, 0, 0, time.UTC)
+	source := mailRecordFixture(accountID, inboxID, 100, 5, "forward-source@example.test")
+	source.Parsed.InReplyTo = ""
+	source.Parsed.References = nil
+	source.Parsed.From = maildomain.Address{Email: "target@example.test"}
+	source.Parsed.ReplyTo = maildomain.Address{}
+	source.Parsed.To = []maildomain.Address{{Email: "mail-test@icloud.com"}}
+	source.Parsed.Subject = "Forward source"
+	source.Parsed.BCC = []maildomain.Address{{Email: "hidden@example.test"}}
+	commitSentRecord(t, state, source, "chk_0198d704-6c00-7000-8000-000000000612", base)
+	sourcePage, err := state.Threads().Show(ctx, accountID, source.MessageID, "", 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	request, err := maildomain.NormalizeSendRequest(maildomain.SendRequest{
+		Kind: maildomain.OutboundKindForward, SourceMessageID: source.MessageID,
+		From:    maildomain.Address{DisplayName: "Mail Test", Email: "mail-test@icloud.com"},
+		To:      []maildomain.Address{{Email: "target@example.test"}},
+		Subject: "Fwd: Forward source", TextBody: "quoted forward body",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw bytes.Buffer
+	if err := maildomain.ComposeOutboundMessage(&raw, request, "forward-child@example.test", base.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	content, err := maildomain.ParseNormalized(bytes.NewReader(raw.Bytes()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content.AttachmentsIndexed = true
+	for index := range content.Parts {
+		content.Parts[index].ID = fmt.Sprintf("prt_0198d704-6c00-7000-8000-%012d", index+780)
+	}
+	rawHash := strings.Repeat("d", 64)
+	attempt, existing, err := state.Outbound().Begin(ctx, maildomain.BeginOutboundAttempt{
+		AttemptID: "send_0198d704-6c00-7000-8000-000000000012",
+		AccountID: accountID, ProposedMessageID: "msg_0198d704-6c00-7000-8000-000000000612",
+		RequestHash: strings.Repeat("c", 64), IdempotencyKey: "forward-persistence-01",
+		RFCMessageID:   content.Preview.RFCMessageID,
+		RawContentHash: rawHash, RawStorageKey: "raw/sha256/dd/" + rawHash + ".eml", RawByteSize: int64(raw.Len()),
+		ToCount: len(request.To), BodyPartCount: request.BodyPartCount(),
+		Kind: request.Operation(), SourceMessageID: request.SourceMessageID, Now: base.Add(time.Minute),
+	})
+	if err != nil || existing {
+		t.Fatalf("begin forward attempt=%+v existing=%v err=%v", attempt, existing, err)
+	}
+	accepted, err := state.Outbound().CompleteSent(ctx, maildomain.CompleteOutboundSend{
+		AttemptID: attempt.ID, Request: request, Content: content, AcceptedAt: base.Add(2 * time.Minute),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if accepted.Kind != maildomain.OutboundKindForward || accepted.SourceMessageID != source.MessageID ||
+		accepted.ParentMessageID != "" || accepted.ThreadID == "" || accepted.ThreadID == sourcePage.Thread.ID {
+		t.Fatalf("accepted forward metadata=%+v source_thread=%s", accepted, sourcePage.Thread.ID)
+	}
+	message, err := state.Mail().Message(ctx, accountID, accepted.MessageID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if message.InReplyTo != "" || len(message.References) != 0 || message.Subject != "Fwd: Forward source" {
+		t.Fatalf("stored forward relationship=%+v", message)
+	}
+	sourceAfter, err := state.Mail().Message(ctx, accountID, source.MessageID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sourceAfter.Subject != source.Parsed.Subject || len(sourceAfter.Locations) != 1 || !sourceAfter.Locations[0].Present {
+		t.Fatalf("source mutated by forward: %+v", sourceAfter)
+	}
+	sourceThreadAfter, err := state.Threads().Show(ctx, accountID, source.MessageID, "", 20)
+	if err != nil || sourceThreadAfter.Thread.ID != sourcePage.Thread.ID || sourceThreadAfter.Thread.MessageCount != 1 {
+		t.Fatalf("source thread changed=%+v err=%v", sourceThreadAfter, err)
+	}
+}
+
 func TestOutboundAcceptedTransactionRollbackLeavesPendingAttemptAndNoMessage(t *testing.T) {
 	state, accountID, _ := newMailStoreFixture(t)
 	defer state.Close()

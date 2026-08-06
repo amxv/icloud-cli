@@ -700,6 +700,7 @@ func TestMailPhaseFifteenHelpAndOutboundStatusRemainCompactAndPayloadFree(t *tes
 		{args: []string{"mail", "send", "--help"}, want: []string{"--attach", "--attach-name", "--attach-type", "--retry-of", "--retry-unknown"}},
 		{args: []string{"mail", "reply", "--help"}, want: []string{"reply <msg_…>", "--replace-to", "--replace-cc", "prior Bcc recipients are never inferred", "--dry-run", "--yes"}},
 		{args: []string{"mail", "reply-all", "--help"}, want: []string{"reply-all <msg_…>", "visible participants", "--replace-to", "--replace-cc", "--attach"}},
+		{args: []string{"mail", "forward", "--help"}, want: []string{"forward <msg_…>", "--original", "quoted, eml, or none", "--include-attachment", "new conversation", "--dry-run", "--yes"}},
 		{args: []string{"mail", "sync", "--help"}, want: []string{"--reconcile-outbound"}},
 		{args: []string{"mail", "status", "--help"}, want: []string{"--outbound", "--limit", "--json"}},
 	} {
@@ -740,7 +741,7 @@ func TestMailPhaseFifteenHelpAndOutboundStatusRemainCompactAndPayloadFree(t *tes
 		}
 	}
 	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "status", "--outbound", "--limit", "1", "--json")
-	if code != 0 || stderr != "" || !strings.Contains(stdout, `"schema_version":13`) || !strings.Contains(stdout, `"count":1`) || !strings.Contains(stdout, `"status":"sent"`) || !strings.Contains(stdout, `"kind":"send"`) {
+	if code != 0 || stderr != "" || !strings.Contains(stdout, `"schema_version":14`) || !strings.Contains(stdout, `"count":1`) || !strings.Contains(stdout, `"status":"sent"`) || !strings.Contains(stdout, `"kind":"send"`) {
 		t.Fatalf("outbound status JSON code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 	for _, forbidden := range []string{"primary@example.com", "Outbound status private subject", "outbound-status-private-body", "outbound-status-private-key", "synthetic-send-secret"} {

@@ -20,7 +20,9 @@ SELECT attempt_id, account_id, proposed_message_id, request_hash,
        idempotency_key, status, rfc_message_id,
        raw_content_hash, raw_storage_key, raw_byte_size,
        to_count, cc_count, bcc_count, body_part_count,
-       attachment_count, attachment_byte_size, outbound_kind, parent_message_id,
+       attachment_count, attachment_byte_size,
+       CASE WHEN source_message_id <> '' THEN 'forward' ELSE outbound_kind END,
+       parent_message_id, source_message_id,
        message_id, thread_id,
        retry_of_attempt_id, reconciliation, reconciled_location_id,
        reconciliation_error_code, error_code,
@@ -58,15 +60,24 @@ func (repository *OutboundRepository) Begin(ctx context.Context, input maildomai
 		kind = maildomain.OutboundKindSend
 	}
 	parentMessageID := strings.TrimSpace(input.ParentMessageID)
+	sourceMessageID := strings.TrimSpace(input.SourceMessageID)
+	storedKind := kind
 	switch kind {
 	case maildomain.OutboundKindSend:
-		if parentMessageID != "" {
-			return maildomain.OutboundAttempt{}, false, errors.New("begin outbound attempt: send cannot name a reply parent")
+		if parentMessageID != "" || sourceMessageID != "" {
+			return maildomain.OutboundAttempt{}, false, errors.New("begin outbound attempt: send cannot name a related message")
 		}
 	case maildomain.OutboundKindReply, maildomain.OutboundKindReplyAll:
-		if !strings.HasPrefix(parentMessageID, "msg_") {
+		if !strings.HasPrefix(parentMessageID, "msg_") || sourceMessageID != "" {
 			return maildomain.OutboundAttempt{}, false, errors.New("begin outbound attempt: reply parent message is required")
 		}
+	case maildomain.OutboundKindForward:
+		if parentMessageID != "" || !strings.HasPrefix(sourceMessageID, "msg_") {
+			return maildomain.OutboundAttempt{}, false, errors.New("begin outbound attempt: forward source message is required")
+		}
+		// Schema 13 constrained outbound_kind before forward existed. Keep the
+		// stored base kind compatible and derive forward from source_message_id.
+		storedKind = maildomain.OutboundKindSend
 	default:
 		return maildomain.OutboundAttempt{}, false, errors.New("begin outbound attempt: unsupported outbound kind")
 	}
@@ -116,15 +127,15 @@ INSERT INTO outbound_attempts (
     attempt_id, account_id, proposed_message_id, request_hash, idempotency_key,
     status, rfc_message_id, raw_content_hash, raw_storage_key, raw_byte_size,
     to_count, cc_count, bcc_count, body_part_count,
-    attachment_count, attachment_byte_size, outbound_kind, parent_message_id,
+    attachment_count, attachment_byte_size, outbound_kind, parent_message_id, source_message_id,
     retry_of_attempt_id,
     reconciliation, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'none', ?, ?)`,
+) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'none', ?, ?)`,
 		input.AttemptID, input.AccountID, input.ProposedMessageID, input.RequestHash,
 		strings.TrimSpace(input.IdempotencyKey), input.RFCMessageID,
 		input.RawContentHash, input.RawStorageKey, input.RawByteSize,
 		input.ToCount, input.CCCount, input.BCCCount, input.BodyPartCount,
-		len(input.Attachments), attachmentBytes, kind, parentMessageID,
+		len(input.Attachments), attachmentBytes, storedKind, parentMessageID, sourceMessageID,
 		strings.TrimSpace(input.RetryOfAttemptID),
 		timestamp, timestamp,
 	); err != nil {
@@ -253,7 +264,9 @@ func (repository *OutboundRepository) CompleteSent(ctx context.Context, input ma
 	if err := verifyOutboundAttemptAttachments(ctx, tx, attempt.ID, input.Content.Attachments); err != nil {
 		return maildomain.OutboundAttempt{}, err
 	}
-	if attempt.Kind != input.Request.Operation() || attempt.ParentMessageID != strings.TrimSpace(input.Request.ParentMessageID) {
+	if attempt.Kind != input.Request.Operation() ||
+		attempt.ParentMessageID != strings.TrimSpace(input.Request.ParentMessageID) ||
+		attempt.SourceMessageID != strings.TrimSpace(input.Request.SourceMessageID) {
 		return maildomain.OutboundAttempt{}, errors.New("accepted outbound operation does not match the pending attempt")
 	}
 	timestamp := input.AcceptedAt.UTC().Format(time.RFC3339Nano)
@@ -525,7 +538,7 @@ func scanOutboundAttempt(row rowScanner) (maildomain.OutboundAttempt, error) {
 		&value.IdempotencyKey, &status, &value.RFCMessageID,
 		&value.RawContentHash, &value.RawStorageKey, &value.RawByteSize,
 		&value.ToCount, &value.CCCount, &value.BCCCount, &value.BodyPartCount,
-		&value.AttachmentCount, &value.AttachmentBytes, &value.Kind, &value.ParentMessageID,
+		&value.AttachmentCount, &value.AttachmentBytes, &value.Kind, &value.ParentMessageID, &value.SourceMessageID,
 		&value.MessageID, &value.ThreadID,
 		&value.RetryOfAttemptID, &reconciliation, &value.ReconciledLocationID,
 		&value.ReconciliationErrorCode, &value.ErrorCode,

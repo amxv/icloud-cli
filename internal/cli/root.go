@@ -110,6 +110,7 @@ type capabilitiesData struct {
 	MailHydration     bool             `json:"mail_hydration"`
 	MailSend          bool             `json:"mail_send"`
 	MailReply         bool             `json:"mail_reply"`
+	MailForward       bool             `json:"mail_forward"`
 	Output            capabilityOutput `json:"output"`
 	Completion        []string         `json:"completion"`
 	Man               bool             `json:"man"`
@@ -208,8 +209,8 @@ func newRootCommand(state *executionState) *cobra.Command {
 	root := &cobra.Command{
 		Use:           commandName,
 		Short:         "Control iCloud services from the command line",
-		Long:          "icloud controls iCloud services from the command line. This build provides secure account setup, live read-only IMAP and SMTP validation, deliberate text, HTML, and attachment sending plus exact-message reply and reply-all with dry-run review, idempotency, explicit retry linkage, and Sent reconciliation, durable folder discovery, bounded folder synchronization and flag reconciliation, indexed local search, explicit bounded remote search and targeted hydration, complete local message reads, verified attachment export, location-aware read and flag updates, account health diagnostics, version and capability reporting, shell completions, and man-page generation.",
-		Example:       "  icloud account add --name Personal --email owner@icloud.com --password-stdin\n  icloud account test\n  icloud mail send --to client@example.com --subject Update --body-file message.txt --dry-run\n  icloud mail reply msg_… --body-file reply.txt --dry-run\n  icloud mail sync\n  icloud mail message show msg_…\n  icloud mail mark-read msg_…\n  icloud doctor",
+		Long:          "icloud controls iCloud services from the command line. This build provides secure account setup, live read-only IMAP and SMTP validation, deliberate text, HTML, and attachment sending plus exact-message reply, reply-all, and forward with dry-run review, idempotency, explicit retry linkage, and Sent reconciliation, durable folder discovery, bounded folder synchronization and flag reconciliation, indexed local search, explicit bounded remote search and targeted hydration, complete local message reads, verified attachment export, location-aware read and flag updates, account health diagnostics, version and capability reporting, shell completions, and man-page generation.",
+		Example:       "  icloud account add --name Personal --email owner@icloud.com --password-stdin\n  icloud account test\n  icloud mail send --to client@example.com --subject Update --body-file message.txt --dry-run\n  icloud mail reply msg_… --body-file reply.txt --dry-run\n  icloud mail forward msg_… --to teammate@example.com --dry-run\n  icloud mail sync\n  icloud mail message show msg_…\n  icloud mail mark-read msg_…\n  icloud doctor",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		Args:          cobra.NoArgs,
@@ -327,6 +328,7 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				MailHydration:     true,
 				MailSend:          true,
 				MailReply:         true,
+				MailForward:       true,
 				Output: capabilityOutput{
 					Default: "compact",
 					JSON:    true,
@@ -361,6 +363,7 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				Field("mail_hydration", data.MailHydration),
 				Field("mail_send", data.MailSend),
 				Field("mail_reply", data.MailReply),
+				Field("mail_forward", data.MailForward),
 				Field("default_output", data.Output.Default),
 				Field("json", data.Output.JSON),
 				Field("completion", data.Completion),
