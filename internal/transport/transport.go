@@ -334,6 +334,24 @@ type IMAPSentAppender interface {
 	AppendSent(context.Context, AuthRequest, SentAppendRequest) (SentAppendResult, error)
 }
 
+type MailboxAppendRequest struct {
+	Mailbox      string
+	Message      io.Reader
+	Size         int64
+	InternalDate time.Time
+	Flags        []string
+}
+
+type MailboxAppendResult struct {
+	Mailbox     string `json:"mailbox"`
+	UIDValidity uint32 `json:"uid_validity,omitempty"`
+	UID         uint32 `json:"uid,omitempty"`
+}
+
+type IMAPMailboxAppender interface {
+	AppendMailbox(context.Context, AuthRequest, MailboxAppendRequest) (MailboxAppendResult, error)
+}
+
 type RemoteSearchCriteria struct {
 	Text         []string
 	Sender       string

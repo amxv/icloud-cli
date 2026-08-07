@@ -359,6 +359,73 @@ A pending attempt and all outbound attachment metadata are durable before SMTP. 
 
 Real compact/JSON success returns only stable account, attempt, message, and thread identity plus status, reconciliation, reuse state, and schema metadata. It omits recipients, BCC, subject, bodies, custom headers, idempotency key, and raw-storage coordinates. Dry-run JSON intentionally contains the full normalized review request and must be treated as private message content.
 
+## `icloud mail draft create` / `update`
+
+Create a local draft or replace one saved revision without contacting iCloud:
+
+```bash
+icloud mail draft create --to client@example.com --subject 'Idea' --body-file draft.txt
+icloud mail draft update drf_… --to client@example.com --subject 'Revised' --body-file revised.txt --attach report.pdf
+```
+
+Both commands accept the same message-building inputs as a new send: repeatable To/Cc/Bcc addresses, Reply-To, text/HTML bodies or files/stdin, safe custom headers, and reviewed regular-file attachments with optional filename/media-type overrides. Empty recipients, subject, or body are allowed while the message is unfinished. BCC is preserved in the saved draft MIME but omitted from ordinary compact and JSON output.
+
+`create` returns a stable `drf_…` at revision 1. `update` keeps that draft ID, increments the revision, and leaves any confirmed provider copy as recoverable previous state until a replacement is synchronized.
+
+## `icloud mail draft list` / `show`
+
+Read drafts from local state without contacting iCloud:
+
+```bash
+icloud mail draft list --limit 20
+icloud mail draft show drf_…
+icloud mail draft show drf_… --full
+icloud mail draft show drf_… --format raw
+```
+
+`list` is bounded to 1–100 results. `show` defaults to compact content and supports the same explicit progressive expansions used by message reads: complete decoded text with `--full`, `--format text|html|raw`, `--headers`, `--body-only`, `--verbose`, and `--json`. BCC remains omitted from decoded header output; raw MIME is an intentional complete-content expansion and can contain the saved BCC header.
+
+## `icloud mail draft sync`
+
+Synchronize provider drafts and upload local revisions:
+
+```bash
+icloud mail draft sync
+icloud mail draft sync drf_… --limit 20
+icloud mail draft sync drf_… --folder Drafts
+```
+
+Without a draft ID, sync adopts bounded provider-native `\Draft` messages into the same local draft list and reconciles pending local drafts. A local revision is APPENDed with `\Draft` and `\Seen`; when APPENDUID is available it is recorded directly, otherwise the CLI requires exact current Message-ID/content evidence before considering the revision synchronized. Updates append the new revision before removing the previous confirmed copy.
+
+The normal selector is the provider-advertised Drafts role. `--folder <selector>` is only an explicit fallback for an unclassified selectable mailbox when iCloud advertises no Drafts role. It does not persist or infer a system role, and an override is rejected when the provider already exposes a distinct Drafts role.
+
+Compact output reports bounded observed/appended/reconciled/cleaned/pending counts and stable IDs. `--verbose` adds recovery state; `--json` returns the structured bounded result.
+
+## `icloud mail draft send`
+
+Preview or send the exact saved revision:
+
+```bash
+icloud mail draft send drf_… --dry-run
+icloud mail draft send drf_… --dry-run --headers
+icloud mail draft send drf_… --yes
+```
+
+The dry run reuses ordinary send review modes and never contacts SMTP or deletes the draft. A real draft send derives an idempotency key from the stable draft ID and revision, then uses the same pending/sent/failed/unknown outbound-attempt path as `mail send`. Non-interactive execution requires `--yes`.
+
+Known provider draft versions are removed only after the send is proven sent. An unknown SMTP outcome preserves the draft and its provider copy. If the message is proven sent but cleanup cannot finish, the draft remains in cleanup-pending state so `draft sync` or an idempotent repeated draft-send cleanup can resume without another SMTP submission.
+
+## `icloud mail draft delete`
+
+Review and then remove one draft without sending it:
+
+```bash
+icloud mail draft delete drf_… --dry-run
+icloud mail draft delete drf_… --yes
+```
+
+The real operation deletes every known present `\Draft` provider version first and removes local draft state only after provider deletion is confirmed. Non-interactive deletion requires `--yes`; unresolved provider deletion remains visible instead of being reported as success.
+
 ## `icloud mail reply` / `reply-all`
 
 Reply to one exact locally synchronized message:
@@ -793,7 +860,7 @@ Compact output:
 capabilities
 command=icloud
 version=0.1.0
-schema=17
+schema=18
 account_mode=validated_lifecycle
 credentials=keyring,env,file
 network_validation=true

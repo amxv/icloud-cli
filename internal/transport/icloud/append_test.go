@@ -132,3 +132,57 @@ func (reader *boundedSentSource) Read(buffer []byte) (int, error) {
 	}
 	return reader.reader.Read(buffer)
 }
+
+func TestAppendMailboxPreservesDraftAndSeenFlags(t *testing.T) {
+	const (
+		username = "draft-user"
+		password = "draft-password"
+	)
+	memServer := imapmemserver.New()
+	user := imapmemserver.NewUser(username, password)
+	if err := user.Create("Drafts", nil); err != nil {
+		t.Fatal(err)
+	}
+	memServer.AddUser(user)
+	certificate := newTestCertificate(t)
+	server := imapserver.New(&imapserver.Options{
+		NewSession: func(*imapserver.Conn) (imapserver.Session, *imapserver.GreetingData, error) {
+			return memServer.NewSession(), nil, nil
+		},
+		TLSConfig: &tls.Config{Certificates: []tls.Certificate{certificate.certificate}, MinVersion: tls.VersionTLS12},
+		Caps:      imap.CapSet{imap.CapIMAP4rev1: {}, imap.CapUIDPlus: {}},
+	})
+	listener, err := tls.Listen("tcp", "127.0.0.1:0", serverTLSConfig(certificate))
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = server.Serve(listener) }()
+	defer server.Close()
+	_, port, err := net.SplitHostPort(listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := New(Config{
+		IMAPHost: "127.0.0.1", IMAPPort: port, StageTimeout: 5 * time.Second,
+		TLSConfig: &tls.Config{RootCAs: certificate.pool, ServerName: "localhost", MinVersion: tls.VersionTLS12},
+	})
+	raw := []byte("From: owner@example.test\r\nMessage-ID: <draft-append@example.test>\r\nSubject: Draft\r\n\r\ndraft-body\r\n")
+	result, err := client.AppendMailbox(context.Background(), transport.AuthRequest{Username: username, Password: []byte(password)}, transport.MailboxAppendRequest{
+		Mailbox: "Drafts", Message: bytes.NewReader(raw), Size: int64(len(raw)), InternalDate: time.Date(2026, 8, 7, 1, 0, 0, 0, time.UTC),
+		Flags: []string{`\Draft`, `\Seen`},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Mailbox != "Drafts" || result.UIDValidity != 1 || result.UID != 1 {
+		t.Fatalf("append result = %+v", result)
+	}
+	page, err := client.FetchInboxPage(context.Background(), transport.AuthRequest{Username: username, Password: []byte(password)}, transport.InboxFetchRequest{Mailbox: "Drafts", Bootstrap: true, Limit: 20}, blob.New(t.TempDir()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer abortFetched(page.Messages)
+	if len(page.Messages) != 1 || !slices.Contains(page.Messages[0].Flags, `\Draft`) || !slices.Contains(page.Messages[0].Flags, `\Seen`) {
+		t.Fatalf("fetched Drafts page = %+v", page)
+	}
+}

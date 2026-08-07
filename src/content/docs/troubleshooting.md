@@ -364,7 +364,25 @@ For deletion, refresh counts with `icloud mail folders status`. A non-empty cust
 
 ## Archive or Drafts says kind other
 
-The provider did not advertise a corresponding special-use attribute. The CLI deliberately does not infer Archive, Drafts, Trash, or Junk roles from an English display name. Select the folder by stable ID or name and enable it explicitly when future synchronization should include it.
+The provider did not advertise a corresponding special-use attribute. The CLI deliberately does not infer Archive, Drafts, Trash, or Junk roles from an English display name.
+
+For ordinary folder synchronization, select the discovered folder by stable ID or name and enable it explicitly when you want it included. For the draft lifecycle, keep the provider classification unchanged and explicitly select the discovered mailbox for that operation:
+
+```bash
+icloud mail draft sync drf_… --folder Drafts
+```
+
+The selector does not relabel the mailbox as a trusted system folder. If iCloud later advertises a real Drafts role, the CLI uses that provider role and rejects an override to a different ordinary folder.
+
+## A draft was sent but cleanup is pending
+
+Do not send the draft again. The outbound attempt is already proven sent; only provider/local draft cleanup remains.
+
+```bash
+icloud mail draft sync drf_…
+```
+
+If this account exposes Drafts as `kind=other`, add the same explicit `--folder <selector>` you used for upload. Sync retries cleanup only from saved provider locations and proven send state. If the error instead says the SMTP outcome is unknown, keep the draft intact and verify Sent plus the recipient before taking any deliberate retry action.
 
 ## A removed folder still appears
 

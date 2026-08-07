@@ -209,6 +209,14 @@ type OutboundReconcileSummary struct {
 }
 
 func NormalizeSendRequest(value SendRequest) (SendRequest, error) {
+	return normalizeMessageRequest(value, true, true, true)
+}
+
+func NormalizeDraftRequest(value SendRequest) (SendRequest, error) {
+	return normalizeMessageRequest(value, false, false, false)
+}
+
+func normalizeMessageRequest(value SendRequest, requireTo, requireSubject, requireBody bool) (SendRequest, error) {
 	value.Kind = normalizeOutboundKind(value.Kind)
 	value.ParentMessageID = strings.TrimSpace(value.ParentMessageID)
 	value.SourceMessageID = strings.TrimSpace(value.SourceMessageID)
@@ -232,7 +240,7 @@ func NormalizeSendRequest(value SendRequest) (SendRequest, error) {
 	if err != nil {
 		return SendRequest{}, fmt.Errorf("%w: Bcc recipients", ErrInvalidSendRequest)
 	}
-	if len(value.To) == 0 {
+	if requireTo && len(value.To) == 0 {
 		return SendRequest{}, fmt.Errorf("%w: at least one To recipient is required", ErrInvalidSendRequest)
 	}
 	if len(value.To)+len(value.CC)+len(value.BCC) > MaxSendRecipients {
@@ -247,12 +255,12 @@ func NormalizeSendRequest(value SendRequest) (SendRequest, error) {
 		value.ReplyTo = &normalized
 	}
 	value.Subject = cleanSendHeaderText(value.Subject)
-	if value.Subject == "" || utf8.RuneCountInString(value.Subject) > MaxSendSubjectRunes {
+	if (requireSubject && value.Subject == "") || utf8.RuneCountInString(value.Subject) > MaxSendSubjectRunes {
 		return SendRequest{}, fmt.Errorf("%w: subject is required and must fit RFC line bounds", ErrInvalidSendRequest)
 	}
 	value.TextBody = normalizeBody(value.TextBody)
 	value.HTMLBody = normalizeBody(value.HTMLBody)
-	if value.TextBody == "" && value.HTMLBody == "" {
+	if requireBody && value.TextBody == "" && value.HTMLBody == "" {
 		return SendRequest{}, fmt.Errorf("%w: a text or HTML body is required", ErrInvalidSendRequest)
 	}
 	if len(value.TextBody) > MaxSendBodyBytes || len(value.HTMLBody) > MaxSendBodyBytes {
@@ -418,6 +426,31 @@ func dedupeCrossLists(value *SendRequest) {
 	value.To = filter(value.To)
 	value.CC = filter(value.CC)
 	value.BCC = filter(value.BCC)
+}
+
+func SafeCustomHeaders(fields []HeaderField) []CustomHeader {
+	if len(fields) == 0 {
+		return nil
+	}
+	result := make([]CustomHeader, 0, min(len(fields), MaxSendCustomHeaders))
+	seen := map[string]struct{}{}
+	for _, field := range fields {
+		if len(result) >= MaxSendCustomHeaders {
+			break
+		}
+		normalized, err := normalizeCustomHeaders([]CustomHeader{{Key: field.Key, Value: field.Value}})
+		if err != nil || len(normalized) != 1 {
+			continue
+		}
+		key := strings.ToLower(normalized[0].Key)
+		if _, duplicate := seen[key]; duplicate {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, normalized[0])
+	}
+	sort.Slice(result, func(i, j int) bool { return strings.ToLower(result[i].Key) < strings.ToLower(result[j].Key) })
+	return result
 }
 
 func normalizeCustomHeaders(values []CustomHeader) ([]CustomHeader, error) {

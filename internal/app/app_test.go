@@ -216,6 +216,9 @@ func TestMailMessageHelpAdvertisesEveryExplicitContentModeWithoutCreatingState(t
 		{[]string{"--home", home, "mail", "search", "--help"}, []string{"--remote", "--all-folders", "--folder", "--attachment-name", "--result"}},
 		{[]string{"--home", home, "mail", "sync", "--help"}, []string{"backfill", "rebaseline", "repair", "--hydrate", "--folder", "--limit"}},
 		{[]string{"--home", home, "mail", "watch", "--help"}, []string{"--all-accounts", "--poll-interval", "--reconcile-interval", "--limit", "--verbose", "--jsonl", "foreground", "Ctrl-C"}},
+		{[]string{"--home", home, "mail", "draft", "--help"}, []string{"create", "update", "list", "show", "sync", "send", "delete", "iCloud-backed"}},
+		{[]string{"--home", home, "mail", "draft", "send", "--help"}, []string{"--dry-run", "--yes", "idempotent", "SMTP"}},
+		{[]string{"--home", home, "mail", "draft", "delete", "--help"}, []string{"--dry-run", "--yes", "provider"}},
 		{[]string{"--home", home, "mail", "sync", "backfill", "--help"}, []string{"--folder", "--after", "--before", "--limit", "--json", "historical"}},
 		{[]string{"--home", home, "mail", "sync", "rebaseline", "--help"}, []string{"--folder", "--current-tail", "--json", "without deleting cache"}},
 		{[]string{"--home", home, "mail", "sync", "repair", "--help"}, []string{"--check", "--apply", "--cleanup-orphans", "--yes", "--limit", "--verbose", "--json"}},
@@ -460,14 +463,14 @@ func TestCapabilitiesCompactGoldenBudget(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("exit code = %d, stderr = %q", exitCode, stderr)
 	}
-	const want = "capabilities\ncommand=icloud\nversion=dev\nschema=17\naccount_mode=validated_lifecycle\ncredentials=keyring,env,file\nnetwork_validation=true\ndiagnostics=true\nmail_folders=true\nmail_sync=true\nmail_watch=true\nmail_content=true\nmail_attachments=true\nmail_flags=true\nmail_threads=true\nmail_search=true\nmail_remote_search=true\nmail_hydration=true\nmail_send=true\nmail_reply=true\nmail_forward=true\nmail_location_mutations=true\ndefault_output=compact\njson=true\njsonl=true\ncompletion=bash,zsh,fish,powershell\nman=true\n"
+	const want = "capabilities\ncommand=icloud\nversion=dev\nschema=18\naccount_mode=validated_lifecycle\ncredentials=keyring,env,file\nnetwork_validation=true\ndiagnostics=true\nmail_folders=true\nmail_sync=true\nmail_watch=true\nmail_drafts=true\nmail_content=true\nmail_attachments=true\nmail_flags=true\nmail_threads=true\nmail_search=true\nmail_remote_search=true\nmail_hydration=true\nmail_send=true\nmail_reply=true\nmail_forward=true\nmail_location_mutations=true\ndefault_output=compact\njson=true\njsonl=true\ncompletion=bash,zsh,fish,powershell\nman=true\n"
 	if stdout != want {
 		t.Fatalf("stdout mismatch\nwant: %q\n got: %q", want, stdout)
 	}
-	if lines := strings.Count(stdout, "\n"); lines > 27 {
+	if lines := strings.Count(stdout, "\n"); lines > 28 {
 		t.Fatalf("line budget exceeded: %d", lines)
 	}
-	if len(stdout) > 565 {
+	if len(stdout) > 590 {
 		t.Fatalf("byte budget exceeded: %d", len(stdout))
 	}
 	for _, unwanted := range []string{"{", "}", "\x1b[", "│", "Command:", "Version:"} {
@@ -490,7 +493,7 @@ func TestCapabilitiesJSONEnvelope(t *testing.T) {
 		t.Fatalf("ok = %#v", envelope["ok"])
 	}
 	data, ok := envelope["data"].(map[string]any)
-	if !ok || data["data_schema_version"] != float64(store.SchemaVersion) || data["network_validation"] != true || data["diagnostics"] != true || data["mail_folders"] != true || data["mail_sync"] != true || data["mail_watch"] != true || data["mail_content"] != true || data["mail_attachments"] != true || data["mail_flags"] != true || data["mail_threads"] != true || data["mail_search"] != true || data["mail_remote_search"] != true || data["mail_hydration"] != true || data["mail_send"] != true || data["mail_reply"] != true || data["mail_forward"] != true || data["mail_location_mutations"] != true || data["output"].(map[string]any)["jsonl"] != true {
+	if !ok || data["data_schema_version"] != float64(store.SchemaVersion) || data["network_validation"] != true || data["diagnostics"] != true || data["mail_folders"] != true || data["mail_sync"] != true || data["mail_watch"] != true || data["mail_drafts"] != true || data["mail_content"] != true || data["mail_attachments"] != true || data["mail_flags"] != true || data["mail_threads"] != true || data["mail_search"] != true || data["mail_remote_search"] != true || data["mail_hydration"] != true || data["mail_send"] != true || data["mail_reply"] != true || data["mail_forward"] != true || data["mail_location_mutations"] != true || data["output"].(map[string]any)["jsonl"] != true {
 		t.Fatalf("data = %#v", envelope["data"])
 	}
 	if strings.Contains(stdout, "\x1b[") {

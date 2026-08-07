@@ -699,6 +699,13 @@ ON CONFLICT(content_hash) DO NOTHING`,
 		return false, false, 0, err
 	}
 	record.MessageID = resolution.MessageID
+	preserveDraft, err := pendingDraftOwnsCanonicalContent(ctx, tx, record.MessageID, record.RawContentHash)
+	if err != nil {
+		return false, false, 0, err
+	}
+	if preserveDraft {
+		resolution.PreserveLogical = true
+	}
 	if !resolution.PreserveLogical {
 		if err := upsertLogicalMessage(ctx, tx, record, timestamp); err != nil {
 			return false, false, 0, err
@@ -787,6 +794,27 @@ WHERE account_id = ? AND folder_id = ? AND uid_validity = ? AND uid = ?`,
 		return false, false, 0, err
 	}
 	return resolution.Created, resolution.Merged, len(resolution.Conflicts), nil
+}
+
+func pendingDraftOwnsCanonicalContent(ctx context.Context, tx *sql.Tx, messageID, observedRawHash string) (bool, error) {
+	var state, localRawHash string
+	err := tx.QueryRowContext(ctx, `
+SELECT d.sync_state, s.raw_content_hash
+FROM mail_drafts AS d
+JOIN local_message_sources AS s ON s.message_id = d.message_id
+WHERE d.message_id = ?`, strings.TrimSpace(messageID)).Scan(&state, &localRawHash)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("inspect pending draft canonical content: %w", err)
+	}
+	switch maildomain.DraftSyncState(state) {
+	case maildomain.DraftLocal, maildomain.DraftReconcile, maildomain.DraftCleanupPending, maildomain.DraftSendUnknown:
+		return strings.TrimSpace(localRawHash) != "" && !strings.EqualFold(strings.TrimSpace(localRawHash), strings.TrimSpace(observedRawHash)), nil
+	default:
+		return false, nil
+	}
 }
 
 func upsertLogicalMessage(ctx context.Context, tx *sql.Tx, record maildomain.IngestRecord, timestamp string) error {
@@ -1604,7 +1632,7 @@ ORDER BY present DESC, folder_id, uid`, value.ID)
 		}
 		value.Locations = append(value.Locations, location)
 		if location.Present && location.Flags.Eligible() {
-			if location.FolderKind != "sent" {
+			if location.FolderKind != "sent" && location.FolderKind != "drafts" && !location.Flags.Draft {
 				value.Unread = value.Unread || !location.Flags.Seen
 			}
 			value.Flagged = value.Flagged || location.Flags.Flagged

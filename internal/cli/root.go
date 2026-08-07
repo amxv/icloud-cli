@@ -104,6 +104,7 @@ type capabilitiesData struct {
 	MailFolders           bool             `json:"mail_folders"`
 	MailSync              bool             `json:"mail_sync"`
 	MailWatch             bool             `json:"mail_watch"`
+	MailDrafts            bool             `json:"mail_drafts"`
 	MailContent           bool             `json:"mail_content"`
 	MailAttachments       bool             `json:"mail_attachments"`
 	MailFlags             bool             `json:"mail_flags"`
@@ -334,6 +335,7 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				MailFolders:           true,
 				MailSync:              true,
 				MailWatch:             true,
+				MailDrafts:            true,
 				MailContent:           true,
 				MailAttachments:       true,
 				MailFlags:             true,
@@ -371,6 +373,7 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				Field("mail_folders", data.MailFolders),
 				Field("mail_sync", data.MailSync),
 				Field("mail_watch", data.MailWatch),
+				Field("mail_drafts", data.MailDrafts),
 				Field("mail_content", data.MailContent),
 				Field("mail_attachments", data.MailAttachments),
 				Field("mail_flags", data.MailFlags),

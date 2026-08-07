@@ -277,8 +277,8 @@ func (commands accountCommands) syncMailbox(
 	}, usedUsername, nil
 }
 
-func messageDirection(accountValue account.Account, folderValue folder.Folder, parsed maildomain.ParsedMessage) maildomain.Direction {
-	if folderValue.Kind == folder.KindSent || strings.EqualFold(strings.TrimSpace(parsed.From.Email), strings.TrimSpace(accountValue.Email)) {
+func messageDirection(accountValue account.Account, folderValue folder.Folder, parsed maildomain.ParsedMessage, flags maildomain.LocationFlags) maildomain.Direction {
+	if folderValue.Kind == folder.KindSent || folderValue.Kind == folder.KindDrafts || flags.Draft || strings.EqualFold(strings.TrimSpace(parsed.From.Email), strings.TrimSpace(accountValue.Email)) {
 		return maildomain.DirectionOutbound
 	}
 	return maildomain.DirectionInbound

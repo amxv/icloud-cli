@@ -24,7 +24,7 @@ func executeWatchTest(t *testing.T, service MailService, args ...string) (Result
 	t.Helper()
 	var stdout, stderr bytes.Buffer
 	result := Execute(context.Background(), args, Config{
-		Version: "test", SchemaVersion: 17, Stdout: &stdout, Stderr: &stderr, Mail: service,
+		Version: "test", SchemaVersion: 18, Stdout: &stdout, Stderr: &stderr, Mail: service,
 	})
 	return result, stdout.String(), stderr.String()
 }

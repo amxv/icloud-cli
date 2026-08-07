@@ -30,7 +30,7 @@ version
 capabilities
 command=icloud
 version=0.1.0
-schema=17
+schema=18
 account_mode=validated_lifecycle
 credentials=keyring,env,file
 network_validation=true
@@ -165,6 +165,40 @@ icloud mail send \
 ```
 
 Success returns only stable attempt, message, and thread IDs plus attachment counts and reconciliation state. BCC addresses remain in the SMTP envelope and are omitted from the composed message. An `unknown` result means acceptance could not be proved either way and must not be retried automatically. Run `icloud mail sync --reconcile-outbound` before considering an explicit linked retry. Read [Send mail safely](/docs/send-mail-safely) for text/HTML input, attachments, display names, Reply-To, custom headers, dry-run expansions, idempotency, Sent confirmation, and recovery.
+
+## Save work as a draft before sending
+
+Create a draft locally first when the message is not ready to leave the machine:
+
+```bash
+icloud mail draft create \
+  --to client@example.com \
+  --subject 'Project update' \
+  --body-file message.txt
+```
+
+`draft create` and `draft update` do not contact iCloud. Upload the current revision only when you want it available in iCloud Mail:
+
+```bash
+icloud mail draft sync drf_…
+```
+
+If `icloud mail folders status` shows the real provider Drafts mailbox as `kind=other`, iCloud did not advertise a Drafts role. Keep that classification truthful and select the discovered mailbox explicitly for this workflow:
+
+```bash
+icloud mail draft sync drf_… --folder Drafts
+```
+
+Update locally, sync the replacement, then preview the exact saved revision before sending:
+
+```bash
+icloud mail draft update drf_… --to client@example.com --subject 'Project update' --body-file revised.txt
+icloud mail draft sync drf_… --folder Drafts
+icloud mail draft send drf_… --dry-run
+icloud mail draft send drf_… --yes
+```
+
+Replacement uploads keep the previous recoverable provider copy until the new revision is confirmed. A proven send removes known provider draft copies; an unknown SMTP outcome keeps the draft instead of guessing that it is safe to delete or resend. The [Send mail safely](/docs/send-mail-safely) guide covers listing, full-content review, attachments, BCC privacy, cleanup recovery, and deletion.
 
 Reply or forward only after selecting the exact local message ID you intend:
 

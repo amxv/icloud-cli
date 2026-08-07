@@ -1562,7 +1562,7 @@ func TestOpenUpgradesSchemaFourteenForwardAndLocationStateIntoEmptyMutationLedge
 		t.Fatal(err)
 	}
 	defer state.Close()
-	if state.SchemaVersion() != 17 {
+	if state.SchemaVersion() != 18 {
 		t.Fatalf("schema version = %d", state.SchemaVersion())
 	}
 	attempt, err := state.Outbound().Attempt(context.Background(), attemptID)

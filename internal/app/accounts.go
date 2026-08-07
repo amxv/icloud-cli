@@ -33,6 +33,7 @@ type accountCommands struct {
 	flags           transport.IMAPFlagClient
 	locations       transport.IMAPLocationClient
 	sent            transport.IMAPSentAppender
+	appendMailbox   transport.IMAPMailboxAppender
 	blobs           func(config.AppPaths) blob.Stager
 	attachmentBlobs func(config.AppPaths) attachmentBlobStore
 	now             func() time.Time

@@ -24,12 +24,24 @@ func GenerateOutboundMessageID(fromEmail string) (string, error) {
 }
 
 func ComposeOutboundMessage(writer io.Writer, request SendRequest, messageID string, sentAt time.Time) error {
-	if writer == nil {
-		return errors.New("outbound message writer is required")
-	}
 	request, err := NormalizeSendRequest(request)
 	if err != nil {
 		return err
+	}
+	return composeMessage(writer, request, messageID, sentAt, false)
+}
+
+func ComposeDraftMessage(writer io.Writer, request SendRequest, messageID string, savedAt time.Time) error {
+	request, err := NormalizeDraftRequest(request)
+	if err != nil {
+		return err
+	}
+	return composeMessage(writer, request, messageID, savedAt, true)
+}
+
+func composeMessage(writer io.Writer, request SendRequest, messageID string, sentAt time.Time, includeBCC bool) error {
+	if writer == nil {
+		return errors.New("outbound message writer is required")
 	}
 	messageID = strings.Trim(strings.TrimSpace(messageID), "<>")
 	if messageID == "" || sentAt.IsZero() {
@@ -37,8 +49,15 @@ func ComposeOutboundMessage(writer io.Writer, request SendRequest, messageID str
 	}
 	var header gomail.Header
 	header.SetAddressList("From", []*gomail.Address{toGoMailAddress(request.From)})
-	header.SetAddressList("To", toGoMailAddresses(request.To))
-	header.SetAddressList("Cc", toGoMailAddresses(request.CC))
+	if len(request.To) > 0 {
+		header.SetAddressList("To", toGoMailAddresses(request.To))
+	}
+	if len(request.CC) > 0 {
+		header.SetAddressList("Cc", toGoMailAddresses(request.CC))
+	}
+	if includeBCC && len(request.BCC) > 0 {
+		header.SetAddressList("Bcc", toGoMailAddresses(request.BCC))
+	}
 	if request.ReplyTo != nil {
 		header.SetAddressList("Reply-To", []*gomail.Address{toGoMailAddress(*request.ReplyTo)})
 	}

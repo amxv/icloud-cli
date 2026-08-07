@@ -1,9 +1,9 @@
 ---
 title: Send mail safely
-description: Preview, send, reply, and forward through iCloud Mail with explicit message selection, confirmation, idempotency, BCC privacy, streamed attachments, and honest delivery outcomes.
+description: Preview, draft, send, reply, and forward through iCloud Mail with explicit message selection, confirmation, idempotency, BCC privacy, streamed attachments, and honest delivery outcomes.
 order: 8
 category: Guides
-summary: Dry-run review, exact-message replies and forwards, recipient and original-content review, attachments, privacy, idempotency, Sent reconciliation, and unknown-outcome recovery.
+summary: Dry-run review, recoverable drafts, exact-message replies and forwards, attachments, privacy, idempotency, Sent reconciliation, and unknown-outcome recovery.
 ---
 
 ## Preview the exact request first
@@ -66,6 +66,62 @@ reused=false
 ```
 
 The submitted subject, body, recipients, BCC list, and custom headers are not echoed after a real send. The accepted message is immediately readable and searchable through its local `msg_…` and `thr_…` IDs.
+
+## Keep an unfinished message as a recoverable draft
+
+Draft creation is local-only, so you can assemble recipients, text/HTML, safe custom headers, and ordinary attachments without opening IMAP or SMTP:
+
+```bash
+icloud mail draft create \
+  --to client@example.com \
+  --subject 'Project update' \
+  --body-file message.txt \
+  --attach report.pdf
+```
+
+The returned `drf_…` remains the stable draft ID across revisions. `draft update` replaces the saved revision locally; it does not silently edit the provider copy first:
+
+```bash
+icloud mail draft update drf_… \
+  --to client@example.com \
+  --subject 'Project update — revised' \
+  --body-file revised.txt \
+  --attach report.pdf
+```
+
+Use `draft list` for a bounded overview and `draft show drf_…` for one saved draft. Default compact and JSON views hide BCC addresses. Complete decoded text, HTML, headers, body-only output, or raw MIME requires the corresponding explicit `draft show` expansion.
+
+Synchronize only when you want the revision in iCloud Mail:
+
+```bash
+icloud mail draft sync drf_…
+```
+
+The CLI normally selects the provider-advertised Drafts role. Some iCloud accounts expose a selectable Drafts mailbox without advertising that role; `folders status` then truthfully shows `kind=other`. In that case, select the discovered mailbox explicitly instead of teaching the CLI to guess from its English name:
+
+```bash
+icloud mail draft sync drf_… --folder Drafts
+```
+
+An update uploads the replacement before deleting the previous confirmed provider version. If APPEND succeeds but its UID is unavailable, sync reconciles the exact generated Message-ID and current raw content before removing an older copy. If that proof is interrupted, the previous version remains recoverable and the draft reports a recovery state rather than deleting first.
+
+When the draft is ready, preview the exact stored revision, then send it through the same outbound attempt path as `mail send`:
+
+```bash
+icloud mail draft send drf_… --dry-run
+icloud mail draft send drf_… --yes
+```
+
+Draft sends derive a stable idempotency key from the draft ID and revision. A proven send removes known `\Draft` provider copies before removing the local draft. If SMTP acceptance is unknown, the draft and provider copy stay in place. If the message is proven sent but cleanup is incomplete, do not resend; run `icloud mail draft sync drf_…` (adding the explicit `--folder` selector when needed) so cleanup can resume from the saved attempt state.
+
+Delete without sending only after reviewing the scope:
+
+```bash
+icloud mail draft delete drf_… --dry-run
+icloud mail draft delete drf_… --yes
+```
+
+Deletion removes the known provider draft versions first and then the local draft. It refuses to claim success when provider deletion is unresolved.
 
 ## Reply to the exact message you intend
 

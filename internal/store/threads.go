@@ -423,7 +423,7 @@ ORDER BY r.message_id, r.kind, r.ordinal`, recipientArgs...)
 	}
 	locationRows, err := tx.QueryContext(ctx, `
 SELECT l.message_id, l.folder_id,
-       MAX(CASE WHEN f.kind <> 'sent' AND l.seen = 0 THEN 1 ELSE 0 END)
+       MAX(CASE WHEN f.kind NOT IN ('sent', 'drafts') AND l.draft = 0 AND l.seen = 0 THEN 1 ELSE 0 END)
 FROM message_locations AS l
 `+locationScopeJoin+`
 JOIN folders AS f ON f.folder_id = l.folder_id

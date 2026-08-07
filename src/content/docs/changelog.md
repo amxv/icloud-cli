@@ -8,6 +8,9 @@ summary: Public command, output, installation, and documentation changes.
 
 ## Unreleased
 
+- Added `mail draft create|update|list|show|sync|send|delete` with local-first revisions, streamed attachments, saved BCC/custom headers, provider-native draft adoption, and explicit full-content read modes.
+- Added safe iCloud Drafts replacement and cleanup: new revisions are confirmed before previous copies are removed, APPENDUID-less uploads require exact reconciliation, unknown sends preserve drafts, and proven sends clean provider `\Draft` copies through the normal idempotent outbound path.
+- Added an explicit `mail draft sync --folder <selector>` fallback for accounts where iCloud exposes a Drafts mailbox without advertising a Drafts role. The fallback never relabels or infers the mailbox role from its English name.
 - Added resumable bounded `mail sync backfill` with an independent historical cursor, optional UTC date window, cancellation-safe page commits, and no movement of the ordinary new-mail checkpoint.
 - Added explicit `mail sync rebaseline --current-tail` to move one forward frontier to freshly verified provider state while preserving cached messages and historical-backfill progress.
 - Added bounded check-first `mail sync repair` for search/index drift, temporary blob leftovers, UID/frontier problems, relational/location/thread consistency, canonical blob availability, unresolved dedupe evidence, and outbound reconciliation. Apply mode fixes only deterministic evidence; ambiguous identity and missing/corrupt canonical bytes remain visible.

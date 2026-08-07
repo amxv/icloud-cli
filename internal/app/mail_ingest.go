@@ -99,7 +99,7 @@ func (commands accountCommands) prepareFetchedMailRecords(
 		)
 		record.Content = &normalized
 		record.ModSequence = fetched.ModSequence
-		record.Direction = messageDirection(accountValue, folderValue, normalized.Preview)
+		record.Direction = messageDirection(accountValue, folderValue, normalized.Preview, maildomain.ParseLocationFlags(fetched.Flags))
 		record.ContentFingerprint = maildomain.BuildContentFingerprint(
 			accountValue.ID, normalized.Preview, fetched.InternalDate, normalized.Attachments,
 		)
