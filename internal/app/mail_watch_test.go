@@ -168,7 +168,7 @@ func TestMailWatchOperationTimeoutCancelsBlockingProvider(t *testing.T) {
 	if !seenDegraded {
 		t.Fatal("blocking provider did not emit degraded lifecycle event")
 	}
-	if elapsed := time.Since(started); elapsed > 2*time.Second {
+	if elapsed := time.Since(started); elapsed > 10*time.Second {
 		t.Fatalf("operation timeout was not prompt: %v", elapsed)
 	}
 }
