@@ -91,13 +91,36 @@ func newMailDraftCommand(state *executionState) *cobra.Command {
 
 func newDraftSaveCommand(state *executionState, update bool) *cobra.Command {
 	var flags sendFlags
+	var input jsonInputOptions
 	use, short, args := "create", "Create one local draft without contacting iCloud", cobra.NoArgs
 	if update {
-		use, short, args = "update <draft-id>", "Replace one draft revision locally before its next provider sync", cobra.ExactArgs(1)
+		use, short, args = "update <draft-id>", "Replace one draft revision locally before its next provider sync", exactArgsOrJSONInput(&input, 1)
 	}
 	command := &cobra.Command{Use: use, Short: short, Args: args,
 		Example: "  icloud mail draft create --subject 'Idea' --body 'Incomplete is okay'\n  icloud mail draft update drf_… --to client@example.com --subject 'Ready soon' --body-file draft.txt",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			draftID := ""
+			if len(args) == 1 {
+				draftID = strings.TrimSpace(args[0])
+			}
+			var jsonRequest draftSaveJSONRequest
+			if used, inputErr := readJSONInput(cmd, state, input, &jsonRequest,
+				"to", "cc", "bcc", "reply-to", "subject", "body", "body-file", "html-body", "html-body-file", "header", "attach", "attach-name", "attach-type"); inputErr != nil {
+				return inputErr
+			} else if used {
+				if !update && strings.TrimSpace(jsonRequest.DraftID) != "" {
+					return NewAppError(ErrorUsage, "draft_id is only valid for draft update", false)
+				}
+				if update {
+					draftID = strings.TrimSpace(jsonRequest.DraftID)
+				}
+				if jsonInputConsumesStdin(input) && draftComposeConsumesStdin(jsonRequest.Message) {
+					return NewAppError(ErrorUsage, "body_file cannot read stdin when --input-json also reads stdin", false)
+				}
+				jsonOutput := flags.JSON
+				flags = jsonRequest.Message.sendFlags()
+				flags.JSON = jsonOutput
+			}
 			request, _, err := sendRequestFromFlags(state, flags)
 			if err != nil {
 				return err
@@ -106,7 +129,7 @@ func newDraftSaveCommand(state *executionState, update bool) *cobra.Command {
 			var value maildomain.Draft
 			var schemaVersion int64
 			if update {
-				accountValue, value, schemaVersion, err = state.mail.MailDraftUpdate(cmd.Context(), state.global.Home, state.global.Account, args[0], request)
+				accountValue, value, schemaVersion, err = state.mail.MailDraftUpdate(cmd.Context(), state.global.Home, state.global.Account, draftID, request)
 			} else {
 				accountValue, value, schemaVersion, err = state.mail.MailDraftCreate(cmd.Context(), state.global.Home, state.global.Account, request)
 			}
@@ -121,6 +144,7 @@ func newDraftSaveCommand(state *executionState, update bool) *cobra.Command {
 	}
 	bindDraftComposeFlags(command, &flags)
 	command.Flags().BoolVar(&flags.JSON, "json", false, "Emit one stable JSON success envelope")
+	bindJSONInput(command, &input)
 	return command
 }
 
@@ -246,7 +270,8 @@ func newDraftSyncCommand(state *executionState) *cobra.Command {
 	var limit int
 	var folderSelector string
 	var jsonOutput, verbose bool
-	command := &cobra.Command{Use: "sync [draft-id]", Short: "Synchronize provider Drafts and safely upload local revisions", Args: cobra.MaximumNArgs(1),
+	var input jsonInputOptions
+	command := &cobra.Command{Use: "sync [draft-id]", Short: "Synchronize provider Drafts and safely upload local revisions", Args: maximumArgsOrJSONInput(&input, 1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput, Verbose: verbose}, OutputSupport{JSON: true, Verbose: true}); err != nil {
 				return err
@@ -254,6 +279,18 @@ func newDraftSyncCommand(state *executionState) *cobra.Command {
 			draftID := ""
 			if len(args) == 1 {
 				draftID = args[0]
+			}
+			var jsonRequest draftSyncJSONRequest
+			if used, err := readJSONInput(cmd, state, input, &jsonRequest, "folder", "limit"); err != nil {
+				return err
+			} else if used {
+				draftID, folderSelector = jsonRequest.DraftID, jsonRequest.Folder
+				if jsonRequest.Limit != nil {
+					limit = *jsonRequest.Limit
+				}
+			}
+			if limit < 1 || limit > MaximumPageSize {
+				return NewAppError(ErrorUsage, "--limit must be between 1 and 100", false)
 			}
 			accountValue, summary, values, schemaVersion, err := state.mail.MailDraftSync(cmd.Context(), state.global.Home, state.global.Account, folderSelector, draftID, limit)
 			if err != nil {
@@ -284,14 +321,26 @@ func newDraftSyncCommand(state *executionState) *cobra.Command {
 	command.Flags().IntVar(&limit, "limit", DefaultPageSize, "Maximum provider messages committed per Drafts sync page (1-100)")
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
 	command.Flags().BoolVar(&verbose, "verbose", false, "Include resulting draft recovery state")
+	bindJSONInput(command, &input)
 	return command
 }
 
 func newDraftSendCommand(state *executionState) *cobra.Command {
 	var dryRun, yes, jsonOutput, verbose, showHeaders bool
 	var format string
-	command := &cobra.Command{Use: "send <draft-id>", Short: "Preview or send one draft through the normal idempotent outbound path", Args: cobra.ExactArgs(1),
+	var input jsonInputOptions
+	command := &cobra.Command{Use: "send <draft-id>", Short: "Preview or send one draft through the normal idempotent outbound path", Args: exactArgsOrJSONInput(&input, 1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			draftID := ""
+			if len(args) == 1 {
+				draftID = strings.TrimSpace(args[0])
+			}
+			var jsonRequest draftTargetJSONRequest
+			if used, err := readJSONInput(cmd, state, input, &jsonRequest); err != nil {
+				return err
+			} else if used {
+				draftID = strings.TrimSpace(jsonRequest.DraftID)
+			}
 			if dryRun && yes {
 				return NewAppError(ErrorUsage, "--dry-run and --yes cannot be combined", false)
 			}
@@ -299,7 +348,7 @@ func newDraftSendCommand(state *executionState) *cobra.Command {
 				return NewAppError(ErrorUsage, "--verbose, --headers, and --format are dry-run preview expansions", false)
 			}
 			if dryRun {
-				accountValue, value, preview, schemaVersion, err := state.mail.MailDraftSendPreview(cmd.Context(), state.global.Home, state.global.Account, args[0])
+				accountValue, value, preview, schemaVersion, err := state.mail.MailDraftSendPreview(cmd.Context(), state.global.Home, state.global.Account, draftID)
 				if err != nil {
 					return err
 				}
@@ -313,7 +362,7 @@ func newDraftSendCommand(state *executionState) *cobra.Command {
 				return NewAppError(ErrorSafety, "non-interactive draft send requires --yes", false)
 			}
 			if !yes {
-				_, _, preview, _, err := state.mail.MailDraftSendPreview(cmd.Context(), state.global.Home, state.global.Account, args[0])
+				_, _, preview, _, err := state.mail.MailDraftSendPreview(cmd.Context(), state.global.Home, state.global.Account, draftID)
 				if err != nil {
 					return err
 				}
@@ -328,7 +377,7 @@ func newDraftSendCommand(state *executionState) *cobra.Command {
 					return NewAppError(ErrorSafety, "draft send canceled before contacting SMTP", false)
 				}
 			}
-			accountValue, value, attempt, reused, schemaVersion, err := state.mail.MailDraftSend(cmd.Context(), state.global.Home, state.global.Account, args[0])
+			accountValue, value, attempt, reused, schemaVersion, err := state.mail.MailDraftSend(cmd.Context(), state.global.Home, state.global.Account, draftID)
 			if err != nil {
 				return err
 			}
@@ -344,17 +393,29 @@ func newDraftSendCommand(state *executionState) *cobra.Command {
 	command.Flags().BoolVar(&verbose, "verbose", false, "With --dry-run, include normalized header detail")
 	command.Flags().BoolVar(&showHeaders, "headers", false, "With --dry-run, print normalized safe headers")
 	command.Flags().StringVar(&format, "format", "", "With --dry-run, output text, html, or raw preview content")
+	bindJSONInput(command, &input)
 	return command
 }
 
 func newDraftDeleteCommand(state *executionState) *cobra.Command {
 	var dryRun, yes, jsonOutput bool
-	command := &cobra.Command{Use: "delete <draft-id>", Short: "Delete one local draft and every known provider Drafts version", Args: cobra.ExactArgs(1),
+	var input jsonInputOptions
+	command := &cobra.Command{Use: "delete <draft-id>", Short: "Delete one local draft and every known provider Drafts version", Args: exactArgsOrJSONInput(&input, 1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			draftID := ""
+			if len(args) == 1 {
+				draftID = strings.TrimSpace(args[0])
+			}
+			var jsonRequest draftTargetJSONRequest
+			if used, err := readJSONInput(cmd, state, input, &jsonRequest); err != nil {
+				return err
+			} else if used {
+				draftID = strings.TrimSpace(jsonRequest.DraftID)
+			}
 			if dryRun && yes {
 				return NewAppError(ErrorUsage, "--dry-run and --yes cannot be combined", false)
 			}
-			accountValue, value, _, schemaVersion, err := state.mail.MailDraftShow(cmd.Context(), state.global.Home, state.global.Account, args[0])
+			accountValue, value, _, schemaVersion, err := state.mail.MailDraftShow(cmd.Context(), state.global.Home, state.global.Account, draftID)
 			if err != nil {
 				return err
 			}
@@ -378,7 +439,7 @@ func newDraftDeleteCommand(state *executionState) *cobra.Command {
 					return NewAppError(ErrorSafety, "draft delete canceled before contacting IMAP", false)
 				}
 			}
-			accountValue, value, providerCopies, schemaVersion, err = state.mail.MailDraftDelete(cmd.Context(), state.global.Home, state.global.Account, args[0])
+			accountValue, value, providerCopies, schemaVersion, err = state.mail.MailDraftDelete(cmd.Context(), state.global.Home, state.global.Account, draftID)
 			if err != nil {
 				return err
 			}
@@ -391,6 +452,7 @@ func newDraftDeleteCommand(state *executionState) *cobra.Command {
 	command.Flags().BoolVar(&dryRun, "dry-run", false, "Show the exact deletion scope without changing local or provider state")
 	command.Flags().BoolVar(&yes, "yes", false, "Confirm intentional non-interactive draft deletion")
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
+	bindJSONInput(command, &input)
 	return command
 }
 
@@ -411,7 +473,7 @@ func renderDraft(renderer *CompactTextRenderer, value maildomain.Draft, verbose 
 func draftProviderCopies(value maildomain.Draft) int {
 	count := 0
 	for _, location := range value.Message.Locations {
-		if location.Present && location.FolderKind == "drafts" {
+		if location.Present && !location.Flags.Deleted && location.Flags.Draft {
 			count++
 		}
 	}

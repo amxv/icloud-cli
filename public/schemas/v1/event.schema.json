@@ -1,0 +1,53 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/event.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "account_id": {
+      "type": "string"
+    },
+    "error": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "details": {
+          "additionalProperties": {},
+          "type": "object"
+        },
+        "message": {
+          "type": "string"
+        },
+        "retryable": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "retryable"
+      ],
+      "type": "object"
+    },
+    "event": {
+      "type": "string"
+    },
+    "payload": {},
+    "sequence": {
+      "type": "integer"
+    },
+    "timestamp": {
+      "format": "date-time",
+      "type": "string"
+    }
+  },
+  "required": [
+    "event",
+    "sequence",
+    "timestamp"
+  ],
+  "title": "iCloud CLI JSONL event",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

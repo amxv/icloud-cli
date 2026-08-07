@@ -25,6 +25,7 @@
     "scripts/postinstall.js",
     "cmd",
     "internal",
+    "schemas",
     "go.mod",
     "go.sum",
     "README.md",

@@ -1,0 +1,19 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/mail-repair-input.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "cleanup_orphans": {
+      "type": "boolean"
+    },
+    "limit": {
+      "type": "integer"
+    },
+    "mode": {
+      "type": "string"
+    }
+  },
+  "title": "mail repair JSON input",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

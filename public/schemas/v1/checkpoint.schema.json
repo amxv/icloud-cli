@@ -1,0 +1,66 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/checkpoint.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "account_id": {
+      "type": "string"
+    },
+    "bootstrap_complete": {
+      "type": "boolean"
+    },
+    "created_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "folder_id": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string"
+    },
+    "last_attempt_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "last_committed_uid": {
+      "type": "integer"
+    },
+    "last_error_code": {
+      "type": "string"
+    },
+    "last_scanned_uid": {
+      "type": "integer"
+    },
+    "last_success_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "more_available": {
+      "type": "boolean"
+    },
+    "state": {
+      "type": "string"
+    },
+    "uid_validity": {
+      "type": "integer"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "type": "string"
+    }
+  },
+  "required": [
+    "account_id",
+    "bootstrap_complete",
+    "created_at",
+    "folder_id",
+    "id",
+    "more_available",
+    "state",
+    "updated_at"
+  ],
+  "title": "iCloud CLI checkpoint",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

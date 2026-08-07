@@ -1,0 +1,76 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/account.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "created_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "credential_scheme": {
+      "type": "string"
+    },
+    "default": {
+      "type": "boolean"
+    },
+    "email": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string"
+    },
+    "imap_capabilities": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "imap_username": {
+      "type": "string"
+    },
+    "last_error_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "last_error_code": {
+      "type": "string"
+    },
+    "last_healthy_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "last_tested_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "smtp_capabilities": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "status": {
+      "type": "string"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "type": "string"
+    }
+  },
+  "required": [
+    "created_at",
+    "default",
+    "email",
+    "id",
+    "imap_username",
+    "name",
+    "status",
+    "updated_at"
+  ],
+  "title": "iCloud CLI account",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

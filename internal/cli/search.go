@@ -195,6 +195,7 @@ func renderRemoteSearchSummary(renderer *CompactTextRenderer, accountID string, 
 func newMailSearchRepairCommand(state *executionState) *cobra.Command {
 	var jsonOutput bool
 	var limit int
+	var input jsonInputOptions
 	command := &cobra.Command{
 		Use:     "repair",
 		Short:   "Rebuild a bounded batch of incomplete local body-search entries",
@@ -203,6 +204,12 @@ func newMailSearchRepairCommand(state *executionState) *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput}, OutputSupport{JSON: true}); err != nil {
 				return err
+			}
+			var jsonRequest mailSearchRepairJSONRequest
+			if used, err := readJSONInput(cmd, state, input, &jsonRequest, "limit"); err != nil {
+				return err
+			} else if used && jsonRequest.Limit != nil {
+				limit = *jsonRequest.Limit
 			}
 			if limit < 1 || limit > MaximumPageSize {
 				return NewAppError(ErrorUsage, fmt.Sprintf("--limit must be between 1 and %d", MaximumPageSize), false)
@@ -229,6 +236,7 @@ func newMailSearchRepairCommand(state *executionState) *cobra.Command {
 	}
 	command.Flags().IntVar(&limit, "limit", DefaultPageSize, fmt.Sprintf("Maximum incomplete messages to repair (1-%d)", MaximumPageSize))
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
+	bindJSONInput(command, &input)
 	return command
 }
 

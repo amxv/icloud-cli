@@ -1,0 +1,16 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/folder-selector-input.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "folder": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "folder"
+  ],
+  "title": "folder selector JSON input",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

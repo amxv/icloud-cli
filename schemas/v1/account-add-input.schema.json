@@ -1,0 +1,35 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/account-add-input.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "credential_env": {
+      "type": "string"
+    },
+    "credential_file": {
+      "type": "string"
+    },
+    "default": {
+      "type": "boolean"
+    },
+    "email": {
+      "type": "string"
+    },
+    "imap_username": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "password_stdin": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "email",
+    "name"
+  ],
+  "title": "account add JSON input",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

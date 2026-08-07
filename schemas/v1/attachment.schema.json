@@ -1,0 +1,68 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/attachment.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "availability": {
+      "type": "string"
+    },
+    "byte_size": {
+      "type": "integer"
+    },
+    "content_hash": {
+      "type": "string"
+    },
+    "content_id": {
+      "type": "string"
+    },
+    "disposition": {
+      "type": "string"
+    },
+    "error_code": {
+      "type": "string"
+    },
+    "filename": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string"
+    },
+    "inline": {
+      "type": "boolean"
+    },
+    "media_params": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "media_type": {
+      "type": "string"
+    },
+    "message_id": {
+      "type": "string"
+    },
+    "ordinal": {
+      "type": "integer"
+    },
+    "part_id": {
+      "type": "string"
+    },
+    "part_path": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "availability",
+    "byte_size",
+    "id",
+    "inline",
+    "message_id",
+    "ordinal",
+    "part_id",
+    "part_path"
+  ],
+  "title": "iCloud CLI attachment",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

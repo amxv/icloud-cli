@@ -1,0 +1,101 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/forward-input.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "include_attachments": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "message": {
+      "additionalProperties": false,
+      "properties": {
+        "attachments": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "filename": {
+                "type": "string"
+              },
+              "media_type": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "path"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "bcc": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "body": {
+          "type": "string"
+        },
+        "body_file": {
+          "type": "string"
+        },
+        "cc": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "headers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "html_body": {
+          "type": "string"
+        },
+        "html_body_file": {
+          "type": "string"
+        },
+        "idempotency_key": {
+          "type": "string"
+        },
+        "reply_to": {
+          "type": "string"
+        },
+        "retry_of": {
+          "type": "string"
+        },
+        "retry_unknown": {
+          "type": "boolean"
+        },
+        "to": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "message_id": {
+      "type": "string"
+    },
+    "original": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "message",
+    "message_id"
+  ],
+  "title": "mail forward JSON input",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

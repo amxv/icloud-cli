@@ -26,9 +26,21 @@ Running `icloud` without a command prints root help to stdout.
 | `--version` | — | Print the compact installed version and exit. |
 | `-h`, `--help` | — | Print help to stdout. |
 
+### Write input and automation schemas
+
+Every command in the explicit automation write contract accepts:
+
+```text
+--input-json <path|->
+```
+
+That contract covers account/folder configuration, bounded sync/repair, provider message mutations, drafts, outbound mail, and caller-selected exports; `icloud capabilities --json` is the authoritative command list. Read, diagnostic, and foreground-watch commands are not generic JSON-input RPC endpoints. The JSON request replaces equivalent positional/write flags; mixing the two is a usage error. Confirmation and output controls remain ordinary flags, so `--yes`, `--dry-run`, `--json`, and explicit content expansions cannot be smuggled through the request body. JSON is strict, bounded to 1 MiB, rejects unknown fields/trailing values, and cannot share stdin with a password/body stream.
+
+Run `icloud capabilities --json` for the installed automation-contract version plus the request/response schema ID for each write command. Versioned schema files ship under `schemas/v1/` and are served by this site under `/schemas/v1/`. The [Output and automation](/docs/output-and-automation) guide gives complete examples and precedence rules without duplicating every schema property here.
+
 ## `icloud account add`
 
-Create an offline account profile. `--name` and `--email` are required.
+Create an offline account profile. Name and email are required, either through the ordinary flags or the command's JSON request.
 
 ```bash
 icloud account add --name Personal --email owner@icloud.com
@@ -639,11 +651,15 @@ Late roots or bridge messages may merge provisional threads transactionally. One
 
 ```bash
 icloud mail mark-read msg_…
+icloud mail mark-read msg_… msg_… msg_…
 icloud mail mark-read msg_… --folder INBOX
-icloud mail mark-unread msg_… --json
+icloud mail mark-unread --input-json changes.json --json
+icloud mail mark-unread --input-jsonl changes.jsonl --mode continue-on-error --jsonl
 ```
 
-Adds or removes `Seen` on one exact current provider location. Without `--folder`, the message must have exactly one eligible present location. A message with several eligible copies returns conflict rather than guessing. `--folder` accepts a stable folder ID, decoded name, exact wire name, or unambiguous kind and still requires exactly one matching location.
+Adds or removes `Seen` on up to 100 exact current message locations. Without `--folder`, each message must have exactly one eligible present location. A message with several eligible copies returns conflict rather than guessing. `--folder` accepts a stable folder ID, decoded name, exact wire name, or unambiguous kind and still requires exactly one matching location.
+
+`--input-json` accepts one bounded object with `message_ids` and optional shared `folder`. `--input-jsonl` accepts one strict object per line with `message_id` and optional `folder`. `--mode atomic` validates the whole bounded input shape first, then resolves and mutates targets one by one and stops on the first target/provider failure; if an earlier provider mutation already succeeded, output explicitly reports `partial=true` plus skipped-item counts because IMAP cannot roll the earlier write back. `--mode continue-on-error` attempts every syntactically valid item. `--jsonl` emits typed per-item events followed by one completion event. Any failed item leaves the process non-zero.
 
 The provider UID and UID validity are taken from synchronized local state; the command never searches mailboxes by Message-ID or thread reference. It stores the flags returned by iCloud and recomputes the message's unread and flagged summaries across every eligible current location. Deleted or absent locations are excluded.
 
@@ -651,13 +667,14 @@ The provider UID and UID validity are taken from synchronized local state; the c
 
 ```bash
 icloud mail flag msg_…
+icloud mail flag msg_… msg_…
 icloud mail flag msg_… --folder fld_…
 icloud mail unflag msg_… --json
 ```
 
-Adds or removes `Flagged` at one location with the same resolution and ambiguity rules as read state. Unknown provider flags are preserved. Conditional updates use the synchronized mod-sequence when iCloud exposes one; a concurrent change returns conflict after the current server state has been persisted.
+Adds or removes `Flagged` with the same single/bulk resolution, bound, failure-mode, and JSONL rules as read state. Unknown provider flags are preserved. Conditional updates use the synchronized mod-sequence when iCloud exposes one; a concurrent change returns conflict after the current server state has been persisted.
 
-Compact success reports the action plus stable message, location, and folder IDs and the recomputed unread/flagged summaries. JSON additionally includes UID identity, structured flags, mod-sequence, last flag-check time, and schema version. No command in this phase offers implicit all-locations or thread-wide mutation.
+Compact success reports the action plus stable message, location, and folder IDs and the recomputed unread/flagged summaries. Multi-item compact output ends with bounded updated/failed/partial counts. JSON additionally includes UID identity, structured flags, mod-sequence, last flag-check time, and schema version. The commands never imply all-locations or thread-wide mutation.
 
 ## `icloud mail move` / `copy`
 

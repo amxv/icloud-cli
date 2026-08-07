@@ -1,0 +1,23 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/attachments-save-all-input.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "directory": {
+      "type": "string"
+    },
+    "force": {
+      "type": "boolean"
+    },
+    "message_id": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "directory",
+    "message_id"
+  ],
+  "title": "attachment set export JSON input",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

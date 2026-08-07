@@ -253,16 +253,27 @@ func newFolderPolicyCommand(state *executionState, enabled bool) *cobra.Command 
 		name, outcome, short = "enable", "enabled", "Enable local synchronization policy for one folder"
 	}
 	var jsonOutput bool
+	var input jsonInputOptions
 	command := &cobra.Command{
 		Use:     name + " <folder-id|name|wire-name|kind>",
 		Short:   short,
-		Args:    cobra.ExactArgs(1),
+		Args:    exactArgsOrJSONInput(&input, 1),
 		Example: "  icloud mail folders " + name + " Receipts",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput}, OutputSupport{JSON: true}); err != nil {
 				return err
 			}
-			accountValue, value, schemaVersion, err := state.folders.FolderSetSync(cmd.Context(), state.global.Home, state.global.Account, args[0], enabled)
+			selector := ""
+			if len(args) == 1 {
+				selector = args[0]
+			}
+			var request folderPolicyJSONRequest
+			if used, err := readJSONInput(cmd, state, input, &request); err != nil {
+				return err
+			} else if used {
+				selector = request.Folder
+			}
+			accountValue, value, schemaVersion, err := state.folders.FolderSetSync(cmd.Context(), state.global.Home, state.global.Account, selector, enabled)
 			if err != nil {
 				return err
 			}
@@ -274,16 +285,26 @@ func newFolderPolicyCommand(state *executionState, enabled bool) *cobra.Command 
 		},
 	}
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
+	bindJSONInput(command, &input)
 	return command
 }
 
 func newFolderAdminCommand(state *executionState, action folder.AdminAction) *cobra.Command {
 	use, short, example := folderAdminCommandMetadata(action)
 	var dryRun, yes, jsonOutput, allowNonEmpty bool
+	var input jsonInputOptions
 	command := &cobra.Command{
-		Use:     use,
-		Short:   short,
-		Args:    folderAdminArgs(action),
+		Use:   use,
+		Short: short,
+		Args: func(cmd *cobra.Command, args []string) error {
+			if strings.TrimSpace(input.Path) != "" {
+				if len(args) != 0 {
+					return NewAppError(ErrorUsage, "positional write arguments cannot be combined with --input-json", false)
+				}
+				return nil
+			}
+			return folderAdminArgs(action)(cmd, args)
+		},
 		Example: example,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput}, OutputSupport{JSON: true}); err != nil {
@@ -293,13 +314,43 @@ func newFolderAdminCommand(state *executionState, action folder.AdminAction) *co
 				return NewAppError(ErrorUsage, "--dry-run and --yes cannot be combined", false)
 			}
 			request := folder.AdminRequest{Action: action, AllowNonEmpty: allowNonEmpty}
-			switch action {
-			case folder.AdminCreate:
-				request.Name = args[0]
-			case folder.AdminRename:
-				request.Folder, request.Name = args[0], args[1]
-			default:
-				request.Folder = args[0]
+			if len(args) > 0 {
+				switch action {
+				case folder.AdminCreate:
+					request.Name = args[0]
+				case folder.AdminRename:
+					request.Folder, request.Name = args[0], args[1]
+				default:
+					request.Folder = args[0]
+				}
+			}
+			if strings.TrimSpace(input.Path) != "" {
+				switch action {
+				case folder.AdminCreate:
+					var jsonRequest folderCreateJSONRequest
+					if _, err := readJSONInput(cmd, state, input, &jsonRequest); err != nil {
+						return err
+					}
+					request.Name = jsonRequest.Name
+				case folder.AdminRename:
+					var jsonRequest folderRenameJSONRequest
+					if _, err := readJSONInput(cmd, state, input, &jsonRequest); err != nil {
+						return err
+					}
+					request.Folder, request.Name = jsonRequest.Folder, jsonRequest.Name
+				case folder.AdminDelete:
+					var jsonRequest folderDeleteJSONRequest
+					if _, err := readJSONInput(cmd, state, input, &jsonRequest, "allow-non-empty"); err != nil {
+						return err
+					}
+					request.Folder, request.AllowNonEmpty = jsonRequest.Folder, jsonRequest.AllowNonEmpty
+				default:
+					var jsonRequest folderSelectorJSONRequest
+					if _, err := readJSONInput(cmd, state, input, &jsonRequest); err != nil {
+						return err
+					}
+					request.Folder = jsonRequest.Folder
+				}
 			}
 			if dryRun {
 				_, plan, schemaVersion, err := state.folders.FolderAdminPreview(cmd.Context(), state.global.Home, state.global.Account, request)
@@ -344,6 +395,7 @@ func newFolderAdminCommand(state *executionState, action folder.AdminAction) *co
 	if action == folder.AdminDelete {
 		command.Flags().BoolVar(&allowNonEmpty, "allow-non-empty", false, "Allow provider deletion only after iCloud rechecks that the folder contains messages")
 	}
+	bindJSONInput(command, &input)
 	return command
 }
 

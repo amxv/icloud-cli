@@ -10,7 +10,7 @@ BIN_PATH ?= $(DIST_DIR)/$(BIN_NAME)
 VERSION ?= $(shell node -p "require('./package.json').version" 2>/dev/null)
 LDFLAGS ?= -s -w -X github.com/amxv/icloud-cli/internal/buildinfo.Version=$(if $(VERSION),$(VERSION),dev)
 
-.PHONY: help fmt test vet lint check docs-check docs-build build build-all install-local clean release-tag
+.PHONY: help fmt test vet lint schemas check docs-check docs-build build build-all install-local clean release-tag
 
 help:
 	@echo "icloud CLI command runner"
@@ -20,6 +20,7 @@ help:
 	@echo "  make test          - run go test ./..."
 	@echo "  make vet           - run go vet ./..."
 	@echo "  make lint          - run Node script checks"
+	@echo "  make schemas       - regenerate versioned JSON Schemas"
 	@echo "  make check         - fmt + test + vet + lint"
 	@echo "  make docs-check    - validate the Astro/ZueDocs site"
 	@echo "  make docs-build    - build the Astro/ZueDocs site"
@@ -40,6 +41,9 @@ vet:
 
 lint:
 	@npm run lint
+
+schemas:
+	@$(GO) run ./scripts/schema-gen.go
 
 check: fmt test vet lint
 

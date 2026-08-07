@@ -2,7 +2,7 @@
 
 `icloud` is a local-first command-line client for iCloud services. The project is being built for agent workflows without making the normal terminal experience noisy: compact plain text is the default, and structured or expanded output is always explicit.
 
-The current implementation provides secure multi-account and credential lifecycle, read-only live iCloud compatibility testing, deliberate text/HTML and filesystem-attachment sending, local and provider-synchronized drafts, exact-message reply/reply-all, exact-message forwarding, durable all-folder discovery, bounded forward synchronization, foreground IDLE/polling watch, resumable historical backfill, explicit current-tail rebaseline, check-first repair, indexed offline mail search, explicit bounded remote search and targeted hydration, local RFC conversation reconstruction, complete local message reads, safe attachment export, explicit read/flag updates, and exact provider-location move/copy/archive/trash/restore/delete workflows. It can validate IMAP/SMTP authentication, preview outbound or location-changing requests without network side effects, require interactive confirmation or non-TTY `--yes`, stream standards-compliant MIME, keep historical and forward sync progress independent, preserve cached mail during rebaseline, repair only deterministic consistency problems, report ambiguous identity or canonical-blob problems without guessing, persist idempotent outbound and location-mutation intents, distinguish proven outcomes from unresolved provider state, preserve one logical message across independent folder locations, prefer atomic UID MOVE, fall back only to safe COPY plus UID EXPUNGE, record destination UID mappings, avoid archiving Sent copies, delete one exact provider location without purging another copy, and expose bounded recovery status when a provider write may have partially completed.
+The current implementation provides secure multi-account and credential lifecycle, read-only live iCloud compatibility testing, deliberate text/HTML and filesystem-attachment sending, local and provider-synchronized drafts, exact-message reply/reply-all, exact-message forwarding, durable all-folder discovery, bounded forward synchronization, foreground IDLE/polling watch, resumable historical backfill, explicit current-tail rebaseline, check-first repair, indexed offline mail search, explicit bounded remote search and targeted hydration, local RFC conversation reconstruction, complete local message reads, safe attachment export, explicit read/flag updates, exact provider-location move/copy/archive/trash/restore/delete workflows, strict JSON write input, bounded bulk message-state changes, versioned JSON Schemas, and local-only account/folder completion. It can validate IMAP/SMTP authentication, preview outbound or location-changing requests without network side effects, require interactive confirmation or non-TTY `--yes`, stream standards-compliant MIME, keep historical and forward sync progress independent, preserve cached mail during rebaseline, repair only deterministic consistency problems, report ambiguous identity or canonical-blob problems without guessing, persist idempotent outbound and location-mutation intents, distinguish proven outcomes from unresolved provider state, preserve one logical message across independent folder locations, prefer atomic UID MOVE, fall back only to safe COPY plus UID EXPUNGE, record destination UID mappings, avoid archiving Sent copies, delete one exact provider location without purging another copy, and expose bounded recovery status when a provider write may have partially completed.
 
 ## Install
 
@@ -61,7 +61,7 @@ icloud mail thread show <thread-id|message-id> [--limit <n>] [--cursor <cursor>]
 icloud mail message show <message-id> [--full] [--format compact|text|html|raw] [--headers] [--body-only] [--metadata-only] [--verbose] [--json]
 icloud mail message show <rem_…> --remote [--cache] [content flags] [--json]
 icloud mail message raw <message-id>
-icloud mail message export <message-id> --output <path|-> [--force]
+icloud mail message export <message-id> --output <path|-> [--force] [--json]
 icloud mail attachments list <message-id> [--limit <n>] [--json]
 icloud mail attachments save <attachment-id> --output <path|-> [--binary] [--force] [--json]
 icloud mail attachments save-all <message-id> --dir <directory> [--force] [--json]
@@ -78,10 +78,10 @@ icloud mail reply-all <message-id> [reply flags]
 icloud mail forward <message-id> --to <address> [--original quoted|eml|none] [--include-attachment <attachment-id>] [--body <text>|--body-file <path|->] [--attach <path>] [--idempotency-key <key>] [--dry-run|--yes] [--json]
 icloud mail status --outbound [--limit <n>] [--json]
 icloud mail status --mutations [--limit <n>] [--json]
-icloud mail mark-read <message-id> [--folder <selector>] [--json]
-icloud mail mark-unread <message-id> [--folder <selector>] [--json]
-icloud mail flag <message-id> [--folder <selector>] [--json]
-icloud mail unflag <message-id> [--folder <selector>] [--json]
+icloud mail mark-read <message-id> [message-id...] [--folder <selector>] [--mode atomic|continue-on-error] [--json|--jsonl]
+icloud mail mark-unread <message-id> [message-id...] [--folder <selector>] [--mode atomic|continue-on-error] [--json|--jsonl]
+icloud mail flag <message-id> [message-id...] [--folder <selector>] [--mode atomic|continue-on-error] [--json|--jsonl]
+icloud mail unflag <message-id> [message-id...] [--folder <selector>] [--mode atomic|continue-on-error] [--json|--jsonl]
 icloud mail move <message-id> --from <folder> --to <folder> [--idempotency-key <key>] [--dry-run|--yes] [--json]
 icloud mail copy <message-id> --from <folder> --to <folder> [--idempotency-key <key>] [--dry-run|--yes] [--json]
 icloud mail archive <message-id> [--from <folder>] [--idempotency-key <key>] [--dry-run|--yes] [--json]
@@ -96,6 +96,8 @@ icloud completion bash|zsh|fish|powershell
 icloud man [--output-dir <directory>]
 icloud help [command]
 ```
+
+All write commands also accept one strict `--input-json <path|->` request instead of equivalent positional/write flags. Read/flag state commands additionally accept bounded `--input-jsonl <path|->` input and typed `--jsonl` output. Confirmation and review remain flags, so JSON input never bypasses `--yes`, `--dry-run`, non-TTY safety, idempotency, or explicit content expansion. `icloud capabilities --json` reports the automation-contract version plus request/response schema IDs; the matching generated JSON Schemas ship in `schemas/v1/`. See [Output and automation](https://icloud.ashray.xyz/docs/output-and-automation) for precedence, examples, bulk partial-success semantics, and privacy rules.
 
 Representative default output:
 

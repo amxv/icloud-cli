@@ -1,0 +1,28 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/mail-sync-input.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "all_folders": {
+      "type": "boolean"
+    },
+    "folder": {
+      "type": "string"
+    },
+    "hydrate": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "limit": {
+      "type": "integer"
+    },
+    "reconcile_outbound": {
+      "type": "boolean"
+    }
+  },
+  "title": "mail sync JSON input",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

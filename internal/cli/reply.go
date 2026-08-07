@@ -26,6 +26,7 @@ type mailReplyPreviewData struct {
 
 func newMailReplyCommand(state *executionState, replyAll bool) *cobra.Command {
 	var flags replyFlags
+	var input jsonInputOptions
 	name, short := "reply", "Reply to one explicitly selected local message"
 	if replyAll {
 		name, short = "reply-all", "Reply to all visible participants of one explicitly selected local message"
@@ -33,10 +34,28 @@ func newMailReplyCommand(state *executionState, replyAll bool) *cobra.Command {
 	command := &cobra.Command{
 		Use:   name + " <msg_…>",
 		Short: short,
-		Args:  cobra.ExactArgs(1),
+		Args:  exactArgsOrJSONInput(&input, 1),
 		Example: "  icloud mail " + name + " msg_… --body-file reply.txt --dry-run\n" +
 			"  icloud mail " + name + " msg_… --body 'Thanks' --idempotency-key reply-01 --yes",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			parentID := ""
+			if len(args) == 1 {
+				parentID = strings.TrimSpace(args[0])
+			}
+			var jsonRequest replyJSONRequest
+			if used, err := readJSONInput(cmd, state, input, &jsonRequest,
+				"to", "cc", "bcc", "replace-to", "replace-cc", "body", "body-file", "html-body", "html-body-file",
+				"header", "attach", "attach-name", "attach-type", "idempotency-key", "retry-of", "retry-unknown"); err != nil {
+				return err
+			} else if used {
+				if jsonInputConsumesStdin(input) && replyComposeConsumesStdin(jsonRequest.Compose) {
+					return NewAppError(ErrorUsage, "body_file cannot read stdin when --input-json also reads stdin", false)
+				}
+				process := flags.sendFlags
+				flags = replyFlags{sendFlags: jsonRequest.Compose.sendFlags(), ReplaceTo: jsonRequest.ReplaceTo, ReplaceCC: jsonRequest.ReplaceCC}
+				flags.DryRun, flags.Yes, flags.JSON, flags.Verbose, flags.ShowHeaders, flags.Format = process.DryRun, process.Yes, process.JSON, process.Verbose, process.ShowHeaders, process.Format
+				parentID = strings.TrimSpace(jsonRequest.MessageID)
+			}
 			if flags.DryRun && flags.Yes {
 				return NewAppError(ErrorUsage, "--dry-run and --yes cannot be combined", false)
 			}
@@ -46,7 +65,7 @@ func newMailReplyCommand(state *executionState, replyAll bool) *cobra.Command {
 			if !flags.DryRun && (flags.Verbose || flags.ShowHeaders || strings.TrimSpace(flags.Format) != "") {
 				return NewAppError(ErrorUsage, "--verbose, --headers, and --format are dry-run preview expansions", false)
 			}
-			request, stdinConsumed, err := replyRequestFromFlags(state, strings.TrimSpace(args[0]), replyAll, flags)
+			request, stdinConsumed, err := replyRequestFromFlags(state, parentID, replyAll, flags)
 			if err != nil {
 				return err
 			}
@@ -94,6 +113,7 @@ func newMailReplyCommand(state *executionState, replyAll bool) *cobra.Command {
 		},
 	}
 	bindReplyFlags(command, &flags)
+	bindJSONInput(command, &input)
 	return command
 }
 
@@ -111,7 +131,7 @@ func bindReplyFlags(command *cobra.Command, flags *replyFlags) {
 	command.Flags().StringArrayVar(&flags.Attachments, "attach", nil, "Regular file path to attach; repeat as needed")
 	command.Flags().StringArrayVar(&flags.AttachmentNames, "attach-name", nil, "Override one attachment filename as path=filename; repeat as needed")
 	command.Flags().StringArrayVar(&flags.AttachmentTypes, "attach-type", nil, "Override one attachment media type as path=type/subtype; repeat as needed")
-	command.Flags().StringVar(&flags.IdempotencyKey, "idempotency-key", "", "Return the original attempt when the same normalized reply is repeated")
+	command.Flags().StringVar(&flags.IdempotencyKey, "idempotency-key", "", idempotencyKeyHelp)
 	command.Flags().StringVar(&flags.RetryOf, "retry-of", "", "Link an explicit retry to one failed or unknown send_… attempt")
 	command.Flags().BoolVar(&flags.RetryUnknown, "retry-unknown", false, "Authorize one duplicate-risk retry of an unknown attempt; requires --retry-of and --yes")
 	command.Flags().BoolVar(&flags.DryRun, "dry-run", false, "Preview the resolved reply without creating an attempt or contacting SMTP")

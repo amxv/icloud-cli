@@ -1,0 +1,334 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/message.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "account_id": {
+      "type": "string"
+    },
+    "attachment_count": {
+      "type": "integer"
+    },
+    "cc": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "display_name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "content_location_id": {
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "date_source": {
+      "type": "string"
+    },
+    "dedupe_conflicts": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "account_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "evidence_kind": {
+            "type": "string"
+          },
+          "evidence_value": {
+            "type": "string"
+          },
+          "existing_location_id": {
+            "type": "string"
+          },
+          "existing_message_id": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "observed_location_id": {
+            "type": "string"
+          },
+          "observed_message_id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "account_id",
+          "created_at",
+          "evidence_kind",
+          "evidence_value",
+          "existing_message_id",
+          "id",
+          "observed_message_id",
+          "reason",
+          "status"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "direction": {
+      "type": "string"
+    },
+    "flagged": {
+      "type": "boolean"
+    },
+    "from": {
+      "additionalProperties": false,
+      "properties": {
+        "display_name": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "email"
+      ],
+      "type": "object"
+    },
+    "header_date": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "id": {
+      "type": "string"
+    },
+    "identity": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "account_id": {
+            "type": "string"
+          },
+          "first_seen_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "last_seen_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "message_id": {
+            "type": "string"
+          },
+          "source_location_id": {
+            "type": "string"
+          },
+          "strength": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "account_id",
+          "first_seen_at",
+          "id",
+          "kind",
+          "last_seen_at",
+          "message_id",
+          "strength",
+          "value"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "in_reply_to": {
+      "type": "string"
+    },
+    "internal_date": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "locations": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "flags": {
+            "additionalProperties": false,
+            "properties": {
+              "answered": {
+                "type": "boolean"
+              },
+              "deleted": {
+                "type": "boolean"
+              },
+              "draft": {
+                "type": "boolean"
+              },
+              "flagged": {
+                "type": "boolean"
+              },
+              "seen": {
+                "type": "boolean"
+              },
+              "unknown": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "answered",
+              "deleted",
+              "draft",
+              "flagged",
+              "seen"
+            ],
+            "type": "object"
+          },
+          "flags_checked_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "folder_id": {
+            "type": "string"
+          },
+          "folder_kind": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "internal_date": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "mod_sequence": {
+            "type": "integer"
+          },
+          "present": {
+            "type": "boolean"
+          },
+          "rfc822_size": {
+            "type": "integer"
+          },
+          "uid": {
+            "type": "integer"
+          },
+          "uid_validity": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "flags",
+          "folder_id",
+          "id",
+          "present",
+          "uid",
+          "uid_validity"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "references": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "reply_to": {
+      "additionalProperties": false,
+      "properties": {
+        "display_name": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "email"
+      ],
+      "type": "object"
+    },
+    "rfc_message_id": {
+      "type": "string"
+    },
+    "snippet": {
+      "type": "string"
+    },
+    "sort_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "subject": {
+      "type": "string"
+    },
+    "to": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "display_name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "unread": {
+      "type": "boolean"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "type": "string"
+    }
+  },
+  "required": [
+    "account_id",
+    "created_at",
+    "date_source",
+    "direction",
+    "flagged",
+    "from",
+    "id",
+    "unread",
+    "updated_at"
+  ],
+  "title": "iCloud CLI message",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

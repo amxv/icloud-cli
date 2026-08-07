@@ -56,7 +56,7 @@ func privateDraftFixture() maildomain.Draft {
 			ID: "msg_0198d704-6c00-7000-8000-000000000001", AccountID: "acct_test", Direction: maildomain.DirectionOutbound,
 			To: []maildomain.Address{{Email: "visible@example.test"}}, BCC: []maildomain.Address{{Email: "hidden-bcc@example.test"}},
 			Subject: "Private draft", Snippet: "bounded draft excerpt", AttachmentCount: 1,
-			Locations: []maildomain.Location{{ID: "loc_remote", FolderKind: "drafts", Present: true}},
+			Locations: []maildomain.Location{{ID: "loc_remote", FolderKind: "other", Flags: maildomain.LocationFlags{Draft: true}, Present: true}},
 		},
 	}
 }

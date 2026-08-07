@@ -1,0 +1,19 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/folder-delete-input.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "allow_non_empty": {
+      "type": "boolean"
+    },
+    "folder": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "folder"
+  ],
+  "title": "folder delete JSON input",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

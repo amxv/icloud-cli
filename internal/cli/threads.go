@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"time"
 
 	maildomain "github.com/amxv/icloud-cli/internal/mail"
 	"github.com/spf13/cobra"
@@ -30,8 +31,8 @@ type publicThread struct {
 	MessageCount     int                   `json:"message_count"`
 	UnreadCount      int                   `json:"unread_count"`
 	AttachmentCount  int                   `json:"attachment_count"`
-	FirstMessageAt   any                   `json:"first_message_at,omitempty"`
-	LastMessageAt    any                   `json:"last_message_at,omitempty"`
+	FirstMessageAt   *time.Time            `json:"first_message_at,omitempty"`
+	LastMessageAt    *time.Time            `json:"last_message_at,omitempty"`
 	Status           string                `json:"status"`
 	Reconstruction   string                `json:"reconstruction"`
 	RedirectedFrom   string                `json:"redirected_from,omitempty"`
@@ -296,12 +297,14 @@ func buildPublicThread(ctx context.Context, thread maildomain.Thread, sources []
 		}
 		messages = append(messages, publicThreadMessage{Message: publicMessage, Content: content})
 	}
-	var first, last any
+	var first, last *time.Time
 	if !thread.FirstMessageAt.IsZero() {
-		first = thread.FirstMessageAt
+		value := thread.FirstMessageAt
+		first = &value
 	}
 	if !thread.LastMessageAt.IsZero() {
-		last = thread.LastMessageAt
+		value := thread.LastMessageAt
+		last = &value
 	}
 	edges := []publicThreadEdge(nil)
 	if options.Verbose || options.MetadataOnly {

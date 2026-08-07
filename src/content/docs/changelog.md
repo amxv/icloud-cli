@@ -8,6 +8,10 @@ summary: Public command, output, installation, and documentation changes.
 
 ## Unreleased
 
+- Added strict `--input-json <path|->` requests for every state-changing/export command. JSON write input uses the same validation, confirmation, idempotency, redaction, and non-TTY safety paths as flags and rejects mixed equivalent write inputs.
+- Added bounded multi-message read/flag state updates with atomic fail-fast or continue-on-error modes, strict JSONL input, typed JSONL per-item/completion output, and explicit `partial=true` reporting when a provider failure follows an earlier successful mutation.
+- Added versioned generated JSON Schemas for public resources, errors/events, output envelopes, and write-input shapes; `capabilities --json` now links command request/response schemas and optionally reports cached provider capabilities for an explicitly selected account.
+- Added local-only account/folder ID completion; completion reads cached local repositories and never authenticates or contacts iCloud.
 - Added `mail draft create|update|list|show|sync|send|delete` with local-first revisions, streamed attachments, saved BCC/custom headers, provider-native draft adoption, and explicit full-content read modes.
 - Added safe iCloud Drafts replacement and cleanup: new revisions are confirmed before previous copies are removed, APPENDUID-less uploads require exact reconciliation, unknown sends preserve drafts, and proven sends clean provider `\Draft` copies through the normal idempotent outbound path.
 - Added an explicit `mail draft sync --folder <selector>` fallback for accounts where iCloud exposes a Drafts mailbox without advertising a Drafts role. The fallback never relabels or infers the mailbox role from its English name.

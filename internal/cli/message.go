@@ -238,17 +238,34 @@ func newMailMessageRawCommand(state *executionState) *cobra.Command {
 
 func newMailMessageExportCommand(state *executionState) *cobra.Command {
 	var output string
-	var force bool
+	var force, jsonOutput bool
+	var input jsonInputOptions
 	command := &cobra.Command{
 		Use:     "export <message-id>",
 		Short:   "Export the exact locally stored RFC822 message atomically",
-		Args:    cobra.ExactArgs(1),
+		Args:    exactArgsOrJSONInput(&input, 1),
 		Example: "  icloud mail message export msg_… --output message.eml\n  icloud mail message export msg_… --output - > message.eml",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput}, OutputSupport{JSON: true}); err != nil {
+				return err
+			}
+			messageID := ""
+			if len(args) == 1 {
+				messageID = args[0]
+			}
+			var jsonRequest messageExportJSONRequest
+			if used, err := readJSONInput(cmd, state, input, &jsonRequest, "output", "force"); err != nil {
+				return err
+			} else if used {
+				messageID, output, force = jsonRequest.MessageID, jsonRequest.Output, jsonRequest.Force
+			}
 			if strings.TrimSpace(output) == "" {
 				return NewAppError(ErrorUsage, "--output is required", false)
 			}
-			_, message, source, _, err := state.mail.MailMessage(cmd.Context(), state.global.Home, state.global.Account, args[0])
+			if output == "-" && jsonOutput {
+				return NewAppError(ErrorUsage, "--json cannot be combined with --output -", false)
+			}
+			_, message, source, _, err := state.mail.MailMessage(cmd.Context(), state.global.Home, state.global.Account, messageID)
 			if err != nil {
 				return err
 			}
@@ -261,6 +278,9 @@ func newMailMessageExportCommand(state *executionState) *cobra.Command {
 			if err := exportRawMessage(cmd.Context(), source, output, force); err != nil {
 				return err
 			}
+			if jsonOutput {
+				return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: map[string]any{"message_id": message.ID, "bytes": rawMessageSize(message), "saved": true}, Meta: EnvelopeMeta{RequestID: state.requestID}})
+			}
 			return NewCompactTextRenderer(state.stdout).Record("message-export", message.ID,
 				Field("bytes", rawMessageSize(message)),
 			)
@@ -268,6 +288,8 @@ func newMailMessageExportCommand(state *executionState) *cobra.Command {
 	}
 	command.Flags().StringVar(&output, "output", "", "Destination path, or - for stdout")
 	command.Flags().BoolVar(&force, "force", false, "Replace an existing regular file")
+	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope after file export")
+	bindJSONInput(command, &input)
 	return command
 }
 

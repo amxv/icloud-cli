@@ -1,0 +1,74 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/attempt.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "accepted_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "attachment_bytes": {
+      "type": "integer"
+    },
+    "attachment_count": {
+      "type": "integer"
+    },
+    "created_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "error_code": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string"
+    },
+    "message_id": {
+      "type": "string"
+    },
+    "parent_message_id": {
+      "type": "string"
+    },
+    "reconciled_location_id": {
+      "type": "string"
+    },
+    "reconciliation": {
+      "type": "string"
+    },
+    "reconciliation_error_code": {
+      "type": "string"
+    },
+    "retry_of_attempt_id": {
+      "type": "string"
+    },
+    "source_message_id": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    },
+    "thread_id": {
+      "type": "string"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "type": "string"
+    }
+  },
+  "required": [
+    "attachment_bytes",
+    "attachment_count",
+    "created_at",
+    "id",
+    "kind",
+    "reconciliation",
+    "status",
+    "updated_at"
+  ],
+  "title": "iCloud CLI outbound attempt",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

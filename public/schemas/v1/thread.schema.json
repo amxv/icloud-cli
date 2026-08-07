@@ -1,0 +1,603 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/thread.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "account_id": {
+      "type": "string"
+    },
+    "attachment_count": {
+      "type": "integer"
+    },
+    "edges": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "child_message_id": {
+            "type": "string"
+          },
+          "ordinal": {
+            "type": "integer"
+          },
+          "parent_message_id": {
+            "type": "string"
+          },
+          "relation": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "child_message_id",
+          "ordinal",
+          "relation",
+          "status",
+          "token"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "first_message_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "folder_ids": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "id": {
+      "type": "string"
+    },
+    "last_message_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "message_count": {
+      "type": "integer"
+    },
+    "messages": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "additionalProperties": false,
+            "properties": {
+              "diagnostics": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "path": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "headers": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "key": {
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "key",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "headers_available": {
+                "type": "boolean"
+              },
+              "html_available": {
+                "type": "boolean"
+              },
+              "html_body": {
+                "type": "string"
+              },
+              "parsed_complete": {
+                "type": "boolean"
+              },
+              "part_count": {
+                "type": "integer"
+              },
+              "parts": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "attachment": {
+                      "type": "boolean"
+                    },
+                    "charset": {
+                      "type": "string"
+                    },
+                    "content_id": {
+                      "type": "string"
+                    },
+                    "decoded_size": {
+                      "type": "integer"
+                    },
+                    "diagnostics": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "disposition": {
+                      "type": "string"
+                    },
+                    "embedded_message": {
+                      "type": "boolean"
+                    },
+                    "filename": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "inline": {
+                      "type": "boolean"
+                    },
+                    "media_params": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "media_type": {
+                      "type": "string"
+                    },
+                    "ordinal": {
+                      "type": "integer"
+                    },
+                    "parent_path": {
+                      "type": "string"
+                    },
+                    "path": {
+                      "type": "string"
+                    },
+                    "transfer_encoding": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "attachment",
+                    "embedded_message",
+                    "inline",
+                    "media_type",
+                    "ordinal",
+                    "path"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "parts_available": {
+                "type": "boolean"
+              },
+              "raw_available": {
+                "type": "boolean"
+              },
+              "raw_base64": {
+                "type": "string"
+              },
+              "text_available": {
+                "type": "boolean"
+              },
+              "text_body": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "headers_available",
+              "html_available",
+              "parsed_complete",
+              "part_count",
+              "parts_available",
+              "raw_available",
+              "text_available"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "additionalProperties": false,
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "attachment_count": {
+                "type": "integer"
+              },
+              "cc": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "display_name": {
+                      "type": "string"
+                    },
+                    "email": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "email"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "content_location_id": {
+                "type": "string"
+              },
+              "created_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "date_source": {
+                "type": "string"
+              },
+              "dedupe_conflicts": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "account_id": {
+                      "type": "string"
+                    },
+                    "created_at": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "evidence_kind": {
+                      "type": "string"
+                    },
+                    "evidence_value": {
+                      "type": "string"
+                    },
+                    "existing_location_id": {
+                      "type": "string"
+                    },
+                    "existing_message_id": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "observed_location_id": {
+                      "type": "string"
+                    },
+                    "observed_message_id": {
+                      "type": "string"
+                    },
+                    "reason": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "account_id",
+                    "created_at",
+                    "evidence_kind",
+                    "evidence_value",
+                    "existing_message_id",
+                    "id",
+                    "observed_message_id",
+                    "reason",
+                    "status"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "direction": {
+                "type": "string"
+              },
+              "flagged": {
+                "type": "boolean"
+              },
+              "from": {
+                "additionalProperties": false,
+                "properties": {
+                  "display_name": {
+                    "type": "string"
+                  },
+                  "email": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "email"
+                ],
+                "type": "object"
+              },
+              "header_date": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "identity": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "account_id": {
+                      "type": "string"
+                    },
+                    "first_seen_at": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "last_seen_at": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "message_id": {
+                      "type": "string"
+                    },
+                    "source_location_id": {
+                      "type": "string"
+                    },
+                    "strength": {
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "account_id",
+                    "first_seen_at",
+                    "id",
+                    "kind",
+                    "last_seen_at",
+                    "message_id",
+                    "strength",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "in_reply_to": {
+                "type": "string"
+              },
+              "internal_date": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "locations": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "flags": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "answered": {
+                          "type": "boolean"
+                        },
+                        "deleted": {
+                          "type": "boolean"
+                        },
+                        "draft": {
+                          "type": "boolean"
+                        },
+                        "flagged": {
+                          "type": "boolean"
+                        },
+                        "seen": {
+                          "type": "boolean"
+                        },
+                        "unknown": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "answered",
+                        "deleted",
+                        "draft",
+                        "flagged",
+                        "seen"
+                      ],
+                      "type": "object"
+                    },
+                    "flags_checked_at": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "folder_id": {
+                      "type": "string"
+                    },
+                    "folder_kind": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "internal_date": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "mod_sequence": {
+                      "type": "integer"
+                    },
+                    "present": {
+                      "type": "boolean"
+                    },
+                    "rfc822_size": {
+                      "type": "integer"
+                    },
+                    "uid": {
+                      "type": "integer"
+                    },
+                    "uid_validity": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "flags",
+                    "folder_id",
+                    "id",
+                    "present",
+                    "uid",
+                    "uid_validity"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "references": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "reply_to": {
+                "additionalProperties": false,
+                "properties": {
+                  "display_name": {
+                    "type": "string"
+                  },
+                  "email": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "email"
+                ],
+                "type": "object"
+              },
+              "rfc_message_id": {
+                "type": "string"
+              },
+              "snippet": {
+                "type": "string"
+              },
+              "sort_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "subject": {
+                "type": "string"
+              },
+              "to": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "display_name": {
+                      "type": "string"
+                    },
+                    "email": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "email"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "unread": {
+                "type": "boolean"
+              },
+              "updated_at": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "account_id",
+              "created_at",
+              "date_source",
+              "direction",
+              "flagged",
+              "from",
+              "id",
+              "unread",
+              "updated_at"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "content",
+          "message"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "participants": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "reconstruction": {
+      "type": "string"
+    },
+    "redirected_from": {
+      "type": "string"
+    },
+    "root_rfc_message_id": {
+      "type": "string"
+    },
+    "snippet": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    },
+    "subject": {
+      "type": "string"
+    },
+    "unread_count": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "account_id",
+    "attachment_count",
+    "id",
+    "message_count",
+    "messages",
+    "reconstruction",
+    "status",
+    "unread_count"
+  ],
+  "title": "iCloud CLI thread",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

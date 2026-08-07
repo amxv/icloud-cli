@@ -13,6 +13,8 @@ test("npm exposes one public icloud command", () => {
   assert.equal(pkg.config.cliBinaryName, "icloud");
   assert.ok(fs.existsSync(path.join(__dirname, "..", pkg.bin.icloud)));
   assert.ok(pkg.files.includes("go.sum"));
+  assert.ok(pkg.files.includes("schemas"));
+  assert.ok(fs.existsSync(path.join(__dirname, "..", "schemas", "v1", "message.schema.json")));
 });
 
 test("project identity and fallback source use cmd/icloud", () => {

@@ -1,0 +1,54 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/output-envelope.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "data": {},
+    "error": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "details": {
+          "additionalProperties": {},
+          "type": "object"
+        },
+        "message": {
+          "type": "string"
+        },
+        "retryable": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "retryable"
+      ],
+      "type": "object"
+    },
+    "meta": {
+      "additionalProperties": false,
+      "properties": {
+        "request_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "request_id"
+      ],
+      "type": "object"
+    },
+    "ok": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "meta",
+    "ok"
+  ],
+  "title": "iCloud CLI output envelope",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

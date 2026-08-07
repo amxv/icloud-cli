@@ -93,32 +93,52 @@ type capabilityOutput struct {
 	JSONL   bool   `json:"jsonl"`
 }
 
+type capabilityAutomation struct {
+	ContractVersion string                      `json:"contract_version"`
+	InputJSON       bool                        `json:"input_json"`
+	InputJSONL      bool                        `json:"input_jsonl"`
+	BulkMaximum     int                         `json:"bulk_maximum"`
+	BulkModes       []string                    `json:"bulk_modes"`
+	GlobalFlags     []string                    `json:"global_flags"`
+	ConsistentFlags []string                    `json:"consistent_flags"`
+	Commands        []capabilityCommandContract `json:"commands"`
+}
+
+type capabilityProvider struct {
+	AccountID        string   `json:"account_id"`
+	IMAPCapabilities []string `json:"imap_capabilities,omitempty"`
+	SMTPCapabilities []string `json:"smtp_capabilities,omitempty"`
+}
+
 type capabilitiesData struct {
-	Command               string           `json:"command"`
-	Version               string           `json:"version"`
-	DataSchemaVersion     int64            `json:"data_schema_version"`
-	AccountMode           string           `json:"account_mode"`
-	CredentialSchemes     []string         `json:"credential_schemes"`
-	NetworkValidation     bool             `json:"network_validation"`
-	Diagnostics           bool             `json:"diagnostics"`
-	MailFolders           bool             `json:"mail_folders"`
-	MailSync              bool             `json:"mail_sync"`
-	MailWatch             bool             `json:"mail_watch"`
-	MailDrafts            bool             `json:"mail_drafts"`
-	MailContent           bool             `json:"mail_content"`
-	MailAttachments       bool             `json:"mail_attachments"`
-	MailFlags             bool             `json:"mail_flags"`
-	MailThreads           bool             `json:"mail_threads"`
-	MailSearch            bool             `json:"mail_search"`
-	MailRemoteSearch      bool             `json:"mail_remote_search"`
-	MailHydration         bool             `json:"mail_hydration"`
-	MailSend              bool             `json:"mail_send"`
-	MailReply             bool             `json:"mail_reply"`
-	MailForward           bool             `json:"mail_forward"`
-	MailLocationMutations bool             `json:"mail_location_mutations"`
-	Output                capabilityOutput `json:"output"`
-	Completion            []string         `json:"completion"`
-	Man                   bool             `json:"man"`
+	Command               string               `json:"command"`
+	Version               string               `json:"version"`
+	DataSchemaVersion     int64                `json:"data_schema_version"`
+	AccountMode           string               `json:"account_mode"`
+	CredentialSchemes     []string             `json:"credential_schemes"`
+	NetworkValidation     bool                 `json:"network_validation"`
+	Diagnostics           bool                 `json:"diagnostics"`
+	MailFolders           bool                 `json:"mail_folders"`
+	MailSync              bool                 `json:"mail_sync"`
+	MailWatch             bool                 `json:"mail_watch"`
+	MailDrafts            bool                 `json:"mail_drafts"`
+	MailContent           bool                 `json:"mail_content"`
+	MailAttachments       bool                 `json:"mail_attachments"`
+	MailFlags             bool                 `json:"mail_flags"`
+	MailThreads           bool                 `json:"mail_threads"`
+	MailSearch            bool                 `json:"mail_search"`
+	MailRemoteSearch      bool                 `json:"mail_remote_search"`
+	MailHydration         bool                 `json:"mail_hydration"`
+	MailSend              bool                 `json:"mail_send"`
+	MailReply             bool                 `json:"mail_reply"`
+	MailForward           bool                 `json:"mail_forward"`
+	MailLocationMutations bool                 `json:"mail_location_mutations"`
+	Output                capabilityOutput     `json:"output"`
+	Automation            capabilityAutomation `json:"automation"`
+	Schemas               map[string]string    `json:"schemas"`
+	Provider              *capabilityProvider  `json:"provider,omitempty"`
+	Completion            []string             `json:"completion"`
+	Man                   bool                 `json:"man"`
 }
 
 type accountListData struct {
@@ -282,6 +302,7 @@ func newRootCommand(state *executionState) *cobra.Command {
 	if helpCommand, _, err := root.Find([]string{"help"}); err == nil && helpCommand != root {
 		helpCommand.GroupID = "docs"
 	}
+	configureDynamicCompletion(root, state)
 	return root
 }
 
@@ -320,7 +341,7 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 		GroupID: "core",
 		Args:    cobra.NoArgs,
 		Example: "  icloud capabilities\n  icloud capabilities --json",
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput}, OutputSupport{JSON: true}); err != nil {
 				return err
 			}
@@ -352,8 +373,26 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 					JSON:    true,
 					JSONL:   true,
 				},
+				Automation: capabilityAutomation{
+					ContractVersion: AutomationContractVersion,
+					InputJSON:       true,
+					InputJSONL:      true,
+					BulkMaximum:     MaximumBulkItems,
+					BulkModes:       []string{"atomic", "continue-on-error"},
+					GlobalFlags:     []string{"--account", "--home", "--no-input", "--request-id", "--timeout"},
+					ConsistentFlags: []string{"--request-id", "--idempotency-key", "--timeout", "--account", "--home", "--no-input", "--full", "--verbose", "--format", "--headers", "--body-only", "--json", "--jsonl"},
+					Commands:        automationCommandContracts(),
+				},
+				Schemas:    SchemaIDs(),
 				Completion: []string{"bash", "zsh", "fish", "powershell"},
 				Man:        true,
+			}
+			if strings.TrimSpace(state.global.Account) != "" {
+				value, _, err := state.accounts.Show(cmd.Context(), state.global.Home, state.global.Account)
+				if err != nil {
+					return err
+				}
+				data.Provider = &capabilityProvider{AccountID: value.ID, IMAPCapabilities: append([]string(nil), value.IMAPCapabilities...), SMTPCapabilities: append([]string(nil), value.SMTPCapabilities...)}
 			}
 			if jsonOutput {
 				return WriteJSON(state.stdout, OutputEnvelope{

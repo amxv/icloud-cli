@@ -162,6 +162,7 @@ func newMailSyncCommand(state *executionState) *cobra.Command {
 	var allFolders bool
 	var hydrate []string
 	var reconcileOutbound bool
+	var input jsonInputOptions
 	command := &cobra.Command{
 		Use:     "sync",
 		Short:   "Fetch and atomically commit bounded pages from enabled mail folders",
@@ -170,6 +171,15 @@ func newMailSyncCommand(state *executionState) *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput}, OutputSupport{JSON: true}); err != nil {
 				return err
+			}
+			var jsonRequest mailSyncJSONRequest
+			if used, err := readJSONInput(cmd, state, input, &jsonRequest, "folder", "all-folders", "hydrate", "reconcile-outbound", "limit"); err != nil {
+				return err
+			} else if used {
+				folderSelector, allFolders, hydrate, reconcileOutbound = jsonRequest.Folder, jsonRequest.AllFolders, append([]string(nil), jsonRequest.Hydrate...), jsonRequest.ReconcileOutbound
+				if jsonRequest.Limit != nil {
+					limit = *jsonRequest.Limit
+				}
 			}
 			if limit < 1 || limit > MaximumPageSize {
 				return NewAppError(ErrorUsage, fmt.Sprintf("--limit must be between 1 and %d", MaximumPageSize), false)
@@ -271,6 +281,7 @@ func newMailSyncCommand(state *executionState) *cobra.Command {
 	command.Flags().BoolVar(&reconcileOutbound, "reconcile-outbound", false, "Sync Sent and reconcile recent sent/unknown attempts by exact Message-ID evidence")
 	command.Flags().IntVar(&limit, "limit", DefaultPageSize, fmt.Sprintf("Maximum messages to fetch and commit per folder (1-%d)", MaximumPageSize))
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
+	bindJSONInput(command, &input)
 	command.AddCommand(newMailSyncStatusCommand(state))
 	command.AddCommand(newMailSyncCheckpointsCommand(state))
 	command.AddCommand(newMailSyncBackfillCommand(state))
@@ -431,6 +442,7 @@ func newMailSyncBackfillCommand(state *executionState) *cobra.Command {
 	var afterValue string
 	var beforeValue string
 	var limit int
+	var input jsonInputOptions
 	command := &cobra.Command{
 		Use:     "backfill",
 		Short:   "Resume one bounded historical page without moving the new-mail frontier",
@@ -439,6 +451,15 @@ func newMailSyncBackfillCommand(state *executionState) *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput}, OutputSupport{JSON: true}); err != nil {
 				return err
+			}
+			var jsonRequest mailBackfillJSONRequest
+			if used, err := readJSONInput(cmd, state, input, &jsonRequest, "folder", "after", "before", "limit"); err != nil {
+				return err
+			} else if used {
+				folderSelector, afterValue, beforeValue = jsonRequest.Folder, jsonRequest.After, jsonRequest.Before
+				if jsonRequest.Limit != nil {
+					limit = *jsonRequest.Limit
+				}
 			}
 			if limit < 1 || limit > MaximumPageSize {
 				return NewAppError(ErrorUsage, fmt.Sprintf("--limit must be between 1 and %d", MaximumPageSize), false)
@@ -474,6 +495,7 @@ func newMailSyncBackfillCommand(state *executionState) *cobra.Command {
 	command.Flags().StringVar(&beforeValue, "before", "", "Include messages before this UTC date (YYYY-MM-DD)")
 	command.Flags().IntVar(&limit, "limit", DefaultPageSize, fmt.Sprintf("Maximum historical messages to fetch and commit in this page (1-%d)", MaximumPageSize))
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
+	bindJSONInput(command, &input)
 	return command
 }
 
@@ -481,6 +503,7 @@ func newMailSyncRebaselineCommand(state *executionState) *cobra.Command {
 	var jsonOutput bool
 	var folderSelector string
 	var currentTail bool
+	var input jsonInputOptions
 	command := &cobra.Command{
 		Use:     "rebaseline",
 		Short:   "Move one forward sync frontier to the verified current iCloud tail without deleting cache",
@@ -489,6 +512,12 @@ func newMailSyncRebaselineCommand(state *executionState) *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput}, OutputSupport{JSON: true}); err != nil {
 				return err
+			}
+			var jsonRequest mailRebaselineJSONRequest
+			if used, err := readJSONInput(cmd, state, input, &jsonRequest, "folder", "current-tail"); err != nil {
+				return err
+			} else if used {
+				folderSelector, currentTail = jsonRequest.Folder, jsonRequest.CurrentTail
 			}
 			if !currentTail {
 				return NewAppError(ErrorSafety, "rebaseline requires --current-tail", false)
@@ -512,6 +541,7 @@ func newMailSyncRebaselineCommand(state *executionState) *cobra.Command {
 	command.Flags().StringVar(&folderSelector, "folder", string(folder.KindInbox), "Folder kind, ID, name, or wire name")
 	command.Flags().BoolVar(&currentTail, "current-tail", false, "Acknowledge moving only this forward frontier to UIDNEXT-1 observed now")
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
+	bindJSONInput(command, &input)
 	return command
 }
 
@@ -523,6 +553,7 @@ func newMailSyncRepairCommand(state *executionState) *cobra.Command {
 	var cleanupOrphans bool
 	var yes bool
 	var limit int
+	var input jsonInputOptions
 	command := &cobra.Command{
 		Use:     "repair",
 		Short:   "Audit bounded local mail consistency and apply only deterministic repairs",
@@ -531,6 +562,23 @@ func newMailSyncRepairCommand(state *executionState) *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput, Verbose: verbose}, OutputSupport{JSON: true, Verbose: true}); err != nil {
 				return err
+			}
+			var jsonRequest mailRepairJSONRequest
+			if used, err := readJSONInput(cmd, state, input, &jsonRequest, "check", "apply", "cleanup-orphans", "limit"); err != nil {
+				return err
+			} else if used {
+				cleanupOrphans = jsonRequest.CleanupOrphans
+				if jsonRequest.Limit != nil {
+					limit = *jsonRequest.Limit
+				}
+				switch strings.ToLower(strings.TrimSpace(jsonRequest.Mode)) {
+				case "", "check":
+					check, apply = true, false
+				case "apply":
+					check, apply = false, true
+				default:
+					return NewAppError(ErrorUsage, "repair JSON mode must be check or apply", false)
+				}
 			}
 			if check && apply {
 				return NewAppError(ErrorUsage, "--check and --apply cannot be combined", false)
@@ -582,6 +630,7 @@ func newMailSyncRepairCommand(state *executionState) *cobra.Command {
 	command.Flags().IntVar(&limit, "limit", DefaultPageSize, fmt.Sprintf("Maximum findings or repair candidates per bounded category (1-%d)", MaximumPageSize))
 	command.Flags().BoolVar(&verbose, "verbose", false, "Print bounded per-finding detail before the compact summary")
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope with bounded findings")
+	bindJSONInput(command, &input)
 	return command
 }
 

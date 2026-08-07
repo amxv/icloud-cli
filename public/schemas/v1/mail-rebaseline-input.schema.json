@@ -1,0 +1,19 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/mail-rebaseline-input.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "current_tail": {
+      "type": "boolean"
+    },
+    "folder": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "current_tail"
+  ],
+  "title": "mail rebaseline JSON input",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

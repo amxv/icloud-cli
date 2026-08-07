@@ -1,0 +1,19 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/flag-bulk-item.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "folder": {
+      "type": "string"
+    },
+    "message_id": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "message_id"
+  ],
+  "title": "bulk mail state JSONL item",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

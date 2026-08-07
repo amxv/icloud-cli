@@ -48,6 +48,7 @@ func newAccountAddCommand(state *executionState) *cobra.Command {
 		makeDefault  bool
 		jsonOutput   bool
 		source       credentialSourceOptions
+		input        jsonInputOptions
 	)
 	command := &cobra.Command{
 		Use:   "add",
@@ -58,6 +59,19 @@ func newAccountAddCommand(state *executionState) *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput}, OutputSupport{JSON: true}); err != nil {
 				return err
+			}
+			var request accountAddJSONRequest
+			if used, err := readJSONInput(cmd, state, input, &request, "name", "email", "imap-username", "default", "password-stdin", "credential-env", "credential-file"); err != nil {
+				return err
+			} else if used {
+				if request.PasswordStdin && jsonInputConsumesStdin(input) {
+					return NewAppError(ErrorUsage, "password_stdin cannot be used when --input-json reads stdin", false)
+				}
+				name, email, imapUsername, makeDefault = request.Name, request.Email, request.IMAPUsername, request.Default
+				source = credentialSourceFromJSON(request.PasswordStdin, request.CredentialEnv, request.CredentialFile)
+			}
+			if strings.TrimSpace(name) == "" || strings.TrimSpace(email) == "" {
+				return NewAppError(ErrorUsage, "account add requires name and email", false)
 			}
 			setup, err := credentialSetupFromOptions(state, source)
 			if err != nil {
@@ -98,23 +112,33 @@ func newAccountAddCommand(state *executionState) *cobra.Command {
 	command.Flags().BoolVar(&makeDefault, "default", false, "Make this the default account")
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
 	bindCredentialSourceFlags(command, &source)
-	_ = command.MarkFlagRequired("name")
-	_ = command.MarkFlagRequired("email")
+	bindJSONInput(command, &input)
 	return command
 }
 
 func newAccountRenameCommand(state *executionState) *cobra.Command {
 	var jsonOutput bool
+	var input jsonInputOptions
 	command := &cobra.Command{
 		Use:     "rename <selector> <new-name>",
 		Short:   "Rename an account profile",
-		Args:    cobra.ExactArgs(2),
+		Args:    exactArgsOrJSONInput(&input, 2),
 		Example: "  icloud account rename Personal Primary",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput}, OutputSupport{JSON: true}); err != nil {
 				return err
 			}
-			value, schemaVersion, err := state.accounts.Rename(cmd.Context(), state.global.Home, args[0], args[1])
+			selector, newName := "", ""
+			if len(args) == 2 {
+				selector, newName = args[0], args[1]
+			}
+			var request accountRenameJSONRequest
+			if used, err := readJSONInput(cmd, state, input, &request); err != nil {
+				return err
+			} else if used {
+				selector, newName = request.Selector, request.NewName
+			}
+			value, schemaVersion, err := state.accounts.Rename(cmd.Context(), state.global.Home, selector, newName)
 			if err != nil {
 				return err
 			}
@@ -126,21 +150,33 @@ func newAccountRenameCommand(state *executionState) *cobra.Command {
 		},
 	}
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
+	bindJSONInput(command, &input)
 	return command
 }
 
 func newAccountDefaultCommand(state *executionState) *cobra.Command {
 	var jsonOutput bool
+	var input jsonInputOptions
 	command := &cobra.Command{
 		Use:     "default <selector>",
 		Short:   "Set the default account",
-		Args:    cobra.ExactArgs(1),
+		Args:    exactArgsOrJSONInput(&input, 1),
 		Example: "  icloud account default Work",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput}, OutputSupport{JSON: true}); err != nil {
 				return err
 			}
-			value, schemaVersion, err := state.accounts.SetDefault(cmd.Context(), state.global.Home, args[0])
+			selector := ""
+			if len(args) == 1 {
+				selector = args[0]
+			}
+			var request accountSelectorJSONRequest
+			if used, err := readJSONInput(cmd, state, input, &request); err != nil {
+				return err
+			} else if used {
+				selector = request.Selector
+			}
+			value, schemaVersion, err := state.accounts.SetDefault(cmd.Context(), state.global.Home, selector)
 			if err != nil {
 				return err
 			}
@@ -152,15 +188,17 @@ func newAccountDefaultCommand(state *executionState) *cobra.Command {
 		},
 	}
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
+	bindJSONInput(command, &input)
 	return command
 }
 
 func newAccountRemoveCommand(state *executionState) *cobra.Command {
 	var yes, jsonOutput bool
+	var input jsonInputOptions
 	command := &cobra.Command{
 		Use:     "remove <selector>",
 		Short:   "Remove an account profile and its native keyring entry",
-		Args:    cobra.ExactArgs(1),
+		Args:    exactArgsOrJSONInput(&input, 1),
 		Example: "  icloud account remove Old --yes",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput}, OutputSupport{JSON: true}); err != nil {
@@ -169,7 +207,17 @@ func newAccountRemoveCommand(state *executionState) *cobra.Command {
 			if !yes {
 				return NewAppError(ErrorSafety, "account removal requires --yes", false)
 			}
-			value, keyringDeleted, schemaVersion, err := state.accounts.Remove(cmd.Context(), state.global.Home, args[0])
+			selector := ""
+			if len(args) == 1 {
+				selector = args[0]
+			}
+			var request accountSelectorJSONRequest
+			if used, err := readJSONInput(cmd, state, input, &request); err != nil {
+				return err
+			} else if used {
+				selector = request.Selector
+			}
+			value, keyringDeleted, schemaVersion, err := state.accounts.Remove(cmd.Context(), state.global.Home, selector)
 			if err != nil {
 				return err
 			}
@@ -182,6 +230,7 @@ func newAccountRemoveCommand(state *executionState) *cobra.Command {
 	}
 	command.Flags().BoolVar(&yes, "yes", false, "Authorize removal without prompting")
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
+	bindJSONInput(command, &input)
 	return command
 }
 
@@ -230,21 +279,36 @@ func newAccountCredentialShowCommand(state *executionState) *cobra.Command {
 func newAccountCredentialReplaceCommand(state *executionState) *cobra.Command {
 	var jsonOutput bool
 	var source credentialSourceOptions
+	var input jsonInputOptions
 	command := &cobra.Command{
 		Use:     "replace <selector>",
 		Short:   "Replace an account credential and return it to pending validation",
-		Args:    cobra.ExactArgs(1),
+		Args:    exactArgsOrJSONInput(&input, 1),
 		Example: "  printf '%s\\n' \"$NEW_PASSWORD\" | icloud account credential replace Personal --password-stdin",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput}, OutputSupport{JSON: true}); err != nil {
 				return err
+			}
+			selector := ""
+			if len(args) == 1 {
+				selector = args[0]
+			}
+			var request credentialReplaceJSONRequest
+			if used, err := readJSONInput(cmd, state, input, &request, "password-stdin", "credential-env", "credential-file"); err != nil {
+				return err
+			} else if used {
+				if request.PasswordStdin && jsonInputConsumesStdin(input) {
+					return NewAppError(ErrorUsage, "password_stdin cannot be used when --input-json reads stdin", false)
+				}
+				selector = request.Selector
+				source = credentialSourceFromJSON(request.PasswordStdin, request.CredentialEnv, request.CredentialFile)
 			}
 			setup, err := credentialSetupFromOptions(state, source)
 			if err != nil {
 				return err
 			}
 			defer wipeSecret(setup.Secret)
-			credential, schemaVersion, err := state.accounts.CredentialReplace(cmd.Context(), state.global.Home, args[0], setup)
+			credential, schemaVersion, err := state.accounts.CredentialReplace(cmd.Context(), state.global.Home, selector, setup)
 			if err != nil {
 				return err
 			}
@@ -257,15 +321,17 @@ func newAccountCredentialReplaceCommand(state *executionState) *cobra.Command {
 	}
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
 	bindCredentialSourceFlags(command, &source)
+	bindJSONInput(command, &input)
 	return command
 }
 
 func newAccountCredentialDeleteCommand(state *executionState) *cobra.Command {
 	var yes, jsonOutput bool
+	var input jsonInputOptions
 	command := &cobra.Command{
 		Use:     "delete <selector>",
 		Short:   "Delete an account credential reference and native keyring entry",
-		Args:    cobra.ExactArgs(1),
+		Args:    exactArgsOrJSONInput(&input, 1),
 		Example: "  icloud account credential delete Personal --yes",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput}, OutputSupport{JSON: true}); err != nil {
@@ -274,7 +340,17 @@ func newAccountCredentialDeleteCommand(state *executionState) *cobra.Command {
 			if !yes {
 				return NewAppError(ErrorSafety, "credential deletion requires --yes", false)
 			}
-			credential, schemaVersion, err := state.accounts.CredentialDelete(cmd.Context(), state.global.Home, args[0])
+			selector := ""
+			if len(args) == 1 {
+				selector = args[0]
+			}
+			var request accountSelectorJSONRequest
+			if used, err := readJSONInput(cmd, state, input, &request); err != nil {
+				return err
+			} else if used {
+				selector = request.Selector
+			}
+			credential, schemaVersion, err := state.accounts.CredentialDelete(cmd.Context(), state.global.Home, selector)
 			if err != nil {
 				return err
 			}
@@ -287,6 +363,7 @@ func newAccountCredentialDeleteCommand(state *executionState) *cobra.Command {
 	}
 	command.Flags().BoolVar(&yes, "yes", false, "Authorize credential deletion without prompting")
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
+	bindJSONInput(command, &input)
 	return command
 }
 

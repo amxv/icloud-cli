@@ -1,0 +1,23 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/message-export-input.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "force": {
+      "type": "boolean"
+    },
+    "message_id": {
+      "type": "string"
+    },
+    "output": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "message_id",
+    "output"
+  ],
+  "title": "message export JSON input",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

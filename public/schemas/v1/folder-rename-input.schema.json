@@ -1,0 +1,20 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/folder-rename-input.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "folder": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "folder",
+    "name"
+  ],
+  "title": "folder rename JSON input",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

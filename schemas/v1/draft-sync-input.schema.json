@@ -1,0 +1,19 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/draft-sync-input.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "draft_id": {
+      "type": "string"
+    },
+    "folder": {
+      "type": "string"
+    },
+    "limit": {
+      "type": "integer"
+    }
+  },
+  "title": "draft sync JSON input",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

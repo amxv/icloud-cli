@@ -26,13 +26,32 @@ type mailForwardPreviewData struct {
 
 func newMailForwardCommand(state *executionState) *cobra.Command {
 	var flags forwardFlags
+	var input jsonInputOptions
 	command := &cobra.Command{
 		Use:   "forward <msg_…>",
 		Short: "Forward one explicitly selected local message as a new conversation",
-		Args:  cobra.ExactArgs(1),
+		Args:  exactArgsOrJSONInput(&input, 1),
 		Example: "  icloud mail forward msg_… --to teammate@example.com --body 'For context' --dry-run\n" +
 			"  icloud mail forward msg_… --to teammate@example.com --original eml --include-attachment att_… --idempotency-key forward-01 --yes",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			sourceID := ""
+			if len(args) == 1 {
+				sourceID = strings.TrimSpace(args[0])
+			}
+			var jsonRequest forwardJSONRequest
+			if used, err := readJSONInput(cmd, state, input, &jsonRequest,
+				"to", "cc", "bcc", "reply-to", "body", "body-file", "html-body", "html-body-file",
+				"header", "attach", "attach-name", "attach-type", "original", "include-attachment", "idempotency-key", "retry-of", "retry-unknown"); err != nil {
+				return err
+			} else if used {
+				if jsonInputConsumesStdin(input) && forwardComposeConsumesStdin(jsonRequest.Compose) {
+					return NewAppError(ErrorUsage, "body_file cannot read stdin when --input-json also reads stdin", false)
+				}
+				process := flags.sendFlags
+				flags = forwardFlags{sendFlags: jsonRequest.Compose.sendFlags(), Original: jsonRequest.Original, OriginalAttachments: append([]string(nil), jsonRequest.IncludeAttachments...)}
+				flags.DryRun, flags.Yes, flags.JSON, flags.Verbose, flags.ShowHeaders, flags.Format = process.DryRun, process.Yes, process.JSON, process.Verbose, process.ShowHeaders, process.Format
+				sourceID = strings.TrimSpace(jsonRequest.MessageID)
+			}
 			if flags.DryRun && flags.Yes {
 				return NewAppError(ErrorUsage, "--dry-run and --yes cannot be combined", false)
 			}
@@ -42,7 +61,7 @@ func newMailForwardCommand(state *executionState) *cobra.Command {
 			if !flags.DryRun && (flags.Verbose || flags.ShowHeaders || strings.TrimSpace(flags.Format) != "") {
 				return NewAppError(ErrorUsage, "--verbose, --headers, and --format are dry-run preview expansions", false)
 			}
-			request, stdinConsumed, err := forwardRequestFromFlags(state, strings.TrimSpace(args[0]), flags)
+			request, stdinConsumed, err := forwardRequestFromFlags(state, sourceID, flags)
 			if err != nil {
 				return err
 			}
@@ -92,6 +111,7 @@ func newMailForwardCommand(state *executionState) *cobra.Command {
 		},
 	}
 	bindForwardFlags(command, &flags)
+	bindJSONInput(command, &input)
 	return command
 }
 
@@ -110,7 +130,7 @@ func bindForwardFlags(command *cobra.Command, flags *forwardFlags) {
 	command.Flags().StringArrayVar(&flags.AttachmentTypes, "attach-type", nil, "Override one new attachment media type as path=type/subtype; repeat as needed")
 	command.Flags().StringVar(&flags.Original, "original", string(maildomain.ForwardOriginalQuoted), "Original representation: quoted, eml, or none")
 	command.Flags().StringArrayVar(&flags.OriginalAttachments, "include-attachment", nil, "Include one original att_… attachment by stable ID; repeat as needed")
-	command.Flags().StringVar(&flags.IdempotencyKey, "idempotency-key", "", "Return the original attempt when the same normalized forward is repeated")
+	command.Flags().StringVar(&flags.IdempotencyKey, "idempotency-key", "", idempotencyKeyHelp)
 	command.Flags().StringVar(&flags.RetryOf, "retry-of", "", "Link an explicit retry to one failed or unknown send_… attempt")
 	command.Flags().BoolVar(&flags.RetryUnknown, "retry-unknown", false, "Authorize one duplicate-risk retry of an unknown attempt; requires --retry-of and --yes")
 	command.Flags().BoolVar(&flags.DryRun, "dry-run", false, "Preview the resolved forward without creating an attempt or contacting SMTP")

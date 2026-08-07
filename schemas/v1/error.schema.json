@@ -1,0 +1,28 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/error.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "code": {
+      "type": "string"
+    },
+    "details": {
+      "additionalProperties": {},
+      "type": "object"
+    },
+    "message": {
+      "type": "string"
+    },
+    "retryable": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "code",
+    "message",
+    "retryable"
+  ],
+  "title": "iCloud CLI error",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

@@ -1,0 +1,20 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/account-rename-input.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "new_name": {
+      "type": "string"
+    },
+    "selector": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "new_name",
+    "selector"
+  ],
+  "title": "account rename JSON input",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

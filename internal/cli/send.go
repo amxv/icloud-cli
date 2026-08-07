@@ -77,6 +77,7 @@ type mailSendPreviewData struct {
 
 func newMailSendCommand(state *executionState) *cobra.Command {
 	var flags sendFlags
+	var input jsonInputOptions
 	command := &cobra.Command{
 		Use:   "send",
 		Short: "Preview or send text, HTML, and attachments safely and idempotently",
@@ -85,6 +86,19 @@ func newMailSendCommand(state *executionState) *cobra.Command {
 			"  icloud mail send --to 'Client <client@example.com>' --subject 'Update' --body 'Hello' --attach report.pdf --yes --idempotency-key send-01\n" +
 			"  icloud mail send --to client@example.com --subject 'Update' --body-file - --yes --json",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			var jsonRequest composeJSONRequest
+			if used, err := readJSONInput(cmd, state, input, &jsonRequest,
+				"to", "cc", "bcc", "reply-to", "subject", "body", "body-file", "html-body", "html-body-file",
+				"header", "attach", "attach-name", "attach-type", "idempotency-key", "retry-of", "retry-unknown"); err != nil {
+				return err
+			} else if used {
+				if jsonInputConsumesStdin(input) && composeConsumesStdin(jsonRequest) {
+					return NewAppError(ErrorUsage, "body_file cannot read stdin when --input-json also reads stdin", false)
+				}
+				process := sendFlags{DryRun: flags.DryRun, Yes: flags.Yes, JSON: flags.JSON, Verbose: flags.Verbose, ShowHeaders: flags.ShowHeaders, Format: flags.Format}
+				flags = jsonRequest.sendFlags()
+				flags.DryRun, flags.Yes, flags.JSON, flags.Verbose, flags.ShowHeaders, flags.Format = process.DryRun, process.Yes, process.JSON, process.Verbose, process.ShowHeaders, process.Format
+			}
 			if flags.DryRun && flags.Yes {
 				return NewAppError(ErrorUsage, "--dry-run and --yes cannot be combined", false)
 			}
@@ -159,7 +173,7 @@ func newMailSendCommand(state *executionState) *cobra.Command {
 	command.Flags().StringArrayVar(&flags.Attachments, "attach", nil, "Regular file path to attach; repeat as needed")
 	command.Flags().StringArrayVar(&flags.AttachmentNames, "attach-name", nil, "Override one attachment filename as path=filename; repeat as needed")
 	command.Flags().StringArrayVar(&flags.AttachmentTypes, "attach-type", nil, "Override one attachment media type as path=type/subtype; repeat as needed")
-	command.Flags().StringVar(&flags.IdempotencyKey, "idempotency-key", "", "Return the original attempt when the same normalized request is repeated")
+	command.Flags().StringVar(&flags.IdempotencyKey, "idempotency-key", "", idempotencyKeyHelp)
 	command.Flags().StringVar(&flags.RetryOf, "retry-of", "", "Link an explicit retry to one failed or unknown send_… attempt")
 	command.Flags().BoolVar(&flags.RetryUnknown, "retry-unknown", false, "Authorize one duplicate-risk retry of an unknown attempt; requires --retry-of and --yes")
 	command.Flags().BoolVar(&flags.DryRun, "dry-run", false, "Preview the normalized message without creating an attempt or contacting SMTP")
@@ -168,6 +182,7 @@ func newMailSendCommand(state *executionState) *cobra.Command {
 	command.Flags().BoolVar(&flags.Verbose, "verbose", false, "With --dry-run, include normalized custom-header detail and HTML byte count")
 	command.Flags().BoolVar(&flags.ShowHeaders, "headers", false, "With --dry-run, print normalized safe header fields (Bcc remains omitted)")
 	command.Flags().StringVar(&flags.Format, "format", "", "With --dry-run, output text, html, or raw preview content")
+	bindJSONInput(command, &input)
 	return command
 }
 

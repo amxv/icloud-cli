@@ -1,9 +1,9 @@
 ---
 title: Output and automation
-description: Understand compact defaults, JSON envelopes, outbound-review privacy, stdin safety, stderr, request IDs, timeouts, and stable exit classes.
+description: Understand compact defaults, strict JSON write input, bounded bulk JSONL, versioned schemas, outbound-review privacy, stdin safety, stderr, request IDs, timeouts, and stable exit classes.
 order: 9
 category: Guides
-summary: The agent-facing contract for bounded text, explicit JSON, safe credential and message input, deliberate send/reply/forward operations, and stable failures.
+summary: The agent-facing contract for bounded text, explicit JSON, strict write requests, bulk state changes, public schemas, safe message input, and stable failures.
 ---
 
 ## Compact text is always the default
@@ -54,6 +54,65 @@ Account lifecycle, credential, validation, doctor, folder discovery/policy, enab
 Thread JSON remains local reconstruction data. `mail latest --json` returns aggregates only. `mail thread show --metadata-only --verbose --json` returns chronological messages and bounded RFC graph evidence without excerpts, BCC, raw-storage coordinates, bodies, or internal edge IDs. `--format raw --json` is explicit and bounded; plain multi-message raw output is rejected.
 
 Credential metadata JSON omits internal IDs, keyring references, environment names, file paths, and values. Outbound status JSON omits recipients, BCC, subject, bodies, idempotency keys, attachment paths, and private blob coordinates. Error envelopes omit wrapped provider and storage causes.
+
+## Use one strict JSON shape for writes
+
+Every command in the explicit automation write contract—account/folder configuration, bounded sync/repair, provider message mutations, drafts, outbound mail, and caller-selected exports—accepts `--input-json <path|->`. `icloud capabilities --json` is the source of truth for that command list. JSON enters the same validators and safety gates as flags; it is not a generic command RPC for read, diagnostic, or foreground-watch commands.
+
+For example, preview a send request from stdin:
+
+```bash
+cat >request.json <<'JSON'
+{
+  "to": ["client@example.com"],
+  "subject": "Project update",
+  "body_file": "message.txt",
+  "idempotency_key": "project-update-07"
+}
+JSON
+
+icloud mail send --input-json request.json --dry-run --json
+icloud mail send --input-json request.json --yes --json
+```
+
+Equivalent write flags and positional write arguments cannot be mixed with `--input-json`; a mixed request exits `2` before any provider mutation. Process controls remain flags: `--yes` and `--dry-run` preserve the existing confirmation model, while `--json`, `--jsonl`, `--full`, `--verbose`, `--format`, `--headers`, and `--body-only` control what is returned. Global `--home`, `--account`, `--timeout`, `--no-input`, and `--request-id` keep their normal precedence.
+
+Use this precedence consistently in automation: global selection/lifetime flags choose local state, account, timeout, prompting policy, and request correlation first; then choose exactly one write-input form (ordinary positional/write flags, `--input-json`, or a command's documented JSONL input); then apply safety controls such as `--dry-run` and `--yes`; finally choose one structured output mode and any command-supported explicit content expansions. `--json` and `--jsonl` are mutually exclusive. An input document never overrides a global, safety, or output-expansion flag. Where a write supports an idempotency key, it is part of that write request: provide it either as `--idempotency-key` with ordinary flags or as `idempotency_key` in JSON, never both.
+
+JSON decoding is strict: unknown fields, trailing values, empty input, and requests larger than 1 MiB are rejected. A write request read from stdin cannot also request a body or password from stdin; use an input file for one of those streams instead. Credential JSON never accepts a plaintext password property. It can select `password_stdin`, `credential_env`, or `credential_file`, preserving the same secret-handling boundary as the human flags.
+
+The exact JSON shape for each write is published in `icloud capabilities --json`. Its automation command list links each command to a versioned request schema and response schema. The installed npm package ships the same files under `schemas/v1/`, and the docs site serves them from `/schemas/v1/`.
+
+## Bulk message state is bounded and explicit about partial success
+
+Read/flag state commands accept up to 100 stable message IDs at once:
+
+```bash
+icloud mail mark-read msg_… msg_… msg_…
+```
+
+For structured pipelines, either send one JSON object with `message_ids` through `--input-json`, or use line-delimited items:
+
+```bash
+cat changes.jsonl | \
+  icloud mail flag --input-jsonl - --mode continue-on-error --jsonl
+```
+
+Each JSONL input line contains one `message_id` and an optional exact `folder`. `--mode atomic` is the default: the complete bounded input shape and stable IDs are validated before provider writes begin, then target resolution and provider mutation proceed item by item and execution stops on the first failure. IMAP does not provide a cross-message rollback transaction, so if an earlier item already succeeded, the command explicitly reports `partial=true`, requested/attempted/updated/failed/skipped counts, and a non-zero exit instead of pretending those provider writes rolled back. `--mode continue-on-error` attempts every syntactically valid item and returns a non-zero exit if any target or provider operation failed.
+
+`--jsonl` emits one typed `item` event per attempted operation followed by a typed `completed` event containing mode, requested/attempted/updated/failed/skipped counts, and `partial`. Compact output uses one small result block per attempted item plus one bounded summary.
+
+## Schemas and capabilities are public contracts
+
+```bash
+icloud capabilities --json
+```
+
+The capability envelope includes the CLI version, local data-schema version, automation-contract version, supported bulk modes/bounds, stable schema identifiers, and per-write request/response schema IDs. When you explicitly select an account with `--account`, capabilities may also include the IMAP/SMTP capability strings already cached for that account; this lookup is local-only and never resolves a credential or opens a network connection.
+
+The versioned JSON Schemas cover accounts, folders, messages, threads, attachments, checkpoints, outbound attempts, drafts, JSONL events, errors, the common output envelope, and every documented write-input shape. Regenerate repository artifacts with `make schemas`; CI tests fail if generated and committed schemas drift.
+
+Shell completion follows the same local-only rule. Account and folder suggestions use cached stable IDs with friendly descriptions and do not run folder status, authenticate, or contact iCloud.
 
 ## Outbound review and success have different privacy contracts
 

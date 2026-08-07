@@ -116,11 +116,22 @@ func newMailAttachmentsListCommand(state *executionState) *cobra.Command {
 func newMailAttachmentSaveCommand(state *executionState) *cobra.Command {
 	var output string
 	var force, binary, jsonOutput bool
+	var input jsonInputOptions
 	command := &cobra.Command{
 		Use:   "save <attachment-id>",
 		Short: "Verify and stream one decoded attachment",
-		Args:  cobra.ExactArgs(1),
+		Args:  exactArgsOrJSONInput(&input, 1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			attachmentID := ""
+			if len(args) == 1 {
+				attachmentID = args[0]
+			}
+			var jsonRequest attachmentSaveJSONRequest
+			if used, err := readJSONInput(cmd, state, input, &jsonRequest, "output", "force", "binary"); err != nil {
+				return err
+			} else if used {
+				attachmentID, output, force, binary = jsonRequest.AttachmentID, jsonRequest.Output, jsonRequest.Force, jsonRequest.Binary
+			}
 			if strings.TrimSpace(output) == "" {
 				return NewAppError(ErrorUsage, "--output is required", false)
 			}
@@ -131,7 +142,7 @@ func newMailAttachmentSaveCommand(state *executionState) *cobra.Command {
 				return NewAppError(ErrorUsage, "--json cannot be combined with --output -", false)
 			}
 			accountValue, attachment, source, schemaVersion, err := state.mail.MailAttachment(
-				cmd.Context(), state.global.Home, state.global.Account, args[0],
+				cmd.Context(), state.global.Home, state.global.Account, attachmentID,
 			)
 			if err != nil {
 				return err
@@ -161,22 +172,34 @@ func newMailAttachmentSaveCommand(state *executionState) *cobra.Command {
 	command.Flags().BoolVar(&force, "force", false, "Replace an existing regular file")
 	command.Flags().BoolVar(&binary, "binary", false, "Acknowledge binary bytes on stdout")
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope after file export")
+	bindJSONInput(command, &input)
 	return command
 }
 
 func newMailAttachmentsSaveAllCommand(state *executionState) *cobra.Command {
 	var directory string
 	var force, jsonOutput bool
+	var input jsonInputOptions
 	command := &cobra.Command{
 		Use:   "save-all <message-id>",
 		Short: "Export a bounded attachment set with safe deterministic names",
-		Args:  cobra.ExactArgs(1),
+		Args:  exactArgsOrJSONInput(&input, 1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			messageID := ""
+			if len(args) == 1 {
+				messageID = args[0]
+			}
+			var jsonRequest attachmentsSaveAllJSONRequest
+			if used, err := readJSONInput(cmd, state, input, &jsonRequest, "dir", "force"); err != nil {
+				return err
+			} else if used {
+				messageID, directory, force = jsonRequest.MessageID, jsonRequest.Directory, jsonRequest.Force
+			}
 			if strings.TrimSpace(directory) == "" {
 				return NewAppError(ErrorUsage, "--dir is required", false)
 			}
 			accountValue, message, attachments, more, schemaVersion, err := state.mail.MailAttachments(
-				cmd.Context(), state.global.Home, state.global.Account, args[0], maximumAttachmentSetSize,
+				cmd.Context(), state.global.Home, state.global.Account, messageID, maximumAttachmentSetSize,
 			)
 			if err != nil {
 				return err
@@ -203,6 +226,7 @@ func newMailAttachmentsSaveAllCommand(state *executionState) *cobra.Command {
 	command.Flags().StringVar(&directory, "dir", "", "Destination directory")
 	command.Flags().BoolVar(&force, "force", false, "Replace existing regular files")
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
+	bindJSONInput(command, &input)
 	return command
 }
 

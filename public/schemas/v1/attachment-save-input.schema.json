@@ -1,0 +1,26 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/attachment-save-input.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "attachment_id": {
+      "type": "string"
+    },
+    "binary": {
+      "type": "boolean"
+    },
+    "force": {
+      "type": "boolean"
+    },
+    "output": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "attachment_id",
+    "output"
+  ],
+  "title": "attachment save JSON input",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

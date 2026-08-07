@@ -1,0 +1,105 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/folder.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "account_id": {
+      "type": "string"
+    },
+    "attributes": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "created_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "delimiter": {
+      "type": "string"
+    },
+    "discovered_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "id": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string"
+    },
+    "kind_source": {
+      "type": "string"
+    },
+    "messages": {
+      "type": "integer"
+    },
+    "missing_since": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "parent_name": {
+      "type": "string"
+    },
+    "parent_wire_name": {
+      "type": "string"
+    },
+    "present": {
+      "type": "boolean"
+    },
+    "selectable": {
+      "type": "boolean"
+    },
+    "stale": {
+      "type": "boolean"
+    },
+    "status_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "subscription": {
+      "type": "string"
+    },
+    "sync_enabled": {
+      "type": "boolean"
+    },
+    "uid_next": {
+      "type": "integer"
+    },
+    "uid_validity": {
+      "type": "integer"
+    },
+    "unseen": {
+      "type": "integer"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "wire_name": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "account_id",
+    "created_at",
+    "discovered_at",
+    "id",
+    "kind",
+    "name",
+    "present",
+    "selectable",
+    "stale",
+    "subscription",
+    "sync_enabled",
+    "updated_at",
+    "wire_name"
+  ],
+  "title": "iCloud CLI folder",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

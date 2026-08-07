@@ -39,11 +39,12 @@ type mailLocationMutationData struct {
 
 func newMailLocationMutationCommand(state *executionState, action maildomain.LocationMutationAction) *cobra.Command {
 	var flags locationMutationFlags
+	var input jsonInputOptions
 	name, short, example := locationMutationCommandMetadata(action)
 	command := &cobra.Command{
 		Use:     name + " <message-id>",
 		Short:   short,
-		Args:    cobra.ExactArgs(1),
+		Args:    exactArgsOrJSONInput(&input, 1),
 		Example: example,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := ValidateOutputOptions(OutputOptions{JSON: flags.JSON}, OutputSupport{JSON: true}); err != nil {
@@ -52,8 +53,18 @@ func newMailLocationMutationCommand(state *executionState, action maildomain.Loc
 			if flags.DryRun && flags.Yes {
 				return NewAppError(ErrorUsage, "--dry-run and --yes cannot be combined", false)
 			}
+			messageID := ""
+			if len(args) == 1 {
+				messageID = strings.TrimSpace(args[0])
+			}
+			var jsonRequest locationJSONRequest
+			if used, err := readJSONInput(cmd, state, input, &jsonRequest, "from", "to", "idempotency-key"); err != nil {
+				return err
+			} else if used {
+				messageID, flags.From, flags.To, flags.IdempotencyKey = strings.TrimSpace(jsonRequest.MessageID), jsonRequest.From, jsonRequest.To, jsonRequest.IdempotencyKey
+			}
 			request := maildomain.LocationMutationRequest{
-				Action: action, MessageID: strings.TrimSpace(args[0]),
+				Action: action, MessageID: messageID,
 				FromFolder: strings.TrimSpace(flags.From), ToFolder: strings.TrimSpace(flags.To),
 				IdempotencyKey: strings.TrimSpace(flags.IdempotencyKey),
 			}
@@ -104,10 +115,11 @@ func newMailLocationMutationCommand(state *executionState, action maildomain.Loc
 	}
 	command.Flags().StringVar(&flags.From, "from", "", "Select one exact current source folder by ID, name, wire name, or kind")
 	command.Flags().StringVar(&flags.To, "to", "", "Select one current destination folder by ID, name, wire name, or kind")
-	command.Flags().StringVar(&flags.IdempotencyKey, "idempotency-key", "", "Return the original mutation when the same exact request is repeated")
+	command.Flags().StringVar(&flags.IdempotencyKey, "idempotency-key", "", idempotencyKeyHelp)
 	command.Flags().BoolVar(&flags.DryRun, "dry-run", false, "Preview the exact location change without creating intent or contacting IMAP")
 	command.Flags().BoolVar(&flags.Yes, "yes", false, "Confirm an intentional non-interactive location change")
 	command.Flags().BoolVar(&flags.JSON, "json", false, "Emit one stable JSON success envelope")
+	bindJSONInput(command, &input)
 	return command
 }
 
