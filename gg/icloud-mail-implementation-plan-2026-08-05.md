@@ -1948,6 +1948,14 @@ Regression scope is the entire repository: Go formatting/vet/test/race/fuzz wher
 
 ## Amendments
 
+### 2026-08-07 — Bind historical backfill progress to the exact requested selection
+
+- **Trigger:** Phase 20 exposes optional `--after`/`--before` historical windows. A single account/folder reverse cursor would let a narrow run acknowledge provider history that a later wider run never examined, while starting every historical run from provider tail would unnecessarily revisit mail already covered by the safe forward checkpoint.
+- **Change:** a durable historical frontier is keyed by account, folder, and the exact normalized date selection. Different windows therefore resume independently and may safely refetch overlap through canonical idempotent ingestion. When a forward checkpoint exists, a new historical run begins immediately below its saved `last_scanned_uid` boundary; when no forward checkpoint exists, it starts from the freshly selected provider tail. Historical commits can never update the forward checkpoint.
+- **Repair boundary:** if iCloud reports a changed UID namespace while backfill resumes, the existing reverse cursor is retained as failed evidence until targeted repair reads fresh STATUS for that exact mailbox. Repair then resets the historical namespace/cursor to the verified provider boundary rather than combining reused UIDs or inferring a position from local cache.
+- **Affected phases:** Phase 20 backfill/rebaseline/repair, Phase 24 documentation/reference consolidation, and Phase 25 cursor/UIDVALIDITY/migration/scale acceptance.
+
+
 ### 2026-08-06 — Enforce the provider message-size bound before outbound SMTP
 
 - **Trigger:** Phase 15’s planned per-file/count/total attachment bounds permit a normalized request whose MIME/base64 expansion is larger than iCloud Mail’s ordinary 20 MB message limit. Waiting for SMTP to reject that request would violate the preflight/safety contract and could leave a needless failed attempt after all attachment bytes had already been reviewed and cached.
