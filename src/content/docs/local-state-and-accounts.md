@@ -139,6 +139,20 @@ Treat the selected application root as one unit: it contains the local mail inde
 
 The root does not contain a plaintext app-specific password. A keyring secret remains in the operating-system credential store; environment values and external credential files also remain outside the root. Back those external sources up separately if your recovery plan depends on them.
 
+## Configure inbound storage limits
+
+Inbound raw RFC822 messages and decoded attachment blobs default to 64 MiB each. Deployments that need a different ceiling can set validated application-level byte limits before running the CLI:
+
+```bash
+export ICLOUD_MAX_RAW_MESSAGE_BYTES=67108864
+export ICLOUD_MAX_ATTACHMENT_BYTES=67108864
+icloud capabilities --json
+```
+
+Each value is a decimal byte count from 1 byte through 1 GiB. The effective limits apply consistently to ordinary sync, historical/provider hydration, message parsing and search repair, attachment storage, local content verification, and repair diagnostics. They do not change the separate 20 MiB iCloud composed-message send limit.
+
+Lowering a limit below an already stored canonical blob does not rewrite or delete that blob. Reads or repair checks that need those bytes fail visibly as over-limit/unavailable. Raise the applicable limit again, then retry the read, sync/hydration, or repair workflow; do not edit the content-addressed blob store by hand.
+
 To restore, put the complete saved root back at the same chosen `ICLOUD_HOME`/`--home` location while no `icloud` process is using it, keep it private to the user, then start with local checks:
 
 ```bash

@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/amxv/icloud-cli/internal/account"
-	"github.com/amxv/icloud-cli/internal/blob"
 	"github.com/amxv/icloud-cli/internal/cli"
 	"github.com/amxv/icloud-cli/internal/config"
 	"github.com/amxv/icloud-cli/internal/folder"
@@ -74,7 +74,7 @@ func (commands accountCommands) repairSearchBodies(ctx context.Context, state *s
 		return maildomain.SearchRepairSummary{}, cli.WrapAppError(cli.ErrorInternal, "cannot inspect the local search index", false, err)
 	}
 	summary := maildomain.SearchRepairSummary{AccountID: accountValue.ID, Selected: len(items)}
-	blobStore := blob.New(paths.BlobRoot)
+	blobStore := commands.inboundBlobStore(paths)
 	for _, item := range items {
 		if err := ctx.Err(); err != nil {
 			return maildomain.SearchRepairSummary{}, cli.WrapAppError(cli.ErrorUnavailable, "search repair was canceled", false, err)
@@ -82,19 +82,25 @@ func (commands accountCommands) repairSearchBodies(ctx context.Context, state *s
 		message, readErr := state.Mail().Message(ctx, accountValue.ID, item.MessageID)
 		if readErr != nil {
 			summary.Failed++
-			_ = state.Search().RecordBodyError(ctx, accountValue.ID, item.MessageID, "message_unavailable", commands.timeNow())
+			if err := recordSearchRepairBodyError(ctx, state, accountValue.ID, item.MessageID, "message_unavailable", commands.timeNow()); err != nil {
+				return summary, err
+			}
 			continue
 		}
 		rawSource, ok := rawMessageSource(message)
 		if !ok {
 			summary.Failed++
-			_ = state.Search().RecordBodyError(ctx, accountValue.ID, item.MessageID, "raw_unavailable", commands.timeNow())
+			if err := recordSearchRepairBodyError(ctx, state, accountValue.ID, item.MessageID, "raw_unavailable", commands.timeNow()); err != nil {
+				return summary, err
+			}
 			continue
 		}
 		reader, openErr := blobStore.OpenVerifiedContext(ctx, rawSource.StorageKey, rawSource.ContentHash, rawSource.ByteSize)
 		if openErr != nil {
 			summary.Failed++
-			_ = state.Search().RecordBodyError(ctx, accountValue.ID, item.MessageID, "raw_unavailable", commands.timeNow())
+			if err := recordSearchRepairBodyError(ctx, state, accountValue.ID, item.MessageID, "raw_unavailable", commands.timeNow()); err != nil {
+				return summary, err
+			}
 			continue
 		}
 		normalized, parseErr := maildomain.ParseNormalizedContext(ctx, reader)
@@ -104,12 +110,16 @@ func (commands accountCommands) repairSearchBodies(ctx context.Context, state *s
 		}
 		if parseErr != nil {
 			summary.Failed++
-			_ = state.Search().RecordBodyError(ctx, accountValue.ID, item.MessageID, "message_parse", commands.timeNow())
+			if err := recordSearchRepairBodyError(ctx, state, accountValue.ID, item.MessageID, "message_parse", commands.timeNow()); err != nil {
+				return summary, err
+			}
 			continue
 		}
 		if err := state.Search().SaveBody(ctx, accountValue.ID, item.MessageID, normalized.SearchText, normalized.SearchTextTruncated, commands.timeNow()); err != nil {
 			summary.Failed++
-			_ = state.Search().RecordBodyError(ctx, accountValue.ID, item.MessageID, "index_write", commands.timeNow())
+			if recordErr := recordSearchRepairBodyError(ctx, state, accountValue.ID, item.MessageID, "index_write", commands.timeNow()); recordErr != nil {
+				return summary, recordErr
+			}
 			continue
 		}
 		summary.Repaired++
@@ -121,4 +131,11 @@ func (commands accountCommands) repairSearchBodies(ctx context.Context, state *s
 	summary.Remaining = pending
 	summary.Errors = failed
 	return summary, nil
+}
+
+func recordSearchRepairBodyError(ctx context.Context, state *store.Store, accountID, messageID, code string, now time.Time) error {
+	if err := state.Search().RecordBodyError(ctx, accountID, messageID, code, now); err != nil {
+		return cli.WrapAppError(cli.ErrorInternal, "cannot persist search repair failure state", false, err)
+	}
+	return nil
 }

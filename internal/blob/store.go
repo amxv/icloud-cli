@@ -30,19 +30,30 @@ type Stager interface {
 
 // Store owns the content-addressed blob directory beneath one CLI state root.
 type Store struct {
-	root     string
-	maxBytes int64
+	root               string
+	maxRawBytes        int64
+	maxAttachmentBytes int64
 }
 
 func New(root string) *Store {
-	return &Store{root: filepath.Clean(root), maxBytes: DefaultMaxRawMessageBytes}
+	return NewWithLimits(root, DefaultMaxRawMessageBytes, DefaultMaxAttachmentBytes)
 }
 
 func NewWithLimit(root string, maxBytes int64) *Store {
 	if maxBytes <= 0 {
 		maxBytes = DefaultMaxRawMessageBytes
 	}
-	return &Store{root: filepath.Clean(root), maxBytes: maxBytes}
+	return NewWithLimits(root, maxBytes, maxBytes)
+}
+
+func NewWithLimits(root string, maxRawBytes, maxAttachmentBytes int64) *Store {
+	if maxRawBytes <= 0 {
+		maxRawBytes = DefaultMaxRawMessageBytes
+	}
+	if maxAttachmentBytes <= 0 {
+		maxAttachmentBytes = DefaultMaxAttachmentBytes
+	}
+	return &Store{root: filepath.Clean(root), maxRawBytes: maxRawBytes, maxAttachmentBytes: maxAttachmentBytes}
 }
 
 // Staged is a durable-intent blob. Before Commit, Open reads the temporary
@@ -74,7 +85,11 @@ func (store *Store) stage(ctx context.Context, reader io.Reader, expectedSize in
 	if reader == nil {
 		return nil, errors.New("blob reader is required")
 	}
-	if expectedSize > store.maxBytes {
+	maxBytes := store.maxRawBytes
+	if namespace == "attachments" {
+		maxBytes = store.maxAttachmentBytes
+	}
+	if expectedSize > maxBytes {
 		return nil, ErrTooLarge
 	}
 	stagingRoot := filepath.Join(store.root, ".staging")
@@ -100,11 +115,11 @@ func (store *Store) stage(ctx context.Context, reader io.Reader, expectedSize in
 
 	hash := sha256.New()
 	limited := &contextReader{ctx: ctx, reader: reader}
-	written, err := io.Copy(io.MultiWriter(file, hash), io.LimitReader(limited, store.maxBytes+1))
+	written, err := io.Copy(io.MultiWriter(file, hash), io.LimitReader(limited, maxBytes+1))
 	if err != nil {
 		return cleanup(fmt.Errorf("stage blob: %w", err))
 	}
-	if written > store.maxBytes {
+	if written > maxBytes {
 		return cleanup(ErrTooLarge)
 	}
 	if err := file.Sync(); err != nil {
@@ -140,6 +155,13 @@ func (store *Store) OpenVerifiedContext(ctx context.Context, storageKey, content
 	contentHash = strings.ToLower(strings.TrimSpace(contentHash))
 	if len(contentHash) != 64 {
 		return nil, ErrCorrupt
+	}
+	limit := store.maxRawBytes
+	if strings.HasPrefix(filepath.ToSlash(strings.TrimSpace(storageKey)), "attachments/") {
+		limit = store.maxAttachmentBytes
+	}
+	if expectedSize > limit {
+		return nil, ErrTooLarge
 	}
 	path, err := store.canonicalPath(storageKey)
 	if err != nil {

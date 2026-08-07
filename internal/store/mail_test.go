@@ -352,6 +352,17 @@ func TestMailAttachmentsKeepDistinctMetadataForDuplicateContent(t *testing.T) {
 	if err != nil || first.Filename != values[0].Filename {
 		t.Fatalf("single attachment=%+v err=%v", first, err)
 	}
+	threadID, err := state.Threads().Resolve(context.Background(), accountID, record.MessageID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	threadValues, threadMore, err := state.Mail().AttachmentsForThread(context.Background(), accountID, threadID, 20)
+	if err != nil || threadMore || len(threadValues) != 2 {
+		t.Fatalf("thread attachments=%+v more=%v err=%v", threadValues, threadMore, err)
+	}
+	if threadValues[0].ID == threadValues[1].ID || threadValues[0].ContentHash != threadValues[1].ContentHash {
+		t.Fatalf("thread duplicate-content attachment identities collapsed: %+v", threadValues)
+	}
 }
 
 func TestMailLocationFlagsReconcileAndDeriveSummariesAcrossEligibleLocations(t *testing.T) {

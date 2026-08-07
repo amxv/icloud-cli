@@ -24,6 +24,10 @@ func (service *draftTestMailService) MailDraftList(context.Context, string, stri
 	return account.Account{ID: "acct_test"}, append([]maildomain.Draft(nil), service.values...), false, 18, nil
 }
 
+func (service *draftTestMailService) MailDraftListPage(context.Context, string, string, string, int) (account.Account, []maildomain.Draft, bool, string, int64, error) {
+	return account.Account{ID: "acct_test"}, append([]maildomain.Draft(nil), service.values...), false, "", 18, nil
+}
+
 func (service *draftTestMailService) MailDraftShow(context.Context, string, string, string) (account.Account, maildomain.Draft, maildomain.ContentSource, int64, error) {
 	return account.Account{ID: "acct_test"}, service.show, nil, 18, nil
 }

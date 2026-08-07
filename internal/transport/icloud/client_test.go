@@ -675,6 +675,8 @@ type smtpServerOptions struct {
 	AcceptSend          bool
 	RejectAfterData     bool
 	DisconnectAfterData bool
+	DelayDataResponse   time.Duration
+	DelayDataRead       time.Duration
 }
 
 type smtpTestServer struct {
@@ -789,7 +791,13 @@ func (server *smtpTestServer) handle(conn net.Conn, options smtpServerOptions) {
 				writeSMTP(writer, "550 validation cannot send")
 				continue
 			}
+			if options.DelayDataResponse > 0 {
+				time.Sleep(options.DelayDataResponse)
+			}
 			writeSMTP(writer, "354 continue")
+			if options.DelayDataRead > 0 {
+				time.Sleep(options.DelayDataRead)
+			}
 			data, readErr := io.ReadAll(textproto.NewReader(reader).DotReader())
 			if readErr != nil {
 				return

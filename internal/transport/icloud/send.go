@@ -73,15 +73,20 @@ func (client *Client) SendSMTP(ctx context.Context, auth transport.AuthRequest, 
 			errors.New("at least one SMTP recipient is required"),
 		)
 	}
-	data, err := smtpClient.Data()
+	data, err := runValueWithDeadline(ctx, conn, client.config.StageTimeout, smtpClient.Data)
 	if err != nil {
 		return transport.SMTPSendResult{}, smtpCommandSendError(transport.StageSMTPData, transport.SMTPSendFailed, err)
 	}
-	if _, err := io.Copy(data, request.Message); err != nil {
-		_ = data.Close()
+	if err := runWithDeadline(ctx, conn, client.config.StageTimeout, func() error {
+		_, copyErr := io.Copy(data, request.Message)
+		return copyErr
+	}); err != nil {
+		// DATA may already be in flight. The deadline helper closes the
+		// connection and joins the writer before returning; do not emit a DATA
+		// terminator or touch the command again on this ambiguous path.
 		return transport.SMTPSendResult{}, smtpCommandSendError(transport.StageSMTPWrite, transport.SMTPSendUnknown, err)
 	}
-	response, err := data.CloseWithResponse()
+	response, err := runValueWithDeadline(ctx, conn, client.config.StageTimeout, data.CloseWithResponse)
 	if err != nil {
 		outcome := transport.SMTPSendUnknown
 		var smtpErr *smtp.SMTPError

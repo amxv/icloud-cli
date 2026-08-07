@@ -614,6 +614,9 @@ func messageContentError(err error) error {
 	if errors.Is(err, errJSONContentTooLarge) {
 		return WrapAppError(ErrorSafety, "requested JSON content exceeds the 8 MiB limit; use plain streaming output", false, err)
 	}
+	if errors.Is(err, maildomain.ErrContentLimit) {
+		return WrapAppError(ErrorConfiguration, "local content exceeds the configured inbound limit; raise ICLOUD_MAX_RAW_MESSAGE_BYTES or ICLOUD_MAX_ATTACHMENT_BYTES as appropriate and retry", false, err)
+	}
 	if errors.Is(err, maildomain.ErrContentCorrupt) {
 		return WrapAppError(ErrorUnavailable, "local raw message content is corrupt", false, err)
 	}

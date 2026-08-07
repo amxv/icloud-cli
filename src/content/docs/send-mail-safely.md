@@ -114,6 +114,8 @@ icloud mail draft send drf_… --yes
 
 Draft sends derive a stable idempotency key from the draft ID and revision. A proven send removes known `\Draft` provider copies before removing the local draft. If SMTP acceptance is unknown, the draft and provider copy stay in place. If the message is proven sent but cleanup is incomplete, do not resend; run `icloud mail draft sync drf_…` (adding the explicit `--folder` selector when needed) so cleanup can resume from the saved attempt state.
 
+Likewise, a draft in `reconcile`, `cleanup_pending`, or `send_unknown` recovery state cannot be directly discarded by an ordinary send/delete path when doing so would lose the only provider-recovery evidence. Run `draft sync` first. A retry of a draft whose outbound attempt is already proven `sent` remains idempotent: it reuses that attempt and may resume cleanup without another SMTP transmission.
+
 Delete without sending only after reviewing the scope:
 
 ```bash

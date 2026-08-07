@@ -12,21 +12,48 @@ import (
 	maildomain "github.com/amxv/icloud-cli/internal/mail"
 )
 
-func (commands accountCommands) MailAttachments(ctx context.Context, home, accountSelector, messageID string, limit int) (account.Account, maildomain.Message, []maildomain.Attachment, bool, int64, error) {
-	accountValue, message, _, schemaVersion, err := commands.MailMessage(ctx, home, accountSelector, messageID)
-	if err != nil {
-		return account.Account{}, maildomain.Message{}, nil, false, schemaVersion, err
+func (commands accountCommands) MailAttachments(ctx context.Context, home, accountSelector, selector string, limit int) (account.Account, maildomain.AttachmentTarget, []maildomain.Attachment, bool, int64, error) {
+	selector = strings.TrimSpace(selector)
+	if strings.HasPrefix(selector, "msg_") {
+		accountValue, message, _, schemaVersion, err := commands.MailMessage(ctx, home, accountSelector, selector)
+		if err != nil {
+			return account.Account{}, maildomain.AttachmentTarget{}, nil, false, schemaVersion, err
+		}
+		state, err := openState(ctx, home)
+		if err != nil {
+			return account.Account{}, maildomain.AttachmentTarget{}, nil, false, 0, err
+		}
+		defer state.Close()
+		values, more, err := state.Mail().Attachments(ctx, accountValue.ID, message.ID, limit)
+		if err != nil {
+			return account.Account{}, maildomain.AttachmentTarget{}, nil, false, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot read local attachments", false, err)
+		}
+		return accountValue, maildomain.AttachmentTarget{Kind: "message", ID: message.ID}, values, more, state.SchemaVersion(), nil
+	}
+	if !strings.HasPrefix(selector, "thr_") {
+		return account.Account{}, maildomain.AttachmentTarget{}, nil, false, 0, cli.NewAppError(cli.ErrorUsage, "attachment target must be a stable msg_… message ID or thr_… thread ID", false)
 	}
 	state, err := openState(ctx, home)
 	if err != nil {
-		return account.Account{}, maildomain.Message{}, nil, false, 0, err
+		return account.Account{}, maildomain.AttachmentTarget{}, nil, false, 0, err
 	}
 	defer state.Close()
-	values, more, err := state.Mail().Attachments(ctx, accountValue.ID, message.ID, limit)
+	accountValue, err := state.Accounts().ResolveSelected(ctx, accountSelector)
 	if err != nil {
-		return account.Account{}, maildomain.Message{}, nil, false, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot read local attachments", false, err)
+		return account.Account{}, maildomain.AttachmentTarget{}, nil, false, state.SchemaVersion(), mapAccountError(err)
 	}
-	return accountValue, message, values, more, state.SchemaVersion(), nil
+	threadID, err := state.Threads().Resolve(ctx, accountValue.ID, selector)
+	if err != nil {
+		if errors.Is(err, maildomain.ErrThreadNotFound) {
+			return account.Account{}, maildomain.AttachmentTarget{}, nil, false, state.SchemaVersion(), cli.WrapAppError(cli.ErrorNotFound, "mail thread not found", false, err)
+		}
+		return account.Account{}, maildomain.AttachmentTarget{}, nil, false, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot resolve mail thread", false, err)
+	}
+	values, more, err := state.Mail().AttachmentsForThread(ctx, accountValue.ID, threadID, limit)
+	if err != nil {
+		return account.Account{}, maildomain.AttachmentTarget{}, nil, false, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot read thread attachments", false, err)
+	}
+	return accountValue, maildomain.AttachmentTarget{Kind: "thread", ID: threadID}, values, more, state.SchemaVersion(), nil
 }
 
 func (commands accountCommands) MailAttachment(ctx context.Context, home, accountSelector, attachmentID string) (account.Account, maildomain.Attachment, maildomain.AttachmentSource, int64, error) {
@@ -67,6 +94,9 @@ func (source *attachmentContentSource) Write(ctx context.Context, writer io.Writ
 	if err != nil {
 		if errors.Is(err, blob.ErrCorrupt) {
 			return errors.Join(maildomain.ErrContentCorrupt, err)
+		}
+		if errors.Is(err, blob.ErrTooLarge) {
+			return errors.Join(maildomain.ErrContentLimit, err)
 		}
 		return errors.Join(maildomain.ErrContentUnavailable, err)
 	}

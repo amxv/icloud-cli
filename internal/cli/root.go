@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/amxv/icloud-cli/internal/account"
+	"github.com/amxv/icloud-cli/internal/config"
 	"github.com/amxv/icloud-cli/internal/folder"
 	"github.com/spf13/cobra"
 	"github.com/spf13/cobra/doc"
@@ -133,6 +134,7 @@ type capabilitiesData struct {
 	MailReply             bool                 `json:"mail_reply"`
 	MailForward           bool                 `json:"mail_forward"`
 	MailLocationMutations bool                 `json:"mail_location_mutations"`
+	InboundLimits         config.InboundLimits `json:"inbound_limits"`
 	Output                capabilityOutput     `json:"output"`
 	Automation            capabilityAutomation `json:"automation"`
 	Schemas               map[string]string    `json:"schemas"`
@@ -354,6 +356,10 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput}, OutputSupport{JSON: true}); err != nil {
 				return err
 			}
+			limits, err := config.ResolveInboundLimits()
+			if err != nil {
+				return WrapAppError(ErrorConfiguration, "invalid inbound mail limit configuration", false, err)
+			}
 			data := capabilitiesData{
 				Command:               commandName,
 				Version:               state.version,
@@ -377,6 +383,7 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				MailReply:             true,
 				MailForward:           true,
 				MailLocationMutations: true,
+				InboundLimits:         limits,
 				Output: capabilityOutput{
 					Default: "compact",
 					JSON:    true,

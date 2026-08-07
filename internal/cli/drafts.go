@@ -39,6 +39,7 @@ type draftListData struct {
 	Drafts        []publicDraft `json:"drafts"`
 	Count         int           `json:"count"`
 	More          bool          `json:"more,omitempty"`
+	NextCursor    string        `json:"next_cursor,omitempty"`
 	SchemaVersion int64         `json:"schema_version"`
 }
 
@@ -166,8 +167,10 @@ func bindDraftComposeFlags(command *cobra.Command, flags *sendFlags) {
 
 func newDraftListCommand(state *executionState) *cobra.Command {
 	var limit int
+	var cursor string
 	var jsonOutput, verbose bool
 	command := &cobra.Command{Use: "list", Short: "List local and provider-synchronized drafts", Args: cobra.NoArgs,
+		Example: "  icloud mail draft list\n  icloud mail draft list --limit 50 --json\n  icloud mail draft list --cursor '<opaque-cursor>'",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput, Verbose: verbose}, OutputSupport{JSON: true, Verbose: true}); err != nil {
 				return err
@@ -175,7 +178,7 @@ func newDraftListCommand(state *executionState) *cobra.Command {
 			if limit < 1 || limit > MaximumPageSize {
 				return NewAppError(ErrorUsage, "--limit must be between 1 and 100", false)
 			}
-			accountValue, values, more, schemaVersion, err := state.mail.MailDraftList(cmd.Context(), state.global.Home, state.global.Account, limit)
+			accountValue, values, more, nextCursor, schemaVersion, err := state.mail.MailDraftListPage(cmd.Context(), state.global.Home, state.global.Account, cursor, limit)
 			if err != nil {
 				return err
 			}
@@ -184,7 +187,7 @@ func newDraftListCommand(state *executionState) *cobra.Command {
 				for _, value := range values {
 					public = append(public, sanitizeDraft(value))
 				}
-				return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: draftListData{AccountID: accountValue.ID, Drafts: public, Count: len(public), More: more, SchemaVersion: schemaVersion}, Meta: EnvelopeMeta{RequestID: state.requestID}})
+				return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: draftListData{AccountID: accountValue.ID, Drafts: public, Count: len(public), More: more, NextCursor: nextCursor, SchemaVersion: schemaVersion}, Meta: EnvelopeMeta{RequestID: state.requestID}})
 			}
 			renderer := NewCompactTextRenderer(state.stdout)
 			for _, value := range values {
@@ -193,12 +196,13 @@ func newDraftListCommand(state *executionState) *cobra.Command {
 				}
 			}
 			if more {
-				return renderer.Record("drafts-more", accountValue.ID, Field("limit", limit))
+				return renderer.Record("drafts-more", accountValue.ID, Field("limit", limit), Field("next_cursor", nextCursor))
 			}
 			return nil
 		},
 	}
 	command.Flags().IntVar(&limit, "limit", DefaultPageSize, "Maximum drafts to return (1-100)")
+	command.Flags().StringVar(&cursor, "cursor", "", "Opaque cursor from a previous draft list page")
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
 	command.Flags().BoolVar(&verbose, "verbose", false, "Include provider recovery IDs and timestamps")
 	return command
@@ -207,6 +211,7 @@ func newDraftListCommand(state *executionState) *cobra.Command {
 func newDraftShowCommand(state *executionState) *cobra.Command {
 	var options OutputOptions
 	command := &cobra.Command{Use: "show <draft-id>", Short: "Show a draft with bounded default content or an explicit body/raw expansion", Args: cobra.ExactArgs(1),
+		Example: "  icloud mail draft show drf_…\n  icloud mail draft show drf_… --full",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			format, err := effectiveMessageFormat(options)
 			if err != nil {
@@ -272,6 +277,7 @@ func newDraftSyncCommand(state *executionState) *cobra.Command {
 	var jsonOutput, verbose bool
 	var input jsonInputOptions
 	command := &cobra.Command{Use: "sync [draft-id]", Short: "Synchronize provider Drafts and safely upload local revisions", Args: maximumArgsOrJSONInput(&input, 1),
+		Example: "  icloud mail draft sync\n  icloud mail draft sync drf_…\n  icloud mail draft sync --folder Drafts",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput, Verbose: verbose}, OutputSupport{JSON: true, Verbose: true}); err != nil {
 				return err
@@ -330,6 +336,7 @@ func newDraftSendCommand(state *executionState) *cobra.Command {
 	var format string
 	var input jsonInputOptions
 	command := &cobra.Command{Use: "send <draft-id>", Short: "Preview or send one draft through the normal idempotent outbound path", Args: exactArgsOrJSONInput(&input, 1),
+		Example: "  icloud mail draft send drf_… --dry-run\n  icloud mail draft send drf_… --yes",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			draftID := ""
 			if len(args) == 1 {
@@ -401,6 +408,7 @@ func newDraftDeleteCommand(state *executionState) *cobra.Command {
 	var dryRun, yes, jsonOutput bool
 	var input jsonInputOptions
 	command := &cobra.Command{Use: "delete <draft-id>", Short: "Delete one local draft and every known provider Drafts version", Args: exactArgsOrJSONInput(&input, 1),
+		Example: "  icloud mail draft delete drf_… --dry-run\n  icloud mail draft delete drf_… --yes",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			draftID := ""
 			if len(args) == 1 {

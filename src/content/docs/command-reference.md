@@ -701,7 +701,11 @@ Use "icloud mail attachments [command] --help" for more information about a comm
 List bounded attachment metadata without printing bytes
 
 Usage:
-  icloud mail attachments list <message-id> [flags]
+  icloud mail attachments list <message-or-thread-id> [flags]
+
+Examples:
+  icloud mail attachments list msg_…
+  icloud mail attachments list thr_… --json
 
 Flags:
   -h, --help        help for list
@@ -723,6 +727,10 @@ Verify and stream one decoded attachment
 
 Usage:
   icloud mail attachments save <attachment-id> [flags]
+
+Examples:
+  icloud mail attachments save att_… --output ./document.pdf
+  icloud mail attachments save att_… --output - --binary
 
 Flags:
       --binary              Acknowledge binary bytes on stdout
@@ -746,7 +754,11 @@ Global Flags:
 Export a bounded attachment set with safe deterministic names
 
 Usage:
-  icloud mail attachments save-all <message-id> [flags]
+  icloud mail attachments save-all <message-or-thread-id> [flags]
+
+Examples:
+  icloud mail attachments save-all msg_… --dir ./attachments
+  icloud mail attachments save-all thr_… --dir ./thread-files
 
 Flags:
       --dir string          Destination directory
@@ -906,6 +918,10 @@ Delete one local draft and every known provider Drafts version
 Usage:
   icloud mail draft delete <draft-id> [flags]
 
+Examples:
+  icloud mail draft delete drf_… --dry-run
+  icloud mail draft delete drf_… --yes
+
 Flags:
       --dry-run             Show the exact deletion scope without changing local or provider state
   -h, --help                help for delete
@@ -929,11 +945,17 @@ List local and provider-synchronized drafts
 Usage:
   icloud mail draft list [flags]
 
+Examples:
+  icloud mail draft list
+  icloud mail draft list --limit 50 --json
+  icloud mail draft list --cursor '<opaque-cursor>'
+
 Flags:
-  -h, --help        help for list
-      --json        Emit one stable JSON success envelope
-      --limit int   Maximum drafts to return (1-100) (default 20)
-      --verbose     Include provider recovery IDs and timestamps
+      --cursor string   Opaque cursor from a previous draft list page
+  -h, --help            help for list
+      --json            Emit one stable JSON success envelope
+      --limit int       Maximum drafts to return (1-100) (default 20)
+      --verbose         Include provider recovery IDs and timestamps
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID
@@ -950,6 +972,10 @@ Preview or send one draft through the normal idempotent outbound path
 
 Usage:
   icloud mail draft send <draft-id> [flags]
+
+Examples:
+  icloud mail draft send drf_… --dry-run
+  icloud mail draft send drf_… --yes
 
 Flags:
       --dry-run             Preview the normalized send without contacting SMTP or deleting the draft
@@ -977,6 +1003,10 @@ Show a draft with bounded default content or an explicit body/raw expansion
 Usage:
   icloud mail draft show <draft-id> [flags]
 
+Examples:
+  icloud mail draft show drf_…
+  icloud mail draft show drf_… --full
+
 Flags:
       --body-only       Write only the selected body representation
       --format string   Content format: compact, text, html, or raw (default "compact")
@@ -1001,6 +1031,11 @@ Synchronize provider Drafts and safely upload local revisions
 
 Usage:
   icloud mail draft sync [draft-id] [flags]
+
+Examples:
+  icloud mail draft sync
+  icloud mail draft sync drf_…
+  icloud mail draft sync --folder Drafts
 
 Flags:
       --folder string       Explicitly select the provider Drafts mailbox by ID, name, or wire name when iCloud advertises no Drafts role
@@ -1063,6 +1098,10 @@ Flag one selected message location
 
 Usage:
   icloud mail flag <message-id> [message-id...] [flags]
+
+Examples:
+  icloud mail flag msg_…
+  icloud mail flag msg_… --folder inbox
 
 Flags:
       --folder string        Select one exact folder ID, name, wire name, or kind for every positional/JSON item
@@ -1520,6 +1559,10 @@ Mark one selected message location as read
 Usage:
   icloud mail mark-read <message-id> [message-id...] [flags]
 
+Examples:
+  icloud mail mark-read msg_…
+  icloud mail mark-read msg_… --folder inbox
+
 Flags:
       --folder string        Select one exact folder ID, name, wire name, or kind for every positional/JSON item
   -h, --help                 help for mark-read
@@ -1544,6 +1587,10 @@ Mark one selected message location as unread
 
 Usage:
   icloud mail mark-unread <message-id> [message-id...] [flags]
+
+Examples:
+  icloud mail mark-unread msg_…
+  icloud mail mark-unread msg_… --folder inbox
 
 Flags:
       --folder string        Select one exact folder ID, name, wire name, or kind for every positional/JSON item
@@ -1995,6 +2042,7 @@ Examples:
   icloud mail sync
   icloud mail sync --folder sent
   icloud mail sync --hydrate rem_…
+  icloud mail sync --all-folders --continue-on-error --jsonl
   icloud mail sync --limit 50 --json
   icloud mail sync status --folder sent
 
@@ -2007,11 +2055,13 @@ Available Commands:
 
 Flags:
       --all-folders          Explicitly sync every current selectable folder, including locally disabled folders, with bounded recent bootstrap
+      --continue-on-error    Continue independent hydration items or folders after an error; committed earlier work is never rolled back
       --folder string        Sync one enabled folder by kind, ID, name, or wire name instead of all enabled folders
   -h, --help                 help for sync
       --hydrate strings      Cache one or more comma-separated rem_… references without advancing folder checkpoints
       --input-json string    Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
       --json                 Emit one stable JSON success envelope
+      --jsonl                Emit typed per-folder or per-hydration-item JSONL events plus a completed event
       --limit int            Maximum messages to fetch and commit per folder (1-100) (default 20)
       --reconcile-outbound   Sync Sent and reconcile recent sent/unknown attempts by exact Message-ID evidence
 
@@ -2296,6 +2346,10 @@ Remove the flag from one selected message location
 
 Usage:
   icloud mail unflag <message-id> [message-id...] [flags]
+
+Examples:
+  icloud mail unflag msg_…
+  icloud mail unflag msg_… --folder inbox
 
 Flags:
       --folder string        Select one exact folder ID, name, wire name, or kind for every positional/JSON item

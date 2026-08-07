@@ -18,6 +18,10 @@ Fetch and atomically commit bounded pages from enabled mail folders
 	Explicitly sync every current selectable folder, including locally disabled folders, with bounded recent bootstrap
 
 .PP
+\fB--continue-on-error\fP[=false]
+	Continue independent hydration items or folders after an error; committed earlier work is never rolled back
+
+.PP
 \fB--folder\fP=""
 	Sync one enabled folder by kind, ID, name, or wire name instead of all enabled folders
 
@@ -36,6 +40,10 @@ Fetch and atomically commit bounded pages from enabled mail folders
 .PP
 \fB--json\fP[=false]
 	Emit one stable JSON success envelope
+
+.PP
+\fB--jsonl\fP[=false]
+	Emit typed per-folder or per-hydration-item JSONL events plus a completed event
 
 .PP
 \fB--limit\fP=20
@@ -72,6 +80,7 @@ Fetch and atomically commit bounded pages from enabled mail folders
   icloud mail sync
   icloud mail sync --folder sent
   icloud mail sync --hydrate rem_…
+  icloud mail sync --all-folders --continue-on-error --jsonl
   icloud mail sync --limit 50 --json
   icloud mail sync status --folder sent
 .EE

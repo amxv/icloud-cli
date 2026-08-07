@@ -464,8 +464,7 @@ func structuredSearchWhere(options maildomain.SearchOptions, alias string) (stri
 		exists := `EXISTS (
     SELECT 1 FROM message_locations AS su
     JOIN folders AS sf ON sf.folder_id = su.folder_id
-    WHERE su.message_id = ` + prefix + `message_id AND su.present = 1 AND su.deleted = 0
-      AND sf.kind <> 'sent' AND su.seen = 0
+    WHERE su.message_id = ` + prefix + `message_id AND ` + unreadLocationSQL("su", "sf") + `
 )`
 		if !*options.Unread {
 			exists = "NOT " + exists

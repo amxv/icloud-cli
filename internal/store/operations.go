@@ -88,7 +88,7 @@ func (repository *MailRepository) CommitBackfillPage(ctx context.Context, page m
 	if err != nil {
 		return maildomain.BackfillCommitResult{}, err
 	}
-	if err := rebuildAffectedThreadGraph(ctx, tx, page.AccountID, mapKeysSorted(ingested.Affected), page.AttemptedAt); err != nil {
+	if err := rebuildCanonicalThreadProjection(ctx, tx, page.AccountID, mapKeysSorted(ingested.Affected), page.AttemptedAt); err != nil {
 		return maildomain.BackfillCommitResult{}, err
 	}
 	frontierID, createdAt := strings.TrimSpace(page.FrontierID), timestamp

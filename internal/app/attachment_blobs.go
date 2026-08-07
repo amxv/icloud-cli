@@ -24,7 +24,7 @@ func (commands accountCommands) attachmentBlobStore(paths config.AppPaths) attac
 	if commands.attachmentBlobs != nil {
 		return commands.attachmentBlobs(paths)
 	}
-	return blob.New(paths.BlobRoot)
+	return commands.inboundBlobStore(paths)
 }
 
 func newStagedAttachmentSet(store attachmentBlobStore) *stagedAttachmentSet {

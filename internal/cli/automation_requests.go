@@ -57,6 +57,7 @@ type mailSyncJSONRequest struct {
 	AllFolders        bool     `json:"all_folders,omitempty"`
 	Hydrate           []string `json:"hydrate,omitempty"`
 	ReconcileOutbound bool     `json:"reconcile_outbound,omitempty"`
+	ContinueOnError   bool     `json:"continue_on_error,omitempty"`
 	Limit             *int     `json:"limit,omitempty"`
 }
 
@@ -96,7 +97,8 @@ type attachmentSaveJSONRequest struct {
 }
 
 type attachmentsSaveAllJSONRequest struct {
-	MessageID string `json:"message_id"`
+	TargetID  string `json:"target_id,omitempty"`
+	MessageID string `json:"message_id,omitempty"`
 	Directory string `json:"directory"`
 	Force     bool   `json:"force,omitempty"`
 }

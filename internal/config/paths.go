@@ -5,10 +5,22 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 )
 
 const appDirectoryName = "icloud-cli"
+
+const (
+	DefaultMaxInboundRawMessageBytes int64 = 64 << 20
+	DefaultMaxInboundAttachmentBytes int64 = 64 << 20
+	MaximumConfiguredInboundBytes    int64 = 1 << 30
+)
+
+type InboundLimits struct {
+	RawMessageBytes int64 `json:"raw_message_bytes"`
+	AttachmentBytes int64 `json:"attachment_bytes"`
+}
 
 // AppPaths contains every durable path owned by the standalone CLI.
 type AppPaths struct {
@@ -18,31 +30,40 @@ type AppPaths struct {
 	LockRoot      string
 	MigrationLock string
 	AccountLock   string
+	InboundLimits InboundLimits
 }
 
 // ResolveAppPaths applies explicit --home, ICLOUD_HOME, and platform defaults in
 // that order. Returned paths are absolute and do not create filesystem state.
 func ResolveAppPaths(explicitHome string) (AppPaths, error) {
 	return resolveAppPaths(pathEnvironment{
-		GOOS:         runtime.GOOS,
-		ExplicitHome: explicitHome,
-		ICloudHome:   os.Getenv("ICLOUD_HOME"),
-		XDGDataHome:  os.Getenv("XDG_DATA_HOME"),
-		UserHome:     userHomeDir,
-		UserConfig:   userConfigDir,
+		GOOS:           runtime.GOOS,
+		ExplicitHome:   explicitHome,
+		ICloudHome:     os.Getenv("ICLOUD_HOME"),
+		XDGDataHome:    os.Getenv("XDG_DATA_HOME"),
+		MaxRawBytes:    os.Getenv("ICLOUD_MAX_RAW_MESSAGE_BYTES"),
+		MaxAttachBytes: os.Getenv("ICLOUD_MAX_ATTACHMENT_BYTES"),
+		UserHome:       userHomeDir,
+		UserConfig:     userConfigDir,
 	})
 }
 
 type pathEnvironment struct {
-	GOOS         string
-	ExplicitHome string
-	ICloudHome   string
-	XDGDataHome  string
-	UserHome     func() (string, error)
-	UserConfig   func() (string, error)
+	GOOS           string
+	ExplicitHome   string
+	ICloudHome     string
+	XDGDataHome    string
+	MaxRawBytes    string
+	MaxAttachBytes string
+	UserHome       func() (string, error)
+	UserConfig     func() (string, error)
 }
 
 func resolveAppPaths(environment pathEnvironment) (AppPaths, error) {
+	limits, err := resolveInboundLimits(environment.MaxRawBytes, environment.MaxAttachBytes)
+	if err != nil {
+		return AppPaths{}, err
+	}
 	root := strings.TrimSpace(environment.ExplicitHome)
 	if root == "" {
 		root = strings.TrimSpace(environment.ICloudHome)
@@ -66,7 +87,36 @@ func resolveAppPaths(environment pathEnvironment) (AppPaths, error) {
 		LockRoot:      filepath.Join(absoluteRoot, "locks"),
 		MigrationLock: filepath.Join(absoluteRoot, "locks", "migrate.lock"),
 		AccountLock:   filepath.Join(absoluteRoot, "locks", "accounts.lock"),
+		InboundLimits: limits,
 	}, nil
+}
+
+func ResolveInboundLimits() (InboundLimits, error) {
+	return resolveInboundLimits(os.Getenv("ICLOUD_MAX_RAW_MESSAGE_BYTES"), os.Getenv("ICLOUD_MAX_ATTACHMENT_BYTES"))
+}
+
+func resolveInboundLimits(rawValue, attachmentValue string) (InboundLimits, error) {
+	raw, err := parseInboundLimit("ICLOUD_MAX_RAW_MESSAGE_BYTES", rawValue, DefaultMaxInboundRawMessageBytes)
+	if err != nil {
+		return InboundLimits{}, err
+	}
+	attachment, err := parseInboundLimit("ICLOUD_MAX_ATTACHMENT_BYTES", attachmentValue, DefaultMaxInboundAttachmentBytes)
+	if err != nil {
+		return InboundLimits{}, err
+	}
+	return InboundLimits{RawMessageBytes: raw, AttachmentBytes: attachment}, nil
+}
+
+func parseInboundLimit(name, value string, fallback int64) (int64, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fallback, nil
+	}
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || parsed < 1 || parsed > MaximumConfiguredInboundBytes {
+		return 0, fmt.Errorf("%s must be a byte count between 1 and %d", name, MaximumConfiguredInboundBytes)
+	}
+	return parsed, nil
 }
 
 func defaultDataRoot(environment pathEnvironment) (string, error) {

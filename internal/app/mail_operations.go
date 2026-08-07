@@ -13,6 +13,7 @@ import (
 	"github.com/amxv/icloud-cli/internal/account"
 	"github.com/amxv/icloud-cli/internal/blob"
 	"github.com/amxv/icloud-cli/internal/cli"
+	"github.com/amxv/icloud-cli/internal/config"
 	"github.com/amxv/icloud-cli/internal/folder"
 	maildomain "github.com/amxv/icloud-cli/internal/mail"
 	"github.com/amxv/icloud-cli/internal/secret"
@@ -353,7 +354,7 @@ func (commands accountCommands) MailRepair(ctx context.Context, home, accountSel
 		finalAudit.Summary.CleanupSkipped = len(orphans)
 		finalAudit.Summary.Findings = append(finalAudit.Summary.Findings, maildomain.RepairFinding{Kind: "orphan_temp_blob", Detail: fmt.Sprintf("%d temporary blob files are not referenced by an active writer", len(orphans)), Action: "rerun --apply --cleanup-orphans", Applicable: options.Mode == maildomain.RepairApply})
 	}
-	if err := appendCanonicalBlobFindings(ctx, state, paths.BlobRoot, accountValue.ID, options.Limit, &finalAudit.Summary); err != nil {
+	if err := appendCanonicalBlobFindings(ctx, state, paths, accountValue.ID, options.Limit, &finalAudit.Summary); err != nil {
 		return account.Account{}, maildomain.RepairSummary{}, state.SchemaVersion(), err
 	}
 	finalAudit.Summary.NextAction = repairNextAction(finalAudit.Summary, options)
@@ -468,7 +469,7 @@ func orphanStagingFiles(blobRoot string, limit int) ([]string, bool, error) {
 	return paths, more, nil
 }
 
-func appendCanonicalBlobFindings(ctx context.Context, state *store.Store, blobRoot, accountID string, limit int, summary *maildomain.RepairSummary) error {
+func appendCanonicalBlobFindings(ctx context.Context, state *store.Store, paths config.AppPaths, accountID string, limit int, summary *maildomain.RepairSummary) error {
 	refs, more, err := state.MailBlobReferences(ctx, accountID, limit)
 	if err != nil {
 		return cli.WrapAppError(cli.ErrorInternal, "cannot enumerate canonical mail blobs", false, err)
@@ -476,7 +477,7 @@ func appendCanonicalBlobFindings(ctx context.Context, state *store.Store, blobRo
 	if more {
 		summary.More = true
 	}
-	blobStore := blob.New(blobRoot)
+	blobStore := blob.NewWithLimits(paths.BlobRoot, paths.InboundLimits.RawMessageBytes, paths.InboundLimits.AttachmentBytes)
 	seen := map[string]struct{}{}
 	for _, ref := range refs {
 		key := ref.StorageKey + "\x00" + ref.ContentHash + fmt.Sprintf("\x00%d", ref.ByteSize)

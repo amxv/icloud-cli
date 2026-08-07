@@ -492,6 +492,40 @@ INSERT INTO message_search_documents (
 	}
 }
 
+func TestMailSearchUnreadUsesCanonicalDraftEligibility(t *testing.T) {
+	state, accountID, folderID := newMailStoreFixture(t)
+	defer state.Close()
+	base := time.Date(2026, 8, 7, 4, 45, 0, 0, time.UTC)
+	record := searchRecordFixture(
+		accountID, folderID, 100, 427, "draft-unread-427@example.test", base,
+		"Draft unread canonical marker", "Owner", "owner@icloud.com", "draft-unread-canonical-token", "", "",
+	)
+	// This intentionally models an explicitly selected provider Drafts fallback
+	// that has no Drafts folder role metadata: the \Draft flag alone must exclude
+	// the location from canonical unread state.
+	record.Flags = []string{`\Draft`}
+	commitSearchRecords(t, state, accountID, folderID, "chk_search_draft_unread", base.Add(time.Minute), record)
+
+	message, err := state.Mail().Message(context.Background(), accountID, record.MessageID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if message.Unread {
+		t.Fatalf("canonical message unread unexpectedly true: %+v", message.Locations)
+	}
+	unread := true
+	page, err := state.Search().Search(context.Background(), accountID, maildomain.SearchOptions{
+		Query: "draft-unread-canonical-token", FolderID: folderID, Unread: &unread,
+		ResultKind: maildomain.SearchMessages, Limit: 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Hits) != 0 {
+		t.Fatalf("structured unread search diverged from canonical unread state: %+v", page.Hits)
+	}
+}
+
 func searchRecordFixture(
 	accountID, folderID string,
 	uidValidity, uid uint32,

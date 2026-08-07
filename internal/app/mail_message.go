@@ -35,7 +35,7 @@ func (commands accountCommands) MailMessage(ctx context.Context, home, accountSe
 	if !ok {
 		return account.Account{}, maildomain.Message{}, nil, state.SchemaVersion(), cli.NewAppError(cli.ErrorUnavailable, "raw message content is not available locally", false)
 	}
-	blobStore := blob.New(paths.BlobRoot)
+	blobStore := commands.inboundBlobStore(paths)
 	if message.Content == nil || !message.Content.AttachmentsIndexed {
 		reader, openErr := blobStore.OpenVerifiedContext(ctx, rawSource.StorageKey, rawSource.ContentHash, rawSource.ByteSize)
 		if openErr != nil {
@@ -164,6 +164,9 @@ func mapContentSourceError(err error) error {
 	}
 	if errors.Is(err, blob.ErrCorrupt) {
 		return fmt.Errorf("%w: %v", maildomain.ErrContentCorrupt, err)
+	}
+	if errors.Is(err, blob.ErrTooLarge) {
+		return fmt.Errorf("%w: %v", maildomain.ErrContentLimit, err)
 	}
 	return fmt.Errorf("%w: %v", maildomain.ErrContentUnavailable, err)
 }

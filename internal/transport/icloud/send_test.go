@@ -107,3 +107,60 @@ func TestSendSMTPRecordsPostDataDisconnectAsUnknownAndFinalRejectionAsFailed(t *
 		})
 	}
 }
+
+func TestSendSMTPCancellationBeforeAndDuringDataPreservesOutcomeBoundary(t *testing.T) {
+	t.Run("before data transmission is safely failed", func(t *testing.T) {
+		server := newSMTPServer(t, smtpServerOptions{AdvertiseSTARTTLS: true, AuthOK: true, AcceptSend: true, DelayDataResponse: time.Second})
+		defer server.Close()
+		client := New(Config{SMTPHost: "127.0.0.1", SMTPPort: server.Port(), StageTimeout: 5 * time.Second, TLSConfig: server.ClientTLSConfig()})
+		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
+		defer cancel()
+		started := time.Now()
+		_, err := client.SendSMTP(ctx, transport.AuthRequest{Username: "owner@icloud.com", Password: []byte("synthetic-password")}, transport.SMTPSendRequest{
+			Envelope: transport.SMTPEnvelope{From: "owner@icloud.com", Recipients: []string{"recipient@example.com"}},
+			Message:  strings.NewReader("From: owner@icloud.com\r\nTo: recipient@example.com\r\n\r\nbody\r\n"),
+		})
+		var sendErr *transport.SMTPSendError
+		if !errors.As(err, &sendErr) || sendErr.Outcome != transport.SMTPSendFailed {
+			t.Fatalf("pre-DATA cancellation = %#v", err)
+		}
+		if time.Since(started) > 500*time.Millisecond {
+			t.Fatalf("pre-DATA cancellation was not prompt: %s", time.Since(started))
+		}
+	})
+
+	t.Run("during data transmission is unknown", func(t *testing.T) {
+		server := newSMTPServer(t, smtpServerOptions{AdvertiseSTARTTLS: true, AuthOK: true, AcceptSend: true})
+		defer server.Close()
+		client := New(Config{SMTPHost: "127.0.0.1", SMTPPort: server.Port(), StageTimeout: 5 * time.Second, TLSConfig: server.ClientTLSConfig()})
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		message := &cancelOnFirstRead{reader: strings.NewReader("From: owner@icloud.com\r\nTo: recipient@example.com\r\n\r\nbody\r\n"), cancel: cancel}
+		started := time.Now()
+		_, err := client.SendSMTP(ctx, transport.AuthRequest{Username: "owner@icloud.com", Password: []byte("synthetic-password")}, transport.SMTPSendRequest{
+			Envelope: transport.SMTPEnvelope{From: "owner@icloud.com", Recipients: []string{"recipient@example.com"}},
+			Message:  message,
+		})
+		var sendErr *transport.SMTPSendError
+		if !errors.As(err, &sendErr) || sendErr.Outcome != transport.SMTPSendUnknown {
+			t.Fatalf("mid-DATA cancellation = %#v", err)
+		}
+		if time.Since(started) > 500*time.Millisecond {
+			t.Fatalf("mid-DATA cancellation was not prompt: %s", time.Since(started))
+		}
+	})
+}
+
+type cancelOnFirstRead struct {
+	reader *strings.Reader
+	cancel context.CancelFunc
+	done   bool
+}
+
+func (reader *cancelOnFirstRead) Read(buffer []byte) (int, error) {
+	if !reader.done {
+		reader.done = true
+		reader.cancel()
+	}
+	return reader.reader.Read(buffer)
+}

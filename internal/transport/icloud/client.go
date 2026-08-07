@@ -283,22 +283,24 @@ func runValueWithDeadline[T any](ctx context.Context, conn net.Conn, timeout tim
 		return value.value, value.err
 	case <-ctx.Done():
 		_ = conn.Close()
+		// Every operation passed to this helper is connection-bound. Wait for
+		// the interrupted protocol call to observe the closed socket and exit
+		// before returning, so callers never reuse/close protocol state while a
+		// detached worker is still mutating it.
+		<-result
 		return zero, ctx.Err()
 	case <-timer.C:
 		_ = conn.Close()
+		<-result
 		return zero, context.DeadlineExceeded
 	}
 }
 
 func closeIMAPClient(conn net.Conn, client *imapclient.Client) {
 	_ = conn.Close()
-	done := make(chan struct{})
-	go func() {
-		_ = client.Close()
-		close(done)
-	}()
-	select {
-	case <-done:
-	case <-time.After(100 * time.Millisecond):
-	}
+	// The closed socket is the authoritative teardown boundary. Calling the
+	// protocol client's Close after the connection is gone can itself block while
+	// trying to exchange logout state; the old timed goroutine avoided the wait
+	// only by abandoning that goroutine. Do not start a second cleanup operation.
+	_ = client
 }

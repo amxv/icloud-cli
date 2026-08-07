@@ -190,6 +190,9 @@ function downloadToFile(url, destinationPath, redirectsRemaining = 5) {
       });
     });
 
+    request.setTimeout(15000, () => {
+      request.destroy(new Error("release download timed out"));
+    });
     request.on("error", reject);
   });
 }
@@ -223,6 +226,9 @@ function downloadText(url, redirectsRemaining = 5) {
       });
       response.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
       response.on("error", reject);
+    });
+    request.setTimeout(15000, () => {
+      request.destroy(new Error("release checksum download timed out"));
     });
     request.on("error", reject);
   });

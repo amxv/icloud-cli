@@ -105,6 +105,18 @@ func TestStageRejectsOversizeAndCancellationWithoutLeavingTemporaryFiles(t *test
 	}
 }
 
+func TestStoreUsesIndependentRawAndAttachmentLimits(t *testing.T) {
+	store := NewWithLimits(t.TempDir(), 4, 8)
+	if _, err := store.Stage(context.Background(), strings.NewReader("12345"), 5); !errors.Is(err, ErrTooLarge) {
+		t.Fatalf("raw oversize error = %v", err)
+	}
+	staged, err := store.StageAttachment(context.Background(), strings.NewReader("12345"), 5)
+	if err != nil {
+		t.Fatalf("attachment within independent limit: %v", err)
+	}
+	_ = staged.Abort()
+}
+
 func TestCommitRejectsCorruptExistingCanonicalBlob(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "blobs")
 	store := NewWithLimit(root, 1024)

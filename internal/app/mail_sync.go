@@ -17,14 +17,22 @@ import (
 )
 
 func (commands accountCommands) MailSync(ctx context.Context, home, accountSelector, folderSelector string, limit int) (account.Account, []folder.Folder, []maildomain.SyncSummary, int64, error) {
-	return commands.mailSync(ctx, home, accountSelector, folderSelector, limit, false)
+	return commands.mailSync(ctx, home, accountSelector, folderSelector, limit, false, false)
+}
+
+func (commands accountCommands) MailSyncMode(ctx context.Context, home, accountSelector, folderSelector string, limit int, continueOnError bool) (account.Account, []folder.Folder, []maildomain.SyncSummary, int64, error) {
+	return commands.mailSync(ctx, home, accountSelector, folderSelector, limit, false, continueOnError)
 }
 
 func (commands accountCommands) MailSyncAll(ctx context.Context, home, accountSelector string, limit int) (account.Account, []folder.Folder, []maildomain.SyncSummary, int64, error) {
-	return commands.mailSync(ctx, home, accountSelector, "", limit, true)
+	return commands.mailSync(ctx, home, accountSelector, "", limit, true, false)
 }
 
-func (commands accountCommands) mailSync(ctx context.Context, home, accountSelector, folderSelector string, limit int, allFolders bool) (account.Account, []folder.Folder, []maildomain.SyncSummary, int64, error) {
+func (commands accountCommands) MailSyncAllMode(ctx context.Context, home, accountSelector string, limit int, continueOnError bool) (account.Account, []folder.Folder, []maildomain.SyncSummary, int64, error) {
+	return commands.mailSync(ctx, home, accountSelector, "", limit, true, continueOnError)
+}
+
+func (commands accountCommands) mailSync(ctx context.Context, home, accountSelector, folderSelector string, limit int, allFolders, continueOnError bool) (account.Account, []folder.Folder, []maildomain.SyncSummary, int64, error) {
 	state, paths, unlock, err := commands.openWriteState(ctx, home)
 	if err != nil {
 		return account.Account{}, nil, nil, 0, err
@@ -57,23 +65,63 @@ func (commands accountCommands) mailSync(ctx context.Context, home, accountSelec
 
 	summaries := make([]maildomain.SyncSummary, 0, len(folders))
 	completedFolders := make([]folder.Folder, 0, len(folders))
+	failures := make([]map[string]any, 0)
+	var firstFailure *cli.AppError
 	for _, folderValue := range folders {
 		summary, usedUsername, syncErr := commands.syncMailbox(
 			ctx, state, paths, accountValue, password, folderValue, limit,
 		)
 		if syncErr != nil {
-			return accountValue, completedFolders, summaries, state.SchemaVersion(), syncErr
-		}
-		if usedUsername != "" && usedUsername != accountValue.IMAPUsername {
-			accountValue, err = state.Accounts().UpdateIMAPUsername(ctx, accountValue.ID, usedUsername, commands.timeNow())
-			if err != nil {
-				return account.Account{}, completedFolders, summaries, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot persist the working IMAP username", false, err)
+			normalized := cli.NormalizeError(syncErr)
+			if firstFailure == nil {
+				firstFailure = normalized
 			}
+			failures = append(failures, map[string]any{"folder_id": folderValue.ID, "folder_name": folderValue.Name, "error": normalized})
+			if !continueOnError {
+				if len(completedFolders) == 0 {
+					return accountValue, completedFolders, summaries, state.SchemaVersion(), normalized
+				}
+				return accountValue, completedFolders, summaries, state.SchemaVersion(), syncPartialError(normalized, folders, completedFolders, summaries, failures)
+			}
+			continue
 		}
 		completedFolders = append(completedFolders, folderValue)
 		summaries = append(summaries, summary)
+		if usedUsername != "" && usedUsername != accountValue.IMAPUsername {
+			accountValue, err = state.Accounts().UpdateIMAPUsername(ctx, accountValue.ID, usedUsername, commands.timeNow())
+			if err != nil {
+				normalized := cli.NormalizeError(cli.WrapAppError(cli.ErrorInternal, "folder synchronization committed but the working IMAP username could not be persisted", false, err))
+				if firstFailure == nil {
+					firstFailure = normalized
+				}
+				failures = append(failures, map[string]any{"folder_id": folderValue.ID, "folder_name": folderValue.Name, "error": normalized, "sync_committed": true})
+				if !continueOnError {
+					return accountValue, completedFolders, summaries, state.SchemaVersion(), syncPartialError(normalized, folders, completedFolders, summaries, failures)
+				}
+			}
+		}
+	}
+	if firstFailure != nil {
+		return accountValue, completedFolders, summaries, state.SchemaVersion(), syncPartialError(firstFailure, folders, completedFolders, summaries, failures)
 	}
 	return accountValue, completedFolders, summaries, state.SchemaVersion(), nil
+}
+
+func syncPartialError(first *cli.AppError, requested []folder.Folder, completed []folder.Folder, summaries []maildomain.SyncSummary, failures []map[string]any) error {
+	if first == nil {
+		first = cli.NewAppError(cli.ErrorInternal, "multi-folder synchronization failed", false)
+	}
+	copyErr := *first
+	copyErr.Message = "multi-folder synchronization partially completed; committed folder results are reported in error details"
+	copyErr.Details = map[string]any{
+		"requested":           len(requested),
+		"completed_count":     len(completed),
+		"completed_folders":   append([]folder.Folder(nil), completed...),
+		"completed_summaries": append([]maildomain.SyncSummary(nil), summaries...),
+		"failures":            failures,
+		"partial":             len(completed) > 0,
+	}
+	return &copyErr
 }
 
 func resolveAllSyncFolders(ctx context.Context, state *store.Store, accountID string) ([]folder.Folder, error) {

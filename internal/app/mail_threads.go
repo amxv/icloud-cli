@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/amxv/icloud-cli/internal/account"
-	"github.com/amxv/icloud-cli/internal/blob"
 	"github.com/amxv/icloud-cli/internal/cli"
 	"github.com/amxv/icloud-cli/internal/config"
 	maildomain "github.com/amxv/icloud-cli/internal/mail"
@@ -84,7 +83,7 @@ func (commands accountCommands) threadMessageSource(ctx context.Context, state *
 		}
 		return maildomain.Message{}, nil, cli.NewAppError(cli.ErrorUnavailable, "raw message content is not available locally", false)
 	}
-	blobStore := blob.New(paths.BlobRoot)
+	blobStore := commands.inboundBlobStore(paths)
 	if options.HydrateContent && (message.Content == nil || !message.Content.AttachmentsIndexed) {
 		reader, openErr := blobStore.OpenVerifiedContext(ctx, rawSource.StorageKey, rawSource.ContentHash, rawSource.ByteSize)
 		if openErr != nil {

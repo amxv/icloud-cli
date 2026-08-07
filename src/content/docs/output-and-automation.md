@@ -102,6 +102,8 @@ Each JSONL input line contains one `message_id` and an optional exact `folder`. 
 
 `--jsonl` emits one typed `item` event per attempted operation followed by a typed `completed` event containing mode, requested/attempted/updated/failed/skipped counts, and `partial`. Compact output uses one small result block per attempted item plus one bounded summary.
 
+The same truthful partial-work rule applies to repeated targeted hydration and multi-folder sync. By default, `mail sync --hydrate ...` and multi-folder `mail sync` stop after the first failing item/folder, but any earlier committed message or folder remains committed and is reported in the structured error details. Add `--continue-on-error` when independent remaining hydration references or folders should still be attempted. With `--jsonl`, each completed or failed item is a typed `item` event and the stream ends with a `completed` event containing `completed`, `failed`, `partial`, and the stop/continue mode. A non-zero exit still follows when any item failed; JSONL does not pretend earlier durable work was rolled back.
+
 ## Schemas and capabilities are public contracts
 
 ```bash
@@ -109,6 +111,8 @@ icloud capabilities --json
 ```
 
 The capability envelope includes the CLI version, local data-schema version, automation-contract version, supported bulk modes/bounds, stable schema identifiers, and per-write request/response schema IDs. When you explicitly select an account with `--account`, capabilities may also include the IMAP/SMTP capability strings already cached for that account; this lookup is local-only and never resolves a credential or opens a network connection.
+
+`capabilities --json` also reports the effective inbound raw-message and decoded-attachment byte limits. These are application configuration, not provider claims, and are independent from the iCloud composed-message send limit.
 
 The versioned JSON Schemas cover accounts, folders, messages, threads, attachments, checkpoints, outbound attempts, drafts, JSONL events, errors, the common output envelope, and every documented write-input shape. Contributors regenerate schemas together with the Cobra command reference, man pages, and completion assets using `make references`; checks fail if committed generated output drifts.
 

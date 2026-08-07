@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -119,6 +120,34 @@ func TestResolveAppPathsReportsMissingHome(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestResolveAppPathsValidatesAndCarriesInboundLimits(t *testing.T) {
+	home := t.TempDir()
+	paths, err := resolveAppPaths(pathEnvironment{
+		GOOS:           "linux",
+		ExplicitHome:   home,
+		MaxRawBytes:    "1048576",
+		MaxAttachBytes: "2097152",
+		UserHome:       os.UserHomeDir,
+		UserConfig:     os.UserConfigDir,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if paths.InboundLimits.RawMessageBytes != 1048576 || paths.InboundLimits.AttachmentBytes != 2097152 {
+		t.Fatalf("inbound limits = %+v", paths.InboundLimits)
+	}
+	_, err = resolveAppPaths(pathEnvironment{
+		GOOS:         "linux",
+		ExplicitHome: home,
+		MaxRawBytes:  "not-a-number",
+		UserHome:     os.UserHomeDir,
+		UserConfig:   os.UserConfigDir,
+	})
+	if err == nil || !strings.Contains(err.Error(), "ICLOUD_MAX_RAW_MESSAGE_BYTES") {
+		t.Fatalf("invalid raw limit error = %v", err)
 	}
 }
 

@@ -6,6 +6,9 @@
     "all_folders": {
       "type": "boolean"
     },
+    "continue_on_error": {
+      "type": "boolean"
+    },
     "folder": {
       "type": "string"
     },

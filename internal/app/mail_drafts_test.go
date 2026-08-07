@@ -319,6 +319,16 @@ func TestMailDraftInterruptedReplacementWithoutAPPENDUIDKeepsOldVersionRecoverab
 	if after.SyncState != maildomain.DraftReconcile || after.PreviousLocationID != oldLocation || after.RemoteLocationID != "" || len(after.Message.Locations) == 0 {
 		t.Fatalf("recoverable draft=%+v", after)
 	}
+	if _, _, _, _, _, sendErr := commands.MailDraftSend(context.Background(), home, "", created.ID); sendErr == nil || cli.NormalizeError(sendErr).Code != cli.ErrorConflict {
+		t.Fatalf("unresolved draft send err=%v", sendErr)
+	}
+	if _, _, _, _, deleteErr := commands.MailDraftDelete(context.Background(), home, "", created.ID); deleteErr == nil || cli.NormalizeError(deleteErr).Code != cli.ErrorConflict {
+		t.Fatalf("unresolved draft delete err=%v", deleteErr)
+	}
+	_, preserved, _, _, preserveErr := commands.MailDraftShow(context.Background(), home, "", created.ID)
+	if preserveErr != nil || preserved.SyncState != maildomain.DraftReconcile || preserved.PreviousLocationID != oldLocation {
+		t.Fatalf("unresolved recovery evidence lost draft=%+v err=%v", preserved, preserveErr)
+	}
 }
 
 func TestMailDraftSyncAdoptsProviderNativeDraftAsOutboundAndNotUnread(t *testing.T) {

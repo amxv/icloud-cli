@@ -6,7 +6,10 @@ import (
 	"time"
 )
 
-var ErrDraftNotFound = errors.New("mail draft not found")
+var (
+	ErrDraftNotFound      = errors.New("mail draft not found")
+	ErrInvalidDraftCursor = errors.New("invalid mail draft cursor")
+)
 
 type DraftSyncState string
 

@@ -35,12 +35,14 @@ type publicAttachment struct {
 }
 
 type mailAttachmentsData struct {
-	AccountID     string             `json:"account_id"`
-	MessageID     string             `json:"message_id"`
-	Attachments   []publicAttachment `json:"attachments"`
-	Count         int                `json:"count"`
-	More          bool               `json:"more,omitempty"`
-	SchemaVersion int64              `json:"schema_version"`
+	AccountID     string                      `json:"account_id"`
+	Target        maildomain.AttachmentTarget `json:"target"`
+	MessageID     string                      `json:"message_id,omitempty"`
+	ThreadID      string                      `json:"thread_id,omitempty"`
+	Attachments   []publicAttachment          `json:"attachments"`
+	Count         int                         `json:"count"`
+	More          bool                        `json:"more,omitempty"`
+	SchemaVersion int64                       `json:"schema_version"`
 }
 
 type mailAttachmentSaveData struct {
@@ -72,9 +74,10 @@ func newMailAttachmentsListCommand(state *executionState) *cobra.Command {
 	var jsonOutput bool
 	var limit int
 	command := &cobra.Command{
-		Use:   "list <message-id>",
-		Short: "List bounded attachment metadata without printing bytes",
-		Args:  cobra.ExactArgs(1),
+		Use:     "list <message-or-thread-id>",
+		Short:   "List bounded attachment metadata without printing bytes",
+		Args:    cobra.ExactArgs(1),
+		Example: "  icloud mail attachments list msg_…\n  icloud mail attachments list thr_… --json",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput}, OutputSupport{JSON: true}); err != nil {
 				return err
@@ -82,16 +85,22 @@ func newMailAttachmentsListCommand(state *executionState) *cobra.Command {
 			if limit < 1 || limit > MaximumPageSize {
 				return NewAppError(ErrorUsage, fmt.Sprintf("--limit must be between 1 and %d", MaximumPageSize), false)
 			}
-			accountValue, message, attachments, more, schemaVersion, err := state.mail.MailAttachments(
+			accountValue, target, attachments, more, schemaVersion, err := state.mail.MailAttachments(
 				cmd.Context(), state.global.Home, state.global.Account, args[0], limit,
 			)
 			if err != nil {
 				return err
 			}
 			public := sanitizeAttachments(attachments)
+			messageID, threadID := "", ""
+			if target.Kind == "message" {
+				messageID = target.ID
+			} else if target.Kind == "thread" {
+				threadID = target.ID
+			}
 			if jsonOutput {
 				return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: mailAttachmentsData{
-					AccountID: accountValue.ID, MessageID: message.ID, Attachments: public,
+					AccountID: accountValue.ID, Target: target, MessageID: messageID, ThreadID: threadID, Attachments: public,
 					Count: len(public), More: more, SchemaVersion: schemaVersion,
 				}, Meta: EnvelopeMeta{RequestID: state.requestID}})
 			}
@@ -102,7 +111,8 @@ func newMailAttachmentsListCommand(state *executionState) *cobra.Command {
 				}
 			}
 			return renderer.Summary("attachments",
-				Field("message", message.ID),
+				Field("target", target.ID),
+				Field("target_kind", target.Kind),
 				Field("count", len(attachments)),
 				Field("more", fmt.Sprintf("%t", more)),
 			)
@@ -118,9 +128,10 @@ func newMailAttachmentSaveCommand(state *executionState) *cobra.Command {
 	var force, binary, jsonOutput bool
 	var input jsonInputOptions
 	command := &cobra.Command{
-		Use:   "save <attachment-id>",
-		Short: "Verify and stream one decoded attachment",
-		Args:  exactArgsOrJSONInput(&input, 1),
+		Use:     "save <attachment-id>",
+		Short:   "Verify and stream one decoded attachment",
+		Args:    exactArgsOrJSONInput(&input, 1),
+		Example: "  icloud mail attachments save att_… --output ./document.pdf\n  icloud mail attachments save att_… --output - --binary",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			attachmentID := ""
 			if len(args) == 1 {
@@ -181,25 +192,33 @@ func newMailAttachmentsSaveAllCommand(state *executionState) *cobra.Command {
 	var force, jsonOutput bool
 	var input jsonInputOptions
 	command := &cobra.Command{
-		Use:   "save-all <message-id>",
-		Short: "Export a bounded attachment set with safe deterministic names",
-		Args:  exactArgsOrJSONInput(&input, 1),
+		Use:     "save-all <message-or-thread-id>",
+		Short:   "Export a bounded attachment set with safe deterministic names",
+		Args:    exactArgsOrJSONInput(&input, 1),
+		Example: "  icloud mail attachments save-all msg_… --dir ./attachments\n  icloud mail attachments save-all thr_… --dir ./thread-files",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			messageID := ""
+			targetID := ""
 			if len(args) == 1 {
-				messageID = args[0]
+				targetID = args[0]
 			}
 			var jsonRequest attachmentsSaveAllJSONRequest
 			if used, err := readJSONInput(cmd, state, input, &jsonRequest, "dir", "force"); err != nil {
 				return err
 			} else if used {
-				messageID, directory, force = jsonRequest.MessageID, jsonRequest.Directory, jsonRequest.Force
+				if strings.TrimSpace(jsonRequest.TargetID) != "" && strings.TrimSpace(jsonRequest.MessageID) != "" && strings.TrimSpace(jsonRequest.TargetID) != strings.TrimSpace(jsonRequest.MessageID) {
+					return NewAppError(ErrorUsage, "target_id and legacy message_id cannot select different attachment targets", false)
+				}
+				targetID = strings.TrimSpace(jsonRequest.TargetID)
+				if targetID == "" {
+					targetID = strings.TrimSpace(jsonRequest.MessageID)
+				}
+				directory, force = jsonRequest.Directory, jsonRequest.Force
 			}
 			if strings.TrimSpace(directory) == "" {
 				return NewAppError(ErrorUsage, "--dir is required", false)
 			}
-			accountValue, message, attachments, more, schemaVersion, err := state.mail.MailAttachments(
-				cmd.Context(), state.global.Home, state.global.Account, messageID, maximumAttachmentSetSize,
+			accountValue, target, attachments, more, schemaVersion, err := state.mail.MailAttachments(
+				cmd.Context(), state.global.Home, state.global.Account, targetID, maximumAttachmentSetSize,
 			)
 			if err != nil {
 				return err
@@ -213,12 +232,13 @@ func newMailAttachmentsSaveAllCommand(state *executionState) *cobra.Command {
 			}
 			if jsonOutput {
 				return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: map[string]any{
-					"account_id": accountValue.ID, "message_id": message.ID,
+					"account_id": accountValue.ID, "target": target,
 					"attachments": sanitizeAttachments(attachments), "filenames": outputBasenames(outputs),
 					"count": len(outputs), "schema_version": schemaVersion,
 				}, Meta: EnvelopeMeta{RequestID: state.requestID}})
 			}
-			return NewCompactTextRenderer(state.stdout).Record("attachments-saved", message.ID,
+			return NewCompactTextRenderer(state.stdout).Record("attachments-saved", target.ID,
+				Field("target_kind", target.Kind),
 				Field("count", len(outputs)),
 			)
 		},
@@ -336,6 +356,22 @@ type preparedAttachment struct {
 	backup     string
 }
 
+type attachmentBatchFS struct {
+	lstat      func(string) (os.FileInfo, error)
+	createTemp func(string, string) (*os.File, error)
+	rename     func(string, string) error
+	link       func(string, string) error
+	remove     func(string) error
+}
+
+var realAttachmentBatchFS = attachmentBatchFS{
+	lstat:      os.Lstat,
+	createTemp: os.CreateTemp,
+	rename:     os.Rename,
+	link:       os.Link,
+	remove:     os.Remove,
+}
+
 func saveAllAttachments(ctx context.Context, state *executionState, attachments []maildomain.Attachment, directory string, force bool) ([]string, error) {
 	directory = filepath.Clean(strings.TrimSpace(directory))
 	if directory == "" {
@@ -401,37 +437,63 @@ func saveAllAttachments(ctx context.Context, state *executionState, attachments 
 }
 
 func installAttachmentBatch(items []preparedAttachment, force bool) error {
+	return installAttachmentBatchWithFS(items, force, realAttachmentBatchFS)
+}
+
+func installAttachmentBatchWithFS(items []preparedAttachment, force bool, fs attachmentBatchFS) error {
 	installed := make([]string, 0, len(items))
-	rollback := func() {
-		for _, target := range installed {
-			_ = os.Remove(target)
-		}
-		for _, item := range items {
-			if item.backup != "" {
-				_ = os.Rename(item.backup, item.target)
+	rollback := func() error {
+		var rollbackErr error
+		for index := len(installed) - 1; index >= 0; index-- {
+			if err := fs.remove(installed[index]); err != nil && !errors.Is(err, os.ErrNotExist) {
+				rollbackErr = errors.Join(rollbackErr, fmt.Errorf("remove installed attachment %q: %w", installed[index], err))
 			}
 		}
+		for index := len(items) - 1; index >= 0; index-- {
+			item := items[index]
+			if item.backup != "" {
+				if err := fs.rename(item.backup, item.target); err != nil {
+					rollbackErr = errors.Join(rollbackErr, fmt.Errorf("restore attachment backup %q: %w", item.target, err))
+				}
+			}
+		}
+		return rollbackErr
 	}
 	if force {
 		for index := range items {
-			info, err := os.Lstat(items[index].target)
+			info, err := fs.lstat(items[index].target)
 			if errors.Is(err, os.ErrNotExist) {
 				continue
 			}
 			if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-				rollback()
+				rollbackErr := rollback()
+				if rollbackErr != nil {
+					return WrapAppError(ErrorInternal, "attachment replacement preflight failed and rollback was incomplete", false, errors.Join(err, rollbackErr))
+				}
 				return NewAppError(ErrorSafety, "attachment destination changed or is not a regular file", false)
 			}
-			backup, err := os.CreateTemp(filepath.Dir(items[index].target), ".icloud-attachment-backup-*.tmp")
+			backup, err := fs.createTemp(filepath.Dir(items[index].target), ".icloud-attachment-backup-*.tmp")
 			if err != nil {
-				rollback()
+				rollbackErr := rollback()
+				if rollbackErr != nil {
+					err = errors.Join(err, rollbackErr)
+				}
 				return WrapAppError(ErrorConfiguration, "cannot prepare attachment replacement", false, err)
 			}
 			backupPath := backup.Name()
 			_ = backup.Close()
-			_ = os.Remove(backupPath)
-			if err := os.Rename(items[index].target, backupPath); err != nil {
-				rollback()
+			if err := fs.remove(backupPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+				rollbackErr := rollback()
+				if rollbackErr != nil {
+					err = errors.Join(err, rollbackErr)
+				}
+				return WrapAppError(ErrorConfiguration, "cannot prepare attachment replacement", false, err)
+			}
+			if err := fs.rename(items[index].target, backupPath); err != nil {
+				rollbackErr := rollback()
+				if rollbackErr != nil {
+					err = errors.Join(err, rollbackErr)
+				}
 				return WrapAppError(ErrorConfiguration, "cannot preserve an existing attachment file", false, err)
 			}
 			items[index].backup = backupPath
@@ -440,23 +502,40 @@ func installAttachmentBatch(items []preparedAttachment, force bool) error {
 	for _, item := range items {
 		var err error
 		if force {
-			err = os.Rename(item.temporary, item.target)
-		} else {
-			err = os.Link(item.temporary, item.target)
+			err = fs.rename(item.temporary, item.target)
 			if err == nil {
-				err = os.Remove(item.temporary)
+				// Rename makes the final path visible immediately. Record it before
+				// any later filesystem step so rollback can never miss it.
+				installed = append(installed, item.target)
+			}
+		} else {
+			err = fs.link(item.temporary, item.target)
+			if err == nil {
+				// Link has already installed the final file. Bookkeep before
+				// removing the staging name; a failed unlink must roll it back.
+				installed = append(installed, item.target)
+				err = fs.remove(item.temporary)
 			}
 		}
 		if err != nil {
-			rollback()
-			return WrapAppError(ErrorConflict, "cannot install the complete attachment set", false, err)
+			rollbackErr := rollback()
+			if rollbackErr != nil {
+				err = errors.Join(err, rollbackErr)
+				return WrapAppError(ErrorInternal, "attachment batch failed and rollback was incomplete; inspect the destination before retrying", false, err)
+			}
+			return WrapAppError(ErrorConflict, "cannot install the complete attachment set; no final batch files were retained", false, err)
 		}
-		installed = append(installed, item.target)
 	}
+	var cleanupErr error
 	for _, item := range items {
 		if item.backup != "" {
-			_ = os.Remove(item.backup)
+			if err := fs.remove(item.backup); err != nil && !errors.Is(err, os.ErrNotExist) {
+				cleanupErr = errors.Join(cleanupErr, fmt.Errorf("remove attachment backup %q: %w", item.backup, err))
+			}
 		}
+	}
+	if cleanupErr != nil {
+		return WrapAppError(ErrorInternal, "complete attachment set was installed, but obsolete backup cleanup failed; exported final files are present", false, cleanupErr)
 	}
 	return nil
 }

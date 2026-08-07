@@ -11,11 +11,13 @@
     },
     "message_id": {
       "type": "string"
+    },
+    "target_id": {
+      "type": "string"
     }
   },
   "required": [
-    "directory",
-    "message_id"
+    "directory"
   ],
   "title": "attachment set export JSON input",
   "type": "object",

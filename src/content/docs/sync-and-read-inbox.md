@@ -66,6 +66,12 @@ icloud mail sync --limit 50
 
 `more=true` means that folder has another bounded page available. Repeat the same selection until it reports `more=false`. A failed folder page leaves its previous frontier unchanged and is safe to retry.
 
+When several folders are selected, earlier folders can already be durably committed before a later folder fails. The CLI reports those completed folder summaries instead of hiding them behind the error. Use `--continue-on-error` to attempt the remaining independent folders, and add `--jsonl` for one typed success/error event per folder plus a final partial-completion event:
+
+```bash
+icloud mail sync --all-folders --continue-on-error --jsonl
+```
+
 `reconciled` counts existing locations whose remote flags were checked without downloading message bodies again. `state_changes` counts real differences. The bounded sweep rotates over time instead of turning one command into a whole-mailbox scan.
 
 ## Keep the local copy fresh in the foreground
@@ -202,9 +208,10 @@ When explicit remote search returns a `rem_…` reference, hydrate only that pro
 ```bash
 icloud mail sync --hydrate rem_…
 icloud mail sync --hydrate rem_…,rem_… --json
+icloud mail sync --hydrate rem_…,rem_… --continue-on-error --jsonl
 ```
 
-This is not a normal folder sync. It verifies the remote account/folder/UID identity, caches the exact message through the standard local parser and dedupe path, and returns stable message/location IDs. The existing folder checkpoint remains unchanged, including committed/scanned UIDs and bootstrap state.
+This is not a normal folder sync. It verifies the remote account/folder/UID identity, caches the exact message through the standard local parser and dedupe path, and returns stable message/location IDs. The existing folder checkpoint remains unchanged, including committed/scanned UIDs and bootstrap state. If one reference fails after earlier references committed, those stable completed IDs remain visible in text/JSON error details or JSONL item events; `--continue-on-error` attempts the rest.
 
 Use `icloud mail message show rem_… --remote --cache --full` when you want to cache and immediately read complete content. See [Search synchronized mail](/docs/search-synchronized-mail) for supported remote filters, `partial`, stale-reference recovery, and privacy behavior.
 

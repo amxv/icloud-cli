@@ -403,6 +403,10 @@ LIMIT ?`, strings.TrimSpace(accountID), limit)
 		}
 		attempts = append(attempts, attempt)
 	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return maildomain.OutboundReconcileSummary{}, fmt.Errorf("read outbound reconciliation candidates: %w", err)
+	}
 	if err := rows.Close(); err != nil {
 		return maildomain.OutboundReconcileSummary{}, fmt.Errorf("close outbound reconciliation candidates: %w", err)
 	}

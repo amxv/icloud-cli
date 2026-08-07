@@ -130,7 +130,11 @@ func (commands accountCommands) blobStager(paths config.AppPaths) blob.Stager {
 	if commands.blobs != nil {
 		return commands.blobs(paths)
 	}
-	return blob.New(paths.BlobRoot)
+	return commands.inboundBlobStore(paths)
+}
+
+func (commands accountCommands) inboundBlobStore(paths config.AppPaths) *blob.Store {
+	return blob.NewWithLimits(paths.BlobRoot, paths.InboundLimits.RawMessageBytes, paths.InboundLimits.AttachmentBytes)
 }
 
 type unavailableInboxClient struct{}

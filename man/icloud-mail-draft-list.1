@@ -14,6 +14,10 @@ List local and provider-synchronized drafts
 
 
 .SH OPTIONS
+\fB--cursor\fP=""
+	Opaque cursor from a previous draft list page
+
+.PP
 \fB-h\fP, \fB--help\fP[=false]
 	help for list
 
@@ -49,6 +53,14 @@ List local and provider-synchronized drafts
 .PP
 \fB--timeout\fP=30s
 	Maximum normal command duration; watch applies it per provider/sync attempt
+
+
+.SH EXAMPLE
+.EX
+  icloud mail draft list
+  icloud mail draft list --limit 50 --json
+  icloud mail draft list --cursor '<opaque-cursor>'
+.EE
 
 
 .SH SEE ALSO

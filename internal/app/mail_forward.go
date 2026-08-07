@@ -194,7 +194,7 @@ func forwardRawAttachment(ctx context.Context, paths config.AppPaths, message ma
 	if !ok {
 		return maildomain.OutboundAttachment{}, cli.NewAppError(cli.ErrorUnavailable, "exact raw source is unavailable for attached-EML forwarding", false)
 	}
-	store := blob.New(paths.BlobRoot)
+	store := blob.NewWithLimits(paths.BlobRoot, paths.InboundLimits.RawMessageBytes, paths.InboundLimits.AttachmentBytes)
 	return maildomain.OutboundAttachment{
 		Filename: "forwarded-message.eml", MediaType: "message/rfc822",
 		ContentHash: raw.ContentHash, ByteSize: raw.ByteSize,

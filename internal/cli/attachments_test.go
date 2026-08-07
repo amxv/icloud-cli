@@ -2,14 +2,51 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/amxv/icloud-cli/internal/account"
 	maildomain "github.com/amxv/icloud-cli/internal/mail"
 )
+
+type attachmentSelectorMailService struct {
+	unavailableMailService
+	selectors   []string
+	attachments []maildomain.Attachment
+}
+
+func (service *attachmentSelectorMailService) MailAttachments(_ context.Context, _, _, selector string, _ int) (account.Account, maildomain.AttachmentTarget, []maildomain.Attachment, bool, int64, error) {
+	service.selectors = append(service.selectors, selector)
+	kind := "message"
+	if strings.HasPrefix(selector, "thr_") {
+		kind = "thread"
+	}
+	return account.Account{ID: "acct_test"}, maildomain.AttachmentTarget{Kind: kind, ID: selector}, append([]maildomain.Attachment(nil), service.attachments...), false, 18, nil
+}
+
+func (service *attachmentSelectorMailService) MailAttachment(_ context.Context, _, _, attachmentID string) (account.Account, maildomain.Attachment, maildomain.AttachmentSource, int64, error) {
+	for _, attachment := range service.attachments {
+		if attachment.ID == attachmentID {
+			return account.Account{ID: "acct_test"}, attachment, attachmentBytesSource([]byte("thread-attachment-" + attachmentID)), 18, nil
+		}
+	}
+	return account.Account{}, maildomain.Attachment{}, nil, 18, NewAppError(ErrorNotFound, "attachment not found", false)
+}
+
+type attachmentBytesSource []byte
+
+func (source attachmentBytesSource) Write(ctx context.Context, writer io.Writer) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	_, err := writer.Write(source)
+	return err
+}
 
 func TestAttachmentCompactTwentyRecordBudgetAndPrivacy(t *testing.T) {
 	var output bytes.Buffer
@@ -44,6 +81,32 @@ func TestAttachmentCompactTwentyRecordBudgetAndPrivacy(t *testing.T) {
 		if strings.Contains(text, forbidden) {
 			t.Fatalf("compact attachment output exposed %q", forbidden)
 		}
+	}
+}
+
+func TestAttachmentCommandsAcceptThreadTargetForListAndSaveAll(t *testing.T) {
+	service := &attachmentSelectorMailService{attachments: []maildomain.Attachment{
+		{ID: "att_thread_one", MessageID: "msg_thread_one", Filename: "one.txt", MediaType: "text/plain", ByteSize: 25, Availability: maildomain.AttachmentAvailable},
+		{ID: "att_thread_two", MessageID: "msg_thread_two", Filename: "two.txt", MediaType: "text/plain", ByteSize: 25, Availability: maildomain.AttachmentAvailable},
+	}}
+	threadID := "thr_thread_attachment_fixture"
+	result, stdout, stderr := executeWithMail(t, service, "", "mail", "attachments", "list", threadID, "--json")
+	if result.ExitCode != 0 || stderr != "" || !strings.Contains(stdout, `"kind":"thread"`) || !strings.Contains(stdout, `"thread_id":"`+threadID+`"`) || strings.Count(stdout, `"id":"att_thread_`) != 2 {
+		t.Fatalf("thread attachment list result=%+v stdout=%q stderr=%q", result, stdout, stderr)
+	}
+	directory := t.TempDir()
+	result, stdout, stderr = executeWithMail(t, service, "", "mail", "attachments", "save-all", threadID, "--dir", directory, "--json")
+	if result.ExitCode != 0 || stderr != "" || !strings.Contains(stdout, `"kind":"thread"`) {
+		t.Fatalf("thread attachment save-all result=%+v stdout=%q stderr=%q", result, stdout, stderr)
+	}
+	for _, name := range []string{"one.txt", "two.txt"} {
+		content, err := os.ReadFile(filepath.Join(directory, name))
+		if err != nil || !strings.Contains(string(content), "thread-attachment-att_thread_") {
+			t.Fatalf("saved %s content=%q err=%v", name, content, err)
+		}
+	}
+	if len(service.selectors) != 2 || service.selectors[0] != threadID || service.selectors[1] != threadID {
+		t.Fatalf("attachment selectors=%v", service.selectors)
 	}
 }
 
@@ -109,6 +172,65 @@ func TestInstallAttachmentBatchRollsBackNoClobberFailure(t *testing.T) {
 	content, readErr := os.ReadFile(secondTarget)
 	if readErr != nil || string(content) != "existing" {
 		t.Fatalf("existing target changed: %q err=%v", content, readErr)
+	}
+}
+
+func TestInstallAttachmentBatchRollsBackWhenStagingCleanupFailsAfterLink(t *testing.T) {
+	directory := t.TempDir()
+	temporary := filepath.Join(directory, "first.tmp")
+	target := filepath.Join(directory, "first.bin")
+	if err := os.WriteFile(temporary, []byte("first"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fs := realAttachmentBatchFS
+	failed := false
+	fs.remove = func(path string) error {
+		if path == temporary && !failed {
+			failed = true
+			return errors.New("injected staged cleanup failure")
+		}
+		return os.Remove(path)
+	}
+	err := installAttachmentBatchWithFS([]preparedAttachment{{temporary: temporary, target: target}}, false, fs)
+	if err == nil {
+		t.Fatal("batch install unexpectedly succeeded")
+	}
+	if _, statErr := os.Stat(target); !os.IsNotExist(statErr) {
+		t.Fatalf("linked final target survived failed staged cleanup: %v", statErr)
+	}
+	if content, readErr := os.ReadFile(temporary); readErr != nil || string(content) != "first" {
+		t.Fatalf("staged source should remain available for caller cleanup: %q err=%v", content, readErr)
+	}
+}
+
+func TestInstallAttachmentBatchReportsBackupCleanupAfterCompleteForceInstall(t *testing.T) {
+	directory := t.TempDir()
+	temporary := filepath.Join(directory, "replacement.tmp")
+	target := filepath.Join(directory, "target.bin")
+	if err := os.WriteFile(temporary, []byte("new"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fs := realAttachmentBatchFS
+	backupRemoves := 0
+	fs.remove = func(path string) error {
+		if strings.Contains(filepath.Base(path), ".icloud-attachment-backup-") {
+			backupRemoves++
+			if backupRemoves == 2 {
+				return errors.New("injected backup cleanup failure")
+			}
+		}
+		return os.Remove(path)
+	}
+	err := installAttachmentBatchWithFS([]preparedAttachment{{temporary: temporary, target: target}}, true, fs)
+	if err == nil || !strings.Contains(err.Error(), "complete attachment set was installed") {
+		t.Fatalf("backup cleanup error = %v", err)
+	}
+	content, readErr := os.ReadFile(target)
+	if readErr != nil || string(content) != "new" {
+		t.Fatalf("completed final target = %q err=%v", content, readErr)
 	}
 }
 

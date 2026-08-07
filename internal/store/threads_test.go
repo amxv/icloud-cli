@@ -296,6 +296,92 @@ INSERT INTO messages (
 	}
 }
 
+func TestOversizedThreadProjectionDoesNotBlockCanonicalSyncFrontier(t *testing.T) {
+	state, accountID, folderID := newMailStoreFixture(t)
+	defer state.Close()
+	ctx := context.Background()
+	now := time.Date(2026, 8, 7, 3, 0, 0, 0, time.UTC)
+	timestamp := now.Format(time.RFC3339Nano)
+	threadID := "thr_large_projection_fixture"
+	if _, err := state.db.ExecContext(ctx, `
+INSERT INTO threads (
+    thread_id, account_id, root_rfc_message_id, canonical_subject, snippet,
+    participants_json, folder_ids_json, message_count, unread_count,
+    attachment_count, first_message_at, last_message_at, created_at, updated_at
+) VALUES (?, ?, 'root@example.test', 'Large projection', '', '[]', '[]', ?, 0, 0, ?, ?, ?, ?)`,
+		threadID, accountID, maxAffectedThreadMessages+1, timestamp, timestamp, timestamp, timestamp); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.db.ExecContext(ctx, `
+WITH RECURSIVE n(x) AS (
+    SELECT 1
+    UNION ALL
+    SELECT x + 1 FROM n WHERE x < ?
+)
+INSERT INTO messages (
+    message_id, account_id, rfc_message_id, in_reply_to, direction,
+    from_name, from_email, reply_to_name, reply_to_email, subject, snippet,
+    header_date, internal_date, sort_at, date_source, attachment_count,
+    created_at, updated_at
+)
+SELECT printf('msg_large_projection_%05d', x), ?,
+       CASE WHEN x = 1 THEN 'root@example.test' ELSE printf('large-projection-%05d@example.test', x) END,
+       '', 'inbound', '', 'sender@example.test', '', '', 'Large projection', '',
+       NULL, NULL, NULL, 'unknown', 0, ?, ?
+FROM n`, maxAffectedThreadMessages+1, accountID, timestamp, timestamp); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.db.ExecContext(ctx, `
+INSERT INTO thread_messages (thread_id, message_id, joined_at)
+SELECT ?, message_id, ? FROM messages WHERE message_id LIKE 'msg_large_projection_%'`, threadID, timestamp); err != nil {
+		t.Fatal(err)
+	}
+
+	first := mailRecordFixture(accountID, folderID, 100, 50001, "new-after-large-thread@example.test")
+	first.Parsed.InReplyTo = "root@example.test"
+	first.Parsed.References = []string{"root@example.test"}
+	result, err := state.Mail().CommitInboxPage(ctx, maildomain.CommitPage{
+		CheckpointID:     "chk_large_projection_fixture",
+		AccountID:        accountID,
+		FolderID:         folderID,
+		UIDValidity:      100,
+		LastCommittedUID: 50001,
+		LastScannedUID:   50001,
+		Bootstrap:        true,
+		AttemptedAt:      now,
+		Records:          []maildomain.IngestRecord{first},
+	})
+	if err != nil {
+		t.Fatalf("oversized derived thread projection blocked canonical ingestion: %v", err)
+	}
+	if result.Checkpoint.LastCommittedUID != 50001 {
+		t.Fatalf("checkpoint after oversized thread = %+v", result.Checkpoint)
+	}
+	if _, err := state.Mail().Message(ctx, accountID, first.MessageID); err != nil {
+		t.Fatalf("canonical message was not retained: %v", err)
+	}
+
+	second := mailRecordFixture(accountID, folderID, 100, 50002, "unrelated-after-large-thread@example.test")
+	second.Parsed.InReplyTo = ""
+	second.Parsed.References = nil
+	result, err = state.Mail().CommitInboxPage(ctx, maildomain.CommitPage{
+		CheckpointID:     "chk_large_projection_fixture",
+		AccountID:        accountID,
+		FolderID:         folderID,
+		UIDValidity:      100,
+		LastCommittedUID: 50002,
+		LastScannedUID:   50002,
+		AttemptedAt:      now.Add(time.Minute),
+		Records:          []maildomain.IngestRecord{second},
+	})
+	if err != nil {
+		t.Fatalf("mail after oversized thread could not advance: %v", err)
+	}
+	if result.Checkpoint.LastCommittedUID != 50002 {
+		t.Fatalf("canonical sync frontier remained wedged: %+v", result.Checkpoint)
+	}
+}
+
 func TestThreadGraphSplitPreservesRetiredAliasAndAllocatesFreshID(t *testing.T) {
 	state, accountID, folderID := newMailStoreFixture(t)
 	defer state.Close()

@@ -50,8 +50,9 @@ func newMailFlagMutationCommand(state *executionState, name, short string, mutat
 	var inputJSONL string
 	var mode string
 	command := &cobra.Command{
-		Use:   name + " <message-id> [message-id...]",
-		Short: short,
+		Use:     name + " <message-id> [message-id...]",
+		Short:   short,
+		Example: flagMutationExample(name),
 		Args: func(cmd *cobra.Command, args []string) error {
 			if strings.TrimSpace(input.Path) != "" || strings.TrimSpace(inputJSONL) != "" {
 				if len(args) != 0 {
@@ -198,6 +199,21 @@ func newMailFlagMutationCommand(state *executionState, name, short string, mutat
 	command.Flags().BoolVar(&jsonlOutput, "jsonl", false, "Emit typed per-item and completed JSONL events")
 	bindJSONInput(command, &input)
 	return command
+}
+
+func flagMutationExample(name string) string {
+	switch name {
+	case "mark-read":
+		return "  icloud mail mark-read msg_…\n  icloud mail mark-read msg_… --folder inbox"
+	case "mark-unread":
+		return "  icloud mail mark-unread msg_…\n  icloud mail mark-unread msg_… --folder inbox"
+	case "flag":
+		return "  icloud mail flag msg_…\n  icloud mail flag msg_… --folder inbox"
+	case "unflag":
+		return "  icloud mail unflag msg_…\n  icloud mail unflag msg_… --folder inbox"
+	default:
+		return "  icloud mail " + name + " msg_…"
+	}
 }
 
 func validateFlagMutationItems(items []flagMutationItem) error {

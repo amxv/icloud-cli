@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 )
 
 func TestGeneratedReferenceAssetsAreDeterministicAndComplete(t *testing.T) {
@@ -43,4 +45,27 @@ func TestGeneratedReferenceAssetsAreDeterministicAndComplete(t *testing.T) {
 	if !strings.Contains(rootMan, "icloud 1.2.3") || !strings.Contains(rootMan, "iCloud Mail CLI Manual") {
 		t.Fatalf("root man page lacks version/product metadata: %q", rootMan[:min(len(rootMan), 1000)])
 	}
+}
+
+func TestEveryRunnableVisibleLeafCommandHasCommandLocalExample(t *testing.T) {
+	state := &executionState{version: "test", schemaVersion: 18, stdin: strings.NewReader(""), stdout: &bytes.Buffer{}, stderr: &bytes.Buffer{}, accounts: unavailableAccountService{}, folders: unavailableFolderService{}, mail: unavailableMailService{}}
+	root := newRootCommand(state)
+	var walk func(*cobra.Command)
+	walk = func(command *cobra.Command) {
+		if command.Hidden {
+			return
+		}
+		visibleChildren := 0
+		for _, child := range command.Commands() {
+			if child.Hidden {
+				continue
+			}
+			visibleChildren++
+			walk(child)
+		}
+		if command.Name() != "help" && visibleChildren == 0 && (command.Run != nil || command.RunE != nil) && strings.TrimSpace(command.Example) == "" {
+			t.Errorf("runnable leaf %q has no command-local example", command.CommandPath())
+		}
+	}
+	walk(root)
 }

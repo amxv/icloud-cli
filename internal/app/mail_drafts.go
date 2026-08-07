@@ -167,20 +167,28 @@ func stageDraftMessage(ctx context.Context, stager blob.Stager, request maildoma
 }
 
 func (commands accountCommands) MailDraftList(ctx context.Context, home, accountSelector string, limit int) (account.Account, []maildomain.Draft, bool, int64, error) {
+	accountValue, values, more, _, schemaVersion, err := commands.MailDraftListPage(ctx, home, accountSelector, "", limit)
+	return accountValue, values, more, schemaVersion, err
+}
+
+func (commands accountCommands) MailDraftListPage(ctx context.Context, home, accountSelector, cursor string, limit int) (account.Account, []maildomain.Draft, bool, string, int64, error) {
 	state, err := openState(ctx, home)
 	if err != nil {
-		return account.Account{}, nil, false, 0, err
+		return account.Account{}, nil, false, "", 0, err
 	}
 	defer state.Close()
 	accountValue, err := state.Accounts().ResolveSelected(ctx, accountSelector)
 	if err != nil {
-		return account.Account{}, nil, false, state.SchemaVersion(), mapAccountError(err)
+		return account.Account{}, nil, false, "", state.SchemaVersion(), mapAccountError(err)
 	}
-	values, more, err := state.Drafts().List(ctx, accountValue.ID, limit)
+	values, more, nextCursor, err := state.Drafts().ListPage(ctx, accountValue.ID, cursor, limit)
 	if err != nil {
-		return account.Account{}, nil, false, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot list local drafts", false, err)
+		if errors.Is(err, maildomain.ErrInvalidDraftCursor) {
+			return account.Account{}, nil, false, "", state.SchemaVersion(), cli.WrapAppError(cli.ErrorUsage, "draft list cursor is invalid or belongs to another account", false, err)
+		}
+		return account.Account{}, nil, false, "", state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot list local drafts", false, err)
 	}
-	return accountValue, values, more, state.SchemaVersion(), nil
+	return accountValue, values, more, nextCursor, state.SchemaVersion(), nil
 }
 
 func (commands accountCommands) MailDraftShow(ctx context.Context, home, accountSelector, draftID string) (account.Account, maildomain.Draft, maildomain.ContentSource, int64, error) {
@@ -206,7 +214,7 @@ func (commands accountCommands) MailDraftShow(ctx context.Context, home, account
 	if !ok || value.Message.Content == nil {
 		return accountValue, value, nil, state.SchemaVersion(), nil
 	}
-	source := &messageContentSource{store: blob.New(paths.BlobRoot), raw: raw, content: *value.Message.Content}
+	source := &messageContentSource{store: commands.inboundBlobStore(paths), raw: raw, content: *value.Message.Content}
 	return accountValue, value, source, state.SchemaVersion(), nil
 }
 
@@ -294,36 +302,45 @@ func (commands accountCommands) syncDraftsInState(ctx context.Context, state *st
 	}
 	summary.FolderSync = folderSync
 	summary.MoreAvailable = folderSync.MoreAvailable
-	values, err := state.Drafts().AdoptFolder(ctx, accountValue.ID, draftsFolder.ID, commands.timeNow())
+	observed, err := state.Drafts().AdoptFolder(ctx, accountValue.ID, draftsFolder.ID, commands.timeNow())
 	if err != nil {
 		return accountValue, summary, nil, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot reconcile synchronized provider drafts", true, err)
 	}
-	summary.Observed = len(values)
+	summary.Observed = observed
+
 	appendUnknown := false
-	for _, value := range values {
-		if draftID != "" && value.ID != draftID {
-			continue
+	if draftID != "" {
+		value, err := state.Drafts().Draft(ctx, accountValue.ID, draftID)
+		if err != nil {
+			return accountValue, summary, nil, state.SchemaVersion(), mapDraftError(err)
 		}
+		if value.SyncState == maildomain.DraftLocal {
+			_, unknown, appendErr := commands.appendDraft(ctx, state, paths, accountValue, password, draftsFolder, value)
+			if appendErr != nil {
+				return accountValue, summary, []maildomain.Draft{value}, state.SchemaVersion(), appendErr
+			}
+			summary.Appended++
+			appendUnknown = unknown
+		}
+	} else if err := commands.walkActionableDrafts(ctx, state, accountValue.ID, func(value maildomain.Draft) error {
 		if value.SyncState != maildomain.DraftLocal {
-			continue
+			return nil
 		}
-		updated, unknown, appendErr := commands.appendDraft(ctx, state, paths, accountValue, password, draftsFolder, value)
+		_, unknown, appendErr := commands.appendDraft(ctx, state, paths, accountValue, password, draftsFolder, value)
 		if appendErr != nil {
-			return accountValue, summary, values, state.SchemaVersion(), appendErr
+			return appendErr
 		}
 		summary.Appended++
 		appendUnknown = appendUnknown || unknown
-		_ = updated
+		return nil
+	}); err != nil {
+		return accountValue, summary, nil, state.SchemaVersion(), err
 	}
-	if draftID != "" {
-		if _, err := state.Drafts().Draft(ctx, accountValue.ID, draftID); err != nil {
-			return accountValue, summary, values, state.SchemaVersion(), mapDraftError(err)
-		}
-	}
+
 	if appendUnknown {
 		folderSync, usedUsername, err = commands.syncMailbox(ctx, state, paths, accountValue, password, draftsFolder, limit)
 		if err != nil {
-			return accountValue, summary, values, state.SchemaVersion(), err
+			return accountValue, summary, nil, state.SchemaVersion(), err
 		}
 		if usedUsername != "" && usedUsername != accountValue.IMAPUsername {
 			accountValue, err = state.Accounts().UpdateIMAPUsername(ctx, accountValue.ID, usedUsername, commands.timeNow())
@@ -331,64 +348,94 @@ func (commands accountCommands) syncDraftsInState(ctx context.Context, state *st
 				return account.Account{}, summary, nil, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot persist the working IMAP username", false, err)
 			}
 		}
-		values, err = state.Drafts().AdoptFolder(ctx, accountValue.ID, draftsFolder.ID, commands.timeNow())
-		if err != nil {
+		if _, err = state.Drafts().AdoptFolder(ctx, accountValue.ID, draftsFolder.ID, commands.timeNow()); err != nil {
 			return accountValue, summary, nil, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot reconcile appended draft evidence", true, err)
 		}
 		summary.Reconciled++
 		summary.MoreAvailable = summary.MoreAvailable || folderSync.MoreAvailable
 	}
-	values, _, err = state.Drafts().List(ctx, accountValue.ID, 1000)
-	if err != nil {
-		return accountValue, summary, nil, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot reload draft reconciliation state", false, err)
+
+	if draftID != "" {
+		value, err := state.Drafts().Draft(ctx, accountValue.ID, draftID)
+		if err != nil {
+			return accountValue, summary, nil, state.SchemaVersion(), mapDraftError(err)
+		}
+		deleted := commands.reconcileDraftRecovery(ctx, state, accountValue, password, draftsFolder, value, &summary)
+		if deleted {
+			summary.CompletedAt = commands.timeNow()
+			return accountValue, summary, nil, state.SchemaVersion(), nil
+		}
+		value, err = state.Drafts().Draft(ctx, accountValue.ID, draftID)
+		if err != nil {
+			return accountValue, summary, nil, state.SchemaVersion(), mapDraftError(err)
+		}
+		summary.CompletedAt = commands.timeNow()
+		return accountValue, summary, []maildomain.Draft{value}, state.SchemaVersion(), nil
 	}
-	for _, value := range values {
-		if draftID != "" && value.ID != draftID {
-			continue
-		}
-		if value.OutboundAttemptID != "" && (value.SyncState == maildomain.DraftCleanupPending || value.SyncState == maildomain.DraftSendUnknown) {
-			attempt, attemptErr := state.Outbound().Attempt(ctx, value.OutboundAttemptID)
-			if attemptErr != nil || attempt.Status != maildomain.OutboundSent {
-				summary.Pending++
-				continue
-			}
-			if cleanupErr := commands.deleteAllDraftLocations(ctx, state, accountValue, password, value); cleanupErr != nil {
-				summary.Pending++
-				continue
-			}
-			if deleteErr := state.Drafts().Delete(ctx, accountValue.ID, value.ID, commands.timeNow()); deleteErr != nil {
-				summary.Pending++
-				continue
-			}
-			summary.Cleaned++
-			continue
-		}
-		if value.SyncState == maildomain.DraftCleanupPending {
-			if _, cleanupErr := commands.cleanupPreviousDraftLocation(ctx, state, accountValue, password, draftsFolder, value); cleanupErr != nil {
-				// Keep the durable recovery pointers. A later draft sync can retry cleanup.
-				summary.Pending++
-				continue
-			}
-			summary.Cleaned++
-		} else if value.SyncState == maildomain.DraftReconcile || value.SyncState == maildomain.DraftSendUnknown {
-			summary.Pending++
-		}
+
+	if err := commands.walkActionableDrafts(ctx, state, accountValue.ID, func(value maildomain.Draft) error {
+		commands.reconcileDraftRecovery(ctx, state, accountValue, password, draftsFolder, value, &summary)
+		return nil
+	}); err != nil {
+		return accountValue, summary, nil, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot page draft recovery state", false, err)
 	}
-	values, _, err = state.Drafts().List(ctx, accountValue.ID, 1000)
+	values, more, err := state.Drafts().List(ctx, accountValue.ID, limit)
 	if err != nil {
 		return accountValue, summary, nil, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot reload synchronized drafts", false, err)
 	}
-	if draftID != "" {
-		filtered := values[:0]
-		for _, value := range values {
-			if value.ID == draftID {
-				filtered = append(filtered, value)
-			}
-		}
-		values = filtered
-	}
+	summary.MoreAvailable = summary.MoreAvailable || more
 	summary.CompletedAt = commands.timeNow()
 	return accountValue, summary, values, state.SchemaVersion(), nil
+}
+
+func (commands accountCommands) walkActionableDrafts(ctx context.Context, state *store.Store, accountID string, visit func(maildomain.Draft) error) error {
+	afterDraftID := ""
+	for {
+		values, more, err := state.Drafts().ListActionablePage(ctx, accountID, afterDraftID, 100)
+		if err != nil {
+			return err
+		}
+		for _, value := range values {
+			if err := visit(value); err != nil {
+				return err
+			}
+		}
+		if !more || len(values) == 0 {
+			return nil
+		}
+		afterDraftID = values[len(values)-1].ID
+	}
+}
+
+func (commands accountCommands) reconcileDraftRecovery(ctx context.Context, state *store.Store, accountValue account.Account, password []byte, draftsFolder folder.Folder, value maildomain.Draft, summary *maildomain.DraftSyncSummary) bool {
+	if value.OutboundAttemptID != "" && (value.SyncState == maildomain.DraftCleanupPending || value.SyncState == maildomain.DraftSendUnknown) {
+		attempt, attemptErr := state.Outbound().Attempt(ctx, value.OutboundAttemptID)
+		if attemptErr != nil || attempt.Status != maildomain.OutboundSent {
+			summary.Pending++
+			return false
+		}
+		if cleanupErr := commands.deleteAllDraftLocations(ctx, state, accountValue, password, value); cleanupErr != nil {
+			summary.Pending++
+			return false
+		}
+		if deleteErr := state.Drafts().Delete(ctx, accountValue.ID, value.ID, commands.timeNow()); deleteErr != nil {
+			summary.Pending++
+			return false
+		}
+		summary.Cleaned++
+		return true
+	}
+	if value.SyncState == maildomain.DraftCleanupPending {
+		if _, cleanupErr := commands.cleanupPreviousDraftLocation(ctx, state, accountValue, password, draftsFolder, value); cleanupErr != nil {
+			// Keep the durable recovery pointers. A later draft sync can retry cleanup.
+			summary.Pending++
+			return false
+		}
+		summary.Cleaned++
+	} else if value.SyncState == maildomain.DraftReconcile || value.SyncState == maildomain.DraftSendUnknown {
+		summary.Pending++
+	}
+	return false
 }
 
 func (commands accountCommands) appendDraft(ctx context.Context, state *store.Store, paths config.AppPaths, accountValue account.Account, password []byte, draftsFolder folder.Folder, value maildomain.Draft) (maildomain.Draft, bool, error) {
@@ -399,7 +446,7 @@ func (commands accountCommands) appendDraft(ctx context.Context, state *store.St
 	var result transport.MailboxAppendResult
 	var appendErr error
 	for _, username := range imapUsernameCandidates(accountValue) {
-		reader, openErr := blob.New(paths.BlobRoot).OpenVerifiedContext(ctx, raw.StorageKey, raw.ContentHash, raw.ByteSize)
+		reader, openErr := commands.inboundBlobStore(paths).OpenVerifiedContext(ctx, raw.StorageKey, raw.ContentHash, raw.ByteSize)
 		if openErr != nil {
 			return value, false, mapBlobReadError(openErr)
 		}
@@ -522,7 +569,8 @@ func draftSendRequest(ctx context.Context, paths config.AppPaths, accountValue a
 	if !ok {
 		return maildomain.SendRequest{}, maildomain.ErrContentUnavailable
 	}
-	source := &messageContentSource{store: blob.New(paths.BlobRoot), raw: raw, content: *message.Content}
+	inboundStore := blob.NewWithLimits(paths.BlobRoot, paths.InboundLimits.RawMessageBytes, paths.InboundLimits.AttachmentBytes)
+	source := &messageContentSource{store: inboundStore, raw: raw, content: *message.Content}
 	if len(message.Content.TextPaths) > 0 {
 		writer := &forwardBodyWriter{limit: maildomain.MaxSendBodyBytes}
 		if err := source.WriteBody(ctx, maildomain.ContentText, writer); err != nil {
@@ -545,7 +593,7 @@ func draftSendRequest(ctx context.Context, paths config.AppPaths, accountValue a
 		request.Attachments = append(request.Attachments, maildomain.OutboundAttachment{
 			Filename: copy.Filename, MediaType: copy.MediaType, ContentHash: copy.ContentHash, ByteSize: copy.ByteSize,
 			Open: func() (io.ReadCloser, error) {
-				return blob.New(paths.BlobRoot).OpenVerifiedContext(ctx, copy.StorageKey, copy.ContentHash, copy.ByteSize)
+				return inboundStore.OpenVerifiedContext(ctx, copy.StorageKey, copy.ContentHash, copy.ByteSize)
 			},
 		})
 	}
@@ -693,6 +741,13 @@ func (commands accountCommands) loadDraftSendRequest(ctx context.Context, home, 
 	if err != nil {
 		return account.Account{}, maildomain.Draft{}, maildomain.SendRequest{}, state.SchemaVersion(), mapDraftError(err)
 	}
+	if draftSendRecoveryMustResolve(ctx, state, value) {
+		return accountValue, value, maildomain.SendRequest{}, state.SchemaVersion(), cli.NewAppError(
+			cli.ErrorConflict,
+			"draft has unresolved provider recovery state; run mail draft sync before sending so provider-copy or ambiguous-send evidence is not discarded",
+			false,
+		)
+	}
 	request, err := draftSendRequest(ctx, paths, accountValue, value)
 	if err != nil {
 		return accountValue, value, maildomain.SendRequest{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorUnavailable, "draft content cannot be prepared for sending", false, err)
@@ -721,6 +776,13 @@ func (commands accountCommands) MailDraftDelete(ctx context.Context, home, accou
 	if err != nil {
 		return account.Account{}, maildomain.Draft{}, 0, state.SchemaVersion(), mapDraftError(err)
 	}
+	if draftRecoveryMustResolve(value) {
+		return accountValue, value, 0, state.SchemaVersion(), cli.NewAppError(
+			cli.ErrorConflict,
+			"draft has unresolved provider recovery state; run mail draft sync before deleting so provider-copy or ambiguous-send evidence is not discarded",
+			false,
+		)
+	}
 	remoteCount := draftPresentLocationCount(value)
 	if remoteCount > 0 {
 		_, credential, err := state.Accounts().Credential(ctx, accountValue.ID)
@@ -740,6 +802,29 @@ func (commands accountCommands) MailDraftDelete(ctx context.Context, home, accou
 		return accountValue, value, remoteCount, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "provider draft cleanup completed but the local draft could not be removed", true, err)
 	}
 	return accountValue, value, remoteCount, state.SchemaVersion(), nil
+}
+
+func draftRecoveryMustResolve(value maildomain.Draft) bool {
+	switch value.SyncState {
+	case maildomain.DraftReconcile, maildomain.DraftCleanupPending, maildomain.DraftSendUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+func draftSendRecoveryMustResolve(ctx context.Context, state *store.Store, value maildomain.Draft) bool {
+	if value.SyncState != maildomain.DraftCleanupPending || strings.TrimSpace(value.OutboundAttemptID) == "" {
+		return draftRecoveryMustResolve(value)
+	}
+	attempt, err := state.Outbound().Attempt(ctx, value.OutboundAttemptID)
+	if err != nil {
+		return true
+	}
+	// A proven-sent attempt is safe to revisit through the same durable
+	// idempotency key: MailSend will reuse the existing attempt and the caller can
+	// retry provider/local draft cleanup without transmitting another message.
+	return attempt.Status != maildomain.OutboundSent
 }
 
 func draftPresentLocationCount(value maildomain.Draft) int {

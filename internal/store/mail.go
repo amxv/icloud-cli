@@ -145,7 +145,7 @@ func (repository *MailRepository) CommitInboxPage(ctx context.Context, page mail
 			stateChanges++
 		}
 	}
-	if err := rebuildAffectedThreadGraph(ctx, tx, page.AccountID, mapKeysSorted(affectedMessages), page.AttemptedAt); err != nil {
+	if err := rebuildCanonicalThreadProjection(ctx, tx, page.AccountID, mapKeysSorted(affectedMessages), page.AttemptedAt); err != nil {
 		return maildomain.CommitResult{}, err
 	}
 
@@ -208,7 +208,7 @@ func (repository *MailRepository) CommitHydration(ctx context.Context, page mail
 	if err != nil {
 		return maildomain.HydrateResult{}, err
 	}
-	if err := rebuildAffectedThreadGraph(ctx, tx, page.AccountID, mapKeysSorted(ingested.Affected), page.AttemptedAt); err != nil {
+	if err := rebuildCanonicalThreadProjection(ctx, tx, page.AccountID, mapKeysSorted(ingested.Affected), page.AttemptedAt); err != nil {
 		return maildomain.HydrateResult{}, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -500,6 +500,38 @@ LIMIT ?`, strings.TrimSpace(accountID), strings.TrimSpace(messageID), limit+1)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, false, fmt.Errorf("list attachments: %w", err)
+	}
+	more := len(values) > limit
+	if more {
+		values = values[:limit]
+	}
+	return values, more, nil
+}
+
+func (repository *MailRepository) AttachmentsForThread(ctx context.Context, accountID, threadID string, limit int) ([]maildomain.Attachment, bool, error) {
+	if limit < 1 {
+		return nil, false, errors.New("list thread attachments: limit must be positive")
+	}
+	rows, err := repository.db.QueryContext(ctx, attachmentColumns+`
+JOIN messages AS m ON m.message_id = a.message_id
+JOIN thread_messages AS tm ON tm.message_id = a.message_id
+WHERE m.account_id = ? AND tm.thread_id = ?
+ORDER BY COALESCE(m.sort_at, m.created_at), m.message_id, a.ordinal, a.attachment_id
+LIMIT ?`, strings.TrimSpace(accountID), strings.TrimSpace(threadID), limit+1)
+	if err != nil {
+		return nil, false, fmt.Errorf("list thread attachments: %w", err)
+	}
+	defer rows.Close()
+	values := make([]maildomain.Attachment, 0, limit+1)
+	for rows.Next() {
+		value, scanErr := scanAttachment(rows)
+		if scanErr != nil {
+			return nil, false, scanErr
+		}
+		values = append(values, value)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, fmt.Errorf("list thread attachments: %w", err)
 	}
 	more := len(values) > limit
 	if more {
@@ -1055,6 +1087,10 @@ ON CONFLICT(message_id) DO UPDATE SET
 		}
 		existingParts[path] = partID
 	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("read existing MIME part IDs: %w", err)
+	}
 	if err := rows.Close(); err != nil {
 		return fmt.Errorf("close existing MIME part IDs: %w", err)
 	}
@@ -1070,6 +1106,10 @@ ON CONFLICT(message_id) DO UPDATE SET
 			return fmt.Errorf("read existing attachment ID: %w", err)
 		}
 		existingAttachments[path] = attachmentID
+	}
+	if err := attachmentRows.Err(); err != nil {
+		attachmentRows.Close()
+		return fmt.Errorf("read existing attachment IDs: %w", err)
 	}
 	if err := attachmentRows.Close(); err != nil {
 		return fmt.Errorf("close existing attachment IDs: %w", err)
@@ -1598,6 +1638,10 @@ ORDER BY CASE kind WHEN 'to' THEN 0 WHEN 'cc' THEN 1 ELSE 2 END, ordinal`, value
 			value.BCC = append(value.BCC, address)
 		}
 	}
+	if err := recipientRows.Err(); err != nil {
+		recipientRows.Close()
+		return fmt.Errorf("read message recipients: %w", err)
+	}
 	if err := recipientRows.Close(); err != nil {
 		return fmt.Errorf("close message recipients: %w", err)
 	}
@@ -1613,6 +1657,10 @@ ORDER BY CASE kind WHEN 'to' THEN 0 WHEN 'cc' THEN 1 ELSE 2 END, ordinal`, value
 			return fmt.Errorf("read message reference: %w", err)
 		}
 		value.References = append(value.References, reference)
+	}
+	if err := referenceRows.Err(); err != nil {
+		referenceRows.Close()
+		return fmt.Errorf("read message references: %w", err)
 	}
 	if err := referenceRows.Close(); err != nil {
 		return fmt.Errorf("close message references: %w", err)
@@ -1632,11 +1680,13 @@ ORDER BY present DESC, folder_id, uid`, value.ID)
 		}
 		value.Locations = append(value.Locations, location)
 		if location.Present && location.Flags.Eligible() {
-			if location.FolderKind != "sent" && location.FolderKind != "drafts" && !location.Flags.Draft {
-				value.Unread = value.Unread || !location.Flags.Seen
-			}
+			value.Unread = value.Unread || locationCountsUnread(location)
 			value.Flagged = value.Flagged || location.Flags.Flagged
 		}
+	}
+	if err := locationRows.Err(); err != nil {
+		locationRows.Close()
+		return fmt.Errorf("read message locations: %w", err)
 	}
 	if err := locationRows.Close(); err != nil {
 		return fmt.Errorf("close message locations: %w", err)
@@ -1682,6 +1732,10 @@ LIMIT 100`, value.ID)
 		}
 		value.Identity = append(value.Identity, evidence)
 	}
+	if err := identityRows.Err(); err != nil {
+		identityRows.Close()
+		return fmt.Errorf("read message identity evidence: %w", err)
+	}
 	if err := identityRows.Close(); err != nil {
 		return fmt.Errorf("close message identity evidence: %w", err)
 	}
@@ -1716,6 +1770,10 @@ LIMIT 100`, value.ID, value.ID)
 			return fmt.Errorf("parse dedupe conflict time: %w", err)
 		}
 		value.DedupeConflicts = append(value.DedupeConflicts, conflict)
+	}
+	if err := conflictRows.Err(); err != nil {
+		conflictRows.Close()
+		return fmt.Errorf("read message dedupe conflicts: %w", err)
 	}
 	if err := conflictRows.Close(); err != nil {
 		return fmt.Errorf("close message dedupe conflicts: %w", err)
@@ -1791,6 +1849,10 @@ FROM message_parts WHERE message_id = ? ORDER BY ordinal`, value.ID)
 		}
 		content.Parts = append(content.Parts, part)
 	}
+	if err := partRows.Err(); err != nil {
+		partRows.Close()
+		return fmt.Errorf("read MIME parts: %w", err)
+	}
 	if err := partRows.Close(); err != nil {
 		return fmt.Errorf("close MIME parts: %w", err)
 	}
@@ -1830,6 +1892,10 @@ FROM attachments WHERE message_id = ? ORDER BY ordinal`, value.ID)
 			return fmt.Errorf("parse attachment media parameters: %w", err)
 		}
 		content.Attachments = append(content.Attachments, attachment)
+	}
+	if err := attachmentRows.Err(); err != nil {
+		attachmentRows.Close()
+		return fmt.Errorf("read attachments: %w", err)
 	}
 	if err := attachmentRows.Close(); err != nil {
 		return fmt.Errorf("close attachments: %w", err)

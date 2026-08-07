@@ -16,6 +16,7 @@ type MailService interface {
 	MailDraftCreate(context.Context, string, string, maildomain.SendRequest) (account.Account, maildomain.Draft, int64, error)
 	MailDraftUpdate(context.Context, string, string, string, maildomain.SendRequest) (account.Account, maildomain.Draft, int64, error)
 	MailDraftList(context.Context, string, string, int) (account.Account, []maildomain.Draft, bool, int64, error)
+	MailDraftListPage(context.Context, string, string, string, int) (account.Account, []maildomain.Draft, bool, string, int64, error)
 	MailDraftShow(context.Context, string, string, string) (account.Account, maildomain.Draft, maildomain.ContentSource, int64, error)
 	MailDraftSync(context.Context, string, string, string, string, int) (account.Account, maildomain.DraftSyncSummary, []maildomain.Draft, int64, error)
 	MailDraftSendPreview(context.Context, string, string, string) (account.Account, maildomain.Draft, maildomain.SendPreview, int64, error)
@@ -23,7 +24,9 @@ type MailService interface {
 	MailDraftDelete(context.Context, string, string, string) (account.Account, maildomain.Draft, int, int64, error)
 	MailWatch(context.Context, string, string, maildomain.WatchOptions, func(maildomain.WatchEvent) error) error
 	MailSync(context.Context, string, string, string, int) (account.Account, []folder.Folder, []maildomain.SyncSummary, int64, error)
+	MailSyncMode(context.Context, string, string, string, int, bool) (account.Account, []folder.Folder, []maildomain.SyncSummary, int64, error)
 	MailSyncAll(context.Context, string, string, int) (account.Account, []folder.Folder, []maildomain.SyncSummary, int64, error)
+	MailSyncAllMode(context.Context, string, string, int, bool) (account.Account, []folder.Folder, []maildomain.SyncSummary, int64, error)
 	MailBackfill(context.Context, string, string, string, *time.Time, *time.Time, int) (account.Account, folder.Folder, maildomain.BackfillSummary, int64, error)
 	MailRebaseline(context.Context, string, string, string, bool) (account.Account, folder.Folder, maildomain.RebaselineSummary, int64, error)
 	MailRepair(context.Context, string, string, maildomain.RepairOptions) (account.Account, maildomain.RepairSummary, int64, error)
@@ -33,7 +36,7 @@ type MailService interface {
 	MailMessage(context.Context, string, string, string) (account.Account, maildomain.Message, maildomain.ContentSource, int64, error)
 	MailLatest(context.Context, string, string, int) (account.Account, []maildomain.Thread, bool, int64, error)
 	MailThread(context.Context, string, string, string, maildomain.ThreadReadOptions) (account.Account, maildomain.ThreadPage, []maildomain.ContentSource, int64, error)
-	MailAttachments(context.Context, string, string, string, int) (account.Account, maildomain.Message, []maildomain.Attachment, bool, int64, error)
+	MailAttachments(context.Context, string, string, string, int) (account.Account, maildomain.AttachmentTarget, []maildomain.Attachment, bool, int64, error)
 	MailAttachment(context.Context, string, string, string) (account.Account, maildomain.Attachment, maildomain.AttachmentSource, int64, error)
 	MailUpdateFlag(context.Context, string, string, string, string, maildomain.FlagMutation) (account.Account, folder.Folder, maildomain.Message, maildomain.Location, int64, error)
 	MailSearch(context.Context, string, string, string, maildomain.SearchOptions) (account.Account, folder.Folder, maildomain.SearchPage, int64, error)
@@ -156,7 +159,7 @@ type publicLocation struct {
 }
 
 func newMailSyncCommand(state *executionState) *cobra.Command {
-	var jsonOutput bool
+	var jsonOutput, jsonlOutput, continueOnError bool
 	var limit int
 	var folderSelector string
 	var allFolders bool
@@ -167,16 +170,16 @@ func newMailSyncCommand(state *executionState) *cobra.Command {
 		Use:     "sync",
 		Short:   "Fetch and atomically commit bounded pages from enabled mail folders",
 		Args:    cobra.NoArgs,
-		Example: "  icloud mail sync\n  icloud mail sync --folder sent\n  icloud mail sync --hydrate rem_…\n  icloud mail sync --limit 50 --json\n  icloud mail sync status --folder sent",
+		Example: "  icloud mail sync\n  icloud mail sync --folder sent\n  icloud mail sync --hydrate rem_…\n  icloud mail sync --all-folders --continue-on-error --jsonl\n  icloud mail sync --limit 50 --json\n  icloud mail sync status --folder sent",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput}, OutputSupport{JSON: true}); err != nil {
+			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput, JSONL: jsonlOutput}, OutputSupport{JSON: true, JSONL: true}); err != nil {
 				return err
 			}
 			var jsonRequest mailSyncJSONRequest
-			if used, err := readJSONInput(cmd, state, input, &jsonRequest, "folder", "all-folders", "hydrate", "reconcile-outbound", "limit"); err != nil {
+			if used, err := readJSONInput(cmd, state, input, &jsonRequest, "folder", "all-folders", "hydrate", "reconcile-outbound", "continue-on-error", "limit"); err != nil {
 				return err
 			} else if used {
-				folderSelector, allFolders, hydrate, reconcileOutbound = jsonRequest.Folder, jsonRequest.AllFolders, append([]string(nil), jsonRequest.Hydrate...), jsonRequest.ReconcileOutbound
+				folderSelector, allFolders, hydrate, reconcileOutbound, continueOnError = jsonRequest.Folder, jsonRequest.AllFolders, append([]string(nil), jsonRequest.Hydrate...), jsonRequest.ReconcileOutbound, jsonRequest.ContinueOnError
 				if jsonRequest.Limit != nil {
 					limit = *jsonRequest.Limit
 				}
@@ -194,34 +197,103 @@ func newMailSyncCommand(state *executionState) *cobra.Command {
 				if strings.TrimSpace(folderSelector) != "" || allFolders {
 					return NewAppError(ErrorUsage, "--hydrate cannot be combined with --folder or --all-folders", false)
 				}
-				accountValue, outcomes, schemaVersion, err := state.mail.MailHydrate(cmd.Context(), state.global.Home, state.global.Account, hydrate)
-				if err != nil {
-					return err
+				var accountValue account.Account
+				var outcomes []maildomain.HydrateOutcome
+				var schemaVersion int64
+				var operationErr error
+				hydrateFailures := make([]bulkItemFailure, 0)
+				if continueOnError {
+					seen := map[string]struct{}{}
+					failures := make([]map[string]any, 0)
+					var firstFailure *AppError
+					for _, reference := range hydrate {
+						reference = strings.TrimSpace(reference)
+						if reference == "" {
+							continue
+						}
+						if _, duplicate := seen[reference]; duplicate {
+							continue
+						}
+						seen[reference] = struct{}{}
+						value, itemOutcomes, version, itemErr := state.mail.MailHydrate(cmd.Context(), state.global.Home, state.global.Account, []string{reference})
+						if value.ID != "" {
+							accountValue = value
+						}
+						if version != 0 {
+							schemaVersion = version
+						}
+						outcomes = append(outcomes, itemOutcomes...)
+						if itemErr != nil {
+							normalized := NormalizeError(itemErr)
+							if firstFailure == nil {
+								firstFailure = normalized
+							}
+							failures = append(failures, map[string]any{"reference": reference, "error": normalized})
+							hydrateFailures = append(hydrateFailures, bulkItemFailure{Reference: reference, Error: normalized})
+						}
+					}
+					if firstFailure != nil {
+						copyErr := *firstFailure
+						copyErr.Message = "remote hydration completed with per-item failures; committed results are reported in error details"
+						copyErr.Details = map[string]any{"requested": len(seen), "completed": outcomes, "completed_count": len(outcomes), "failures": failures, "partial": len(outcomes) > 0, "mode": "continue-on-error"}
+						operationErr = &copyErr
+					}
+				} else {
+					accountValue, outcomes, schemaVersion, operationErr = state.mail.MailHydrate(cmd.Context(), state.global.Home, state.global.Account, hydrate)
+					if operationErr != nil {
+						normalized := NormalizeError(operationErr)
+						reference, _ := normalized.Details["failed_reference"].(string)
+						hydrateFailures = append(hydrateFailures, bulkItemFailure{Reference: reference, Error: normalized})
+					}
 				}
 				if jsonOutput {
+					if operationErr != nil {
+						return operationErr
+					}
 					return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: mailHydrateData{
 						AccountID: accountValue.ID, Outcomes: outcomes, Count: len(outcomes), SchemaVersion: schemaVersion,
 					}, Meta: EnvelopeMeta{RequestID: state.requestID}})
 				}
+				if jsonlOutput {
+					sequence := uint64(0)
+					for index, outcome := range outcomes {
+						sequence++
+						if err := WriteJSONLEvent(state.stdout, JSONLEvent{Event: "item", Sequence: sequence, AccountID: accountValue.ID, Timestamp: time.Now().UTC(), Payload: map[string]any{"index": index, "status": hydrateOutcomeStatus(outcome), "result": outcome}}); err != nil {
+							return err
+						}
+					}
+					for index, failure := range hydrateFailures {
+						sequence++
+						if err := WriteJSONLEvent(state.stdout, JSONLEvent{Event: "item", Sequence: sequence, AccountID: accountValue.ID, Timestamp: time.Now().UTC(), Payload: map[string]any{"index": len(outcomes) + index, "status": "error", "reference": failure.Reference}, Error: failure.Error}); err != nil {
+							return err
+						}
+					}
+					sequence++
+					if err := WriteJSONLEvent(state.stdout, JSONLEvent{Event: "completed", Sequence: sequence, AccountID: accountValue.ID, Timestamp: time.Now().UTC(), Payload: map[string]any{"requested": len(hydrate), "completed": len(outcomes), "failed": len(hydrateFailures), "partial": operationErr != nil && len(outcomes) > 0, "mode": bulkFailureMode(continueOnError)}}); err != nil {
+						return err
+					}
+					if operationErr != nil {
+						return operationErr
+					}
+					return nil
+				}
 				renderer := NewCompactTextRenderer(state.stdout)
 				for _, outcome := range outcomes {
-					status := "cached"
-					if outcome.Created {
-						status = "created"
-					} else if outcome.Updated {
-						status = "updated"
-					}
 					if err := renderer.Record("mail-hydrate", outcome.MessageID,
 						Field("location_id", outcome.LocationID),
-						Field("status", status),
+						Field("status", hydrateOutcomeStatus(outcome)),
 					); err != nil {
 						return err
 					}
 				}
-				return renderer.Summary("hydrate-results",
+				if err := renderer.Summary("hydrate-results",
 					Field("account", accountValue.ID),
 					Field("count", fmt.Sprintf("%d", len(outcomes))),
-				)
+					Field("partial", operationErr != nil && len(outcomes) > 0),
+				); err != nil {
+					return err
+				}
+				return operationErr
 			}
 			if allFolders && strings.TrimSpace(folderSelector) != "" {
 				return NewAppError(ErrorUsage, "--all-folders cannot be combined with --folder", false)
@@ -233,21 +305,49 @@ func newMailSyncCommand(state *executionState) *cobra.Command {
 				err           error
 			)
 			if allFolders {
-				accountValue, _, summaries, schemaVersion, err = state.mail.MailSyncAll(cmd.Context(), state.global.Home, state.global.Account, limit)
+				accountValue, _, summaries, schemaVersion, err = state.mail.MailSyncAllMode(cmd.Context(), state.global.Home, state.global.Account, limit, continueOnError)
 			} else {
-				accountValue, _, summaries, schemaVersion, err = state.mail.MailSync(cmd.Context(), state.global.Home, state.global.Account, folderSelector, limit)
+				accountValue, _, summaries, schemaVersion, err = state.mail.MailSyncMode(cmd.Context(), state.global.Home, state.global.Account, folderSelector, limit, continueOnError)
 			}
-			if err != nil {
-				return err
-			}
-			if len(summaries) == 0 {
+			if len(summaries) == 0 && err == nil {
 				return NewAppError(ErrorInternal, "mail synchronization returned no folder summaries", false)
 			}
 			if jsonOutput {
+				if err != nil {
+					return err
+				}
 				return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: mailSyncData{
 					AccountID: accountValue.ID, Summary: summaries[0], Summaries: summaries,
 					Count: len(summaries), SchemaVersion: schemaVersion,
 				}, Meta: EnvelopeMeta{RequestID: state.requestID}})
+			}
+			if jsonlOutput {
+				sequence := uint64(0)
+				for index, summary := range summaries {
+					sequence++
+					if writeErr := WriteJSONLEvent(state.stdout, JSONLEvent{Event: "item", Sequence: sequence, AccountID: accountValue.ID, Timestamp: time.Now().UTC(), Payload: map[string]any{"index": index, "status": "committed", "folder_id": summary.FolderID, "summary": summary}}); writeErr != nil {
+						return writeErr
+					}
+				}
+				syncFailures := bulkFailuresFromError(err)
+				for index, failure := range syncFailures {
+					sequence++
+					payload := map[string]any{"index": len(summaries) + index, "status": "error"}
+					if failure.FolderID != "" {
+						payload["folder_id"] = failure.FolderID
+					}
+					if failure.FolderName != "" {
+						payload["folder_name"] = failure.FolderName
+					}
+					if writeErr := WriteJSONLEvent(state.stdout, JSONLEvent{Event: "item", Sequence: sequence, AccountID: accountValue.ID, Timestamp: time.Now().UTC(), Payload: payload, Error: failure.Error}); writeErr != nil {
+						return writeErr
+					}
+				}
+				sequence++
+				if writeErr := WriteJSONLEvent(state.stdout, JSONLEvent{Event: "completed", Sequence: sequence, AccountID: accountValue.ID, Timestamp: time.Now().UTC(), Payload: map[string]any{"completed": len(summaries), "failed": len(syncFailures), "partial": err != nil && len(summaries) > 0, "mode": bulkFailureMode(continueOnError)}}); writeErr != nil {
+					return writeErr
+				}
+				return err
 			}
 			renderer := NewCompactTextRenderer(state.stdout)
 			for _, summary := range summaries {
@@ -272,7 +372,7 @@ func newMailSyncCommand(state *executionState) *cobra.Command {
 					return err
 				}
 			}
-			return nil
+			return err
 		},
 	}
 	command.Flags().StringVar(&folderSelector, "folder", "", "Sync one enabled folder by kind, ID, name, or wire name instead of all enabled folders")
@@ -281,6 +381,8 @@ func newMailSyncCommand(state *executionState) *cobra.Command {
 	command.Flags().BoolVar(&reconcileOutbound, "reconcile-outbound", false, "Sync Sent and reconcile recent sent/unknown attempts by exact Message-ID evidence")
 	command.Flags().IntVar(&limit, "limit", DefaultPageSize, fmt.Sprintf("Maximum messages to fetch and commit per folder (1-%d)", MaximumPageSize))
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
+	command.Flags().BoolVar(&jsonlOutput, "jsonl", false, "Emit typed per-folder or per-hydration-item JSONL events plus a completed event")
+	command.Flags().BoolVar(&continueOnError, "continue-on-error", false, "Continue independent hydration items or folders after an error; committed earlier work is never rolled back")
 	bindJSONInput(command, &input)
 	command.AddCommand(newMailSyncStatusCommand(state))
 	command.AddCommand(newMailSyncCheckpointsCommand(state))
@@ -288,6 +390,57 @@ func newMailSyncCommand(state *executionState) *cobra.Command {
 	command.AddCommand(newMailSyncRebaselineCommand(state))
 	command.AddCommand(newMailSyncRepairCommand(state))
 	return command
+}
+
+func hydrateOutcomeStatus(outcome maildomain.HydrateOutcome) string {
+	if outcome.Created {
+		return "created"
+	}
+	if outcome.Updated {
+		return "updated"
+	}
+	return "cached"
+}
+
+func bulkFailureMode(continueOnError bool) string {
+	if continueOnError {
+		return "continue-on-error"
+	}
+	return "stop-on-error"
+}
+
+type bulkItemFailure struct {
+	Reference  string
+	FolderID   string
+	FolderName string
+	Error      *AppError
+}
+
+func bulkFailuresFromError(err error) []bulkItemFailure {
+	if err == nil {
+		return nil
+	}
+	normalized := NormalizeError(err)
+	raw, ok := normalized.Details["failures"].([]map[string]any)
+	if !ok {
+		return nil
+	}
+	values := make([]bulkItemFailure, 0, len(raw))
+	for _, item := range raw {
+		failure := bulkItemFailure{}
+		failure.FolderID, _ = item["folder_id"].(string)
+		failure.FolderName, _ = item["folder_name"].(string)
+		failure.Reference, _ = item["reference"].(string)
+		if appErr, ok := item["error"].(*AppError); ok {
+			failure.Error = appErr
+		} else if nestedErr, ok := item["error"].(error); ok {
+			failure.Error = NormalizeError(nestedErr)
+		} else {
+			failure.Error = normalized
+		}
+		values = append(values, failure)
+	}
+	return values
 }
 
 func outboundReconcileValue(summary *maildomain.OutboundReconcileSummary, field string) any {
@@ -731,6 +884,9 @@ func (unavailableMailService) MailDraftUpdate(context.Context, string, string, s
 func (unavailableMailService) MailDraftList(context.Context, string, string, int) (account.Account, []maildomain.Draft, bool, int64, error) {
 	return account.Account{}, nil, false, 0, NewAppError(ErrorConfiguration, "mail drafts are unavailable", false)
 }
+func (unavailableMailService) MailDraftListPage(context.Context, string, string, string, int) (account.Account, []maildomain.Draft, bool, string, int64, error) {
+	return account.Account{}, nil, false, "", 0, NewAppError(ErrorConfiguration, "mail drafts are unavailable", false)
+}
 func (unavailableMailService) MailDraftShow(context.Context, string, string, string) (account.Account, maildomain.Draft, maildomain.ContentSource, int64, error) {
 	return account.Account{}, maildomain.Draft{}, nil, 0, NewAppError(ErrorConfiguration, "mail drafts are unavailable", false)
 }
@@ -754,8 +910,14 @@ func (unavailableMailService) MailWatch(context.Context, string, string, maildom
 func (unavailableMailService) MailSync(context.Context, string, string, string, int) (account.Account, []folder.Folder, []maildomain.SyncSummary, int64, error) {
 	return account.Account{}, nil, nil, 0, NewAppError(ErrorConfiguration, "mail synchronization is unavailable", false)
 }
+func (unavailableMailService) MailSyncMode(context.Context, string, string, string, int, bool) (account.Account, []folder.Folder, []maildomain.SyncSummary, int64, error) {
+	return account.Account{}, nil, nil, 0, NewAppError(ErrorConfiguration, "mail synchronization is unavailable", false)
+}
 
 func (unavailableMailService) MailSyncAll(context.Context, string, string, int) (account.Account, []folder.Folder, []maildomain.SyncSummary, int64, error) {
+	return account.Account{}, nil, nil, 0, NewAppError(ErrorConfiguration, "mail synchronization is unavailable", false)
+}
+func (unavailableMailService) MailSyncAllMode(context.Context, string, string, int, bool) (account.Account, []folder.Folder, []maildomain.SyncSummary, int64, error) {
 	return account.Account{}, nil, nil, 0, NewAppError(ErrorConfiguration, "mail synchronization is unavailable", false)
 }
 func (unavailableMailService) MailBackfill(context.Context, string, string, string, *time.Time, *time.Time, int) (account.Account, folder.Folder, maildomain.BackfillSummary, int64, error) {
@@ -785,8 +947,8 @@ func (unavailableMailService) MailLatest(context.Context, string, string, int) (
 func (unavailableMailService) MailThread(context.Context, string, string, string, maildomain.ThreadReadOptions) (account.Account, maildomain.ThreadPage, []maildomain.ContentSource, int64, error) {
 	return account.Account{}, maildomain.ThreadPage{}, nil, 0, NewAppError(ErrorConfiguration, "local mail threads are unavailable", false)
 }
-func (unavailableMailService) MailAttachments(context.Context, string, string, string, int) (account.Account, maildomain.Message, []maildomain.Attachment, bool, int64, error) {
-	return account.Account{}, maildomain.Message{}, nil, false, 0, NewAppError(ErrorConfiguration, "local attachments are unavailable", false)
+func (unavailableMailService) MailAttachments(context.Context, string, string, string, int) (account.Account, maildomain.AttachmentTarget, []maildomain.Attachment, bool, int64, error) {
+	return account.Account{}, maildomain.AttachmentTarget{}, nil, false, 0, NewAppError(ErrorConfiguration, "local attachments are unavailable", false)
 }
 func (unavailableMailService) MailAttachment(context.Context, string, string, string) (account.Account, maildomain.Attachment, maildomain.AttachmentSource, int64, error) {
 	return account.Account{}, maildomain.Attachment{}, nil, 0, NewAppError(ErrorConfiguration, "local attachment content is unavailable", false)

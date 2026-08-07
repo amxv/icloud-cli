@@ -226,6 +226,65 @@ func TestRemoteSearchLookupHydrationAndCheckpointIsolation(t *testing.T) {
 	}
 }
 
+func TestMailHydrateReportsCommittedPartialResultsAndJSONLItemFailures(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("ICLOUD_REMOTE_PASSWORD", "synthetic-remote-secret")
+	commands, _ := newTestAccountCommands()
+	commands.folders = &fakeFolderClient{results: map[string][]transport.FolderDiscoveryResult{
+		"owner@icloud.com": {{Folders: []transport.RemoteFolder{{
+			Name: "INBOX", WireName: "INBOX", Kind: "inbox", KindSource: "inbox", Selectable: true,
+			Subscription: "subscribed", Status: &transport.MailboxStatus{Mailbox: "INBOX", Messages: 2, UIDNext: 503, UIDValidity: 100},
+		}}}},
+	}}
+	raw := syntheticMailFixture(501, "hydrate-501@example.test", "Hydrate first", "hydrate-partial-first-token", "")
+	remoteClient := &fakeRemoteClient{uidValidity: 100, rawByUID: map[uint32]string{501: raw}}
+	commands.remote = remoteClient
+	addAndDiscoverInbox(t, commands, home, "ICLOUD_REMOTE_PASSWORD")
+	accountID := searchAccountID(t, home)
+	folderID := searchFolderID(t, home)
+	firstRef, err := maildomain.EncodeRemoteReference(maildomain.RemoteReference{AccountID: accountID, FolderID: folderID, UIDValidity: 100, UID: 501})
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondRef, err := maildomain.EncodeRemoteReference(maildomain.RemoteReference{AccountID: accountID, FolderID: folderID, UIDValidity: 100, UID: 502})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	accountValue, outcomes, _, hydrateErr := commands.MailHydrate(context.Background(), home, "", []string{firstRef, secondRef})
+	if hydrateErr == nil || accountValue.ID != accountID || len(outcomes) != 1 || outcomes[0].MessageID == "" {
+		t.Fatalf("partial hydrate account=%+v outcomes=%+v err=%v", accountValue, outcomes, hydrateErr)
+	}
+	normalized := cli.NormalizeError(hydrateErr)
+	if normalized.Details["partial"] != true || normalized.Details["completed_count"] != 1 || normalized.Details["failed_reference"] != secondRef {
+		t.Fatalf("partial hydrate details=%+v", normalized.Details)
+	}
+	state, err := openState(context.Background(), home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.Mail().Message(context.Background(), accountID, outcomes[0].MessageID); err != nil {
+		state.Close()
+		t.Fatalf("committed hydration result was hidden or rolled back: %v", err)
+	}
+	state.Close()
+
+	code, stdout, stderr := runWithAccountCommands(t, commands, "", "--home", home, "mail", "sync",
+		"--hydrate", firstRef+","+secondRef, "--continue-on-error", "--jsonl")
+	if code == 0 {
+		t.Fatalf("partial JSONL hydrate unexpectedly succeeded stdout=%q stderr=%q", stdout, stderr)
+	}
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	if len(lines) != 3 || !strings.Contains(lines[0], `"event":"item"`) || !strings.Contains(lines[0], `"status":"cached"`) ||
+		!strings.Contains(lines[1], `"event":"item"`) || !strings.Contains(lines[1], `"status":"error"`) || !strings.Contains(lines[1], secondRef) ||
+		!strings.Contains(lines[2], `"event":"completed"`) || !strings.Contains(lines[2], `"failed":1`) || !strings.Contains(lines[2], `"partial":true`) {
+		t.Fatalf("partial JSONL hydrate stdout=%q", stdout)
+	}
+	if !strings.Contains(stderr, `"event":"error"`) {
+		t.Fatalf("partial JSONL hydrate stderr=%q", stderr)
+	}
+}
+
 func searchAccountID(t *testing.T, home string) string {
 	t.Helper()
 	state, err := openState(context.Background(), home)

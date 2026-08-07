@@ -1,21 +1,22 @@
 ---
 title: Save mail attachments
-description: List attachments from a synchronized message, save one file or a complete set safely, and recover from missing, corrupt, or conflicting local content.
+description: List attachments from a synchronized message or thread, save one file or a complete set safely, and recover from missing, corrupt, or conflicting local content.
 order: 7
 category: Guides
 summary: Offline attachment inspection, verified streaming, safe filenames, no-clobber exports, batch saves, and recovery.
 ---
 
-## Start with a synchronized message
+## Start with a synchronized message or thread
 
 Copy a stable message ID from the local Inbox:
 
 ```bash
 icloud mail inbox
 icloud mail attachments list msg_…
+icloud mail attachments list thr_…
 ```
 
-The list command works entirely from local state. It prints bounded metadata such as the attachment ID, filename, media type, decoded size, inline status, and availability. It never prints attachment bytes or trusts the filename as a destination path.
+The list command works entirely from local state. A `msg_…` target lists that message; a `thr_…` target deterministically aggregates attachments from the thread's local message membership. Distinct attachment IDs stay distinct even when two messages contain identical bytes. The command prints bounded metadata such as the attachment ID, filename, media type, decoded size, inline status, and availability. It never prints attachment bytes or trusts the filename as a destination path.
 
 ```text
 attachment
@@ -62,10 +63,11 @@ icloud mail attachments save att_… --output - --binary > invoice.pdf
 
 Without `--binary`, the command exits with a safety error before writing bytes. Native attachment output has no compact wrapper, making it safe for redirection and pipelines.
 
-## Save every attachment from a message
+## Save every attachment from a message or thread
 
 ```bash
 icloud mail attachments save-all msg_… --dir ./message-attachments
+icloud mail attachments save-all thr_… --dir ./thread-attachments
 ```
 
 The CLI derives safe filenames from untrusted message metadata. Path separators and control characters are removed, unnamed files receive deterministic names, Unicode names are preserved, and duplicate names receive stable numeric suffixes. Every file is prepared before the set is installed, so a conflict or verification failure does not leave a partial batch.
@@ -76,17 +78,18 @@ Use `--force` only when every conflicting destination is an existing regular fil
 icloud mail attachments save-all msg_… --dir ./message-attachments --force
 ```
 
-Compact success reports only the message ID and count. It does not echo the destination directory or every saved path.
+Compact success reports the stable target ID, target kind, and count. It does not echo the destination directory or every saved path.
 
 ## Use JSON for metadata and outcomes
 
 ```bash
 icloud mail attachments list msg_… --json
+icloud mail attachments list thr_… --json
 icloud mail attachments save att_… --output invoice.pdf --json
 icloud mail attachments save-all msg_… --dir ./message-attachments --json
 ```
 
-List JSON includes stable attachment and MIME-part IDs, decoded size, content hash, media parameters, inline state, and availability. It omits private storage coordinates. Save JSON reports the verified outcome without returning the destination path; batch JSON returns only safe output basenames.
+List JSON includes the stable `target` (`message` or `thread`), stable attachment and MIME-part IDs, decoded size, content hash, media parameters, inline state, and availability. It omits private storage coordinates. Save JSON reports the verified outcome without returning the destination path; batch JSON returns only safe output basenames. Automation should use `target_id` for `save-all`; the older `message_id` request property remains accepted for message-target compatibility.
 
 ## Recover from common failures
 

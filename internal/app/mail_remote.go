@@ -179,14 +179,14 @@ func (commands accountCommands) MailHydrate(
 		seen[encoded] = struct{}{}
 		reference, folderValue, resolveErr := resolveRemoteReference(ctx, state, accountValue.ID, encoded)
 		if resolveErr != nil {
-			return account.Account{}, nil, state.SchemaVersion(), resolveErr
+			return accountValue, outcomes, state.SchemaVersion(), hydratePartialError(resolveErr, encoded, outcomes)
 		}
 		if cached, cachedErr := state.Mail().MessageByProviderLocation(ctx, accountValue.ID, folderValue.ID, reference.UIDValidity, reference.UID); cachedErr == nil {
 			locationID := providerLocationID(cached, folderValue.ID, reference.UIDValidity, reference.UID)
 			outcomes = append(outcomes, maildomain.HydrateOutcome{Reference: encoded, MessageID: cached.ID, LocationID: locationID})
 			continue
 		} else if !errors.Is(cachedErr, maildomain.ErrMessageNotFound) {
-			return account.Account{}, nil, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot inspect the local cache before hydration", false, cachedErr)
+			return accountValue, outcomes, state.SchemaVersion(), hydratePartialError(cli.WrapAppError(cli.ErrorInternal, "cannot inspect the local cache before hydration", false, cachedErr), encoded, outcomes)
 		}
 
 		stager := commands.blobStager(paths)
@@ -194,7 +194,7 @@ func (commands accountCommands) MailHydrate(
 		result, fetchErr := commands.fetchRemoteMessage(ctx, accountValue, password, folderValue, reference, stager)
 		if fetchErr != nil {
 			attachmentSet.Abort()
-			return account.Account{}, nil, state.SchemaVersion(), fetchErr
+			return accountValue, outcomes, state.SchemaVersion(), hydratePartialError(fetchErr, encoded, outcomes)
 		}
 		fetched := result.Message
 		defer fetched.Raw.Abort()
@@ -203,27 +203,27 @@ func (commands accountCommands) MailHydrate(
 			attachmentSet.Abort()
 			var preparation *fetchedPreparationError
 			if errors.As(prepareErr, &preparation) {
-				return account.Account{}, nil, state.SchemaVersion(), preparation.appError()
+				return accountValue, outcomes, state.SchemaVersion(), hydratePartialError(preparation.appError(), encoded, outcomes)
 			}
-			return account.Account{}, nil, state.SchemaVersion(), cli.WrapAppError(cli.ErrorUnavailable, "cannot safely prepare the remote message", false, prepareErr)
+			return accountValue, outcomes, state.SchemaVersion(), hydratePartialError(cli.WrapAppError(cli.ErrorUnavailable, "cannot safely prepare the remote message", false, prepareErr), encoded, outcomes)
 		}
 		if err := fetched.Raw.Commit(); err != nil {
 			attachmentSet.Abort()
-			return account.Account{}, nil, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot commit the hydrated raw message", true, err)
+			return accountValue, outcomes, state.SchemaVersion(), hydratePartialError(cli.WrapAppError(cli.ErrorInternal, "cannot commit the hydrated raw message", true, err), encoded, outcomes)
 		}
 		if err := attachmentSet.Commit(); err != nil {
-			return account.Account{}, nil, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot commit a hydrated attachment", true, err)
+			return accountValue, outcomes, state.SchemaVersion(), hydratePartialError(cli.WrapAppError(cli.ErrorInternal, "cannot commit a hydrated attachment", true, err), encoded, outcomes)
 		}
 		commit, commitErr := state.Mail().CommitHydration(ctx, maildomain.HydratePage{
 			AccountID: accountValue.ID, FolderID: folderValue.ID, UIDValidity: result.UIDValidity,
 			AttemptedAt: commands.timeNow(), Records: records,
 		})
 		if commitErr != nil {
-			return account.Account{}, nil, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot atomically commit the hydrated message", true, commitErr)
+			return accountValue, outcomes, state.SchemaVersion(), hydratePartialError(cli.WrapAppError(cli.ErrorInternal, "cannot atomically commit the hydrated message", true, commitErr), encoded, outcomes)
 		}
 		message, readErr := state.Mail().MessageByProviderLocation(ctx, accountValue.ID, folderValue.ID, result.UIDValidity, reference.UID)
 		if readErr != nil {
-			return account.Account{}, nil, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot reload the hydrated message", false, readErr)
+			return accountValue, outcomes, state.SchemaVersion(), hydratePartialError(cli.WrapAppError(cli.ErrorInternal, "cannot reload the hydrated message", false, readErr), encoded, outcomes)
 		}
 		outcomes = append(outcomes, maildomain.HydrateOutcome{
 			Reference: encoded, MessageID: message.ID,
@@ -232,6 +232,17 @@ func (commands accountCommands) MailHydrate(
 		})
 	}
 	return accountValue, outcomes, state.SchemaVersion(), nil
+}
+
+func hydratePartialError(err error, reference string, outcomes []maildomain.HydrateOutcome) error {
+	appErr := cli.NormalizeError(err)
+	appErr.Details = map[string]any{
+		"failed_reference": strings.TrimSpace(reference),
+		"completed":        append([]maildomain.HydrateOutcome(nil), outcomes...),
+		"completed_count":  len(outcomes),
+		"partial":          len(outcomes) > 0,
+	}
+	return appErr
 }
 
 func validateRemoteSearchOptions(options maildomain.SearchOptions) error {

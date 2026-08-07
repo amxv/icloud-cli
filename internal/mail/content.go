@@ -22,6 +22,7 @@ const (
 var (
 	ErrContentCorrupt     = errors.New("message content is corrupt")
 	ErrContentUnavailable = errors.New("message content is unavailable")
+	ErrContentLimit       = errors.New("message content exceeds the configured inbound limit")
 	ErrAttachmentStorage  = errors.New("attachment storage failed")
 )
 
@@ -78,6 +79,11 @@ type Attachment struct {
 	ByteSize     int64                  `json:"byte_size"`
 	Availability AttachmentAvailability `json:"availability"`
 	ErrorCode    string                 `json:"error_code,omitempty"`
+}
+
+type AttachmentTarget struct {
+	Kind string `json:"kind"`
+	ID   string `json:"id"`
 }
 
 type AttachmentBlob struct {

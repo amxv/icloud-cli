@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -212,12 +213,104 @@ func (repository *DraftRepository) ByMessage(ctx context.Context, accountID, mes
 }
 
 func (repository *DraftRepository) List(ctx context.Context, accountID string, limit int) ([]maildomain.Draft, bool, error) {
+	values, more, _, err := repository.ListPage(ctx, accountID, "", limit)
+	return values, more, err
+}
+
+type storedDraftCursor struct {
+	AccountID string `json:"account_id"`
+	UpdatedAt string `json:"updated_at"`
+	DraftID   string `json:"draft_id"`
+}
+
+func (repository *DraftRepository) ListPage(ctx context.Context, accountID, cursor string, limit int) ([]maildomain.Draft, bool, string, error) {
 	if strings.TrimSpace(accountID) == "" || limit < 1 {
-		return nil, false, errors.New("list drafts: account and positive limit are required")
+		return nil, false, "", errors.New("list drafts: account and positive limit are required")
 	}
-	rows, err := repository.db.QueryContext(ctx, draftColumns+` WHERE account_id = ? ORDER BY updated_at DESC, draft_id DESC LIMIT ?`, strings.TrimSpace(accountID), limit+1)
+	accountID = strings.TrimSpace(accountID)
+	where := ` WHERE account_id = ?`
+	arguments := []any{accountID}
+	if strings.TrimSpace(cursor) != "" {
+		decoded, err := decodeDraftCursor(cursor, accountID)
+		if err != nil {
+			return nil, false, "", err
+		}
+		where += ` AND (updated_at < ? OR (updated_at = ? AND draft_id < ?))`
+		arguments = append(arguments, decoded.UpdatedAt, decoded.UpdatedAt, decoded.DraftID)
+	}
+	arguments = append(arguments, limit+1)
+	rows, err := repository.db.QueryContext(ctx, draftColumns+where+` ORDER BY updated_at DESC, draft_id DESC LIMIT ?`, arguments...)
 	if err != nil {
-		return nil, false, fmt.Errorf("list drafts: %w", err)
+		return nil, false, "", fmt.Errorf("list drafts: %w", err)
+	}
+	defer rows.Close()
+	values := make([]maildomain.Draft, 0, limit+1)
+	for rows.Next() {
+		value, err := scanDraft(rows)
+		if err != nil {
+			return nil, false, "", err
+		}
+		values = append(values, value)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, "", fmt.Errorf("list drafts: %w", err)
+	}
+	more := len(values) > limit
+	if more {
+		values = values[:limit]
+	}
+	mailRepo := &MailRepository{db: repository.db}
+	for index := range values {
+		message, err := mailRepo.Message(ctx, accountID, values[index].MessageID)
+		if err != nil {
+			return nil, false, "", err
+		}
+		values[index].Message = message
+	}
+	nextCursor := ""
+	if more && len(values) > 0 {
+		last := values[len(values)-1]
+		var err error
+		nextCursor, err = encodeDraftCursor(accountID, last.UpdatedAt, last.ID)
+		if err != nil {
+			return nil, false, "", err
+		}
+	}
+	return values, more, nextCursor, nil
+}
+
+func encodeDraftCursor(accountID string, updatedAt time.Time, draftID string) (string, error) {
+	payload, err := json.Marshal(storedDraftCursor{AccountID: strings.TrimSpace(accountID), UpdatedAt: updatedAt.UTC().Format(time.RFC3339Nano), DraftID: strings.TrimSpace(draftID)})
+	if err != nil {
+		return "", fmt.Errorf("encode draft cursor: %w", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(payload), nil
+}
+
+func decodeDraftCursor(value, accountID string) (storedDraftCursor, error) {
+	payload, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(value))
+	if err != nil {
+		return storedDraftCursor{}, maildomain.ErrInvalidDraftCursor
+	}
+	var cursor storedDraftCursor
+	if err := json.Unmarshal(payload, &cursor); err != nil || cursor.AccountID != strings.TrimSpace(accountID) || strings.TrimSpace(cursor.DraftID) == "" {
+		return storedDraftCursor{}, maildomain.ErrInvalidDraftCursor
+	}
+	if _, err := time.Parse(time.RFC3339Nano, cursor.UpdatedAt); err != nil {
+		return storedDraftCursor{}, maildomain.ErrInvalidDraftCursor
+	}
+	return cursor, nil
+}
+
+func (repository *DraftRepository) ListActionablePage(ctx context.Context, accountID, afterDraftID string, limit int) ([]maildomain.Draft, bool, error) {
+	if strings.TrimSpace(accountID) == "" || limit < 1 {
+		return nil, false, errors.New("list actionable drafts: account and positive limit are required")
+	}
+	rows, err := repository.db.QueryContext(ctx, draftColumns+`
+WHERE account_id = ? AND draft_id > ? AND sync_state IN ('local', 'reconcile', 'cleanup_pending', 'send_unknown')
+ORDER BY draft_id ASC LIMIT ?`, strings.TrimSpace(accountID), strings.TrimSpace(afterDraftID), limit+1)
+	if err != nil {
+		return nil, false, fmt.Errorf("list actionable drafts: %w", err)
 	}
 	defer rows.Close()
 	values := make([]maildomain.Draft, 0, limit+1)
@@ -229,7 +322,7 @@ func (repository *DraftRepository) List(ctx context.Context, accountID string, l
 		values = append(values, value)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, false, fmt.Errorf("list drafts: %w", err)
+		return nil, false, fmt.Errorf("list actionable drafts: %w", err)
 	}
 	more := len(values) > limit
 	if more {
@@ -301,6 +394,10 @@ WHERE tm.thread_id = ? AND tm.message_id <> ? ORDER BY tm.message_id`, threadID,
 				return fmt.Errorf("read draft thread member before delete: %w", err)
 			}
 			remaining = append(remaining, id)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return fmt.Errorf("list draft thread members before delete: %w", err)
 		}
 		if err := rows.Close(); err != nil {
 			return fmt.Errorf("close draft thread members before delete: %w", err)
@@ -423,10 +520,28 @@ WHERE draft_id = ?`, state, strings.TrimSpace(locationID), timestamp, value.ID);
 	return updated, nil
 }
 
-func (repository *DraftRepository) AdoptFolder(ctx context.Context, accountID, folderID string, now time.Time) ([]maildomain.Draft, error) {
+const draftReconciliationPageSize = 100
+
+func (repository *DraftRepository) AdoptFolder(ctx context.Context, accountID, folderID string, now time.Time) (int, error) {
+	afterMessageID := ""
+	observed := 0
+	for {
+		count, lastMessageID, more, err := repository.adoptFolderPage(ctx, accountID, folderID, afterMessageID, draftReconciliationPageSize, now)
+		if err != nil {
+			return observed, err
+		}
+		observed += count
+		if !more {
+			return observed, nil
+		}
+		afterMessageID = lastMessageID
+	}
+}
+
+func (repository *DraftRepository) adoptFolderPage(ctx context.Context, accountID, folderID, afterMessageID string, limit int, now time.Time) (int, string, bool, error) {
 	tx, err := repository.db.BeginTx(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("begin draft folder reconciliation: %w", err)
+		return 0, "", false, fmt.Errorf("begin draft folder reconciliation: %w", err)
 	}
 	defer tx.Rollback()
 	rows, err := tx.QueryContext(ctx, `
@@ -434,41 +549,55 @@ SELECT DISTINCT m.message_id, m.rfc_message_id
 FROM messages AS m
 JOIN message_locations AS l ON l.message_id = m.message_id
 WHERE m.account_id = ? AND l.account_id = ? AND l.folder_id = ? AND l.present = 1 AND l.deleted = 0 AND l.draft = 1
-ORDER BY m.message_id`, strings.TrimSpace(accountID), strings.TrimSpace(accountID), strings.TrimSpace(folderID))
+  AND m.message_id > ?
+ORDER BY m.message_id
+LIMIT ?`, strings.TrimSpace(accountID), strings.TrimSpace(accountID), strings.TrimSpace(folderID), strings.TrimSpace(afterMessageID), limit+1)
 	if err != nil {
-		return nil, fmt.Errorf("select synchronized provider drafts: %w", err)
+		return 0, "", false, fmt.Errorf("select synchronized provider drafts: %w", err)
 	}
 	type candidate struct{ messageID, rfcMessageID string }
-	candidates := []candidate{}
+	candidates := make([]candidate, 0, limit+1)
 	for rows.Next() {
 		var value candidate
 		if err := rows.Scan(&value.messageID, &value.rfcMessageID); err != nil {
 			rows.Close()
-			return nil, fmt.Errorf("read synchronized provider draft: %w", err)
+			return 0, "", false, fmt.Errorf("read synchronized provider draft: %w", err)
 		}
 		candidates = append(candidates, value)
 	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return 0, "", false, fmt.Errorf("select synchronized provider drafts: %w", err)
+	}
 	if err := rows.Close(); err != nil {
-		return nil, fmt.Errorf("close synchronized provider drafts: %w", err)
+		return 0, "", false, fmt.Errorf("close synchronized provider drafts: %w", err)
+	}
+	more := len(candidates) > limit
+	if more {
+		candidates = candidates[:limit]
+	}
+	lastMessageID := afterMessageID
+	if len(candidates) > 0 {
+		lastMessageID = candidates[len(candidates)-1].messageID
 	}
 	timestamp := now.UTC().Format(time.RFC3339Nano)
 	for _, candidate := range candidates {
 		locationID, err := preferredDraftLocation(ctx, tx, accountID, candidate.messageID, folderID, candidate.rfcMessageID)
 		if err != nil {
-			return nil, err
+			return 0, "", false, err
 		}
 		if locationID == "" {
 			continue
 		}
 		draftID := maildomain.DraftIDForMessage(candidate.messageID)
 		if draftID == "" {
-			return nil, errors.New("reconcile provider draft: canonical message ID is invalid")
+			return 0, "", false, errors.New("reconcile provider draft: canonical message ID is invalid")
 		}
 		current, currentErr := scanDraft(tx.QueryRowContext(ctx, draftColumns+` WHERE account_id = ? AND message_id = ?`, accountID, candidate.messageID))
 		if errors.Is(currentErr, maildomain.ErrDraftNotFound) {
 			headersJSON, err := providerDraftCustomHeadersJSON(ctx, tx, candidate.messageID)
 			if err != nil {
-				return nil, err
+				return 0, "", false, err
 			}
 			if _, err := tx.ExecContext(ctx, `
 INSERT INTO mail_drafts (
@@ -476,12 +605,12 @@ INSERT INTO mail_drafts (
     previous_location_id, outbound_attempt_id, custom_headers_json, last_error_code,
     created_at, updated_at
 ) VALUES (?, ?, ?, 1, 'synced', ?, '', '', ?, '', ?, ?)`, draftID, accountID, candidate.messageID, locationID, headersJSON, timestamp, timestamp); err != nil {
-				return nil, fmt.Errorf("adopt provider draft: %w", err)
+				return 0, "", false, fmt.Errorf("adopt provider draft: %w", err)
 			}
 			continue
 		}
 		if currentErr != nil {
-			return nil, currentErr
+			return 0, "", false, currentErr
 		}
 		state, remote, previous := current.SyncState, current.RemoteLocationID, current.PreviousLocationID
 		switch current.SyncState {
@@ -500,14 +629,13 @@ INSERT INTO mail_drafts (
 			// Preserve explicit recovery state until its owner resolves it.
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE mail_drafts SET sync_state = ?, remote_location_id = ?, previous_location_id = ?, updated_at = ? WHERE draft_id = ?`, state, remote, previous, timestamp, current.ID); err != nil {
-			return nil, fmt.Errorf("reconcile provider draft lifecycle: %w", err)
+			return 0, "", false, fmt.Errorf("reconcile provider draft lifecycle: %w", err)
 		}
 	}
 	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("commit draft folder reconciliation: %w", err)
+		return 0, "", false, fmt.Errorf("commit draft folder reconciliation: %w", err)
 	}
-	values, _, err := repository.List(ctx, accountID, 1000)
-	return values, err
+	return len(candidates), lastMessageID, more, nil
 }
 
 func providerDraftCustomHeadersJSON(ctx context.Context, tx *sql.Tx, messageID string) (string, error) {

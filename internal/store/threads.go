@@ -287,6 +287,21 @@ const (
 	threadReconstructionBatchSize = 300
 )
 
+var errThreadProjectionScopeLimit = errors.New("affected thread reconstruction scope limit exceeded")
+
+// rebuildCanonicalThreadProjection keeps derived thread work off the canonical
+// ingestion frontier. An oversized but otherwise valid conversation may defer
+// its thread projection, but it must never roll back durable message/location
+// ingestion or a sync/backfill checkpoint. Other reconstruction failures still
+// surface because they can indicate corruption rather than bounded-work pressure.
+func rebuildCanonicalThreadProjection(ctx context.Context, tx *sql.Tx, accountID string, seedMessageIDs []string, now time.Time) error {
+	err := rebuildAffectedThreadGraph(ctx, tx, accountID, seedMessageIDs, now)
+	if errors.Is(err, errThreadProjectionScopeLimit) {
+		return nil
+	}
+	return err
+}
+
 func loadThreadNodes(ctx context.Context, tx *sql.Tx, accountID string) (map[string]*threadNode, error) {
 	return loadThreadNodesQuery(ctx, tx, accountID, false)
 }
@@ -423,7 +438,7 @@ ORDER BY r.message_id, r.kind, r.ordinal`, recipientArgs...)
 	}
 	locationRows, err := tx.QueryContext(ctx, `
 SELECT l.message_id, l.folder_id,
-       MAX(CASE WHEN f.kind NOT IN ('sent', 'drafts') AND l.draft = 0 AND l.seen = 0 THEN 1 ELSE 0 END)
+       MAX(CASE WHEN `+unreadLocationSQL("l", "f")+` THEN 1 ELSE 0 END)
 FROM message_locations AS l
 `+locationScopeJoin+`
 JOIN folders AS f ON f.folder_id = l.folder_id
@@ -479,7 +494,7 @@ SELECT message_id FROM messages WHERE account_id = ? AND message_id = ?`, accoun
 			return map[string]*threadNode{}, nil
 		}
 		if before > maxAffectedThreadMessages {
-			return nil, fmt.Errorf("affected thread reconstruction exceeds %d messages", maxAffectedThreadMessages)
+			return nil, fmt.Errorf("%w: maximum %d messages", errThreadProjectionScopeLimit, maxAffectedThreadMessages)
 		}
 		if _, err := tx.ExecContext(ctx, `
 INSERT OR IGNORE INTO `+threadScopeTable+` (message_id)
@@ -1093,6 +1108,10 @@ LIMIT ?`, arguments...)
 		}
 		messages = append(messages, value)
 	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return maildomain.ThreadPage{}, fmt.Errorf("read thread messages: %w", err)
+	}
 	if err := rows.Close(); err != nil {
 		return maildomain.ThreadPage{}, fmt.Errorf("close thread messages: %w", err)
 	}
@@ -1131,6 +1150,11 @@ LIMIT ?`, arguments...)
 		}
 	}
 	return maildomain.ThreadPage{Thread: thread, More: more, NextCursor: nextCursor, Edges: edges}, nil
+}
+
+func (repository *ThreadRepository) Resolve(ctx context.Context, accountID, selector string) (string, error) {
+	threadID, _, err := repository.resolve(ctx, accountID, selector)
+	return threadID, err
 }
 
 type storedThreadCursor struct {
