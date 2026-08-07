@@ -68,6 +68,64 @@ icloud mail sync --limit 50
 
 `reconciled` counts existing locations whose remote flags were checked without downloading message bodies again. `state_changes` counts real differences. The bounded sweep rotates over time instead of turning one command into a whole-mailbox scan.
 
+## Keep the local copy fresh in the foreground
+
+After the first successful sync, keep new mail flowing into the same local cache with:
+
+```bash
+icloud mail watch
+```
+
+The command stays in the foreground until you press Ctrl-C. When iCloud advertises IMAP IDLE, the CLI waits efficiently on enabled Inbox and Sent, exits IDLE cleanly when a change arrives, runs the ordinary bounded sync path for that folder, then resumes waiting. If IDLE is unavailable, the startup stream says `mode=polling` and uses the explicit polling interval instead of pretending push notifications are active.
+
+Default compact output reports lifecycle changes and useful sync results while suppressing repeated idle and no-change chatter:
+
+```text
+watch-started
+acct_… poll=1m0s
+reconcile=15m0s
+
+watch-mode
+acct_… mode=idle
+reason=idle_supported
+capabilities=IDLE,IMAP4REV1
+
+watch-change
+acct_… folder=INBOX
+folder_id=fld_…
+reason=change
+
+watch-sync
+acct_… folder=INBOX
+folder_id=fld_…
+fetched=1
+created=1
+updated=0
+reconciled=20
+state_changes=1
+more=false
+```
+
+Use `--verbose` when you also want idle and unchanged-sync lifecycle detail. For an automation stream, use `--jsonl`; every line is one typed event with a per-account sequence number. The stream includes startup, mode, idle, change, sync result, reconnect, degraded, stopped, and completed events.
+
+Polling and periodic reconciliation are configurable without changing the normal sync page bound:
+
+```bash
+icloud mail watch --poll-interval 2m --reconcile-interval 15m --limit 50
+```
+
+Periodic reconciliation refreshes folder state and all enabled folders, so a long-running watch does not rely only on notifications. `--timeout` is different for this foreground command: it bounds each provider/sync attempt rather than ending the watch process after that duration.
+
+Watch every configured account with one foreground process when there are at most 10:
+
+```bash
+icloud mail watch --all-accounts
+```
+
+Each account keeps its own ordered event sequence and watch ownership. A second watch for the same account fails with a retryable conflict instead of creating duplicate workers. Ordinary synchronization remains the only path that commits messages and checkpoints.
+
+If the stream reports `degraded`, use the error code and stage rather than restarting it in a tight loop. Authentication failures use bounded reconnect backoff so you can replace the credential; a UIDVALIDITY change still requires the existing explicit repair/rebaseline decision rather than an automatic reset.
+
 ## Backfill older mail deliberately
 
 Normal synchronization only moves forward. When you actually need older history, start a separate bounded backfill for one folder:

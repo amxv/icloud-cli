@@ -403,6 +403,9 @@ type imapServerOptions struct {
 	StallUIDSearch           bool
 	CondStore                bool
 	ConditionalStoreConflict bool
+	DisableIdle              bool
+	IdleNotify               bool
+	DropIdle                 bool
 	UIDValidity              uint32
 	ListLines                []string
 	Statuses                 map[string]transport.MailboxStatus
@@ -448,7 +451,10 @@ func (server *imapTestServer) handle(conn net.Conn, options imapServerOptions) {
 	}
 	reader := bufio.NewReader(conn)
 	writer := bufio.NewWriter(conn)
-	capabilities := "IMAP4rev1 SPECIAL-USE IDLE UIDPLUS"
+	capabilities := "IMAP4rev1 SPECIAL-USE UIDPLUS"
+	if !options.DisableIdle {
+		capabilities += " IDLE"
+	}
 	if options.Namespace {
 		capabilities += " NAMESPACE"
 	}
@@ -559,6 +565,31 @@ func (server *imapTestServer) handle(conn net.Conn, options imapServerOptions) {
 				break
 			}
 			_, _ = writer.WriteString(tag + " BAD unsupported UID command\r\n")
+		case "IDLE":
+			if options.DisableIdle {
+				_, _ = writer.WriteString(tag + " BAD idle unsupported\r\n")
+				break
+			}
+			_, _ = writer.WriteString("+ idling\r\n")
+			_ = writer.Flush()
+			if options.DropIdle {
+				return
+			}
+			if options.IdleNotify {
+				_, _ = writer.WriteString("* 2 EXISTS\r\n")
+				_ = writer.Flush()
+			}
+			doneLine, readErr := reader.ReadString('\n')
+			if readErr != nil {
+				return
+			}
+			if strings.EqualFold(strings.TrimSpace(doneLine), "DONE") {
+				server.mu.Lock()
+				server.commands = append(server.commands, "DONE")
+				server.commandLines = append(server.commandLines, "DONE")
+				server.mu.Unlock()
+			}
+			_, _ = writer.WriteString(tag + " OK idle complete\r\n")
 		case "CREATE", "RENAME", "DELETE", "SUBSCRIBE", "UNSUBSCRIBE":
 			_, _ = writer.WriteString(tag + " OK folder change\r\n")
 		case "LOGOUT":

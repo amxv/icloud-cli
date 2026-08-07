@@ -271,6 +271,19 @@ ICLOUD_HOME=./icloud-state icloud account list
 
 Version, capabilities, completion, man, and help do not create state merely because `--home` is present.
 
+## Mail watch is degraded or reconnecting
+
+`icloud mail watch` reports provider/session failures as lifecycle events and uses bounded reconnect backoff instead of retrying in a tight loop. For automation, use `--jsonl` to read the error code and stage directly.
+
+If the stage is `imap_auth`, replace or restore the selected account credential, then let the watcher reconnect. If the stream reports polling mode, IDLE is unavailable for that session; adjust `--poll-interval` only if you intentionally want a different fallback cadence. If synchronization reaches `repair_required` after a UIDVALIDITY change, keep the watcher from making identity decisions on your behalf and use the existing check-first recovery:
+
+```bash
+icloud mail sync repair --check --verbose
+icloud mail sync repair --apply
+```
+
+A second foreground watch for the same account returns a retryable conflict. Stop the existing watcher rather than deleting its lock file. Ctrl-C stops active IDLE sessions cleanly and emits stopped/completed lifecycle events.
+
 ## Local state is busy
 
 Another process is upgrading state or mutating accounts. The command returns exit `6` with `retryable=true`. Let the other process finish and retry; do not delete lock files to bypass it.
@@ -291,7 +304,7 @@ Errors avoid printing private absolute paths. Do not place mail state in a share
 
 ## JSON appeared on stderr
 
-Structured errors use stderr when `--json` was requested. Check the process exit code before parsing stdout as a success envelope.
+Structured errors use stderr when `--json` was requested. `mail watch --jsonl` likewise keeps initial or terminal failures as one typed JSONL error event on stderr. Check the process exit code before parsing stdout as a success envelope or event stream.
 
 ## A timeout or request ID is rejected
 

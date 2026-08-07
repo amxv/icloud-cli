@@ -37,6 +37,7 @@ const (
 	StageIMAPCopy        Stage = "imap_copy"
 	StageIMAPMove        Stage = "imap_move"
 	StageIMAPExpunge     Stage = "imap_expunge"
+	StageIMAPIdle        Stage = "imap_idle"
 	StageIMAPLogout      Stage = "imap_logout"
 	StageSMTPGreeting    Stage = "smtp_greeting"
 	StageSMTPStartTLS    Stage = "smtp_starttls"
@@ -283,6 +284,37 @@ type IMAPBackfillClient interface {
 
 type IMAPMailboxStatusClient interface {
 	MailboxStatus(context.Context, AuthRequest, string) (MailboxStatus, error)
+}
+
+type MailboxWatchMode string
+
+const (
+	MailboxWatchIdle    MailboxWatchMode = "idle"
+	MailboxWatchPolling MailboxWatchMode = "polling"
+)
+
+type MailboxWatchReason string
+
+const (
+	MailboxWatchChanged   MailboxWatchReason = "change"
+	MailboxWatchReconcile MailboxWatchReason = "reconcile"
+	MailboxWatchPoll      MailboxWatchReason = "poll"
+)
+
+type MailboxWatchInfo struct {
+	Mailbox      string
+	Mode         MailboxWatchMode
+	Capabilities []string
+}
+
+type IMAPMailboxWatchSession interface {
+	Info() MailboxWatchInfo
+	Wait(context.Context, time.Duration) (MailboxWatchReason, error)
+	Close(context.Context) error
+}
+
+type IMAPWatchClient interface {
+	OpenMailboxWatch(context.Context, AuthRequest, string) (IMAPMailboxWatchSession, error)
 }
 
 type SentAppendRequest struct {

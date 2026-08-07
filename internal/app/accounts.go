@@ -28,6 +28,7 @@ type accountCommands struct {
 	folders         transport.IMAPFolderClient
 	folderAdmin     transport.IMAPFolderAdminClient
 	mail            transport.IMAPInboxClient
+	watch           transport.IMAPWatchClient
 	remote          transport.IMAPRemoteClient
 	flags           transport.IMAPFlagClient
 	locations       transport.IMAPLocationClient

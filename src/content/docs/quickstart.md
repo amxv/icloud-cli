@@ -234,6 +234,16 @@ icloud mail sync --folder 'Projects/Client'
 
 Use `icloud mail sync --all-folders --limit 20` only when you explicitly want one bounded pass across every current selectable folder, including locally disabled ones. It starts unsynchronized folders at their newest bounded page; it does not crawl their older history.
 
+## Keep new mail synchronized while you work
+
+Once the first sync is healthy, leave a foreground watcher running:
+
+```bash
+icloud mail watch
+```
+
+The watcher uses IMAP IDLE for enabled Inbox and Sent when available, reports an explicit polling fallback otherwise, and periodically refreshes all enabled folders. Press Ctrl-C to stop cleanly. Use `icloud mail watch --all-accounts` for up to 10 configured accounts, or `--jsonl` when another process needs a typed event stream.
+
 ## Read compact previews offline
 
 ```bash

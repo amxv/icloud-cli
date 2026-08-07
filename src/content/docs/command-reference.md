@@ -262,6 +262,22 @@ Compact success prints one block per selected folder with fetched/created/update
 
 `--reconcile-outbound` selects Sent, synchronizes one bounded page, and then checks recent `sent` or `unknown` attempts against exact generated RFC Message-ID evidence. It cannot be combined with `--folder`, `--all-folders`, or `--hydrate`. Unique evidence confirms the existing local message/location; missing or ambiguous evidence remains unresolved and never causes a resend.
 
+## `icloud mail watch`
+
+```bash
+icloud mail watch
+icloud --account Work mail watch
+icloud mail watch --all-accounts
+icloud mail watch --poll-interval 2m --reconcile-interval 15m --limit 50
+icloud mail watch --jsonl
+```
+
+Keeps enabled mail fresh in one foreground process until Ctrl-C. Inbox and Sent use IMAP IDLE when the provider advertises it; unsupported sessions report `mode=polling` and use `--poll-interval` instead. Every notification leaves IDLE before the ordinary bounded sync command path runs. A periodic `--reconcile-interval` refreshes folder state and all enabled folders even when notifications are quiet.
+
+`--limit` is the normal per-folder sync bound, from 1 to 100. `--all-accounts` runs one worker per configured account and is capped at 10 accounts; combine neither it nor another worker with the same selected account. `--verbose` adds idle and unchanged-sync lifecycle events to compact output. `--jsonl` emits one typed object per event with account ID, timestamp, and a strictly increasing per-account sequence.
+
+For this long-running command only, global `--timeout` bounds each provider/sync attempt instead of the lifetime of the foreground process. Reconnects use bounded backoff with jitter. Authentication, UIDVALIDITY, or other degraded states are reported without silently resetting provider identity or starting a second sync path.
+
 ## `icloud mail sync backfill`
 
 ```bash

@@ -13,6 +13,7 @@ import (
 )
 
 type MailService interface {
+	MailWatch(context.Context, string, string, maildomain.WatchOptions, func(maildomain.WatchEvent) error) error
 	MailSync(context.Context, string, string, string, int) (account.Account, []folder.Folder, []maildomain.SyncSummary, int64, error)
 	MailSyncAll(context.Context, string, string, int) (account.Account, []folder.Folder, []maildomain.SyncSummary, int64, error)
 	MailBackfill(context.Context, string, string, string, *time.Time, *time.Time, int) (account.Account, folder.Folder, maildomain.BackfillSummary, int64, error)
@@ -663,6 +664,10 @@ func sanitizeMessage(value maildomain.Message) publicMessage {
 }
 
 type unavailableMailService struct{}
+
+func (unavailableMailService) MailWatch(context.Context, string, string, maildomain.WatchOptions, func(maildomain.WatchEvent) error) error {
+	return NewAppError(ErrorConfiguration, "mail watch is unavailable", false)
+}
 
 func (unavailableMailService) MailSync(context.Context, string, string, string, int) (account.Account, []folder.Folder, []maildomain.SyncSummary, int64, error) {
 	return account.Account{}, nil, nil, 0, NewAppError(ErrorConfiguration, "mail synchronization is unavailable", false)

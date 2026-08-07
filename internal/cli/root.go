@@ -103,6 +103,7 @@ type capabilitiesData struct {
 	Diagnostics           bool             `json:"diagnostics"`
 	MailFolders           bool             `json:"mail_folders"`
 	MailSync              bool             `json:"mail_sync"`
+	MailWatch             bool             `json:"mail_watch"`
 	MailContent           bool             `json:"mail_content"`
 	MailAttachments       bool             `json:"mail_attachments"`
 	MailFlags             bool             `json:"mail_flags"`
@@ -202,6 +203,10 @@ func Execute(ctx context.Context, args []string, config Config) Result {
 			Error: appErr,
 			Meta:  EnvelopeMeta{RequestID: state.requestID},
 		})
+	} else if requestedJSONL(args) {
+		_ = WriteJSONLEvent(config.Stderr, JSONLEvent{
+			Event: "error", Sequence: 1, Timestamp: time.Now().UTC(), Error: appErr,
+		})
 	} else {
 		_ = NewCompactTextRenderer(config.Stderr).Error(appErr)
 	}
@@ -212,7 +217,7 @@ func newRootCommand(state *executionState) *cobra.Command {
 	root := &cobra.Command{
 		Use:           commandName,
 		Short:         "Control iCloud services from the command line",
-		Long:          "icloud controls iCloud services from the command line. This build provides secure account setup, live read-only IMAP and SMTP validation, deliberate text, HTML, and attachment sending plus exact-message reply, reply-all, and forward with dry-run review, idempotency, explicit retry linkage, and Sent reconciliation, durable folder discovery, bounded folder synchronization and flag reconciliation, indexed local search, explicit bounded remote search and targeted hydration, complete local message reads, verified attachment export, location-aware read/flag updates, exact message-location move/copy/archive/trash/restore/delete with durable intent and unresolved-state recovery, account health diagnostics, version and capability reporting, shell completions, and man-page generation.",
+		Long:          "icloud controls iCloud services from the command line. This build provides secure account setup, live read-only IMAP and SMTP validation, deliberate text, HTML, and attachment sending plus exact-message reply, reply-all, and forward with dry-run review, idempotency, explicit retry linkage, and Sent reconciliation, durable folder discovery, bounded folder synchronization, foreground IDLE/polling watch and flag reconciliation, indexed local search, explicit bounded remote search and targeted hydration, complete local message reads, verified attachment export, location-aware read/flag updates, exact message-location move/copy/archive/trash/restore/delete with durable intent and unresolved-state recovery, account health diagnostics, version and capability reporting, shell completions, and man-page generation.",
 		Example:       "  icloud account add --name Personal --email owner@icloud.com --password-stdin\n  icloud account test\n  icloud mail send --to client@example.com --subject Update --body-file message.txt --dry-run\n  icloud mail reply msg_… --body-file reply.txt --dry-run\n  icloud mail forward msg_… --to teammate@example.com --dry-run\n  icloud mail move msg_… --from inbox --to Projects --dry-run\n  icloud mail sync\n  icloud mail message show msg_…\n  icloud doctor",
 		SilenceErrors: true,
 		SilenceUsage:  true,
@@ -230,7 +235,13 @@ func newRootCommand(state *executionState) *cobra.Command {
 				}
 				state.requestID = state.global.RequestID
 			}
-			ctx, cancel := context.WithTimeout(cmd.Context(), state.global.Timeout)
+			var ctx context.Context
+			var cancel context.CancelFunc
+			if cmd.Annotations != nil && cmd.Annotations[longRunningAnnotation] == "true" {
+				ctx, cancel = context.WithCancel(cmd.Context())
+			} else {
+				ctx, cancel = context.WithTimeout(cmd.Context(), state.global.Timeout)
+			}
 			state.cancel = cancel
 			cmd.SetContext(ctx)
 			return nil
@@ -249,7 +260,7 @@ func newRootCommand(state *executionState) *cobra.Command {
 
 	root.PersistentFlags().StringVar(&state.global.Home, "home", "", "Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)")
 	root.PersistentFlags().StringVar(&state.global.Account, "account", "", "Select an account by name, email, or stable ID")
-	root.PersistentFlags().DurationVar(&state.global.Timeout, "timeout", 30*time.Second, "Maximum command duration")
+	root.PersistentFlags().DurationVar(&state.global.Timeout, "timeout", 30*time.Second, "Maximum normal command duration; watch applies it per provider/sync attempt")
 	root.PersistentFlags().BoolVar(&state.global.NoInput, "no-input", false, "Never prompt for interactive input")
 	root.PersistentFlags().StringVar(&state.global.RequestID, "request-id", "", "Attach a stable request ID to structured output")
 
@@ -322,6 +333,7 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				Diagnostics:           true,
 				MailFolders:           true,
 				MailSync:              true,
+				MailWatch:             true,
 				MailContent:           true,
 				MailAttachments:       true,
 				MailFlags:             true,
@@ -336,7 +348,7 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				Output: capabilityOutput{
 					Default: "compact",
 					JSON:    true,
-					JSONL:   false,
+					JSONL:   true,
 				},
 				Completion: []string{"bash", "zsh", "fish", "powershell"},
 				Man:        true,
@@ -358,6 +370,7 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				Field("diagnostics", data.Diagnostics),
 				Field("mail_folders", data.MailFolders),
 				Field("mail_sync", data.MailSync),
+				Field("mail_watch", data.MailWatch),
 				Field("mail_content", data.MailContent),
 				Field("mail_attachments", data.MailAttachments),
 				Field("mail_flags", data.MailFlags),
@@ -371,6 +384,7 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				Field("mail_location_mutations", data.MailLocationMutations),
 				Field("default_output", data.Output.Default),
 				Field("json", data.Output.JSON),
+				Field("jsonl", data.Output.JSONL),
 				Field("completion", data.Completion),
 				Field("man", data.Man),
 			)
@@ -631,6 +645,18 @@ func requestedJSON(args []string) bool {
 		case "--json", "--json=true":
 			return true
 		case "--json=false":
+			return false
+		}
+	}
+	return false
+}
+
+func requestedJSONL(args []string) bool {
+	for _, arg := range args {
+		switch arg {
+		case "--jsonl", "--jsonl=true":
+			return true
+		case "--jsonl=false":
 			return false
 		}
 	}

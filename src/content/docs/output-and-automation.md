@@ -71,6 +71,19 @@ An indeterminate post-DATA result uses status `unknown`, returns the stable atte
 
 An `account test --json` failure writes one error envelope to stderr. Its `details.stage` and bounded `details.reports` identify the failing protocol without including the credential reference, password, raw server response, or debug transcript.
 
+## Use JSONL for the watch stream
+
+`mail watch` is a stream rather than a one-shot result, so structured automation uses JSONL instead of a single JSON envelope:
+
+```bash
+icloud mail watch --jsonl
+icloud mail watch --all-accounts --jsonl
+```
+
+Every output line is one complete JSON object with `event`, `sequence`, `account_id`, and `timestamp`. Payloads identify only the lifecycle data needed for startup, mode changes, IDLE, provider changes, bounded sync results, reconnects, degraded operation, stopping, and completion. Sequences are strictly increasing within each account even when several account workers share one foreground process.
+
+Compact watch output suppresses repeated idle and unchanged-sync chatter; JSONL deliberately includes those typed events so a consumer can maintain exact lifecycle state. Initial or terminal command failures requested with `--jsonl` stay JSONL on stderr rather than mixing a compact error into the structured stream.
+
 ## Supply credentials without prompting
 
 An agent or redirected process must choose one source explicitly:
@@ -128,12 +141,12 @@ Help remains on stdout. A failed command never writes a success payload to stdou
 ```text
 --home <path>         override the application data root
 --account <selector>  select an account when a command supports it
---timeout <duration>  bound command execution; default 30s
+--timeout <duration>  bound command execution; for mail watch, bound each provider/sync attempt
 --no-input            prohibit implicit terminal prompts
 --request-id <id>     correlate structured output
 ```
 
-Version, capabilities, completion, man, and help remain disk-free. Account reads, `mail inbox` with any folder selector, local `mail search`, `mail search repair`, `mail latest`, `mail thread show`, local `mail message`, attachment reads, sync status, checkpoint reads, `mail sync repair --check`, local `doctor`, outbound dry runs, folder-administration dry runs, and location-mutation dry runs never prompt or contact Apple. Compact thread reads and plain local `--metadata-only` use stored summaries without opening raw message files. Search repair may verify and parse already synchronized raw bytes, but it never contacts iCloud. `mail search --remote`, `mail message show rem_… --remote`, targeted hydration, normal sync, historical backfill, current-tail rebaseline, real folder administration, read/flag mutations, real outbound mail, real location mutations, and live validation contact Apple and use the same global timeout. `mail sync repair --apply` stays local unless an exact affected mailbox needs fresh UID identity; in that case it reads status only for that folder. Streaming message, attachment, outbound MIME, COPY/MOVE, and reconciliation paths also honor the command timeout.
+Version, capabilities, completion, man, and help remain disk-free. Account reads, `mail inbox` with any folder selector, local `mail search`, `mail search repair`, `mail latest`, `mail thread show`, local `mail message`, attachment reads, sync status, checkpoint reads, `mail sync repair --check`, local `doctor`, outbound dry runs, folder-administration dry runs, and location-mutation dry runs never prompt or contact Apple. Compact thread reads and plain local `--metadata-only` use stored summaries without opening raw message files. Search repair may verify and parse already synchronized raw bytes, but it never contacts iCloud. `mail search --remote`, `mail message show rem_… --remote`, targeted hydration, normal sync, historical backfill, current-tail rebaseline, real folder administration, read/flag mutations, real outbound mail, real location mutations, and live validation contact Apple and use the same global timeout. `mail sync repair --apply` stays local unless an exact affected mailbox needs fresh UID identity; in that case it reads status only for that folder. Streaming message, attachment, outbound MIME, COPY/MOVE, and reconciliation paths also honor the command timeout. `mail watch` is the deliberate long-running exception to a whole-command deadline: it runs until cancellation while applying the same timeout to each provider and synchronization attempt.
 
 Repair is check-first for automation. `--check` returns bounded counts and one `next` action without changing local/provider state. `--apply` fixes only deterministic evidence; ambiguous dedupe identity and missing/corrupt canonical blobs remain findings. Deleting orphan files from the private staging directory is never implicit and requires `--apply --cleanup-orphans --yes`.
 
