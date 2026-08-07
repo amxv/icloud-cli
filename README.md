@@ -2,7 +2,7 @@
 
 `icloud` is a local-first command-line client for iCloud services. The project is being built for agent workflows without making the normal terminal experience noisy: compact plain text is the default, and structured or expanded output is always explicit.
 
-The current implementation provides secure multi-account and credential lifecycle, read-only live iCloud compatibility testing, deliberate text/HTML and filesystem-attachment sending, exact-message reply/reply-all, exact-message forwarding, durable all-folder discovery, bounded synchronization of enabled folders, indexed offline mail search, explicit bounded remote search and targeted hydration, local RFC conversation reconstruction, complete local message reads, safe attachment export, explicit read/flag updates, and exact provider-location move/copy/archive/trash/restore/delete workflows. It can validate IMAP/SMTP authentication, preview outbound or location-changing requests without network side effects, require interactive confirmation or non-TTY `--yes`, stream standards-compliant MIME, persist idempotent outbound and location-mutation intents, distinguish proven outcomes from unresolved provider state, preserve one logical message across independent folder locations, prefer atomic UID MOVE, fall back only to safe COPY plus UID EXPUNGE, record destination UID mappings, avoid archiving Sent copies, delete one exact provider location without purging another copy, and expose bounded recovery status when a provider write may have partially completed.
+The current implementation provides secure multi-account and credential lifecycle, read-only live iCloud compatibility testing, deliberate text/HTML and filesystem-attachment sending, exact-message reply/reply-all, exact-message forwarding, durable all-folder discovery, bounded forward synchronization, resumable historical backfill, explicit current-tail rebaseline, check-first repair, indexed offline mail search, explicit bounded remote search and targeted hydration, local RFC conversation reconstruction, complete local message reads, safe attachment export, explicit read/flag updates, and exact provider-location move/copy/archive/trash/restore/delete workflows. It can validate IMAP/SMTP authentication, preview outbound or location-changing requests without network side effects, require interactive confirmation or non-TTY `--yes`, stream standards-compliant MIME, keep historical and forward sync progress independent, preserve cached mail during rebaseline, repair only deterministic consistency problems, report ambiguous identity or canonical-blob problems without guessing, persist idempotent outbound and location-mutation intents, distinguish proven outcomes from unresolved provider state, preserve one logical message across independent folder locations, prefer atomic UID MOVE, fall back only to safe COPY plus UID EXPUNGE, record destination UID mappings, avoid archiving Sent copies, delete one exact provider location without purging another copy, and expose bounded recovery status when a provider write may have partially completed.
 
 ## Install
 
@@ -46,6 +46,9 @@ icloud mail folders unsubscribe <selector> [--dry-run|--yes] [--json]
 icloud mail sync [--folder <selector>|--all-folders] [--limit <n>] [--json]
 icloud mail sync --reconcile-outbound [--limit <n>] [--json]
 icloud mail sync --hydrate <rem_…[,rem_…]> [--json]
+icloud mail sync backfill --folder <selector> [--after YYYY-MM-DD] [--before YYYY-MM-DD] [--limit <n>] [--json]
+icloud mail sync rebaseline --folder <selector> --current-tail [--json]
+icloud mail sync repair [--check|--apply] [--cleanup-orphans --yes] [--limit <n>] [--verbose] [--json]
 icloud mail inbox [--folder <selector>] [--query <text>] [filters] [--cursor <cursor>] [--limit <n>] [--json]
 icloud mail search [query] [filters] [--result messages|threads] [--cursor <cursor>] [--limit <n>] [--json]
 icloud mail search [query] --remote [--folder <selector>|--all-folders] [provider-filters] [--limit <n>] [--json]
@@ -200,7 +203,7 @@ version
 capabilities
 command=icloud
 version=0.1.0
-schema=16
+schema=17
 account_mode=validated_lifecycle
 credentials=keyring,env,file
 network_validation=true

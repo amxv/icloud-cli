@@ -8,6 +8,10 @@ summary: Public command, output, installation, and documentation changes.
 
 ## Unreleased
 
+- Added resumable bounded `mail sync backfill` with an independent historical cursor, optional UTC date window, cancellation-safe page commits, and no movement of the ordinary new-mail checkpoint.
+- Added explicit `mail sync rebaseline --current-tail` to move one forward frontier to freshly verified provider state while preserving cached messages and historical-backfill progress.
+- Added bounded check-first `mail sync repair` for search/index drift, temporary blob leftovers, UID/frontier problems, relational/location/thread consistency, canonical blob availability, unresolved dedupe evidence, and outbound reconciliation. Apply mode fixes only deterministic evidence; ambiguous identity and missing/corrupt canonical bytes remain visible.
+- Added explicit `--cleanup-orphans --yes` for destructive temporary staging-file cleanup plus compact next-action, verbose finding, JSON, help, migration, and recovery documentation for the new operations workflow.
 - Added safe custom-folder create, rename, delete, subscribe, and unsubscribe with local dry-runs, explicit non-interactive confirmation, provider hierarchy/role protection, and live non-empty delete rechecks.
 - Added interrupted-rename recovery so a provider-accepted RENAME retains its original `fld_…`, sync policy, checkpoint, and message locations even when the response times out and the next LIST omits rename metadata.
 - Added explicit `mail sync --all-folders` for one bounded pass across every current selectable folder, while keeping custom folders disabled by default and preventing automatic old-history crawls.

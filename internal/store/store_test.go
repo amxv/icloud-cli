@@ -42,7 +42,7 @@ func TestOpenCreatesAndReopensVersionedPrivateState(t *testing.T) {
 	if state.SchemaVersion() != SchemaVersion {
 		t.Fatalf("schema version = %d", state.SchemaVersion())
 	}
-	for _, table := range []string{"app_metadata", "accounts", "credential_refs", "folders", "raw_blobs", "messages", "message_recipients", "message_references", "message_locations", "message_content", "message_parts", "attachments", "sync_checkpoints", "message_identity_evidence", "message_dedupe_conflicts", "threads", "thread_messages", "thread_aliases", "thread_edges", "message_search_documents", "message_search_fts", "outbound_attempts", "outbound_attempt_attachments", "idempotency_records", "local_message_sources", "goose_db_version"} {
+	for _, table := range []string{"app_metadata", "accounts", "credential_refs", "folders", "raw_blobs", "messages", "message_recipients", "message_references", "message_locations", "message_content", "message_parts", "attachments", "sync_checkpoints", "mail_backfill_frontiers", "message_identity_evidence", "message_dedupe_conflicts", "threads", "thread_messages", "thread_aliases", "thread_edges", "message_search_documents", "message_search_fts", "outbound_attempts", "outbound_attempt_attachments", "idempotency_records", "local_message_sources", "goose_db_version"} {
 		var count int
 		if err := state.db.QueryRowContext(context.Background(),
 			"SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?", table,
@@ -1562,7 +1562,7 @@ func TestOpenUpgradesSchemaFourteenForwardAndLocationStateIntoEmptyMutationLedge
 		t.Fatal(err)
 	}
 	defer state.Close()
-	if state.SchemaVersion() != 16 {
+	if state.SchemaVersion() != 17 {
 		t.Fatalf("schema version = %d", state.SchemaVersion())
 	}
 	attempt, err := state.Outbound().Attempt(context.Background(), attemptID)
@@ -1591,5 +1591,9 @@ func TestOpenUpgradesSchemaFourteenForwardAndLocationStateIntoEmptyMutationLedge
 	var renameRecoveries int
 	if err := state.db.QueryRow(`SELECT count(*) FROM folder_rename_recoveries`).Scan(&renameRecoveries); err != nil || renameRecoveries != 0 {
 		t.Fatalf("upgraded folder rename recovery ledger count=%d err=%v", renameRecoveries, err)
+	}
+	var backfillFrontiers int
+	if err := state.db.QueryRow(`SELECT count(*) FROM mail_backfill_frontiers`).Scan(&backfillFrontiers); err != nil || backfillFrontiers != 0 {
+		t.Fatalf("upgraded mail backfill frontier count=%d err=%v", backfillFrontiers, err)
 	}
 }

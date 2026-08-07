@@ -381,7 +381,41 @@ icloud mail sync status --folder sent
 
 ## A folder sync requires repair
 
-`state=repair_required` means iCloud returned a different mailbox identity. Ordinary sync stops before resetting or combining message locations. Keep the state directory intact; a dedicated repair command is introduced in a later workflow.
+`state=repair_required` means iCloud returned a different mailbox identity. Ordinary sync stops before resetting or combining message locations. Keep the state directory intact and inspect the bounded repair plan first:
+
+```bash
+icloud mail sync repair --check --verbose
+```
+
+If the finding is an affected UID frontier, apply the deterministic repair:
+
+```bash
+icloud mail sync repair --apply
+icloud mail sync status --folder <folder>
+```
+
+The apply path reads fresh status for only the affected mailbox, moves its forward frontier to the verified current tail, and preserves cached messages. A historical frontier tied to the old UID namespace is reset to the same current provider boundary rather than combining reused UIDs.
+
+## Historical backfill stopped or was canceled
+
+Repeat the same bounded request:
+
+```bash
+icloud mail sync backfill --folder inbox --limit 50
+```
+
+A failed page does not advance the historical cursor. Normal `mail sync` remains independent and can continue to fetch new mail while backfill resumes. If the backfill reports a mailbox identity change, run `mail sync repair --check` before another historical fetch.
+
+## I want future sync to start from now
+
+Inspect the existing frontier first, then make the skip explicit:
+
+```bash
+icloud mail sync status --folder inbox
+icloud mail sync rebaseline --folder inbox --current-tail
+```
+
+Rebaseline does not delete cached messages, but ordinary forward sync will no longer fill the skipped range. Use `mail sync backfill` if some of that earlier provider history should still be cached.
 
 ## The first Sent sync fetched zero messages
 
@@ -615,7 +649,13 @@ The CLI keeps the messages readable and records the relationship as `malformed`,
 
 `mail message raw`, raw format, and export verify the local blob's recorded size and SHA-256 address before returning bytes. An unavailable/corrupt error means the metadata remains present but the exact local RFC822 bytes cannot be trusted.
 
-Do not replace the blob manually or resynchronize the whole mailbox blindly. Keep the state directory intact, inspect `icloud mail sync status`, and wait for the targeted repair workflow. Stable message and location IDs remain unchanged.
+Do not replace the blob manually or resynchronize the whole mailbox blindly. Keep the state directory intact and inspect the bounded repair evidence:
+
+```bash
+icloud mail sync repair --check --verbose
+```
+
+Missing or corrupt canonical bytes are reported with a targeted-recovery/backup next action. `--apply` does not fabricate replacement content or collapse identities to hide the problem. Stable message and location IDs remain unchanged.
 
 ## Export refuses an existing file
 

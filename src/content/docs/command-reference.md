@@ -262,6 +262,45 @@ Compact success prints one block per selected folder with fetched/created/update
 
 `--reconcile-outbound` selects Sent, synchronizes one bounded page, and then checks recent `sent` or `unknown` attempts against exact generated RFC Message-ID evidence. It cannot be combined with `--folder`, `--all-folders`, or `--hydrate`. Unique evidence confirms the existing local message/location; missing or ambiguous evidence remains unresolved and never causes a resend.
 
+## `icloud mail sync backfill`
+
+```bash
+icloud mail sync backfill --folder inbox
+icloud mail sync backfill --folder Receipts --after 2025-01-01 --before 2026-01-01 --limit 50
+icloud mail sync backfill --folder fld_… --json
+```
+
+Fetches and commits one bounded page while walking backward through one selected mailbox. The default and maximum page bounds are 20 and 100. `--after` is an inclusive UTC date and `--before` is an exclusive UTC date, both in `YYYY-MM-DD` form.
+
+Historical backfill has its own resumable cursor. It never advances the ordinary forward sync checkpoint, so new-mail synchronization can continue while older history is incomplete. A failed or canceled historical page leaves the previous reverse cursor unchanged. Compact output reports the stable `bf_…` frontier, folder identity, fetched/created/updated counts, before/next UID boundaries, and `complete=yes|no`; JSON includes the complete bounded frontier record.
+
+## `icloud mail sync rebaseline`
+
+```bash
+icloud mail sync rebaseline --folder inbox --current-tail
+icloud mail sync rebaseline --folder fld_… --current-tail --json
+```
+
+Moves only the selected folder's forward synchronization checkpoint to the current verified iCloud tail (`UIDNEXT-1`). `--current-tail` is mandatory because this deliberately skips any not-yet-cached range for normal forward sync. Existing cached messages are not deleted, rewritten, or detached from their provider identities, and the historical backfill cursor is not silently advanced.
+
+Compact output shows the previous committed/scanned/state values, verified UIDVALIDITY, new committed/scanned values, cached message count, and `deleted=no`. Use `mail sync backfill` later when skipped older mail should still be cached.
+
+## `icloud mail sync repair`
+
+```bash
+icloud mail sync repair --check
+icloud mail sync repair --check --verbose
+icloud mail sync repair --apply
+icloud mail sync repair --apply --cleanup-orphans --yes
+icloud mail sync repair --check --json
+```
+
+Runs a bounded consistency audit for the selected account. Check mode is the default, changes nothing, and stays local. It checks search/index drift, temporary blob leftovers, forward and historical UID-frontier state, relational integrity, location/thread identity conflicts, canonical blob availability, unresolved dedupe evidence, and outbound attempts that still need exact local Sent reconciliation.
+
+`--apply` performs only deterministic repairs: refresh stale local search material, retry exact local Sent reconciliation, and—when a mailbox UID namespace changed—read current status for only the affected folder before moving its forward frontier or resetting its historical frontier. It does not crawl every mailbox, merge ambiguous duplicate candidates, or invent replacement bytes for a missing/corrupt canonical blob.
+
+Temporary staging-file deletion is intentionally separate. `--cleanup-orphans` requires `--apply`, and destructive cleanup additionally requires `--yes`. The default compact summary is payload-free and includes bounded counts plus one `next` action. `--verbose` prints bounded per-finding records; `--json` returns the structured findings and summary.
+
 ## `icloud mail send`
 
 Preview or send one new text/HTML message through the selected iCloud account:
@@ -738,7 +777,7 @@ Compact output:
 capabilities
 command=icloud
 version=0.1.0
-schema=16
+schema=17
 account_mode=validated_lifecycle
 credentials=keyring,env,file
 network_validation=true

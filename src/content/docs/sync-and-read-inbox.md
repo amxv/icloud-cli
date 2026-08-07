@@ -1,9 +1,9 @@
 ---
 title: Sync and read mail
-description: Synchronize enabled iCloud Mail folders into private local state, read Inbox or Sent copies offline, update one exact location, and recover safely.
+description: Synchronize enabled iCloud Mail folders, backfill older history deliberately, read cached mail offline, and recover synchronization state safely.
 order: 6
 category: Guides
-summary: Bounded multi-folder sync, history-free Sent setup, compact local reads, explicit content access, location-aware state changes, safe retries, and recovery.
+summary: Bounded multi-folder sync, resumable historical backfill, deliberate current-tail rebaseline, check-first repair, compact local reads, and safe retries.
 ---
 
 ## Synchronize enabled folders
@@ -67,6 +67,37 @@ icloud mail sync --limit 50
 `more=true` means that folder has another bounded page available. Repeat the same selection until it reports `more=false`. A failed folder page leaves its previous frontier unchanged and is safe to retry.
 
 `reconciled` counts existing locations whose remote flags were checked without downloading message bodies again. `state_changes` counts real differences. The bounded sweep rotates over time instead of turning one command into a whole-mailbox scan.
+
+## Backfill older mail deliberately
+
+Normal synchronization only moves forward. When you actually need older history, start a separate bounded backfill for one folder:
+
+```bash
+icloud mail sync backfill --folder inbox --limit 50
+```
+
+```text
+mail-backfill
+bf_… account=acct_…
+folder=INBOX
+folder_id=fld_…
+fetched=50
+created=45
+updated=5
+before_uid=165
+next_before_uid=112
+complete=no
+```
+
+The historical cursor is independent from normal new-mail synchronization. A successful backfill page can add older messages without moving the forward checkpoint, and ordinary `mail sync` can keep ingesting new mail while history is still incomplete. A canceled or failed page leaves the previous historical cursor unchanged; repeat the same command until `complete=yes`.
+
+Limit the historical window with UTC calendar dates when useful:
+
+```bash
+icloud mail sync backfill --folder Receipts --after 2025-01-01 --before 2026-01-01 --limit 50
+```
+
+`--after` is inclusive and `--before` is exclusive. Each date-bounded selection resumes independently, so changing the date window does not silently reuse a narrower cursor. Backfill may revisit an already cached provider location at its starting boundary; that is idempotent and does not create a duplicate logical message.
 
 ## Confirm outbound attempts from Sent evidence
 
@@ -270,6 +301,45 @@ List bounded checkpoints for every synchronized folder in the selected account:
 icloud mail sync checkpoints
 ```
 
+## Rebaseline one forward frontier deliberately
+
+If you intentionally want normal synchronization to continue from the provider's current tail rather than filling the gap in front of the saved checkpoint, make that choice explicit:
+
+```bash
+icloud mail sync rebaseline --folder inbox --current-tail
+```
+
+The command reads current iCloud UID identity for only the selected folder, moves only that folder's forward checkpoint to `UIDNEXT-1`, and keeps every cached message intact. Compact output shows the previous and new committed/scanned values plus `cached_kept` and `deleted=no` so the effect is visible before you continue.
+
+Rebaseline does **not** mean older mail is synchronized. It deliberately skips that range for normal forward sync. Use `mail sync backfill` afterward when you still want some or all of the older provider history.
+
+## Audit and repair synchronization state
+
+Start with the bounded, local check:
+
+```bash
+icloud mail sync repair --check
+icloud mail sync repair --check --verbose
+```
+
+`--check` is also the default when neither mode flag is supplied. It does not contact iCloud or change state. The compact summary reports searchable-content drift, temporary blob leftovers, UID/frontier problems, unresolved dedupe or outbound evidence, canonical blob problems, whether more findings remain, and one `next` action. Use `--verbose` or `--json` for bounded per-finding detail.
+
+Apply only deterministic repairs after reviewing the check:
+
+```bash
+icloud mail sync repair --apply
+```
+
+This can refresh stale local search data, reconcile exact local Sent evidence, and repair a changed UID namespace only after reading fresh status for the exact affected folder. It does not crawl every mailbox, invent dedupe identity, or fabricate missing/corrupt canonical message bytes. Those ambiguous cases remain findings for review.
+
+Orphan files in the private temporary-blob staging area are reported by default and are never removed implicitly. Cleaning them is a separate destructive choice:
+
+```bash
+icloud mail sync repair --apply --cleanup-orphans --yes
+```
+
+Run `--check` again after any repair if the final `next` field is not `none`.
+
 ## Use JSON deliberately
 
 ```bash
@@ -328,7 +398,15 @@ A failed run leaves `committed` unchanged.
 
 ### Mailbox identity changed
 
-`state=repair_required` means iCloud returned a different UIDVALIDITY for the selected folder. The CLI stops before resetting or combining identities. Keep the local state intact for the dedicated repair workflow.
+`state=repair_required` means iCloud returned a different UIDVALIDITY for the selected folder. The CLI stops before resetting or combining identities. Keep the local state intact, inspect the plan, then apply only the targeted repair:
+
+```bash
+icloud mail sync repair --check --verbose
+icloud mail sync repair --apply
+icloud mail sync status --folder <folder>
+```
+
+The repair reads fresh provider status only for an affected folder, moves its forward frontier to the verified current tail, and leaves cached messages intact. Any historical backfill frontier tied to the old UID namespace is reset to that same verified provider boundary rather than combined with reused UIDs.
 
 ### Inbox looks older than expected
 
@@ -336,7 +414,7 @@ Inbox starts from its newest bounded page. Repeat `mail sync --folder inbox` whi
 
 ### A message body or attachment is unavailable
 
-Local content commands never contact iCloud to repair data implicitly. Inspect the relevant sync status first. Missing or corrupt bytes fail visibly while stable message, location, MIME-part, and attachment IDs remain intact.
+Local content commands never contact iCloud to repair data implicitly. Inspect the relevant sync status, then run `icloud mail sync repair --check --verbose`. Missing or corrupt canonical bytes remain a reported finding rather than being guessed or replaced, while stable message, location, MIME-part, and attachment IDs stay intact.
 
 ### A state command says the location is ambiguous
 

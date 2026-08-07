@@ -259,6 +259,32 @@ type IMAPInboxClient interface {
 	FetchInboxPage(context.Context, AuthRequest, InboxFetchRequest, blob.Stager) (InboxPage, error)
 }
 
+type BackfillFetchRequest struct {
+	Mailbox             string
+	ExpectedUIDValidity uint32
+	BeforeUID           uint32
+	After               *time.Time
+	Before              *time.Time
+	Limit               int
+}
+
+type BackfillPage struct {
+	Mailbox       string
+	UIDValidity   uint32
+	BeforeUID     uint32
+	NextBeforeUID uint32
+	Complete      bool
+	Messages      []FetchedMessage
+}
+
+type IMAPBackfillClient interface {
+	FetchBackfillPage(context.Context, AuthRequest, BackfillFetchRequest, blob.Stager) (BackfillPage, error)
+}
+
+type IMAPMailboxStatusClient interface {
+	MailboxStatus(context.Context, AuthRequest, string) (MailboxStatus, error)
+}
+
 type SentAppendRequest struct {
 	Mailbox      string
 	Message      io.Reader

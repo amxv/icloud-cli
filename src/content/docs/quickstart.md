@@ -30,7 +30,7 @@ version
 capabilities
 command=icloud
 version=0.1.0
-schema=16
+schema=17
 account_mode=validated_lifecycle
 credentials=keyring,env,file
 network_validation=true
@@ -407,7 +407,33 @@ icloud mail sync status --folder sent
 icloud mail sync checkpoints
 ```
 
-Read [Sync and read mail](/docs/sync-and-read-inbox) for enabled-folder selection, history-free Sent setup, incremental state reconciliation, location selection, and recovery, [Move, copy, archive, and delete mail](/docs/manage-mail-locations) for provider location changes, or [Save mail attachments](/docs/save-mail-attachments) for filename, collision, batch, and binary-output rules.
+Normal synchronization never walks backward through old mailbox history. When you deliberately need older mail, use the separate resumable path:
+
+```bash
+icloud mail sync backfill --folder inbox --limit 50
+```
+
+Repeat while `complete=no`. The historical cursor does not move the normal new-mail checkpoint, so ordinary sync can continue at the same time.
+
+When a saved forward frontier is no longer the starting point you want, inspect it before deliberately moving only that folder to the current provider tail:
+
+```bash
+icloud mail sync status --folder inbox
+icloud mail sync rebaseline --folder inbox --current-tail
+```
+
+Rebaseline keeps cached messages; it does not claim skipped mail is synchronized. Use backfill later if you still want that older range.
+
+For recovery, check before applying changes:
+
+```bash
+icloud mail sync repair --check
+icloud mail sync repair --apply
+```
+
+The check is bounded, local, and non-mutating. Apply fixes only deterministic local/frontier state; ambiguous identity or missing canonical bytes remain visible instead of being guessed. Temporary staging-file cleanup requires the separate `--cleanup-orphans --yes` choice.
+
+Read [Sync and read mail](/docs/sync-and-read-inbox) for enabled-folder selection, resumable history, current-tail rebaseline, repair, location selection, and recovery, [Move, copy, archive, and delete mail](/docs/manage-mail-locations) for provider location changes, or [Save mail attachments](/docs/save-mail-attachments) for filename, collision, batch, and binary-output rules.
 
 ## Select another account
 

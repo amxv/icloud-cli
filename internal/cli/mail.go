@@ -15,6 +15,9 @@ import (
 type MailService interface {
 	MailSync(context.Context, string, string, string, int) (account.Account, []folder.Folder, []maildomain.SyncSummary, int64, error)
 	MailSyncAll(context.Context, string, string, int) (account.Account, []folder.Folder, []maildomain.SyncSummary, int64, error)
+	MailBackfill(context.Context, string, string, string, *time.Time, *time.Time, int) (account.Account, folder.Folder, maildomain.BackfillSummary, int64, error)
+	MailRebaseline(context.Context, string, string, string, bool) (account.Account, folder.Folder, maildomain.RebaselineSummary, int64, error)
+	MailRepair(context.Context, string, string, maildomain.RepairOptions) (account.Account, maildomain.RepairSummary, int64, error)
 	MailInbox(context.Context, string, string, string, int) (account.Account, folder.Folder, []maildomain.Message, bool, int64, error)
 	MailSyncStatus(context.Context, string, string, string) (account.Account, folder.Folder, maildomain.Checkpoint, int64, error)
 	MailSyncCheckpoints(context.Context, string, string, int) (account.Account, []maildomain.Checkpoint, bool, int64, error)
@@ -80,6 +83,25 @@ type mailCheckpointData struct {
 	Count         int                     `json:"count"`
 	More          bool                    `json:"more,omitempty"`
 	SchemaVersion int64                   `json:"schema_version"`
+}
+
+type mailBackfillData struct {
+	AccountID     string                     `json:"account_id"`
+	Folder        folder.Folder              `json:"folder"`
+	Summary       maildomain.BackfillSummary `json:"summary"`
+	SchemaVersion int64                      `json:"schema_version"`
+}
+
+type mailRebaselineData struct {
+	AccountID     string                       `json:"account_id"`
+	Folder        folder.Folder                `json:"folder"`
+	Summary       maildomain.RebaselineSummary `json:"summary"`
+	SchemaVersion int64                        `json:"schema_version"`
+}
+
+type mailRepairData struct {
+	Summary       maildomain.RepairSummary `json:"summary"`
+	SchemaVersion int64                    `json:"schema_version"`
 }
 
 type publicMessage struct {
@@ -242,6 +264,9 @@ func newMailSyncCommand(state *executionState) *cobra.Command {
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
 	command.AddCommand(newMailSyncStatusCommand(state))
 	command.AddCommand(newMailSyncCheckpointsCommand(state))
+	command.AddCommand(newMailSyncBackfillCommand(state))
+	command.AddCommand(newMailSyncRebaselineCommand(state))
+	command.AddCommand(newMailSyncRepairCommand(state))
 	return command
 }
 
@@ -391,6 +416,179 @@ func newMailSyncCheckpointsCommand(state *executionState) *cobra.Command {
 	return command
 }
 
+func newMailSyncBackfillCommand(state *executionState) *cobra.Command {
+	var jsonOutput bool
+	var folderSelector string
+	var afterValue string
+	var beforeValue string
+	var limit int
+	command := &cobra.Command{
+		Use:     "backfill",
+		Short:   "Resume one bounded historical page without moving the new-mail frontier",
+		Args:    cobra.NoArgs,
+		Example: "  icloud mail sync backfill --folder inbox\n  icloud mail sync backfill --folder Receipts --after 2025-01-01 --before 2026-01-01 --limit 50\n  icloud mail sync backfill --folder fld_… --json",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput}, OutputSupport{JSON: true}); err != nil {
+				return err
+			}
+			if limit < 1 || limit > MaximumPageSize {
+				return NewAppError(ErrorUsage, fmt.Sprintf("--limit must be between 1 and %d", MaximumPageSize), false)
+			}
+			after, err := parseBackfillDate(afterValue)
+			if err != nil {
+				return NewAppError(ErrorUsage, "--after must be a UTC date in YYYY-MM-DD form", false)
+			}
+			before, err := parseBackfillDate(beforeValue)
+			if err != nil {
+				return NewAppError(ErrorUsage, "--before must be a UTC date in YYYY-MM-DD form", false)
+			}
+			if after != nil && before != nil && !after.Before(*before) {
+				return NewAppError(ErrorUsage, "--after must precede --before", false)
+			}
+			accountValue, folderValue, summary, schemaVersion, err := state.mail.MailBackfill(cmd.Context(), state.global.Home, state.global.Account, folderSelector, after, before, limit)
+			if err != nil {
+				return err
+			}
+			if jsonOutput {
+				return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: mailBackfillData{AccountID: accountValue.ID, Folder: folderValue, Summary: summary, SchemaVersion: schemaVersion}, Meta: EnvelopeMeta{RequestID: state.requestID}})
+			}
+			return NewCompactTextRenderer(state.stdout).Record("mail-backfill", summary.Frontier.ID,
+				Field("account", accountValue.ID), Field("folder", folderValue.Name), Field("folder_id", folderValue.ID),
+				Field("fetched", summary.Fetched), Field("created", summary.Created), Field("updated", summary.Updated),
+				Field("before_uid", summary.StartBeforeUID), Field("next_before_uid", summary.NextBeforeUID),
+				Field("complete", yesNo(summary.Complete)), Field("after", after), Field("before", before),
+			)
+		},
+	}
+	command.Flags().StringVar(&folderSelector, "folder", string(folder.KindInbox), "Folder kind, ID, name, or wire name")
+	command.Flags().StringVar(&afterValue, "after", "", "Include messages on or after this UTC date (YYYY-MM-DD)")
+	command.Flags().StringVar(&beforeValue, "before", "", "Include messages before this UTC date (YYYY-MM-DD)")
+	command.Flags().IntVar(&limit, "limit", DefaultPageSize, fmt.Sprintf("Maximum historical messages to fetch and commit in this page (1-%d)", MaximumPageSize))
+	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
+	return command
+}
+
+func newMailSyncRebaselineCommand(state *executionState) *cobra.Command {
+	var jsonOutput bool
+	var folderSelector string
+	var currentTail bool
+	command := &cobra.Command{
+		Use:     "rebaseline",
+		Short:   "Move one forward sync frontier to the verified current iCloud tail without deleting cache",
+		Args:    cobra.NoArgs,
+		Example: "  icloud mail sync rebaseline --folder inbox --current-tail\n  icloud mail sync rebaseline --folder fld_… --current-tail --json",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput}, OutputSupport{JSON: true}); err != nil {
+				return err
+			}
+			if !currentTail {
+				return NewAppError(ErrorSafety, "rebaseline requires --current-tail", false)
+			}
+			accountValue, folderValue, summary, schemaVersion, err := state.mail.MailRebaseline(cmd.Context(), state.global.Home, state.global.Account, folderSelector, currentTail)
+			if err != nil {
+				return err
+			}
+			if jsonOutput {
+				return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: mailRebaselineData{AccountID: accountValue.ID, Folder: folderValue, Summary: summary, SchemaVersion: schemaVersion}, Meta: EnvelopeMeta{RequestID: state.requestID}})
+			}
+			return NewCompactTextRenderer(state.stdout).Record("mail-rebaseline", summary.After.ID,
+				Field("account", accountValue.ID), Field("folder", folderValue.Name), Field("folder_id", folderValue.ID),
+				Field("uid_validity", summary.UIDValidity), Field("before_committed", summary.PreviousCommitted),
+				Field("before_scanned", summary.PreviousScanned), Field("before_state", summary.PreviousState),
+				Field("after_committed", summary.After.LastCommittedUID), Field("after_scanned", summary.After.LastScannedUID),
+				Field("cached_kept", summary.CachedMessagesKept), Field("deleted", yesNo(false)),
+			)
+		},
+	}
+	command.Flags().StringVar(&folderSelector, "folder", string(folder.KindInbox), "Folder kind, ID, name, or wire name")
+	command.Flags().BoolVar(&currentTail, "current-tail", false, "Acknowledge moving only this forward frontier to UIDNEXT-1 observed now")
+	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
+	return command
+}
+
+func newMailSyncRepairCommand(state *executionState) *cobra.Command {
+	var jsonOutput bool
+	var verbose bool
+	var check bool
+	var apply bool
+	var cleanupOrphans bool
+	var yes bool
+	var limit int
+	command := &cobra.Command{
+		Use:     "repair",
+		Short:   "Audit bounded local mail consistency and apply only deterministic repairs",
+		Args:    cobra.NoArgs,
+		Example: "  icloud mail sync repair --check\n  icloud mail sync repair --check --verbose\n  icloud mail sync repair --apply\n  icloud mail sync repair --apply --cleanup-orphans --yes",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput, Verbose: verbose}, OutputSupport{JSON: true, Verbose: true}); err != nil {
+				return err
+			}
+			if check && apply {
+				return NewAppError(ErrorUsage, "--check and --apply cannot be combined", false)
+			}
+			if limit < 1 || limit > MaximumPageSize {
+				return NewAppError(ErrorUsage, fmt.Sprintf("--limit must be between 1 and %d", MaximumPageSize), false)
+			}
+			if cleanupOrphans && !apply {
+				return NewAppError(ErrorUsage, "--cleanup-orphans requires --apply", false)
+			}
+			if cleanupOrphans && !yes {
+				return NewAppError(ErrorSafety, "temporary blob cleanup requires --yes", false)
+			}
+			mode := maildomain.RepairCheck
+			if apply {
+				mode = maildomain.RepairApply
+			}
+			_, summary, schemaVersion, err := state.mail.MailRepair(cmd.Context(), state.global.Home, state.global.Account, maildomain.RepairOptions{Mode: mode, Limit: limit, CleanupOrphans: cleanupOrphans})
+			if err != nil {
+				return err
+			}
+			if jsonOutput {
+				return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: mailRepairData{Summary: summary, SchemaVersion: schemaVersion}, Meta: EnvelopeMeta{RequestID: state.requestID}})
+			}
+			renderer := NewCompactTextRenderer(state.stdout)
+			if verbose {
+				for _, finding := range summary.Findings {
+					if err := renderer.Record("repair-finding", finding.ID,
+						Field("kind", finding.Kind), Field("folder_id", finding.FolderID), Field("action", finding.Action),
+						Field("applicable", yesNo(finding.Applicable)), Field("applied", yesNo(finding.Applied)), Field("detail", Excerpt(finding.Detail, DefaultExcerptRunes)),
+					); err != nil {
+						return err
+					}
+				}
+			}
+			return renderer.Summary("mail-repair",
+				Field("account", summary.AccountID), Field("mode", summary.Mode), Field("checked", fmt.Sprint(summary.Checked)), Field("changed", fmt.Sprint(summary.Changed)),
+				Field("pending_search", fmt.Sprint(summary.PendingSearch)), Field("search_errors", fmt.Sprint(summary.FailedSearch)), Field("stale_search", fmt.Sprint(summary.StaleFTSRows)),
+				Field("temp_orphans", fmt.Sprint(summary.OrphanTempFiles)), Field("blob_issues", fmt.Sprint(summary.CanonicalBlobIssues)), Field("dedupe_conflicts", fmt.Sprint(summary.DedupeConflicts)),
+				Field("uid_repairs", fmt.Sprint(summary.RepairCheckpoints)), Field("frontier_problems", fmt.Sprint(summary.FrontierProblems)), Field("outbound_unknown", fmt.Sprint(summary.OutboundUnknown)),
+				Field("more", yesNo(summary.More)), Field("next", summary.NextAction),
+			)
+		},
+	}
+	command.Flags().BoolVar(&check, "check", false, "Audit only (the default when neither mode flag is supplied)")
+	command.Flags().BoolVar(&apply, "apply", false, "Apply only deterministic repairs described by the audit")
+	command.Flags().BoolVar(&cleanupOrphans, "cleanup-orphans", false, "With --apply --yes, delete bounded orphan files from the private staging directory")
+	command.Flags().BoolVar(&yes, "yes", false, "Authorize destructive orphan staging-file cleanup")
+	command.Flags().IntVar(&limit, "limit", DefaultPageSize, fmt.Sprintf("Maximum findings or repair candidates per bounded category (1-%d)", MaximumPageSize))
+	command.Flags().BoolVar(&verbose, "verbose", false, "Print bounded per-finding detail before the compact summary")
+	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope with bounded findings")
+	return command
+}
+
+func parseBackfillDate(value string) (*time.Time, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil, nil
+	}
+	parsed, err := time.Parse("2006-01-02", value)
+	if err != nil {
+		return nil, err
+	}
+	parsed = parsed.UTC()
+	return &parsed, nil
+}
+
 func renderInboxMessage(renderer *CompactTextRenderer, value maildomain.Message) error {
 	from := value.From.Email
 	if strings.TrimSpace(from) == "" {
@@ -472,6 +670,15 @@ func (unavailableMailService) MailSync(context.Context, string, string, string, 
 
 func (unavailableMailService) MailSyncAll(context.Context, string, string, int) (account.Account, []folder.Folder, []maildomain.SyncSummary, int64, error) {
 	return account.Account{}, nil, nil, 0, NewAppError(ErrorConfiguration, "mail synchronization is unavailable", false)
+}
+func (unavailableMailService) MailBackfill(context.Context, string, string, string, *time.Time, *time.Time, int) (account.Account, folder.Folder, maildomain.BackfillSummary, int64, error) {
+	return account.Account{}, folder.Folder{}, maildomain.BackfillSummary{}, 0, NewAppError(ErrorConfiguration, "historical mail backfill is unavailable", false)
+}
+func (unavailableMailService) MailRebaseline(context.Context, string, string, string, bool) (account.Account, folder.Folder, maildomain.RebaselineSummary, int64, error) {
+	return account.Account{}, folder.Folder{}, maildomain.RebaselineSummary{}, 0, NewAppError(ErrorConfiguration, "mail synchronization rebaseline is unavailable", false)
+}
+func (unavailableMailService) MailRepair(context.Context, string, string, maildomain.RepairOptions) (account.Account, maildomain.RepairSummary, int64, error) {
+	return account.Account{}, maildomain.RepairSummary{}, 0, NewAppError(ErrorConfiguration, "mail synchronization repair is unavailable", false)
 }
 func (unavailableMailService) MailInbox(context.Context, string, string, string, int) (account.Account, folder.Folder, []maildomain.Message, bool, int64, error) {
 	return account.Account{}, folder.Folder{}, nil, false, 0, NewAppError(ErrorConfiguration, "local Inbox is unavailable", false)

@@ -748,7 +748,7 @@ func TestMailPhaseFifteenHelpAndOutboundStatusRemainCompactAndPayloadFree(t *tes
 		}
 	}
 	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "status", "--outbound", "--limit", "1", "--json")
-	if code != 0 || stderr != "" || !strings.Contains(stdout, `"schema_version":16`) || !strings.Contains(stdout, `"count":1`) || !strings.Contains(stdout, `"status":"sent"`) || !strings.Contains(stdout, `"kind":"send"`) {
+	if code != 0 || stderr != "" || !strings.Contains(stdout, `"schema_version":17`) || !strings.Contains(stdout, `"count":1`) || !strings.Contains(stdout, `"status":"sent"`) || !strings.Contains(stdout, `"kind":"send"`) {
 		t.Fatalf("outbound status JSON code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 	for _, forbidden := range []string{"primary@example.com", "Outbound status private subject", "outbound-status-private-body", "outbound-status-private-key", "synthetic-send-secret"} {

@@ -8,8 +8,10 @@ import (
 	"github.com/amxv/icloud-cli/internal/account"
 	"github.com/amxv/icloud-cli/internal/blob"
 	"github.com/amxv/icloud-cli/internal/cli"
+	"github.com/amxv/icloud-cli/internal/config"
 	"github.com/amxv/icloud-cli/internal/folder"
 	maildomain "github.com/amxv/icloud-cli/internal/mail"
+	"github.com/amxv/icloud-cli/internal/store"
 )
 
 func (commands accountCommands) MailSearch(
@@ -59,15 +61,23 @@ func (commands accountCommands) MailSearchRepair(
 	if err != nil {
 		return account.Account{}, maildomain.SearchRepairSummary{}, state.SchemaVersion(), mapAccountError(err)
 	}
+	summary, err := commands.repairSearchBodies(ctx, state, paths, accountValue, limit)
+	if err != nil {
+		return account.Account{}, maildomain.SearchRepairSummary{}, state.SchemaVersion(), err
+	}
+	return accountValue, summary, state.SchemaVersion(), nil
+}
+
+func (commands accountCommands) repairSearchBodies(ctx context.Context, state *store.Store, paths config.AppPaths, accountValue account.Account, limit int) (maildomain.SearchRepairSummary, error) {
 	items, err := state.Search().Pending(ctx, accountValue.ID, limit)
 	if err != nil {
-		return account.Account{}, maildomain.SearchRepairSummary{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot inspect the local search index", false, err)
+		return maildomain.SearchRepairSummary{}, cli.WrapAppError(cli.ErrorInternal, "cannot inspect the local search index", false, err)
 	}
 	summary := maildomain.SearchRepairSummary{AccountID: accountValue.ID, Selected: len(items)}
 	blobStore := blob.New(paths.BlobRoot)
 	for _, item := range items {
 		if err := ctx.Err(); err != nil {
-			return account.Account{}, maildomain.SearchRepairSummary{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorUnavailable, "search repair was canceled", false, err)
+			return maildomain.SearchRepairSummary{}, cli.WrapAppError(cli.ErrorUnavailable, "search repair was canceled", false, err)
 		}
 		message, readErr := state.Mail().Message(ctx, accountValue.ID, item.MessageID)
 		if readErr != nil {
@@ -106,9 +116,9 @@ func (commands accountCommands) MailSearchRepair(
 	}
 	pending, failed, err := state.Search().Counts(ctx, accountValue.ID)
 	if err != nil {
-		return account.Account{}, maildomain.SearchRepairSummary{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot verify the local search index", false, err)
+		return maildomain.SearchRepairSummary{}, cli.WrapAppError(cli.ErrorInternal, "cannot verify the local search index", false, err)
 	}
 	summary.Remaining = pending
 	summary.Errors = failed
-	return accountValue, summary, state.SchemaVersion(), nil
+	return summary, nil
 }
