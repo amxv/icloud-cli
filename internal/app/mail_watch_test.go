@@ -152,7 +152,7 @@ func TestMailWatchOperationTimeoutCancelsBlockingProvider(t *testing.T) {
 	started := time.Now()
 	seenDegraded := false
 	err := commands.MailWatch(ctx, home, "", maildomain.WatchOptions{
-		OperationTimeout:  10 * time.Millisecond,
+		OperationTimeout:  5 * time.Second,
 		PollInterval:      time.Second,
 		ReconcileInterval: time.Minute,
 	}, func(event maildomain.WatchEvent) error {
