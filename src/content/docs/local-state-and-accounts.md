@@ -3,7 +3,7 @@ title: Local state and account inspection
 description: Choose an isolated data directory, inspect bounded account inventories, understand selection rules, and handle concurrent access safely.
 order: 6
 category: Guides
-summary: State roots, account list and show, selector/default behavior, privacy, locks, and cleanup.
+summary: State roots, account list and show, selector/default behavior, privacy, coordination, backup, restore, and cleanup.
 ---
 
 ## Start with an isolated state directory
@@ -131,13 +131,29 @@ message="local account state is busy in another icloud process"
 retryable=true
 ```
 
-Let the other process finish and retry. Do not remove lock files to bypass a running operation. Reads remain independently bounded and the SQLite store uses transaction boundaries for each mutation.
+Let the other process finish and retry. Do not remove coordination files to bypass a running operation. Reads remain independently bounded.
+
+## Back up or restore the local mail copy
+
+Treat the selected application root as one unit: it contains the local mail index and the content needed for complete cached messages and attachments. Before a file-level backup, stop `mail watch` and let any sync, repair, draft, outbound, or location-changing command finish. Then copy or snapshot the **entire** root rather than selecting only the database or only the content directory.
+
+The root does not contain a plaintext app-specific password. A keyring secret remains in the operating-system credential store; environment values and external credential files also remain outside the root. Back those external sources up separately if your recovery plan depends on them.
+
+To restore, put the complete saved root back at the same chosen `ICLOUD_HOME`/`--home` location while no `icloud` process is using it, keep it private to the user, then start with local checks:
+
+```bash
+icloud account list
+icloud doctor
+icloud mail sync repair --check
+```
+
+Run `account test` only when you are ready to resolve the external credential and validate iCloud connectivity again. If cached content was intentionally discarded instead of restored, synchronize or hydrate it again rather than fabricating missing local files.
 
 ## Privacy and cleanup
 
-The database stores account metadata, credential references, durable folder observations/policy, synchronized logical messages and provider locations, forward sync checkpoints, independent historical-backfill progress, outbound attempts, and compact location-mutation evidence, never plaintext app-specific passwords. Folder records retain decoded/wire names, provider attributes and counts, presence/stale state, and local sync enablement. Rebaseline changes only the selected forward checkpoint; it does not delete cached messages or silently advance historical backfill. Location mutation records keep stable mutation/message/location/folder IDs, idempotency evidence, provider method, UID mapping, confirmed or unresolved state, and recovery markers. They do not place subject, participants, body, attachment names, credentials, or private blob coordinates into ordinary status output. A keyring password lives in the operating-system credential store. Environment values and file contents remain external to the CLI state root.
+The local root stores account/folder metadata, synchronized message content and attachments, search/thread state, sync progress, drafts, outbound outcomes, and recovery evidence. It never stores a plaintext app-specific password. Ordinary status output keeps credentials, private content locations, submitted message payloads, and BCC out of routine results.
 
-Provider locations remain durable evidence after a move or permanent deletion marks them absent. The logical message, decoded content, attachment records, search identity, and reconstructed thread remain stable while another location exists. `mail sync repair --check` audits this local state without changing it; deterministic apply does not erase ambiguous dedupe evidence or fabricate missing canonical message bytes.
+`mail sync repair --check` audits the local copy without changing it. Repair can fix deterministic index/cache inconsistencies, but it does not guess at ambiguous message identity or manufacture missing canonical content.
 
 Removing an account deletes its native keyring entry when present. It does not delete an environment variable or external credential file. Uninstalling the npm package does not remove the selected state root or external credentials.
 

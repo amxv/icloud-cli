@@ -1,0 +1,89 @@
+.nh
+.TH "ICLOUD" "1" "Jan 1970" "icloud 0.1.0" "iCloud Mail CLI Manual"
+
+.SH NAME
+icloud-mail-message-show - Show bounded metadata or explicitly requested complete content
+
+
+.SH SYNOPSIS
+\fBicloud mail message show  [flags]\fP
+
+
+.SH DESCRIPTION
+Show bounded metadata or explicitly requested complete content
+
+
+.SH OPTIONS
+\fB--body-only\fP[=false]
+	Write only the selected body representation
+
+.PP
+\fB--cache\fP[=false]
+	Persist the referenced remote message through the normal local ingestion path
+
+.PP
+\fB--format\fP="compact"
+	Content format: compact, text, html, or raw
+
+.PP
+\fB--full\fP[=false]
+	Include the complete decoded text body
+
+.PP
+\fB--headers\fP[=false]
+	Include decoded headers (BCC remains omitted)
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for show
+
+.PP
+\fB--json\fP[=false]
+	Emit one stable JSON success envelope
+
+.PP
+\fB--metadata-only\fP[=false]
+	Show metadata without a decoded excerpt or content
+
+.PP
+\fB--remote\fP[=false]
+	Treat the argument as a stale-safe rem_… provider reference
+
+.PP
+\fB--verbose\fP[=false]
+	Include MIME part metadata and parse diagnostics
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--account\fP=""
+	Select an account by name, email, or stable ID
+
+.PP
+\fB--home\fP=""
+	Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+
+.PP
+\fB--no-input\fP[=false]
+	Never prompt for interactive input
+
+.PP
+\fB--request-id\fP=""
+	Attach a stable request ID to structured output
+
+.PP
+\fB--timeout\fP=30s
+	Maximum normal command duration; watch applies it per provider/sync attempt
+
+
+.SH EXAMPLE
+.EX
+  icloud mail message show msg_…
+  icloud mail message show rem_… --remote
+  icloud mail message show rem_… --remote --cache --full
+  icloud mail message show msg_… --format html --body-only
+  icloud mail message show msg_… --headers --json
+.EE
+
+
+.SH SEE ALSO
+\fBicloud-mail-message(1)\fP

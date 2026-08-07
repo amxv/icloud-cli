@@ -180,7 +180,7 @@ Thread counts derive from current local messages and locations:
 - `first` and `last` use the best stored message times;
 - `snippet` follows the latest message with a usable bounded preview.
 
-A read or flag update refreshes affected thread aggregates transactionally. A message with both Inbox and Sent locations still counts once.
+A read or flag update refreshes the affected conversation summaries. A message with both Inbox and Sent locations still counts once.
 
 ## Recover from unexpected grouping
 

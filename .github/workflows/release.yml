@@ -29,19 +29,33 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: false
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Validate release tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="$VERSION" node -e "if (!/^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$/.test(process.env.VERSION)) { console.error('release tag must be v<semver>'); process.exit(1) }"
+
+      - name: Generated reference drift
+        run: make reference-check
+
       - name: Go test
         run: go test ./...
 
       - name: Go vet
         run: go vet ./...
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
       - name: Node checks
         run: npm run test
+
+      - name: Install docs dependencies
+        run: npm install --ignore-scripts --no-package-lock
+
+      - name: Docs check and build
+        run: npm run docs:check && npm run docs:build
 
   build-binaries:
     needs: quality
@@ -89,15 +103,58 @@ jobs:
           name: binary-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/*
 
+  package-install:
+    needs: quality
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Packed npm install smoke
+        run: node scripts/package-install-smoke.js
+
   github-release:
-    needs: build-binaries
+    needs: [build-binaries, package-install]
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
+
+      - name: Verify runnable release version
+        run: |
+          chmod +x dist/icloud_linux_amd64
+          EXPECTED="version
+          ${GITHUB_REF_NAME#v}"
+          ACTUAL="$(dist/icloud_linux_amd64 version)"
+          test "$ACTUAL" = "$EXPECTED"
+
+      - name: Generate checksums and release metadata
+        run: node scripts/release-metadata.js --version "${GITHUB_REF_NAME#v}" --dist dist
 
       - name: Publish GitHub release assets
         uses: softprops/action-gh-release@v2
@@ -119,10 +176,19 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           registry-url: "https://registry.npmjs.org"
 
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+
       - name: Set npm version from tag
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           VERSION="$VERSION" node -e "const fs=require('fs');const p=require('./package.json');p.version=process.env.VERSION;fs.writeFileSync('package.json', JSON.stringify(p, null, 2)+'\\n');"
+
+      - name: Regenerate packaged reference assets for release version
+        run: make references VERSION="${GITHUB_REF_NAME#v}"
 
       - name: Publish to npm
         run: npm publish --access public

@@ -1,9 +1,9 @@
 ---
 title: Installation
-description: Install icloud through npm or build it from source, then verify the native binary and version.
+description: Install or update icloud through npm or build it from source, verify the native binary and release checksum path, and enable reference assets.
 order: 2
 category: Start
-summary: npm installation, native fallback behavior, local builds, and verification.
+summary: npm install/update, verified native release assets, source fallback, version checks, completions, and man pages.
 ---
 
 ## Prerequisites
@@ -29,7 +29,9 @@ The npm executable is named `icloud`. The package installer selects a release as
 icloud_<operating-system>_<architecture>[.exe]
 ```
 
-On macOS and Linux, the installed native binary lives beside the JavaScript shim as `icloud-bin`. On Windows it is `icloud.exe`.
+On macOS and Linux, the installed native binary lives beside the JavaScript shim as `icloud-bin`. On Windows it is `icloud.exe`. Before replacing that binary, the installer downloads `checksums.txt` from the same tagged GitHub release and verifies the asset's SHA-256 digest. A missing or mismatched checksum is treated exactly like an unavailable release asset; an unverified download is never installed.
+
+Each release also publishes `release-metadata.json`, a machine-readable list of the six supported native assets, target operating system/architecture, byte size, and SHA-256 digest.
 
 If downloading the release asset fails, the installer checks for Go and the packaged `cmd/icloud` source, then performs a local fallback build. A failure in both paths stops installation rather than leaving a non-working command.
 
@@ -51,6 +53,37 @@ icloud --help
 ```
 
 The Makefile injects the package version into the same build-time version field used by release binaries.
+
+## Update an npm installation
+
+Install the current tagged npm release and then ask the binary what actually runs:
+
+```bash
+npm install --global @amxv/icloud-cli@latest
+icloud version
+```
+
+The npm package version selects the GitHub release tag and native asset version. Do not infer the running CLI version from a package-manager cache or directory name; `icloud version` is the authoritative check for the executable that is on `PATH`.
+
+## Enable completion and man pages
+
+The CLI can always generate completion from its installed command tree:
+
+```bash
+icloud completion bash > icloud.bash
+icloud completion zsh > _icloud
+icloud completion fish > icloud.fish
+icloud completion powershell > icloud.ps1
+```
+
+The npm tarball contains the same four deterministic files under `completions/`. Install or source the file using your shell's normal completion location.
+
+The npm package declares the generated root `man/icloud.1` page and contains the complete subcommand man tree. You can also generate a fresh tree from the running executable:
+
+```bash
+icloud man --output-dir ./man
+man ./man/icloud.1
+```
 
 ## Verify identity and capabilities
 
@@ -83,7 +116,7 @@ When the JavaScript shim exists but its native binary does not:
 npm rebuild --global @amxv/icloud-cli
 ```
 
-If that still fails, check that the installed package version has a matching GitHub release asset or that Go is available for the fallback build.
+If that still fails, check that the installed package version has a matching GitHub release asset **and** checksum entry, or that Go is available for the fallback build. A checksum mismatch should be treated as a failed native download, not bypassed.
 
 ## Uninstall
 

@@ -1,0 +1,129 @@
+.nh
+.TH "ICLOUD" "1" "Jan 1970" "icloud 0.1.0" "iCloud Mail CLI Manual"
+
+.SH NAME
+icloud-mail-search - Search synchronized mail locally or query bounded provider metadata explicitly
+
+
+.SH SYNOPSIS
+\fBicloud mail search [query] [flags]\fP
+
+
+.SH DESCRIPTION
+Search synchronized mail locally or query bounded provider metadata explicitly
+
+
+.SH OPTIONS
+\fB--after\fP=""
+	Include messages at or after an RFC3339 timestamp or YYYY-MM-DD UTC date
+
+.PP
+\fB--all-folders\fP[=false]
+	Search every current selectable folder, up to the documented fan-out bound
+
+.PP
+\fB--attachment-name\fP=""
+	Restrict attachment filename text
+
+.PP
+\fB--attachment-type\fP=""
+	Restrict attachment media type
+
+.PP
+\fB--before\fP=""
+	Include messages before an RFC3339 timestamp or YYYY-MM-DD UTC date
+
+.PP
+\fB--cursor\fP=""
+	Continue from a next_cursor returned by the same query
+
+.PP
+\fB--flagged\fP[=false]
+	Include only messages with a flagged eligible location
+
+.PP
+\fB--folder\fP=""
+	Restrict matches to one folder kind, ID, name, or wire name
+
+.PP
+\fB--from\fP=""
+	Restrict sender or Reply-To text
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for search
+
+.PP
+\fB--json\fP[=false]
+	Emit one stable JSON success envelope
+
+.PP
+\fB--limit\fP=20
+	Maximum hits to return (1-100)
+
+.PP
+\fB--participant\fP=""
+	Restrict sender, Reply-To, To, or Cc participant text
+
+.PP
+\fB--read\fP[=false]
+	Include only messages without an unread eligible location
+
+.PP
+\fB--remote\fP[=false]
+	Query bounded provider metadata instead of local synchronized state
+
+.PP
+\fB--result\fP="messages"
+	Result kind: messages or threads
+
+.PP
+\fB--rfc-id\fP=""
+	Match one RFC Message-ID
+
+.PP
+\fB--subject\fP=""
+	Restrict subject text
+
+.PP
+\fB--unflagged\fP[=false]
+	Include only messages without a flagged eligible location
+
+.PP
+\fB--unread\fP[=false]
+	Include only messages with an unread eligible location
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--account\fP=""
+	Select an account by name, email, or stable ID
+
+.PP
+\fB--home\fP=""
+	Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+
+.PP
+\fB--no-input\fP[=false]
+	Never prompt for interactive input
+
+.PP
+\fB--request-id\fP=""
+	Attach a stable request ID to structured output
+
+.PP
+\fB--timeout\fP=30s
+	Maximum normal command duration; watch applies it per provider/sync attempt
+
+
+.SH EXAMPLE
+.EX
+  icloud mail search invoice
+  icloud mail search --from billing@example.com --unread
+  icloud mail search launch --result threads --limit 20
+  icloud mail search invoice --remote --folder inbox
+  icloud mail search --attachment-type application/pdf --json
+.EE
+
+
+.SH SEE ALSO
+\fBicloud-mail(1)\fP, \fBicloud-mail-search-repair(1)\fP

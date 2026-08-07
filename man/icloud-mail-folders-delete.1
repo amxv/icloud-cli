@@ -1,0 +1,70 @@
+.nh
+.TH "ICLOUD" "1" "Jan 1970" "icloud 0.1.0" "iCloud Mail CLI Manual"
+
+.SH NAME
+icloud-mail-folders-delete - Delete one custom iCloud Mail folder under explicit safety policy
+
+
+.SH SYNOPSIS
+\fBicloud mail folders delete  [flags]\fP
+
+
+.SH DESCRIPTION
+Delete one custom iCloud Mail folder under explicit safety policy
+
+
+.SH OPTIONS
+\fB--allow-non-empty\fP[=false]
+	Allow provider deletion only after iCloud rechecks that the folder contains messages
+
+.PP
+\fB--dry-run\fP[=false]
+	Preview the exact folder change without contacting IMAP
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for delete
+
+.PP
+\fB--input-json\fP=""
+	Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+
+.PP
+\fB--json\fP[=false]
+	Emit one stable JSON success envelope
+
+.PP
+\fB--yes\fP[=false]
+	Confirm an intentional non-interactive folder change
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--account\fP=""
+	Select an account by name, email, or stable ID
+
+.PP
+\fB--home\fP=""
+	Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+
+.PP
+\fB--no-input\fP[=false]
+	Never prompt for interactive input
+
+.PP
+\fB--request-id\fP=""
+	Attach a stable request ID to structured output
+
+.PP
+\fB--timeout\fP=30s
+	Maximum normal command duration; watch applies it per provider/sync attempt
+
+
+.SH EXAMPLE
+.EX
+  icloud mail folders delete fld_… --dry-run
+  icloud mail folders delete fld_… --yes
+.EE
+
+
+.SH SEE ALSO
+\fBicloud-mail-folders(1)\fP

@@ -1,0 +1,146 @@
+.nh
+.TH "ICLOUD" "1" "Jan 1970" "icloud 0.1.0" "iCloud Mail CLI Manual"
+
+.SH NAME
+icloud-mail-forward - Forward one explicitly selected local message as a new conversation
+
+
+.SH SYNOPSIS
+\fBicloud mail forward  [flags]\fP
+
+
+.SH DESCRIPTION
+Forward one explicitly selected local message as a new conversation
+
+
+.SH OPTIONS
+\fB--attach\fP=[]
+	New regular file path to attach; repeat as needed
+
+.PP
+\fB--attach-name\fP=[]
+	Override one new attachment filename as path=filename; repeat as needed
+
+.PP
+\fB--attach-type\fP=[]
+	Override one new attachment media type as path=type/subtype; repeat as needed
+
+.PP
+\fB--bcc\fP=[]
+	Bcc envelope recipient; omitted from message headers
+
+.PP
+\fB--body\fP=""
+	Optional introductory text body
+
+.PP
+\fB--body-file\fP=""
+	Introductory text body file path, or - for stdin
+
+.PP
+\fB--cc\fP=[]
+	Cc recipient address; repeat as needed
+
+.PP
+\fB--dry-run\fP[=false]
+	Preview the resolved forward without creating an attempt or contacting SMTP
+
+.PP
+\fB--format\fP=""
+	With --dry-run, output text, html, or raw preview content
+
+.PP
+\fB--header\fP=[]
+	Safe custom header as Name: Value; repeat as needed
+
+.PP
+\fB--headers\fP[=false]
+	With --dry-run, print normalized headers; forward reply headers remain absent
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for forward
+
+.PP
+\fB--html-body\fP=""
+	Optional introductory HTML body
+
+.PP
+\fB--html-body-file\fP=""
+	Introductory HTML body file path, or - for stdin
+
+.PP
+\fB--idempotency-key\fP=""
+	Reuse the original operation when the same normalized request and idempotency key are repeated
+
+.PP
+\fB--include-attachment\fP=[]
+	Include one original att_… attachment by stable ID; repeat as needed
+
+.PP
+\fB--input-json\fP=""
+	Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+
+.PP
+\fB--json\fP[=false]
+	Emit one stable JSON success envelope
+
+.PP
+\fB--original\fP="quoted"
+	Original representation: quoted, eml, or none
+
+.PP
+\fB--reply-to\fP=""
+	Optional Reply-To address
+
+.PP
+\fB--retry-of\fP=""
+	Link an explicit retry to one failed or unknown send_… attempt
+
+.PP
+\fB--retry-unknown\fP[=false]
+	Authorize one duplicate-risk retry of an unknown attempt; requires --retry-of and --yes
+
+.PP
+\fB--to\fP=[]
+	Recipient address; repeat or provide a comma-separated address list
+
+.PP
+\fB--verbose\fP[=false]
+	With --dry-run, include custom-header detail and HTML byte count
+
+.PP
+\fB--yes\fP[=false]
+	Confirm an intentional non-interactive forward
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--account\fP=""
+	Select an account by name, email, or stable ID
+
+.PP
+\fB--home\fP=""
+	Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+
+.PP
+\fB--no-input\fP[=false]
+	Never prompt for interactive input
+
+.PP
+\fB--request-id\fP=""
+	Attach a stable request ID to structured output
+
+.PP
+\fB--timeout\fP=30s
+	Maximum normal command duration; watch applies it per provider/sync attempt
+
+
+.SH EXAMPLE
+.EX
+  icloud mail forward msg_… --to teammate@example.com --body 'For context' --dry-run
+  icloud mail forward msg_… --to teammate@example.com --original eml --include-attachment att_… --idempotency-key forward-01 --yes
+.EE
+
+
+.SH SEE ALSO
+\fBicloud-mail(1)\fP

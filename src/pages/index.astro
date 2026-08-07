@@ -12,7 +12,7 @@ const proofPoints = [
   },
   {
     title: "Structured on request",
-    body: "Commands that support machine output expose an explicit --json success or error envelope with a request ID."
+    body: "One-shot commands expose explicit JSON envelopes; watch and bounded bulk pipelines use typed JSONL only when requested."
   },
   {
     title: "Safe for automation",
@@ -50,16 +50,15 @@ const workflows = [
   <section class="hero shell">
     <div class="hero__copy">
       <p class="section-label">Local-first iCloud CLI</p>
-      <h1>Control iCloud services with a command surface built for agents and humans.</h1>
+      <h1>Control iCloud Mail with a command surface built for agents and humans.</h1>
       <p class="hero__lede">
         <code>icloud</code> uses compact plain text by default, stable structured output when requested,
         and one public executable across local builds, npm installs, and release assets.
       </p>
       <p class="hero__annotation">
-        The current build validates both iCloud Mail protocols, previews and sends deliberate text or HTML messages, replies to one exact synchronized message, forwards one exact source as a new conversation, changes one exact provider location safely, discovers every folder, synchronizes
-        bounded enabled-folder pages, starts Sent without crawling history, searches locally or through explicit bounded iCloud queries,
-        hydrates selected remote messages without advancing sync, reconstructs RFC conversations locally,
-        reads complete local messages explicitly, and keeps every mutation scoped and explicit.
+        Validate both iCloud Mail protocols, discover and synchronize folders, keep a foreground IDLE watch, backfill or repair deliberately,
+        search locally or through bounded remote queries, read complete messages and attachments explicitly, save drafts,
+        send/reply/forward with idempotency and review, change one exact provider location safely, and automate writes through a versioned JSON contract.
       </p>
       <div class="hero__actions">
         <a class="button button--solid" href="/docs/quickstart">Start with the quickstart</a>
@@ -76,7 +75,7 @@ const workflows = [
         <span>capabilities</span>
         <span>command=icloud</span>
         <span>version=0.1.0</span>
-        <span>schema=15 …</span>
+        <span>schema=18 …</span>
         <span>$ icloud account add --name Personal --email owner@icloud.com</span>
         <span>App-specific password:</span>
         <span>account-added</span>

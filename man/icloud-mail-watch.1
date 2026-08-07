@@ -1,0 +1,76 @@
+.nh
+.TH "ICLOUD" "1" "Jan 1970" "icloud 0.1.0" "iCloud Mail CLI Manual"
+
+.SH NAME
+icloud-mail-watch - Keep enabled mail folders fresh with IDLE or explicit polling fallback
+
+
+.SH SYNOPSIS
+\fBicloud mail watch [flags]\fP
+
+
+.SH DESCRIPTION
+Keep enabled iCloud Mail folders fresh in the foreground. The command uses IMAP IDLE for high-priority enabled folders when supported, falls back explicitly to polling otherwise, periodically refreshes folder state, and stops on Ctrl-C. --timeout bounds each provider/sync attempt rather than the lifetime of this foreground stream.
+
+
+.SH OPTIONS
+\fB--all-accounts\fP[=false]
+	Watch all configured accounts (maximum 10 workers)
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for watch
+
+.PP
+\fB--jsonl\fP[=false]
+	Emit one typed JSON object per lifecycle event
+
+.PP
+\fB--limit\fP=20
+	Maximum messages committed per folder sync (1-100)
+
+.PP
+\fB--poll-interval\fP=1m0s
+	Polling interval when IDLE is unavailable
+
+.PP
+\fB--reconcile-interval\fP=15m0s
+	Interval for full enabled-folder and folder-state reconciliation
+
+.PP
+\fB--verbose\fP[=false]
+	Include idle and unchanged synchronization lifecycle detail
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--account\fP=""
+	Select an account by name, email, or stable ID
+
+.PP
+\fB--home\fP=""
+	Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+
+.PP
+\fB--no-input\fP[=false]
+	Never prompt for interactive input
+
+.PP
+\fB--request-id\fP=""
+	Attach a stable request ID to structured output
+
+.PP
+\fB--timeout\fP=30s
+	Maximum normal command duration; watch applies it per provider/sync attempt
+
+
+.SH EXAMPLE
+.EX
+  icloud mail watch
+  icloud mail watch --all-accounts
+  icloud mail watch --poll-interval 2m --reconcile-interval 15m
+  icloud mail watch --jsonl
+.EE
+
+
+.SH SEE ALSO
+\fBicloud-mail(1)\fP

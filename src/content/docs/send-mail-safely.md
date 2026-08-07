@@ -305,7 +305,7 @@ Custom headers cannot replace routing, identity, MIME, delivery, or reply-thread
 
 ## Interpret the outcome before retrying
 
-Every real send persists a pending attempt before the SMTP transaction. The final result is one of:
+Every real send persists a pending attempt before SMTP submission. The final result is one of:
 
 | Status | Meaning | Next action |
 | --- | --- | --- |

@@ -1,0 +1,89 @@
+.nh
+.TH "ICLOUD" "1" "Jan 1970" "icloud 0.1.0" "iCloud Mail CLI Manual"
+
+.SH NAME
+icloud-mail-thread-show - Show a bounded chronological page from a reconstructed conversation
+
+
+.SH SYNOPSIS
+\fBicloud mail thread show  [flags]\fP
+
+
+.SH DESCRIPTION
+Show a bounded chronological page from a reconstructed conversation
+
+
+.SH OPTIONS
+\fB--body-only\fP[=false]
+	Write only chronological decoded message bodies
+
+.PP
+\fB--cursor\fP=""
+	Continue from a next_cursor returned by an earlier page
+
+.PP
+\fB--format\fP="compact"
+	Content format: compact, text, html, or raw (raw requires --json)
+
+.PP
+\fB--full\fP[=false]
+	Include complete decoded text for every selected message
+
+.PP
+\fB--headers\fP[=false]
+	Include decoded public headers for every selected message
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for show
+
+.PP
+\fB--json\fP[=false]
+	Emit one stable JSON success envelope
+
+.PP
+\fB--limit\fP=20
+	Maximum chronological messages to return (1-100)
+
+.PP
+\fB--metadata-only\fP[=false]
+	Show thread and message metadata without excerpts or bodies
+
+.PP
+\fB--verbose\fP[=false]
+	Include MIME part metadata and RFC graph edge evidence
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--account\fP=""
+	Select an account by name, email, or stable ID
+
+.PP
+\fB--home\fP=""
+	Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+
+.PP
+\fB--no-input\fP[=false]
+	Never prompt for interactive input
+
+.PP
+\fB--request-id\fP=""
+	Attach a stable request ID to structured output
+
+.PP
+\fB--timeout\fP=30s
+	Maximum normal command duration; watch applies it per provider/sync attempt
+
+
+.SH EXAMPLE
+.EX
+  icloud mail thread show thr_…
+  icloud mail thread show msg_… --full
+  icloud mail thread show thr_… --limit 20 --cursor cur_…
+  icloud mail thread show thr_… --format html --json
+  icloud mail thread show thr_… --headers --verbose
+.EE
+
+
+.SH SEE ALSO
+\fBicloud-mail-thread(1)\fP

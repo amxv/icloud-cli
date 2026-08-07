@@ -1,283 +1,107 @@
 # icloud
 
-`icloud` is a local-first command-line client for iCloud services. The project is being built for agent workflows without making the normal terminal experience noisy: compact plain text is the default, and structured or expanded output is always explicit.
+`icloud` is a local-first command-line client for **iCloud Mail**. Compact plain text is the universal default for humans and agents; JSON, JSONL streams, complete bodies, HTML, headers, raw MIME, and verbose diagnostics are explicit expansions.
 
-The current implementation provides secure multi-account and credential lifecycle, read-only live iCloud compatibility testing, deliberate text/HTML and filesystem-attachment sending, local and provider-synchronized drafts, exact-message reply/reply-all, exact-message forwarding, durable all-folder discovery, bounded forward synchronization, foreground IDLE/polling watch, resumable historical backfill, explicit current-tail rebaseline, check-first repair, indexed offline mail search, explicit bounded remote search and targeted hydration, local RFC conversation reconstruction, complete local message reads, safe attachment export, explicit read/flag updates, exact provider-location move/copy/archive/trash/restore/delete workflows, strict JSON write input, bounded bulk message-state changes, versioned JSON Schemas, and local-only account/folder completion. It can validate IMAP/SMTP authentication, preview outbound or location-changing requests without network side effects, require interactive confirmation or non-TTY `--yes`, stream standards-compliant MIME, keep historical and forward sync progress independent, preserve cached mail during rebaseline, repair only deterministic consistency problems, report ambiguous identity or canonical-blob problems without guessing, persist idempotent outbound and location-mutation intents, distinguish proven outcomes from unresolved provider state, preserve one logical message across independent folder locations, prefer atomic UID MOVE, fall back only to safe COPY plus UID EXPUNGE, record destination UID mappings, avoid archiving Sent copies, delete one exact provider location without purging another copy, and expose bounded recovery status when a provider write may have partially completed.
+It supports secure multi-account setup, IMAP/SMTP validation, folder discovery and policy, bounded forward sync and historical backfill, foreground IDLE watch, local and explicit remote search, reconstructed RFC conversations, complete message and attachment access, drafts, send/reply/reply-all/forward, read/flag state, exact-location move/copy/archive/trash/restore/delete, repair/rebaseline/reconciliation workflows, strict JSON write input, bounded JSONL bulk state changes, versioned schemas, local-only completion, and generated man pages.
 
-## Install
+## Install or update
 
 ```bash
-npm install --global @amxv/icloud-cli
+npm install --global @amxv/icloud-cli@latest
 icloud version
 icloud capabilities
 ```
 
-Build from source:
+The npm installer downloads the native `icloud_<os>_<arch>[.exe]` asset for that exact package version and verifies it against the release checksum before installation. If the release asset is unavailable and Go is installed, the package can build the same version from its packaged source as a fallback.
+
+To update later, run the same `npm install --global @amxv/icloud-cli@latest` command and confirm the result with `icloud version`.
+
+Build from source instead:
 
 ```bash
 make check
 make build
-./dist/icloud --help
+./dist/icloud version
 ```
 
-## Current commands
+## First account
+
+Use an Apple **app-specific password**, never the primary Apple Account password. Interactive setup stores the secret in the operating-system keyring by default:
 
 ```bash
-icloud account add --name <name> --email <address> [--password-stdin|--credential-env <name>|--credential-file <path>]
-icloud account list [--json]
-icloud account show [name|email|account-id] [--json]
-icloud account rename <selector> <new-name> [--json]
-icloud account default <selector> [--json]
-icloud account remove <selector> --yes [--json]
-icloud account credential show <selector> [--json]
-icloud account credential replace <selector> [--password-stdin|--credential-env <name>|--credential-file <path>] [--json]
-icloud account credential delete <selector> --yes [--json]
-icloud account test [selector] [--all] [--verbose] [--json]
-icloud mail folders list [--include-missing] [--verbose] [--json]
-icloud mail folders show <selector> [--verbose] [--json]
-icloud mail folders status [--verbose] [--json]
-icloud mail folders enable <selector> [--json]
-icloud mail folders disable <selector> [--json]
-icloud mail folders create <name> [--dry-run|--yes] [--json]
-icloud mail folders rename <selector> <new-name> [--dry-run|--yes] [--json]
-icloud mail folders delete <selector> [--allow-non-empty] [--dry-run|--yes] [--json]
-icloud mail folders subscribe <selector> [--dry-run|--yes] [--json]
-icloud mail folders unsubscribe <selector> [--dry-run|--yes] [--json]
-icloud mail sync [--folder <selector>|--all-folders] [--limit <n>] [--json]
-icloud mail watch [--all-accounts] [--poll-interval <duration>] [--reconcile-interval <duration>] [--limit <n>] [--verbose] [--jsonl]
-icloud mail sync --reconcile-outbound [--limit <n>] [--json]
-icloud mail sync --hydrate <rem_…[,rem_…]> [--json]
-icloud mail sync backfill --folder <selector> [--after YYYY-MM-DD] [--before YYYY-MM-DD] [--limit <n>] [--json]
-icloud mail sync rebaseline --folder <selector> --current-tail [--json]
-icloud mail sync repair [--check|--apply] [--cleanup-orphans --yes] [--limit <n>] [--verbose] [--json]
-icloud mail inbox [--folder <selector>] [--query <text>] [filters] [--cursor <cursor>] [--limit <n>] [--json]
-icloud mail search [query] [filters] [--result messages|threads] [--cursor <cursor>] [--limit <n>] [--json]
-icloud mail search [query] --remote [--folder <selector>|--all-folders] [provider-filters] [--limit <n>] [--json]
-icloud mail search repair [--limit <n>] [--json]
-icloud mail sync status [--folder <selector>] [--json]
-icloud mail sync checkpoints [--limit <n>] [--json]
-icloud mail latest [--query <text>] [filters] [--cursor <cursor>] [--limit <n>] [--json]
-icloud mail thread show <thread-id|message-id> [--limit <n>] [--cursor <cursor>] [--full] [--format compact|text|html|raw] [--headers] [--body-only] [--metadata-only] [--verbose] [--json]
-icloud mail message show <message-id> [--full] [--format compact|text|html|raw] [--headers] [--body-only] [--metadata-only] [--verbose] [--json]
-icloud mail message show <rem_…> --remote [--cache] [content flags] [--json]
-icloud mail message raw <message-id>
-icloud mail message export <message-id> --output <path|-> [--force] [--json]
-icloud mail attachments list <message-id> [--limit <n>] [--json]
-icloud mail attachments save <attachment-id> --output <path|-> [--binary] [--force] [--json]
-icloud mail attachments save-all <message-id> --dir <directory> [--force] [--json]
-icloud mail send --to <address> --subject <subject> [--body <text>|--body-file <path|->] [--html-body <html>|--html-body-file <path|->] [--cc <address>] [--bcc <address>] [--reply-to <address>] [--header 'Name: Value'] [--attach <path>] [--attach-name <path=filename>] [--attach-type <path=type/subtype>] [--idempotency-key <key>] [--retry-of <send-id>] [--retry-unknown] [--dry-run|--yes] [--json]
-icloud mail draft create [message flags] [--json]
-icloud mail draft update <draft-id> [message flags] [--json]
-icloud mail draft list [--limit <n>] [--json]
-icloud mail draft show <draft-id> [--full] [--format compact|text|html|raw] [--headers] [--body-only] [--json]
-icloud mail draft sync [draft-id] [--folder <selector>] [--limit <n>] [--json]
-icloud mail draft send <draft-id> [--dry-run|--yes] [--json]
-icloud mail draft delete <draft-id> [--dry-run|--yes] [--json]
-icloud mail reply <message-id> [--to <address>] [--cc <address>] [--bcc <address>] [--replace-to] [--replace-cc] [--body <text>|--body-file <path|->] [--html-body <html>|--html-body-file <path|->] [--attach <path>] [--idempotency-key <key>] [--dry-run|--yes] [--json]
-icloud mail reply-all <message-id> [reply flags]
-icloud mail forward <message-id> --to <address> [--original quoted|eml|none] [--include-attachment <attachment-id>] [--body <text>|--body-file <path|->] [--attach <path>] [--idempotency-key <key>] [--dry-run|--yes] [--json]
-icloud mail status --outbound [--limit <n>] [--json]
-icloud mail status --mutations [--limit <n>] [--json]
-icloud mail mark-read <message-id> [message-id...] [--folder <selector>] [--mode atomic|continue-on-error] [--json|--jsonl]
-icloud mail mark-unread <message-id> [message-id...] [--folder <selector>] [--mode atomic|continue-on-error] [--json|--jsonl]
-icloud mail flag <message-id> [message-id...] [--folder <selector>] [--mode atomic|continue-on-error] [--json|--jsonl]
-icloud mail unflag <message-id> [message-id...] [--folder <selector>] [--mode atomic|continue-on-error] [--json|--jsonl]
-icloud mail move <message-id> --from <folder> --to <folder> [--idempotency-key <key>] [--dry-run|--yes] [--json]
-icloud mail copy <message-id> --from <folder> --to <folder> [--idempotency-key <key>] [--dry-run|--yes] [--json]
-icloud mail archive <message-id> [--from <folder>] [--idempotency-key <key>] [--dry-run|--yes] [--json]
-icloud mail unarchive <message-id> [--idempotency-key <key>] [--dry-run|--yes] [--json]
-icloud mail trash <message-id> [--from <folder>] [--idempotency-key <key>] [--dry-run|--yes] [--json]
-icloud mail restore <message-id> --to <folder> [--idempotency-key <key>] [--dry-run|--yes] [--json]
-icloud mail delete <message-id> --from <folder> [--idempotency-key <key>] [--dry-run|--yes] [--json]
-icloud doctor [selector] [--all] [--live] [--verbose] [--json]
-icloud version [--json]
-icloud capabilities [--json]
-icloud completion bash|zsh|fish|powershell
-icloud man [--output-dir <directory>]
-icloud help [command]
+icloud account add --name Personal --email owner@icloud.com
+icloud account test Personal
+icloud mail folders status
+icloud mail sync
+icloud mail inbox
 ```
 
-All write commands also accept one strict `--input-json <path|->` request instead of equivalent positional/write flags. Read/flag state commands additionally accept bounded `--input-jsonl <path|->` input and typed `--jsonl` output. Confirmation and review remain flags, so JSON input never bypasses `--yes`, `--dry-run`, non-TTY safety, idempotency, or explicit content expansion. `icloud capabilities --json` reports the automation-contract version plus request/response schema IDs; the matching generated JSON Schemas ship in `schemas/v1/`. See [Output and automation](https://icloud.ashray.xyz/docs/output-and-automation) for precedence, examples, bulk partial-success semantics, and privacy rules.
+For non-interactive setup, use `--password-stdin`, `--credential-env`, or `--credential-file`; there is no plaintext password argv flag. `account test` validates direct-TLS IMAP and mandatory-STARTTLS SMTP without sending mail.
 
-Representative default output:
+## Safe outbound mail
 
-```text
-account-test
-acct_… status=connected
-imap=ok
-smtp=ok
-imap_username=owner
-mailboxes=6
-inbox_messages=42
-inbox_unseen=3
+Review a request before allowing a provider write:
 
-folder-status
-account=acct_…
-count=8
-present=8
-stale=0
-enabled=2
+```bash
+icloud mail send \
+  --to client@example.com \
+  --subject 'Project update' \
+  --body-file message.txt \
+  --dry-run
 
-mail-sync
-fld_… account=acct_…
-folder=INBOX
-fetched=20
-created=20
-updated=0
-reconciled=20
-state_changes=2
-last_uid=184
-more=false
-bootstrap=true
-
-mail-sync
-fld_… account=acct_…
-folder="Sent Messages"
-fetched=0
-created=0
-updated=0
-last_uid=52
-more=false
-bootstrap=true
-
-inbox
-account=acct_…
-count=20
-more=false
-
-thread
-thr_… subject="Project update"
-messages=3
-unread=1
-participants=owner@example.com,sender@example.com
-folders=fld_…
-last=2026-08-06T09:21:00Z
-reconstruction=local_rfc_graph
-
-threads
-account=acct_…
-count=1
-more=false
-
-doctor
-accounts=1
-status=healthy
-
-mail-send
-send_… status=sent
-message_id=msg_…
-thread_id=thr_…
-reconciliation=pending
-reused=false
-
-mail-reply
-send_… kind=reply
-parent_message_id=msg_…
-status=sent
-message_id=msg_…
-thread_id=thr_…
-reconciliation=pending
-reused=false
-
-mail-forward
-send_… kind=forward
-source_message_id=msg_…
-status=sent
-message_id=msg_…
-thread_id=thr_…
-reconciliation=pending
-reused=false
-
-mail-location
-mut_… action=move
-message_id=msg_…
-source_location_id=loc_…
-source_folder_id=fld_…
-destination_location_id=loc_…
-destination_folder_id=fld_…
-destination_uid_validity=…
-destination_uid=…
-status=confirmed
-provider_method=move
-source_present=false
-mapping_known=true
-reconciliation_required=false
-unread=false
-flagged=false
-reused=false
-next=none
-
-version
-0.1.0
-
-capabilities
-command=icloud
-version=0.1.0
-schema=18
-account_mode=validated_lifecycle
-credentials=keyring,env,file
-network_validation=true
-diagnostics=true
-mail_folders=true
-mail_sync=true
-mail_content=true
-mail_attachments=true
-mail_flags=true
-mail_threads=true
-mail_search=true
-mail_remote_search=true
-mail_hydration=true
-mail_send=true
-mail_reply=true
-mail_forward=true
-mail_location_mutations=true
-default_output=compact
-json=true
-completion=bash,zsh,fish,powershell
-man=true
+icloud mail send \
+  --to client@example.com \
+  --subject 'Project update' \
+  --body-file message.txt \
+  --idempotency-key project-update-01 \
+  --yes
 ```
 
-Redirected and non-interactive execution uses the same compact default. Use `--json` only on commands that advertise it. For isolated state, set `ICLOUD_HOME=./icloud-state` or pass `--home ./icloud-state`. Use an app-specific password, never the primary Apple Account password; pass it through a secure prompt or `--password-stdin`, not argv.
+The same confirmation, idempotency, BCC/privacy, and unknown-outcome rules apply to replies, forwards, draft sends, folder administration, and location-changing operations. Non-TTY writes that require authorization never infer consent.
+
+## Automation
+
+Redirected execution keeps compact text unless you explicitly request a structured mode. Discover the installed automation contract and schema IDs with:
+
+```bash
+icloud capabilities --json
+```
+
+Commands in that published write contract accept one strict `--input-json <path|->` request instead of equivalent write flags. Read/flag state commands also accept bounded JSONL input and can emit typed `--jsonl` item/completion events. Generated JSON Schemas ship in `schemas/v1/`.
+
+Use content-expansion flags deliberately. `mail message show` and thread/draft reads keep complete text, HTML, decoded headers, body-only streams, verbose evidence, and raw MIME behind explicit flags; attachment bytes require an explicit output destination.
+
+## Completion, man pages, and reference
+
+The installed command tree can generate completion for Bash, Zsh, Fish, and PowerShell and a complete man-page tree:
+
+```bash
+icloud completion bash > icloud.bash
+icloud man --output-dir ./man
+man ./man/icloud.1
+```
+
+The npm package also contains deterministic `completions/`, `man/`, and `schemas/v1/` assets generated from the same command/schema sources as the executable. The exhaustive [command reference](https://icloud.ashray.xyz/docs/command-reference) is generated from Cobra; the narrative guides stay task-focused.
+
+## Documentation
+
+Start with the [Quickstart](https://icloud.ashray.xyz/docs/quickstart). The hosted docs also cover credentials, validation and doctor, folder policy, synchronization/backfill/watch/repair, search, conversations, attachment export, sending and drafts, location changes, local-state backup/removal, compact and structured output, schemas, installation/update, and troubleshooting.
+
+Raw Markdown is available from `/docs.md` and each guide's `.md` route for agent-friendly retrieval.
 
 ## Development
 
 Prerequisites: Go 1.26+, Node.js 18+, and Bun 1+ for the docs site.
 
 ```bash
-make fmt
-make test
-make vet
-make lint
+make references
 make check
 make build-all
-bun run docs:check
-bun run docs:build
+make docs-check
+make docs-build
 ```
 
-Run the docs commands serially.
-
-## Project layout
-
-- `cmd/icloud`: process startup and final exit behavior
-- `internal/app`: dependency composition and execution entry
-- `internal/account`, `internal/folder`, `internal/config`, `internal/id`, `internal/secret`, and `internal/store`: account/folder vocabulary, paths, identifiers, credential boundaries, and persistence
-- `internal/transport`: narrow redacted protocol contracts and the isolated iCloud IMAP/SMTP compatibility client
-- `internal/cli`: Cobra tree, compact rendering, JSON/JSONL primitives, help, errors, completion, and man generation
-- `internal/buildinfo`: linker-injected version metadata
-- `bin/icloud.js`: npm executable shim
-- `scripts/postinstall.js`: release-asset installer with local Go fallback
-- `.github/workflows/release.yml`: cross-platform release and npm publication
-- `src/content/docs`: user-facing guides
-- `gg`: implementation plan, sweep, and progress ledger
-
-## Documentation
-
-The hosted documentation is at `https://icloud.ashray.xyz`. Local docs development:
-
-```bash
-bun install
-bun run docs:dev
-```
+`make references` regenerates the versioned schemas, exhaustive command reference, man pages, and shell-completion assets. `make check` and `make docs-check` fail when generated references drift from the current command/schema sources.
 
 ## License
 

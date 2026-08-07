@@ -2,7 +2,7 @@ export const siteConfig = {
   name: "icloud",
   strapline: "iCloud from the command line",
   description:
-    "Install and use icloud, a local-first CLI designed for compact human and agent workflows.",
+    "Install and use icloud, a local-first iCloud Mail CLI designed for compact human and agent workflows.",
   repoUrl: "https://github.com/amxv/icloud-cli",
   accentColor: "#0369a1",
   accentColorDark: "#38bdf8",
@@ -10,12 +10,12 @@ export const siteConfig = {
     {
       title: "icloud",
       text:
-        "A local-first command-line client for iCloud services with compact output by default."
+        "A local-first iCloud Mail command-line client with compact output by default."
     },
     {
       title: "Current command set",
       text:
-        "Secure account lifecycle, read-only IMAP/SMTP validation, deliberate idempotent text/HTML sending, exact-message replies, and new-conversation forwarding; Sent/unknown reconciliation, durable folder discovery, bounded enabled-folder sync, multi-location identity reconciliation, exact move/copy/archive/trash/restore/delete with durable unresolved-state recovery, indexed offline and bounded remote search, RFC conversation reconstruction, complete local message reads, raw and attachment export, persisted health diagnostics, shell completions, and man pages."
+        "Account and credential lifecycle, IMAP/SMTP validation, folders, bounded sync/backfill/watch/repair, local and remote search, message/thread/attachment reads, drafts, idempotent send/reply/forward, exact-location state changes, JSON/JSONL automation, schemas, completions, and man pages."
     },
     {
       title: "Repository",

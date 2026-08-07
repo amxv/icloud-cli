@@ -176,7 +176,7 @@ func TestRootHelpUsesICloudIdentityAndGroups(t *testing.T) {
 		t.Fatalf("exit code = %d, stderr = %q", exitCode, stderr)
 	}
 	for _, want := range []string{
-		"icloud controls iCloud services from the command line.",
+		"icloud is a local-first iCloud Mail CLI",
 		"Core commands:",
 		"Account commands:",
 		"Mail commands:",

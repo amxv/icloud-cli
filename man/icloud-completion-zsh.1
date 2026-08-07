@@ -1,0 +1,49 @@
+.nh
+.TH "ICLOUD" "1" "Jan 1970" "icloud 0.1.0" "iCloud Mail CLI Manual"
+
+.SH NAME
+icloud-completion-zsh - Generate zsh completion
+
+
+.SH SYNOPSIS
+\fBicloud completion zsh\fP
+
+
+.SH DESCRIPTION
+Generate zsh completion
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for zsh
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--account\fP=""
+	Select an account by name, email, or stable ID
+
+.PP
+\fB--home\fP=""
+	Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+
+.PP
+\fB--no-input\fP[=false]
+	Never prompt for interactive input
+
+.PP
+\fB--request-id\fP=""
+	Attach a stable request ID to structured output
+
+.PP
+\fB--timeout\fP=30s
+	Maximum normal command duration; watch applies it per provider/sync attempt
+
+
+.SH EXAMPLE
+.EX
+  icloud completion zsh > icloud.zsh
+.EE
+
+
+.SH SEE ALSO
+\fBicloud-completion(1)\fP

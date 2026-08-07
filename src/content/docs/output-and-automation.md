@@ -98,7 +98,7 @@ cat changes.jsonl | \
   icloud mail flag --input-jsonl - --mode continue-on-error --jsonl
 ```
 
-Each JSONL input line contains one `message_id` and an optional exact `folder`. `--mode atomic` is the default: the complete bounded input shape and stable IDs are validated before provider writes begin, then target resolution and provider mutation proceed item by item and execution stops on the first failure. IMAP does not provide a cross-message rollback transaction, so if an earlier item already succeeded, the command explicitly reports `partial=true`, requested/attempted/updated/failed/skipped counts, and a non-zero exit instead of pretending those provider writes rolled back. `--mode continue-on-error` attempts every syntactically valid item and returns a non-zero exit if any target or provider operation failed.
+Each JSONL input line contains one `message_id` and an optional exact `folder`. `--mode atomic` is the default: the complete bounded input shape and stable IDs are validated before provider writes begin, then target resolution and provider mutation proceed item by item and execution stops on the first failure. iCloud cannot roll back provider writes that already succeeded earlier in the batch, so the command explicitly reports `partial=true`, requested/attempted/updated/failed/skipped counts, and a non-zero exit instead of pretending those writes were undone. `--mode continue-on-error` attempts every syntactically valid item and returns a non-zero exit if any target or provider operation failed.
 
 `--jsonl` emits one typed `item` event per attempted operation followed by a typed `completed` event containing mode, requested/attempted/updated/failed/skipped counts, and `partial`. Compact output uses one small result block per attempted item plus one bounded summary.
 
@@ -110,7 +110,7 @@ icloud capabilities --json
 
 The capability envelope includes the CLI version, local data-schema version, automation-contract version, supported bulk modes/bounds, stable schema identifiers, and per-write request/response schema IDs. When you explicitly select an account with `--account`, capabilities may also include the IMAP/SMTP capability strings already cached for that account; this lookup is local-only and never resolves a credential or opens a network connection.
 
-The versioned JSON Schemas cover accounts, folders, messages, threads, attachments, checkpoints, outbound attempts, drafts, JSONL events, errors, the common output envelope, and every documented write-input shape. Regenerate repository artifacts with `make schemas`; CI tests fail if generated and committed schemas drift.
+The versioned JSON Schemas cover accounts, folders, messages, threads, attachments, checkpoints, outbound attempts, drafts, JSONL events, errors, the common output envelope, and every documented write-input shape. Contributors regenerate schemas together with the Cobra command reference, man pages, and completion assets using `make references`; checks fail if committed generated output drifts.
 
 Shell completion follows the same local-only rule. Account and folder suggestions use cached stable IDs with friendly descriptions and do not run folder status, authenticate, or contact iCloud.
 
@@ -128,7 +128,7 @@ An `unresolved` location mutation is not safe to retry automatically. The provid
 
 `mail status --outbound` is the bounded operational view for recent attempts. Its compact records contain stable IDs, status, attachment counts/bytes, reconciliation/error codes, retry linkage, update time, and one next action. It never repeats submitted message payloads. `mail sync --reconcile-outbound` returns only bounded reconciliation counts in addition to the normal Sent sync summary.
 
-An indeterminate post-DATA result uses status `unknown`, returns the stable attempt ID on stderr, and is always `retryable=false`. The caller must not infer that a temporary network cause makes the send safe to repeat. Reusing the same normalized request and idempotency key retrieves the original attempt without another SMTP transaction.
+An indeterminate post-DATA result uses status `unknown`, returns the stable attempt ID on stderr, and is always `retryable=false`. The caller must not infer that a temporary network cause makes the send safe to repeat. Reusing the same normalized request and idempotency key retrieves the original attempt without another SMTP submission.
 
 An `account test --json` failure writes one error envelope to stderr. Its `details.stage` and bounded `details.reports` identify the failing protocol without including the credential reference, password, raw server response, or debug transcript.
 

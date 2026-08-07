@@ -10,7 +10,7 @@ BIN_PATH ?= $(DIST_DIR)/$(BIN_NAME)
 VERSION ?= $(shell node -p "require('./package.json').version" 2>/dev/null)
 LDFLAGS ?= -s -w -X github.com/amxv/icloud-cli/internal/buildinfo.Version=$(if $(VERSION),$(VERSION),dev)
 
-.PHONY: help fmt test vet lint schemas check docs-check docs-build build build-all install-local clean release-tag
+.PHONY: help fmt test vet lint schemas references reference-check check docs-check docs-build build build-all install-local clean release-tag
 
 help:
 	@echo "icloud CLI command runner"
@@ -21,6 +21,8 @@ help:
 	@echo "  make vet           - run go vet ./..."
 	@echo "  make lint          - run Node script checks"
 	@echo "  make schemas       - regenerate versioned JSON Schemas"
+	@echo "  make references    - regenerate schemas, command reference, man pages, and completions"
+	@echo "  make reference-check - verify committed generated reference assets"
 	@echo "  make check         - fmt + test + vet + lint"
 	@echo "  make docs-check    - validate the Astro/ZueDocs site"
 	@echo "  make docs-build    - build the Astro/ZueDocs site"
@@ -45,12 +47,19 @@ lint:
 schemas:
 	@$(GO) run ./scripts/schema-gen.go
 
-check: fmt test vet lint
+references: schemas
+	@$(GO) run ./scripts/reference-gen.go --version "$(VERSION)"
 
-docs-check:
+reference-check:
+	@$(GO) run ./scripts/reference-gen.go --version "$(VERSION)" --check
+	@$(GO) test -count=1 ./internal/cli -run '^TestGeneratedSchemasMatchCommittedArtifacts$$'
+
+check: fmt reference-check test vet lint
+
+docs-check: reference-check
 	@bun run docs:check
 
-docs-build:
+docs-build: reference-check
 	@bun run docs:build
 
 build:

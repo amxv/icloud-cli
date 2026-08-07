@@ -1,945 +1,2394 @@
 ---
 title: Command reference
-description: A complete reference for account lifecycle, iCloud validation, safe send/reply/forward workflows, exact provider-location changes, folder discovery, synchronization, search, message and attachment reads, diagnostics, output modes, completion, and man generation.
+description: Generated usage, examples, flags, and subcommands for the complete icloud command tree.
 order: 11
 category: Reference
-summary: Every account, credential, validation, outbound, location-mutation, folder, sync/read/search, message, attachment, doctor, capability, completion, man, help, and global control available now.
+summary: Exhaustive syntax generated from the same Cobra tree as the installed icloud executable.
 ---
 
-## Root command
+This reference is generated from the same command tree as `icloud --help`, so syntax and flags stay aligned with the executable. For task-focused guidance, start with [Quickstart](/docs/quickstart) or choose a guide from the docs index.
 
-```bash
-icloud [global flags] <command> [command flags]
-```
-
-Running `icloud` without a command prints root help to stdout.
-
-### Global flags
-
-| Flag | Default | Purpose |
-| --- | --- | --- |
-| `--home <path>` | `ICLOUD_HOME`, then platform default | Override the application data directory for state-bearing commands. |
-| `--account <selector>` | none | Select by friendly name, email, or stable ID when supported. |
-| `--timeout <duration>` | `30s` | Bound execution and lock acquisition. |
-| `--no-input` | false | Prevent implicit terminal prompts. Explicit stdin remains allowed. |
-| `--request-id <id>` | generated for structured output | Correlate JSON success and error envelopes. |
-| `--version` | — | Print the compact installed version and exit. |
-| `-h`, `--help` | — | Print help to stdout. |
-
-### Write input and automation schemas
-
-Every command in the explicit automation write contract accepts:
+## `icloud`
 
 ```text
---input-json <path|->
+icloud is a local-first iCloud Mail CLI for account setup, validation, folder and synchronization workflows, offline and bounded remote search, complete message and attachment reads, drafts, deliberate send/reply/forward operations, message-state and location changes, recovery diagnostics, automation-safe JSON/JSONL, shell completion, and man-page generation.
+
+Usage:
+  icloud [flags]
+  icloud [command]
+
+Examples:
+  icloud account add --name Personal --email owner@icloud.com --password-stdin
+  icloud account test
+  icloud mail send --to client@example.com --subject Update --body-file message.txt --dry-run
+  icloud mail reply msg_… --body-file reply.txt --dry-run
+  icloud mail forward msg_… --to teammate@example.com --dry-run
+  icloud mail move msg_… --from inbox --to Projects --dry-run
+  icloud mail sync
+  icloud mail message show msg_…
+  icloud doctor
+
+Core commands:
+  capabilities Describe capabilities in this installed build
+  doctor       Diagnose local account configuration and optional live connectivity
+  version      Print the installed CLI version
+
+Account commands:
+  account      Configure and inspect iCloud Mail accounts
+
+Mail commands:
+  mail         Send, reply, forward, inspect, synchronize, and change exact iCloud Mail locations
+
+Documentation commands:
+  completion   Generate shell completion scripts
+  help         Help about any command
+  man          Generate man pages from the current command tree
+
+Flags:
+      --account string      Select an account by name, email, or stable ID
+  -h, --help                help for icloud
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+  -v, --version             version for icloud
+
+Use "icloud [command] --help" for more information about a command.
 ```
 
-That contract covers account/folder configuration, bounded sync/repair, provider message mutations, drafts, outbound mail, and caller-selected exports; `icloud capabilities --json` is the authoritative command list. Read, diagnostic, and foreground-watch commands are not generic JSON-input RPC endpoints. The JSON request replaces equivalent positional/write flags; mixing the two is a usage error. Confirmation and output controls remain ordinary flags, so `--yes`, `--dry-run`, `--json`, and explicit content expansions cannot be smuggled through the request body. JSON is strict, bounded to 1 MiB, rejects unknown fields/trailing values, and cannot share stdin with a password/body stream.
+## `icloud account`
 
-Run `icloud capabilities --json` for the installed automation-contract version plus the request/response schema ID for each write command. Versioned schema files ship under `schemas/v1/` and are served by this site under `/schemas/v1/`. The [Output and automation](/docs/output-and-automation) guide gives complete examples and precedence rules without duplicating every schema property here.
+```text
+Configure and inspect iCloud Mail accounts
+
+Usage:
+  icloud account [flags]
+  icloud account [command]
+
+Examples:
+  icloud account add --name Personal --email owner@icloud.com --password-stdin
+  icloud account list
+  icloud account show personal
+
+Available Commands:
+  add         Add an offline iCloud Mail account profile
+  credential  Inspect or change account credential metadata
+  default     Set the default account
+  list        List accounts from the local state database
+  remove      Remove an account profile and its native keyring entry
+  rename      Rename an account profile
+  show        Show one account from the local state database
+  test        Validate credentials against iCloud IMAP and SMTP without sending mail
+
+Flags:
+  -h, --help   help for account
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+
+Use "icloud account [command] --help" for more information about a command.
+```
 
 ## `icloud account add`
 
-Create an offline account profile. Name and email are required, either through the ordinary flags or the command's JSON request.
+```text
+Add an offline iCloud Mail account profile
 
-```bash
-icloud account add --name Personal --email owner@icloud.com
-printf '%s\n' "$APP_PASSWORD" |
-  icloud account add --name Personal --email owner@icloud.com --password-stdin
-icloud account add --name Agent --email agent@icloud.com \
-  --credential-env ICLOUD_AGENT_APP_PASSWORD
-icloud account add --name Work --email work@icloud.com \
-  --credential-file "$HOME/.config/icloud-cli/work-password"
+Usage:
+  icloud account add [flags]
+
+Examples:
+  printf '%s\n' "$APP_PASSWORD" | icloud account add --name Personal --email owner@icloud.com --password-stdin
+  icloud account add --name Agent --email agent@icloud.com --credential-env ICLOUD_AGENT_PASSWORD
+
+Flags:
+      --credential-env string    Persist an environment-variable credential reference
+      --credential-file string   Persist a credential-file reference
+      --default                  Make this the default account
+      --email string             iCloud Mail address
+  -h, --help                     help for add
+      --imap-username string     IMAP username (defaults to the email address)
+      --input-json string        Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                     Emit one stable JSON success envelope
+      --name string              Friendly account name
+      --password-stdin           Read an app-specific password from stdin and store it in the native keyring
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
 ```
 
-Credential-source flags are mutually exclusive:
+## `icloud account credential`
 
-| Flag | Behavior |
-| --- | --- |
-| `--password-stdin` | Read a bounded value from stdin and store it in the native keyring. |
-| `--credential-env <name>` | Persist an environment-variable reference without resolving it. |
-| `--credential-file <path>` | Persist an absolute file reference without reading or copying it. |
+```text
+Inspect or change account credential metadata
 
-In an interactive terminal, omitting all three sources opens a secure non-echoing keyring prompt. Non-TTY execution requires an explicit source. Optional `--imap-username` overrides the initial full-email username. `--default` makes the new profile the default; otherwise the first profile defaults automatically.
+Usage:
+  icloud account credential [flags]
+  icloud account credential [command]
 
-Success returns an outcome, stable ID, `pending_validation`, default state when true, and credential scheme. It does not echo the submitted name, email, path, variable, or password. `--json` returns the same bounded mutation metadata.
-
-## `icloud account list`
-
-```bash
-icloud account list
-icloud account list --limit 50
-icloud account list --json
-```
-
-The default bound is 20 and the maximum is 100. A final summary reports count and `more=true` when truncated. Account records include the credential scheme only.
-
-## `icloud account show`
-
-```bash
-icloud account show Personal
-icloud --account owner@icloud.com account show
-icloud account show
-icloud account show --json
-```
-
-Without a selector, the command chooses the default, then a sole account. A missing account exits `7`; ambiguous selection exits `6`.
-
-## `icloud account rename`
-
-```bash
-icloud account rename Personal Primary
-icloud account rename Personal Primary --json
-```
-
-The stable account ID and email do not change. Friendly-name conflicts exit `6`.
-
-## `icloud account default`
-
-```bash
-icloud account default Work
-icloud account default Work --json
-```
-
-Exactly one account is default after success.
-
-## `icloud account remove`
-
-```bash
-icloud account remove Old --yes
-icloud account remove Old --yes --json
-```
-
-`--yes` is required. Removing a native-keyring profile clears its keyring entry. Environment variables and external files are not deleted. A default account cannot be removed while another profile exists; set another default first.
-
-## `icloud account credential show`
-
-```bash
-icloud account credential show Personal
-icloud account credential show Personal --json
-```
-
-Returns account ID, scheme, configured state, and update time. The command does not resolve or disclose the reference or value.
-
-## `icloud account credential replace`
-
-```bash
-printf '%s\n' "$NEW_APP_PASSWORD" |
+Examples:
+  icloud account credential show Personal
   icloud account credential replace Personal --password-stdin
-icloud account credential replace Personal \
-  --credential-env ICLOUD_PERSONAL_APP_PASSWORD
-icloud account credential replace Personal \
-  --credential-file "$HOME/.config/icloud-cli/personal-password"
-```
 
-Uses the same mutually exclusive source flags as `account add`. A replacement marks the account `pending_validation`. `--json` returns credential metadata without the reference or value.
+Available Commands:
+  delete      Delete an account credential reference and native keyring entry
+  replace     Replace an account credential and return it to pending validation
+  show        Show credential metadata without resolving or revealing the value
+
+Flags:
+  -h, --help   help for credential
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+
+Use "icloud account credential [command] --help" for more information about a command.
+```
 
 ## `icloud account credential delete`
 
-```bash
-icloud account credential delete Personal --yes
-icloud account credential delete Personal --yes --json
+```text
+Delete an account credential reference and native keyring entry
+
+Usage:
+  icloud account credential delete <selector> [flags]
+
+Examples:
+  icloud account credential delete Personal --yes
+
+Flags:
+  -h, --help                help for delete
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+      --yes                 Authorize credential deletion without prompting
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
 ```
 
-`--yes` is required. The account remains, but its credential reference is removed and its status is `pending_validation`. A native keyring entry is cleared when present.
+## `icloud account credential replace`
+
+```text
+Replace an account credential and return it to pending validation
+
+Usage:
+  icloud account credential replace <selector> [flags]
+
+Examples:
+  printf '%s\n' "$NEW_PASSWORD" | icloud account credential replace Personal --password-stdin
+
+Flags:
+      --credential-env string    Persist an environment-variable credential reference
+      --credential-file string   Persist a credential-file reference
+  -h, --help                     help for replace
+      --input-json string        Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                     Emit one stable JSON success envelope
+      --password-stdin           Read an app-specific password from stdin and store it in the native keyring
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud account credential show`
+
+```text
+Show credential metadata without resolving or revealing the value
+
+Usage:
+  icloud account credential show <selector> [flags]
+
+Examples:
+  icloud account credential show Personal
+
+Flags:
+  -h, --help   help for show
+      --json   Emit one stable JSON success envelope
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud account default`
+
+```text
+Set the default account
+
+Usage:
+  icloud account default <selector> [flags]
+
+Examples:
+  icloud account default Work
+
+Flags:
+  -h, --help                help for default
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud account list`
+
+```text
+List accounts from the local state database
+
+Usage:
+  icloud account list [flags]
+
+Examples:
+  icloud account list
+  ICLOUD_HOME=./icloud-state icloud account list --json
+
+Flags:
+  -h, --help        help for list
+      --json        Emit one stable JSON success envelope
+      --limit int   Maximum accounts to return (1-100) (default 20)
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud account remove`
+
+```text
+Remove an account profile and its native keyring entry
+
+Usage:
+  icloud account remove <selector> [flags]
+
+Examples:
+  icloud account remove Old --yes
+
+Flags:
+  -h, --help                help for remove
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+      --yes                 Authorize removal without prompting
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud account rename`
+
+```text
+Rename an account profile
+
+Usage:
+  icloud account rename <selector> <new-name> [flags]
+
+Examples:
+  icloud account rename Personal Primary
+
+Flags:
+  -h, --help                help for rename
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud account show`
+
+```text
+Show one account from the local state database
+
+Usage:
+  icloud account show [name|email|account-id] [flags]
+
+Examples:
+  icloud account show
+  icloud account show personal
+  icloud --account owner@icloud.com account show --json
+
+Flags:
+  -h, --help   help for show
+      --json   Emit one stable JSON success envelope
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
 
 ## `icloud account test`
 
-```bash
-icloud account test
-icloud account test Personal
-icloud --account owner@icloud.com account test
-icloud account test --all
-icloud account test --verbose
-icloud account test --json
-```
-
-Resolves the selected credential and validates direct-TLS IMAP plus mandatory-STARTTLS SMTP. IMAP reads capabilities, mailbox names, and `INBOX` status. SMTP authenticates, sends `NOOP`, and quits. The command never sends a message or mutates a mailbox.
-
-`--all` is bounded to 100 profiles and conflicts with a selector. `--verbose` adds sanitized capability names; normal compact output includes protocol outcomes, the successful IMAP username, mailbox count, bounded `INBOX` counts, and the test time. Both protocols must pass for `connected` status.
-
-## `icloud doctor`
-
-```bash
-icloud doctor
-icloud doctor Personal
-icloud doctor --all
-icloud doctor Personal --live
-icloud doctor --json
-```
-
-Without `--live`, reads stored account, credential, last-error, last-tested, and last-healthy metadata without resolving a secret or contacting Apple. With `--live`, runs the same read-only validation as `account test` first. An empty state returns `doctor status=configuration_required`.
-
-## `icloud mail folders status`
-
-```bash
-icloud mail folders status
-icloud mail folders status --limit 50
-icloud --account Personal mail folders status --verbose
-icloud mail folders status --json
-```
-
-Runs live IMAP LIST plus STATUS for every selectable folder, then transactionally reconciles the complete account-scoped inventory. It stores decoded and modified-UTF-7 wire names, delimiter, attributes, special-use kind/source, selectable/subscription state, counts, UID metadata, discovery time, presence/stale state, and local sync policy. It never fetches messages or mutates a mailbox.
-
-The refresh persists every discovered folder while output is bounded to 20 records by default and 100 with `--limit`. The result includes retained missing folders and reports `more=true` when not every record was printed. `--verbose` adds provider metadata; `--json` returns the same bounded records.
-
-## `icloud mail folders list`
-
-```bash
-icloud mail folders list
-icloud mail folders list --limit 50
-icloud mail folders list --include-missing --verbose
-icloud mail folders list --json
-```
-
-Reads the persisted folder inventory without contacting iCloud. The default bound is 20 and the maximum is 100. Missing/stale folders are hidden unless `--include-missing` is supplied.
-
-## `icloud mail folders show`
-
-```bash
-icloud mail folders show INBOX
-icloud mail folders show 'Unicode-日本語' --verbose
-icloud mail folders show fld_… --json
-```
-
-Selects by stable folder ID, decoded name, exact wire name, or unambiguous kind. Duplicate display names and non-unique kinds return a conflict rather than guessing.
-
-## `icloud mail folders enable` / `disable`
-
-```bash
-icloud mail folders enable Receipts
-icloud mail folders disable Receipts
-```
-
-Changes local future-sync policy only; no message is fetched or changed. Newly discovered selectable Inbox and Sent default enabled, while every other folder defaults disabled. Policy survives rediscovery, rename, missing state, and reappearance. Enabling a non-selectable container returns conflict.
-
-## `icloud mail folders create` / `rename`
-
-```bash
-icloud mail folders create 'Projects/Client-日本語' --dry-run
-icloud mail folders create 'Projects/Client-日本語' --yes
-icloud mail folders rename Receipts 'Projects/Receipts' --dry-run
-icloud mail folders rename Receipts 'Projects/Receipts' --yes
-```
-
-Creates or renames one custom provider folder. `--dry-run` resolves local safety without contacting IMAP; a real non-interactive change requires `--yes`. Names use the provider's discovered hierarchy and may contain Unicode. Rename preserves the existing stable folder ID, local sync policy, checkpoint, and locations. Inbox, provider-derived system roles, and folders with current child mailboxes are protected from rename.
-
-An interrupted rename is not safe to repeat automatically: iCloud may have accepted it before the response was lost. Run `icloud mail folders status`; the durable rename recovery reconciles the old and new provider names back to the original stable folder ID when the fresh LIST evidence is decisive.
-
-## `icloud mail folders subscribe` / `unsubscribe`
-
-```bash
-icloud mail folders subscribe Receipts --dry-run
-icloud mail folders subscribe Receipts --yes
-icloud mail folders unsubscribe Receipts --yes
-```
-
-Changes the provider subscription state for one current folder. This is independent from the CLI's local `enable` / `disable` sync policy. `subscription=unknown` remains distinct from subscribed and unsubscribed when iCloud does not report subscription state during normal discovery.
-
-## `icloud mail folders delete`
-
-```bash
-icloud mail folders delete fld_… --dry-run
-icloud mail folders delete fld_… --yes
-icloud mail folders delete fld_… --allow-non-empty --yes
-```
-
-Deletes one exact custom provider folder after local safety checks and an immediate provider message-count recheck. Inbox, provider-derived system/special-use folders, non-selectable containers, and folders with current children are protected. Non-empty deletion additionally requires `--allow-non-empty`; it means the folder's provider contents may be deleted. A confirmed delete marks the retained local folder identity missing/stale and disables its sync policy.
-
-## `icloud mail sync`
-
-```bash
-icloud mail sync
-icloud mail sync --folder sent
-icloud mail sync --folder fld_…
-icloud mail sync --all-folders --limit 20
-icloud mail sync --reconcile-outbound
-icloud mail sync --hydrate rem_…
-icloud mail sync --hydrate rem_…,rem_… --json
-icloud mail sync --limit 50
-icloud --account Personal mail sync --json
-```
-
-Fetches and atomically commits one bounded page for each enabled, current, selectable folder. Inbox and Sent begin enabled. The default page is 20 messages per folder and the maximum is 100. Use `--folder` with a role, stable ID, decoded name, or exact wire name to select one enabled folder. `--all-folders` is an explicit override that selects every current selectable folder, including locally disabled folders, while still applying the same per-folder bound.
-
-Inbox first setup downloads the newest bounded page. Sent first setup records the current remote tail and downloads no historical Sent messages; later runs ingest only new Sent copies. Another enabled or explicitly all-folder-selected mailbox starts from its newest bounded page. Synchronization never walks backward into older history automatically. `more=true` can also reflect a sparse UID tail; subsequent runs continue only above the saved scan frontier.
-
-Each selected folder also refreshes up to 100 least-recently checked current locations using metadata-only UID reads. The rotating sweep detects server-side Seen, Flagged, Answered, Draft, Deleted, unknown flags, disappearance, and mod-sequences when available without downloading bodies again. Sync never changes remote flags, moves mail, or sends a message.
-
-When a new folder copy has the same strong message identity as an existing local message, it becomes another location on the stable `msg_…` record. Each location retains its own folder, UID identity, flags, and presence. Similar content alone does not collapse two provider-backed messages; ambiguous evidence preserves both records and emits dedupe conflict telemetry.
-
-Compact success prints one block per selected folder with fetched/created/updated counts, reconciled locations, actual state changes, nonzero identity merges or conflicts, committed UID, `more`, and bootstrap state. `--json` returns every folder summary plus its durable checkpoint. An interrupted fetch, reconciliation, parse, blob write, or local commit leaves that folder's prior frontier unchanged.
-
-`--hydrate <rem_…,...>` switches to targeted remote caching and cannot be combined with `--folder` or `--all-folders`. It accepts 1-100 stale-safe remote references, deduplicates repeated arguments, verifies each account/folder/UIDVALIDITY/UID, and routes the fetched message through the same parser, blob, identity, attachment, search, and thread ingestion path. It does not create or advance a sync checkpoint. Compact output reports stable message/location IDs plus `created`, `updated`, or `cached`; JSON omits the submitted remote references.
-
-`--reconcile-outbound` selects Sent, synchronizes one bounded page, and then checks recent `sent` or `unknown` attempts against exact generated RFC Message-ID evidence. It cannot be combined with `--folder`, `--all-folders`, or `--hydrate`. Unique evidence confirms the existing local message/location; missing or ambiguous evidence remains unresolved and never causes a resend.
-
-## `icloud mail watch`
-
-```bash
-icloud mail watch
-icloud --account Work mail watch
-icloud mail watch --all-accounts
-icloud mail watch --poll-interval 2m --reconcile-interval 15m --limit 50
-icloud mail watch --jsonl
-```
-
-Keeps enabled mail fresh in one foreground process until Ctrl-C. Inbox and Sent use IMAP IDLE when the provider advertises it; unsupported sessions report `mode=polling` and use `--poll-interval` instead. Every notification leaves IDLE before the ordinary bounded sync command path runs. A periodic `--reconcile-interval` refreshes folder state and all enabled folders even when notifications are quiet.
-
-`--limit` is the normal per-folder sync bound, from 1 to 100. `--all-accounts` runs one worker per configured account and is capped at 10 accounts; combine neither it nor another worker with the same selected account. `--verbose` adds idle and unchanged-sync lifecycle events to compact output. `--jsonl` emits one typed object per event with account ID, timestamp, and a strictly increasing per-account sequence.
-
-For this long-running command only, global `--timeout` bounds each provider/sync attempt instead of the lifetime of the foreground process. Reconnects use bounded backoff with jitter. Authentication, UIDVALIDITY, or other degraded states are reported without silently resetting provider identity or starting a second sync path.
-
-## `icloud mail sync backfill`
-
-```bash
-icloud mail sync backfill --folder inbox
-icloud mail sync backfill --folder Receipts --after 2025-01-01 --before 2026-01-01 --limit 50
-icloud mail sync backfill --folder fld_… --json
-```
-
-Fetches and commits one bounded page while walking backward through one selected mailbox. The default and maximum page bounds are 20 and 100. `--after` is an inclusive UTC date and `--before` is an exclusive UTC date, both in `YYYY-MM-DD` form.
-
-Historical backfill has its own resumable cursor. It never advances the ordinary forward sync checkpoint, so new-mail synchronization can continue while older history is incomplete. A failed or canceled historical page leaves the previous reverse cursor unchanged. Compact output reports the stable `bf_…` frontier, folder identity, fetched/created/updated counts, before/next UID boundaries, and `complete=yes|no`; JSON includes the complete bounded frontier record.
-
-## `icloud mail sync rebaseline`
-
-```bash
-icloud mail sync rebaseline --folder inbox --current-tail
-icloud mail sync rebaseline --folder fld_… --current-tail --json
-```
-
-Moves only the selected folder's forward synchronization checkpoint to the current verified iCloud tail (`UIDNEXT-1`). `--current-tail` is mandatory because this deliberately skips any not-yet-cached range for normal forward sync. Existing cached messages are not deleted, rewritten, or detached from their provider identities, and the historical backfill cursor is not silently advanced.
-
-Compact output shows the previous committed/scanned/state values, verified UIDVALIDITY, new committed/scanned values, cached message count, and `deleted=no`. Use `mail sync backfill` later when skipped older mail should still be cached.
-
-## `icloud mail sync repair`
-
-```bash
-icloud mail sync repair --check
-icloud mail sync repair --check --verbose
-icloud mail sync repair --apply
-icloud mail sync repair --apply --cleanup-orphans --yes
-icloud mail sync repair --check --json
-```
-
-Runs a bounded consistency audit for the selected account. Check mode is the default, changes nothing, and stays local. It checks search/index drift, temporary blob leftovers, forward and historical UID-frontier state, relational integrity, location/thread identity conflicts, canonical blob availability, unresolved dedupe evidence, and outbound attempts that still need exact local Sent reconciliation.
-
-`--apply` performs only deterministic repairs: refresh stale local search material, retry exact local Sent reconciliation, and—when a mailbox UID namespace changed—read current status for only the affected folder before moving its forward frontier or resetting its historical frontier. It does not crawl every mailbox, merge ambiguous duplicate candidates, or invent replacement bytes for a missing/corrupt canonical blob.
-
-Temporary staging-file deletion is intentionally separate. `--cleanup-orphans` requires `--apply`, and destructive cleanup additionally requires `--yes`. The default compact summary is payload-free and includes bounded counts plus one `next` action. `--verbose` prints bounded per-finding records; `--json` returns the structured findings and summary.
-
-## `icloud mail send`
-
-Preview or send one new text/HTML message through the selected iCloud account:
-
-```bash
-icloud mail send --to client@example.com --subject Update --body 'Hello' --dry-run
-icloud mail send --to client@example.com --subject Update --body-file message.txt --dry-run --headers
-icloud mail send --to client@example.com --subject Update --body-file message.txt --attach report.pdf --idempotency-key update-01 --yes
-printf '%s\n' 'Hello' | icloud mail send --to client@example.com --subject Update --body-file - --yes --json
-```
-
-| Flag | Purpose |
-| --- | --- |
-| `--to <address>` | Required To recipient; repeat or pass a comma-separated list. |
-| `--cc <address>` / `--bcc <address>` | Visible Cc or envelope-only Bcc recipient; repeat as needed. |
-| `--reply-to <address>` | Optional Reply-To address with display-name support. |
-| `--subject <text>` | Required normalized subject. |
-| `--body <text>` / `--body-file <path|->` | Inline, regular-file, or stdin text body. |
-| `--html-body <html>` / `--html-body-file <path|->` | Inline, regular-file, or stdin HTML body. |
-| `--header 'Name: Value'` | Repeatable safe custom header; routing, identity, MIME, delivery, `Received`, and `Resent-*` fields are reserved. |
-| `--attach <path>` | Attach one regular file; repeat up to the bounded count. |
-| `--attach-name <path=filename>` | Override the normalized filename for one attached path. |
-| `--attach-type <path=type/subtype>` | Override the normalized media type for one attached path. |
-| `--idempotency-key <key>` | Return the original attempt for the same normalized request; changed content with the same key conflicts. |
-| `--retry-of <send_…>` | Link one deliberate retry to a matching failed or unknown attempt; requires a new idempotency key. |
-| `--retry-unknown` | Accept duplicate-delivery risk for an unresolved unknown attempt; requires `--retry-of`, `--yes`, and a real send. |
-| `--dry-run` | Normalize and review without opening SMTP or creating an attempt. |
-| `--yes` | Authorize a real non-interactive send. It cannot be combined with `--dry-run`. |
-| `--headers` / `--verbose` | Expand a dry-run review with normalized safe header fields or HTML/custom-header detail. |
-| `--format text|html|raw` | Emit one explicit dry-run body or composed RFC message instead of compact review text. |
-| `--json` | Emit a dry-run review envelope or sanitized real-send outcome. |
-
-The configured account name and address become `From`. Text plus HTML produces multipart alternative; HTML-only input receives a simple plain-text alternative. Each body is bounded to 8 MiB. Attachments are hashed and normalized before confirmation, cached before SMTP, and streamed through MIME composition. The complete composed message is capped at 20 MiB including encoding overhead; Mail Drop is not used.
-
-Dry-run compact output includes the normalized recipient lists, including BCC, subject, body counts, text body once, request hash, and a no-network/no-attempt safety summary. `--headers` never prints a `Bcc` header. `--format raw` composes a complete preview message with a generated preview Message-ID and date, but BCC remains absent because it is only an SMTP-envelope recipient.
-
-Without `--dry-run`, a terminal receives the same compact preview and a `Send this message? [y/N]` prompt unless `--yes` is supplied. Non-TTY execution and `--no-input` require `--yes`. When stdin supplied a body, interactive confirmation is unavailable; review first, then rerun with `--yes`.
-
-A pending attempt and all outbound attachment metadata are durable before SMTP. Final status is `sent`, `failed`, or `unknown`; normal successful acceptance creates a searchable local `msg_…`, reconstructed `thr_…`, complete local attachments, and reconciliation state in the same local transaction. `unknown` means acceptance could not be proved either way and is always non-retryable. If SMTP acceptance is proven but local completion or Sent-copy creation fails, the attempt remains `sent` and must not be resubmitted. Repeating the exact normalized request with its idempotency key returns the original attempt without another SMTP transaction.
-
-Real compact/JSON success returns only stable account, attempt, message, and thread identity plus status, reconciliation, reuse state, and schema metadata. It omits recipients, BCC, subject, bodies, custom headers, idempotency key, and raw-storage coordinates. Dry-run JSON intentionally contains the full normalized review request and must be treated as private message content.
-
-## `icloud mail draft create` / `update`
-
-Create a local draft or replace one saved revision without contacting iCloud:
-
-```bash
-icloud mail draft create --to client@example.com --subject 'Idea' --body-file draft.txt
-icloud mail draft update drf_… --to client@example.com --subject 'Revised' --body-file revised.txt --attach report.pdf
-```
-
-Both commands accept the same message-building inputs as a new send: repeatable To/Cc/Bcc addresses, Reply-To, text/HTML bodies or files/stdin, safe custom headers, and reviewed regular-file attachments with optional filename/media-type overrides. Empty recipients, subject, or body are allowed while the message is unfinished. BCC is preserved in the saved draft MIME but omitted from ordinary compact and JSON output.
-
-`create` returns a stable `drf_…` at revision 1. `update` keeps that draft ID, increments the revision, and leaves any confirmed provider copy as recoverable previous state until a replacement is synchronized.
-
-## `icloud mail draft list` / `show`
-
-Read drafts from local state without contacting iCloud:
-
-```bash
-icloud mail draft list --limit 20
-icloud mail draft show drf_…
-icloud mail draft show drf_… --full
-icloud mail draft show drf_… --format raw
-```
-
-`list` is bounded to 1–100 results. `show` defaults to compact content and supports the same explicit progressive expansions used by message reads: complete decoded text with `--full`, `--format text|html|raw`, `--headers`, `--body-only`, `--verbose`, and `--json`. BCC remains omitted from decoded header output; raw MIME is an intentional complete-content expansion and can contain the saved BCC header.
-
-## `icloud mail draft sync`
-
-Synchronize provider drafts and upload local revisions:
-
-```bash
-icloud mail draft sync
-icloud mail draft sync drf_… --limit 20
-icloud mail draft sync drf_… --folder Drafts
-```
-
-Without a draft ID, sync adopts bounded provider-native `\Draft` messages into the same local draft list and reconciles pending local drafts. A local revision is APPENDed with `\Draft` and `\Seen`; when APPENDUID is available it is recorded directly, otherwise the CLI requires exact current Message-ID/content evidence before considering the revision synchronized. Updates append the new revision before removing the previous confirmed copy.
-
-The normal selector is the provider-advertised Drafts role. `--folder <selector>` is only an explicit fallback for an unclassified selectable mailbox when iCloud advertises no Drafts role. It does not persist or infer a system role, and an override is rejected when the provider already exposes a distinct Drafts role.
-
-Compact output reports bounded observed/appended/reconciled/cleaned/pending counts and stable IDs. `--verbose` adds recovery state; `--json` returns the structured bounded result.
-
-## `icloud mail draft send`
-
-Preview or send the exact saved revision:
-
-```bash
-icloud mail draft send drf_… --dry-run
-icloud mail draft send drf_… --dry-run --headers
-icloud mail draft send drf_… --yes
-```
-
-The dry run reuses ordinary send review modes and never contacts SMTP or deletes the draft. A real draft send derives an idempotency key from the stable draft ID and revision, then uses the same pending/sent/failed/unknown outbound-attempt path as `mail send`. Non-interactive execution requires `--yes`.
-
-Known provider draft versions are removed only after the send is proven sent. An unknown SMTP outcome preserves the draft and its provider copy. If the message is proven sent but cleanup cannot finish, the draft remains in cleanup-pending state so `draft sync` or an idempotent repeated draft-send cleanup can resume without another SMTP submission.
-
-## `icloud mail draft delete`
-
-Review and then remove one draft without sending it:
-
-```bash
-icloud mail draft delete drf_… --dry-run
-icloud mail draft delete drf_… --yes
-```
-
-The real operation deletes every known present `\Draft` provider version first and removes local draft state only after provider deletion is confirmed. Non-interactive deletion requires `--yes`; unresolved provider deletion remains visible instead of being reported as success.
-
-## `icloud mail reply` / `reply-all`
-
-Reply to one exact locally synchronized message:
-
-```bash
-icloud mail reply msg_… --body-file reply.txt --dry-run --headers
-icloud mail reply msg_… --body 'Thanks' --idempotency-key reply-01 --yes
-icloud mail reply-all msg_… --body-file reply.txt --attach report.pdf --dry-run
-```
-
-The positional `msg_…` is mandatory and is always the exact reply parent. The command never selects the latest message in a thread implicitly. `reply` derives one primary recipient from `Reply-To`, then `From`. `reply-all` also derives visible original `To` and `Cc` participants, excludes the selected account identity, deduplicates addresses, and never infers prior BCC recipients.
-
-| Flag | Purpose |
-| --- | --- |
-| `--to <address>` / `--cc <address>` | Add recipients to the derived To or Cc list. Repeat or pass a comma-separated list. |
-| `--bcc <address>` | Add a new envelope-only Bcc recipient to this reply. The parent BCC list is never reused. |
-| `--replace-to` / `--replace-cc` | Replace the corresponding derived list with addresses explicitly supplied through `--to` or `--cc`. `--replace-to` requires at least one supplied To address. |
-| `--body`, `--body-file`, `--html-body`, `--html-body-file` | Supply the reply body using the same bounds and stdin rules as `mail send`. |
-| `--attach`, `--attach-name`, `--attach-type` | Attach reviewed regular files through the same streamed attachment path as `mail send`. |
-| `--header 'Name: Value'` | Add a safe custom header. `In-Reply-To` and `References` are reserved for the resolved parent. |
-| `--idempotency-key`, `--retry-of`, `--retry-unknown` | Use the same durable attempt and explicit retry controls as `mail send`. |
-| `--dry-run` / `--yes` | Review without SMTP, or authorize a real non-interactive reply. |
-| `--headers`, `--verbose`, `--format text|html|raw`, `--json` | Expand only a dry-run preview, except `--json`, which also supports sanitized real outcomes. |
-
-The compact dry run shows the exact parent `msg_…`, reconstructed `thr_…`, parent RFC Message-ID when usable, `threading=true|false`, derived versus added recipient lists, final To/Cc/Bcc lists, normalized subject, body/attachment counts, request hash, optional threading headers, and a no-network/no-attempt safety summary.
-
-Repeated `Re:` prefixes collapse to one. When the exact parent has a valid Message-ID, the composed reply uses it in `In-Reply-To` and appends it to a bounded, deduplicated `References` chain. Missing or malformed parent identity produces `threading=false`; the CLI sends no invented relationship headers and does not force the local child into the parent thread.
-
-A real compact outcome is payload-free:
-
 ```text
-mail-reply
-send_… kind=reply
-parent_message_id=msg_…
-status=sent
-message_id=msg_…
-thread_id=thr_…
-reconciliation=pending
-reused=false
-```
-
-`kind` is `reply_all` for reply-all. The stored outbound attempt preserves the exact parent ID so status and audit output can distinguish a new send from a reply without exposing submitted content.
-
-## `icloud mail forward`
-
-Forward one exact locally synchronized message as a new conversation:
-
-```bash
-icloud mail forward msg_… --to teammate@example.com --body 'For context' --dry-run --headers
-icloud mail forward msg_… --to teammate@example.com --original eml --idempotency-key forward-01 --yes
-icloud mail forward msg_… --to teammate@example.com --include-attachment att_… --attach new-note.txt --dry-run
-```
-
-The positional `msg_…` is mandatory and records source provenance. A forward never emits `In-Reply-To` or `References`, never joins the source thread, and never mutates the source message. Repeated `Fwd:` and `Fw:` prefixes normalize to one `Fwd:` subject.
-
-| Flag | Purpose |
-| --- | --- |
-| `--to`, `--cc`, `--bcc`, `--reply-to` | Supply the new message recipients. BCC remains envelope-only. |
-| `--original quoted|eml|none` | Choose the source representation. `quoted` is the default decoded-text form; `eml` attaches exact verified RFC822 bytes; `none` requires your own text or HTML body. |
-| `--include-attachment <att_…>` | Include one verified decoded attachment belonging to the selected source message. Repeat to select more; no original attachment is implicit. |
-| `--body`, `--body-file`, `--html-body`, `--html-body-file` | Add introductory content, or provide the complete body with `--original none`. |
-| `--attach`, `--attach-name`, `--attach-type` | Add new reviewed filesystem attachments. |
-| `--header 'Name: Value'` | Add a safe custom header. Reply relationship fields remain reserved and absent. |
-| `--idempotency-key`, `--retry-of`, `--retry-unknown` | Use the same durable attempt and explicit retry controls as send/reply. |
-| `--dry-run` / `--yes` | Review without SMTP, or authorize a real non-interactive forward. |
-| `--headers`, `--verbose`, `--format text|html|raw`, `--json` | Expand only a dry-run preview, except `--json`, which also supports sanitized real outcomes. |
-
-The compact dry run reports the source message/thread IDs, selected original representation, EML size when applicable, counts for selected original and new attachments, recipients, normalized subject, body/attachment counts, a bounded text excerpt, request hash, and explicit no-network/no-attempt/source-unchanged safety fields. `--format text` emits the complete quoted representation; `--format raw` emits the composed new message. Exact EML bytes appear only as the explicitly selected attachment.
-
-A real compact outcome is payload-free:
-
-```text
-mail-forward
-send_… kind=forward
-source_message_id=msg_…
-status=sent
-message_id=msg_…
-thread_id=thr_…
-reconciliation=pending
-reused=false
-```
-
-The stored outbound attempt links the new message to the source `msg_…` for audit and status without treating that source as an RFC reply parent.
-
-## `icloud mail status --outbound`
-
-```bash
-icloud mail status --outbound
-icloud mail status --outbound --limit 50
-icloud mail status --outbound --json
-```
-
-Lists the most recent bounded outbound attempts for the selected account without contacting iCloud. Compact records include stable attempt/message/thread IDs, status, attachment counts/bytes, reconciliation and error codes, retry linkage, update time, and one next action. JSON adds accepted/created timestamps and a reconciled location ID when known. Both forms omit submitted recipients, BCC, subject, bodies, custom headers, idempotency keys, attachment paths, hashes, and private blob coordinates.
-
-Each attempt also reports `kind=send|reply|reply_all|forward`. Reply attempts include only the stable `parent_message_id`; forward attempts include only the stable `source_message_id`. Neither exposes recipient or body payloads.
-
-Use `icloud mail sync --reconcile-outbound` to fetch current Sent evidence. Exact unique generated Message-ID evidence confirms a pending sent attempt or resolves an unknown attempt. Missing evidence stays unmatched; conflicting exact evidence stays unknown with `ambiguous_sent_evidence`. Failed attempts can be retried only with `--retry-of` and a new idempotency key. Unknown attempts additionally require `--retry-unknown --yes` after checking Sent and the recipient.
-
-## `icloud mail inbox`
-
-```bash
-icloud mail inbox
-icloud mail inbox --folder sent
-icloud mail inbox --folder fld_…
-icloud mail inbox --query invoice --unread
-icloud mail inbox --cursor cur_…
-icloud mail inbox --limit 50
-icloud mail inbox --json
-```
-
-Reads a bounded page from local state without contacting iCloud. The command defaults to Inbox; `--folder` accepts the same selectors as sync. Without filters, compact records include stable ID, sender, subject, best available date, true unread/flagged states, nonzero attachment count, and a bounded decoded-text preview.
-
-`--query`, sender/participant/subject/RFC ID, attachment, date, read, and flag filters use the same indexed local path as `mail search`. Filtered compact records identify the matched field and bounded excerpt. `--cursor` continues only the exact same account, folder, text, and filters. JSON adds `next_cursor` and query/index metadata while preserving the existing sanitized message objects. An unseen Sent location does not make an outbound message unread.
-
-## `icloud mail search`
-
-```bash
-icloud mail search invoice
-icloud mail search --from billing@example.com --unread
-icloud mail search launch --result threads
-icloud mail search --attachment-type application/pdf --after 2026-08-01
-icloud mail search invoice --limit 50 --cursor cur_…
-icloud mail search invoice --remote
-icloud mail search --remote --folder archive --from billing@example.com --unread
-icloud mail search invoice --remote --all-folders
-icloud mail search invoice --json
-```
-
-Searches synchronized local mail without contacting iCloud or changing read state. A positional query matches subject, From and Reply-To, To and CC participants, decoded message text, attachment filenames and media types, and RFC Message-ID. BCC is excluded. Plain query terms are combined with AND.
-
-`--result messages|threads` selects individual message hits or one aggregate per reconstructed conversation. Text search sorts by local relevance, then newest stable message or thread identity; filter-only search sorts newest first. Compact output includes the matched field and a bounded excerpt. The default limit is 20 and the maximum is 100.
-
-Common filters:
-
-| Flag | Behavior |
-| --- | --- |
-| `--folder <selector>` | Require a current synchronized location in one folder. |
-| `--from <text>` | Match From or Reply-To name/address. |
-| `--participant <text>` | Match From, Reply-To, To, or CC name/address. |
-| `--subject <text>` | Match subject text. |
-| `--rfc-id <id>` | Match one RFC Message-ID, with or without angle brackets. |
-| `--attachment-name <text>` | Match attachment filename text. |
-| `--attachment-type <text>` | Match attachment media type text. |
-| `--unread` / `--read` | Select logical unread or read state. |
-| `--flagged` / `--unflagged` | Select logical flagged or unflagged state. |
-| `--after <time>` | Include messages at or after RFC3339 or a UTC `YYYY-MM-DD` date. |
-| `--before <time>` | Include messages before RFC3339 or a UTC `YYYY-MM-DD` date. |
-| `--cursor <cursor>` | Continue the exact account, query, filters, and result kind. |
-
-Free text and structured filters combine with AND. A cursor used with a changed query, filter, account, or result kind exits with usage rather than silently changing the result boundary.
-
-JSON returns sanitized message or thread hits, rank, matched field, bounded excerpt, page metadata, and index status. It omits credentials, BCC, private raw-storage coordinates, complete bodies, HTML, raw MIME, and attachment bytes.
-
-`--remote` contacts iCloud and returns bounded uncached provider-message summaries with `rem_…` references. It defaults to Inbox; `--folder` selects one current selectable folder, while `--all-folders` explicitly fans out to at most 10 current selectable folders. Remote results are newest-first and report folder/UID identity, envelope sender/To/CC, subject, internal date, read/flag state, RFC822 size, a bounded decoded provider preview, matched field, and a stable local message ID only when the provider location is already cached.
-
-Remote search supports positional provider text, `--from`, `--participant`, `--subject`, `--rfc-id`, read/flag state, and date filters. It returns messages only. `--result threads`, attachment filename/type filters, and `--cursor` return usage errors because those require the local indexed/reconstructed model. Remote `more=true` means matching provider results were truncated by `--limit`; `partial=true` means the bounded recent provider range ended before the folder's older UID space and the caller should narrow the query. JSON retains the same privacy exclusions as local search.
-
-## `icloud mail search repair`
-
-```bash
-icloud mail search repair
-icloud mail search repair --limit 100
-icloud mail search repair --json
-```
-
-Rebuilds a bounded batch of incomplete decoded-body search entries from already synchronized local raw messages. It does not contact iCloud, redownload a mailbox, or change stable message, location, attachment, or thread IDs. The default limit is 20 and the maximum is 100. Compact and JSON results report selected, repaired, failed, remaining pending, and error counts.
-
-## `icloud mail latest`
-
-```bash
-icloud mail latest
-icloud mail latest --query launch --unread
-icloud mail latest --participant teammate@example.com --folder sent
-icloud mail latest --cursor cur_…
-icloud mail latest --limit 50
-icloud mail latest --json
-```
-
-Lists the newest locally reconstructed conversations without contacting Apple. The default returns 20 threads and the maximum is 100. Without filters, compact output reports stable thread ID, canonical subject, logical message count, unread count, normalized non-BCC participants, current folder IDs, attachment count, latest message time, and `reconstruction=local_rfc_graph`.
-
-`--query` and the same structured flags as `mail search` restrict threads by matching member messages. Each conversation appears once with its best matched message, field, and bounded excerpt. `--cursor` is bound to the exact account and filters. JSON preserves aggregate thread objects and adds cursor and query/index metadata.
-
-Thread identity is local. The CLI uses ordered normalized `References`, then `In-Reply-To`, and only a conservative subject-and-participant fallback when RFC relationship headers are absent. It does not claim an Apple-native thread ID.
-
-## `icloud mail thread show`
-
-```bash
-icloud mail thread show thr_…
-icloud mail thread show msg_…
-icloud mail thread show thr_… --limit 50
-icloud mail thread show thr_… --cursor cur_…
-icloud mail thread show thr_… --full
-icloud mail thread show thr_… --body-only
-icloud mail thread show thr_… --format html
-icloud mail thread show thr_… --headers
-icloud mail thread show thr_… --metadata-only --verbose --json
-icloud mail thread show thr_… --format raw --json
-```
-
-Resolves a canonical thread ID, retired alias, or stable message ID and returns a bounded chronological page. Compact output prints the aggregate once, then one bounded message record per logical message. When `more=true`, pass the reported `next_cursor` back through `--cursor`; cursors are bound to the selected thread and the final page omits one. `--full` expands complete decoded text for every selected message, while `--body-only` writes chronological bodies without metadata wrappers. HTML, decoded public headers, MIME metadata, and JSON remain explicit choices.
-
-Compact reads and plain `--metadata-only` do not open raw message files. Explicit body, header-decoding, HTML, raw, or not-yet-indexed verbose MIME modes fail visibly when their synchronized source content is unavailable. Verbose graph evidence exposes child, relationship, token, parent, and status fields but not internal evidence-row IDs.
-
-Plain multi-message raw output is rejected because concatenated RFC822 streams are ambiguous. Use raw JSON for bounded per-message payloads or `mail message raw <message-id>` for exact streaming.
-
-`--metadata-only --verbose --json` includes bounded edge evidence with child message, relationship source, ordered reference position, token, resolved parent, and status such as `resolved`, `unresolved`, `malformed`, `self`, `cycle`, `grouped`, or `isolated`. Metadata-only removes thread and message excerpts. BCC and private blob coordinates remain excluded.
-
-Late roots or bridge messages may merge provisional threads transactionally. One existing ID remains canonical and retired IDs become durable aliases. Message, location, MIME-part, attachment, and blob IDs are never rewritten by thread reconstruction.
-
-## `icloud mail mark-read` / `mark-unread`
-
-```bash
-icloud mail mark-read msg_…
-icloud mail mark-read msg_… msg_… msg_…
-icloud mail mark-read msg_… --folder INBOX
-icloud mail mark-unread --input-json changes.json --json
-icloud mail mark-unread --input-jsonl changes.jsonl --mode continue-on-error --jsonl
-```
-
-Adds or removes `Seen` on up to 100 exact current message locations. Without `--folder`, each message must have exactly one eligible present location. A message with several eligible copies returns conflict rather than guessing. `--folder` accepts a stable folder ID, decoded name, exact wire name, or unambiguous kind and still requires exactly one matching location.
-
-`--input-json` accepts one bounded object with `message_ids` and optional shared `folder`. `--input-jsonl` accepts one strict object per line with `message_id` and optional `folder`. `--mode atomic` validates the whole bounded input shape first, then resolves and mutates targets one by one and stops on the first target/provider failure; if an earlier provider mutation already succeeded, output explicitly reports `partial=true` plus skipped-item counts because IMAP cannot roll the earlier write back. `--mode continue-on-error` attempts every syntactically valid item. `--jsonl` emits typed per-item events followed by one completion event. Any failed item leaves the process non-zero.
-
-The provider UID and UID validity are taken from synchronized local state; the command never searches mailboxes by Message-ID or thread reference. It stores the flags returned by iCloud and recomputes the message's unread and flagged summaries across every eligible current location. Deleted or absent locations are excluded.
-
-## `icloud mail flag` / `unflag`
-
-```bash
-icloud mail flag msg_…
-icloud mail flag msg_… msg_…
-icloud mail flag msg_… --folder fld_…
-icloud mail unflag msg_… --json
-```
-
-Adds or removes `Flagged` with the same single/bulk resolution, bound, failure-mode, and JSONL rules as read state. Unknown provider flags are preserved. Conditional updates use the synchronized mod-sequence when iCloud exposes one; a concurrent change returns conflict after the current server state has been persisted.
-
-Compact success reports the action plus stable message, location, and folder IDs and the recomputed unread/flagged summaries. Multi-item compact output ends with bounded updated/failed/partial counts. JSON additionally includes UID identity, structured flags, mod-sequence, last flag-check time, and schema version. The commands never imply all-locations or thread-wide mutation.
-
-## `icloud mail move` / `copy`
-
-```bash
-icloud mail move msg_… --from inbox --to Projects --dry-run
-icloud mail move msg_… --from inbox --to Projects --idempotency-key move-01 --yes
-icloud mail copy msg_… --from inbox --to Receipts --idempotency-key copy-01 --yes
-```
-
-Changes one exact current provider location. Both commands require `--from` and `--to`; selectors accept a stable folder ID, decoded name, wire name, or unambiguous discovered kind. The destination must be current, present, selectable, and distinct from the source.
-
-`move` prefers UID MOVE. Without MOVE, it uses COPY followed by exact UID STORE/UID EXPUNGE only when the provider advertises a safe capability. It never runs mailbox-wide EXPUNGE. `copy` retains the source. Provider UID mappings create the exact destination location immediately; missing or ambiguous mapping evidence produces an `unresolved` mutation for later folder synchronization.
-
-| Flag | Purpose |
-| --- | --- |
-| `--from <folder>` | Select one exact current source location. Required. |
-| `--to <folder>` | Select one current destination folder. Required. |
-| `--idempotency-key <key>` | Return the existing `mut_…` result for the same exact request without another provider write. |
-| `--dry-run` | Resolve and preview the location operation without IMAP or durable intent. |
-| `--yes` | Authorize non-interactive provider mutation. |
-| `--json` | Emit a stable structured preview or sanitized outcome. |
-
-## `icloud mail archive` / `unarchive`
-
-```bash
-icloud mail archive msg_… --dry-run
-icloud mail archive msg_… --from inbox --idempotency-key archive-01 --yes
-icloud mail unarchive msg_… --idempotency-key unarchive-01 --yes
-```
-
-`archive` moves one eligible non-Sent location to the currently discovered Archive role. It never selects a Sent, Archive, or Trash source. When several eligible locations exist, `--from` is required. `unarchive` accepts only one current Archive source and moves it to the discovered Inbox. The commands fail instead of inferring roles from English folder names when iCloud has not advertised the necessary metadata.
-
-## `icloud mail trash` / `restore`
-
-```bash
-icloud mail trash msg_… --from inbox --idempotency-key trash-01 --yes
-icloud mail restore msg_… --to inbox --idempotency-key restore-01 --yes
-```
-
-`trash` moves one eligible location to the discovered Trash role. `restore` accepts only a current Trash source and requires `--to`; the CLI does not invent a previous folder. Both use the same durable intent, MOVE/fallback, UID mapping, idempotency, dry-run, confirmation, and unresolved-recovery contract as general move.
-
-## `icloud mail delete`
-
-```bash
-icloud mail delete msg_… --from trash --dry-run
-icloud mail delete msg_… --from trash --idempotency-key delete-01 --yes
-```
-
-Permanently deletes one exact provider location. `--from` is mandatory. Safe UID EXPUNGE support is required before the provider write begins; ordinary mailbox-wide EXPUNGE is never used. The logical message, content, attachments, search identity, and thread remain available while another current location exists. The selected location becomes absent evidence rather than being silently removed from local history.
-
-## `icloud mail status --mutations`
-
-```bash
-icloud mail status --mutations
-icloud mail status --mutations --limit 50 --json
-```
-
-Lists bounded, payload-free location mutation intents and outcomes. Each record includes stable mutation/message/source/destination IDs, action, status, provider method, source presence, mapping and reconciliation state, error code, update time, and next action. Submitted folder names, subject, participants, body, attachment metadata, credentials, idempotency keys, request hashes, and private storage coordinates are omitted.
-
-`confirmed` means local location state follows provider evidence. `failed` means no provider-side change was observed. `unresolved` means the provider may have copied, moved, deleted, or expunged content without complete confirmation; synchronize the affected folders and do not repeat the provider operation automatically. Repeating the same command with its original idempotency key returns the existing result without IMAP.
-
-## `icloud mail message show`
-
-```bash
-icloud mail message show msg_…
-icloud mail message show msg_… --full
-icloud mail message show msg_… --format text --body-only
-icloud mail message show msg_… --format html
-icloud mail message show msg_… --headers
-icloud mail message show msg_… --metadata-only
-icloud mail message show msg_… --verbose
-icloud mail message show rem_… --remote
-icloud mail message show rem_… --remote --cache --full
-icloud mail message show msg_… --json
-```
-
-Reads one locally synchronized message by stable ID without contacting iCloud or changing read state. The compact default is a bounded vertical block with account/message identity, From/To/CC when present, subject, best time and date source, current state/locations, attachment count, available content kinds, raw/part availability, a decoded-text excerpt, and an expansion hint.
-
-Content is opt-in:
-
-| Option | Result |
-| --- | --- |
-| `--full` | Complete decoded text, equivalent to explicit text content plus metadata. |
-| `--format text` | Complete decoded text. HTML-only messages are converted to readable text. |
-| `--format html` | Complete decoded HTML when available. |
-| `--format raw` | Exact RFC822 bytes; plain output contains no compact wrapper. |
-| `--headers` | Ordered decoded headers after the metadata block; BCC is omitted. |
-| `--body-only` | Only the selected text or HTML body, suitable for redirection. |
-| `--metadata-only` | Metadata without excerpt or content; conflicts with content flags. |
-| `--verbose` | Ordered MIME-part metadata and parse diagnostics. |
-| `--json` | One envelope; content appears only when the corresponding content flag is also present. |
-| `--remote` | Treat the selector as a stale-safe `rem_…` provider reference and read a bounded current provider summary. |
-| `--cache` | With `--remote`, persist the exact provider message through normal local ingestion before applying content flags. |
-
-Default JSON reports text/HTML/raw/header/part availability, part count, and whether parsing was complete. `--full --json` adds decoded text; `--format html --json` adds HTML; `--headers --json` adds headers; `--verbose --json` adds MIME parts; `--format raw --json` adds base64 raw MIME up to 8 MiB. Use plain streaming modes for larger content.
-
-Contradictory combinations return usage errors rather than choosing silently. Examples include `--headers --body-only`, content flags with `--metadata-only`, `--full --format html`, and plain `--format raw --verbose`.
-
-An uncached remote summary allows compact or JSON metadata only. Complete text, HTML, headers, raw MIME, body-only output, and verbose MIME details require `--remote --cache`. Caching returns to the ordinary stable local `msg_…` read path and does not advance the folder sync checkpoint. A remote reference whose account, folder, or UIDVALIDITY no longer matches exits with usage or conflict before fetching another message at a reused UID.
-
-## `icloud mail message raw`
-
-```bash
-icloud mail message raw msg_… > message.eml
-```
-
-Streams the exact synchronized RFC822 bytes to stdout after verifying the stored size and SHA-256 content address. The command emits no compact status block because stdout is the requested binary/native payload.
-
-## `icloud mail message export`
-
-```bash
-icloud mail message export msg_… --output message.eml
-icloud mail message export msg_… --output message.eml --force
-icloud mail message export msg_… --output - > message.eml
-```
-
-Exports exact RFC822 bytes. File output uses a private temporary file and mode `0600`, refuses existing destinations unless `--force` is supplied, and installs the completed file only after verified streaming succeeds. `--output -` writes raw bytes to stdout and emits no compact wrapper. Successful file output reports the message ID and byte count without echoing the destination path.
-
-## `icloud mail attachments list`
-
-```bash
-icloud mail attachments list msg_…
-icloud mail attachments list msg_… --limit 50
-icloud mail attachments list msg_… --json
-```
-
-Reads bounded attachment metadata from one locally synchronized message. Compact records include stable attachment, message, and MIME-part IDs; filename, media type, decoded size, inline state, disposition, content ID when present, and availability. Attachment bytes and private storage coordinates are never printed.
-
-The default bound is 20 and the maximum is 100. `more=true` means additional attachment records were not printed. JSON adds media parameters and the decoded content hash while still omitting private storage paths.
-
-## `icloud mail attachments save`
-
-```bash
-icloud mail attachments save att_… --output document.pdf
-icloud mail attachments save att_… --output document.pdf --force
-icloud mail attachments save att_… --output - --binary > document.pdf
-icloud mail attachments save att_… --output document.pdf --json
-```
-
-Verifies and streams one decoded local attachment by stable ID. `--output` is required. File output uses a private temporary file, refuses an existing destination unless `--force` is supplied, and rejects directories, symbolic links, and other special files. Successful compact and JSON output do not echo the destination path.
-
-Writing native bytes to stdout requires both `--output -` and `--binary`; the command emits no compact wrapper in that mode. `--json` cannot be combined with binary stdout.
-
-## `icloud mail attachments save-all`
-
-```bash
-icloud mail attachments save-all msg_… --dir ./message-attachments
-icloud mail attachments save-all msg_… --dir ./message-attachments --force
-icloud mail attachments save-all msg_… --dir ./message-attachments --json
-```
-
-Saves the complete supported attachment set for one message. Filenames are treated as untrusted metadata: traversal components, separators, controls, and reserved names are made safe; unnamed files receive deterministic names; Unicode is preserved; and duplicate names receive stable numeric suffixes.
-
-Every file is prepared and verified before the batch is installed. A conflict or failure rolls back installed outputs rather than leaving a partial set. Compact success reports the message ID and count. JSON returns attachment metadata and safe output basenames, not the requested directory path.
-
-## `icloud mail sync status`
-
-```bash
-icloud mail sync status
-icloud mail sync status --folder sent
-icloud mail sync status --json
-```
-
-Shows one selected folder checkpoint locally. It defaults to Inbox and accepts a role, stable ID, decoded name, or exact wire name. `idle` means the latest page committed, `failed` means the frontier did not advance, and `repair_required` means iCloud reported a different mailbox identity and ordinary sync stopped.
-
-## `icloud mail sync checkpoints`
-
-```bash
-icloud mail sync checkpoints
-icloud mail sync checkpoints --limit 50
-icloud mail sync checkpoints --json
-```
-
-Lists bounded account-scoped checkpoints from local state, including Inbox, Sent, and any other enabled folder that has been synchronized.
-
-## `icloud version`
-
-```bash
-icloud version
-icloud version --json
-```
-
-Compact output:
-
-```text
-version
-0.1.0
+Validate credentials against iCloud IMAP and SMTP without sending mail
+
+Usage:
+  icloud account test [selector] [flags]
+
+Examples:
+  icloud account test
+  icloud account test Personal
+  icloud account test --all --json
+
+Flags:
+      --all       Validate every configured account (maximum 100)
+  -h, --help      help for test
+      --json      Emit one stable JSON success envelope
+      --verbose   Include bounded protocol capability summaries
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
 ```
 
 ## `icloud capabilities`
 
-```bash
-icloud capabilities
-icloud capabilities --json
-```
-
-Compact output:
-
 ```text
-capabilities
-command=icloud
-version=0.1.0
-schema=18
-account_mode=validated_lifecycle
-credentials=keyring,env,file
-network_validation=true
-diagnostics=true
-mail_folders=true
-mail_sync=true
-mail_content=true
-mail_attachments=true
-mail_flags=true
-mail_threads=true
-mail_search=true
-mail_remote_search=true
-mail_hydration=true
-mail_send=true
-mail_reply=true
-mail_forward=true
-mail_location_mutations=true
-default_output=compact
-json=true
-completion=bash,zsh,fish,powershell
-man=true
-```
+Describe capabilities in this installed build
 
-The schema field reports the installed local-state migration version without opening state.
+Usage:
+  icloud capabilities [flags]
+
+Examples:
+  icloud capabilities
+  icloud capabilities --json
+
+Flags:
+  -h, --help   help for capabilities
+      --json   Emit one stable JSON success envelope
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
 
 ## `icloud completion`
 
-```bash
-icloud completion bash
-icloud completion zsh
-icloud completion fish
-icloud completion powershell
+```text
+Generate shell completion scripts
+
+Usage:
+  icloud completion [flags]
+  icloud completion [command]
+
+Examples:
+  icloud completion bash > icloud.bash
+  icloud completion zsh > _icloud
+
+Available Commands:
+  bash        Generate bash completion
+  fish        Generate fish completion
+  powershell  Generate powershell completion
+  zsh         Generate zsh completion
+
+Flags:
+  -h, --help   help for completion
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+
+Use "icloud completion [command] --help" for more information about a command.
 ```
 
-Output is the native shell script, not compact text or JSON.
-
-## `icloud man`
-
-```bash
-icloud man > icloud.1
-icloud man --output-dir ./man
-```
-
-Directory mode returns:
+## `icloud completion bash`
 
 ```text
-man
-generated dir=man
+Generate bash completion
+
+Usage:
+  icloud completion bash
+
+Examples:
+  icloud completion bash > icloud.bash
+
+Flags:
+  -h, --help   help for bash
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud completion fish`
+
+```text
+Generate fish completion
+
+Usage:
+  icloud completion fish
+
+Examples:
+  icloud completion fish > icloud.fish
+
+Flags:
+  -h, --help   help for fish
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud completion powershell`
+
+```text
+Generate powershell completion
+
+Usage:
+  icloud completion powershell
+
+Examples:
+  icloud completion powershell > icloud.powershell
+
+Flags:
+  -h, --help   help for powershell
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud completion zsh`
+
+```text
+Generate zsh completion
+
+Usage:
+  icloud completion zsh
+
+Examples:
+  icloud completion zsh > icloud.zsh
+
+Flags:
+  -h, --help   help for zsh
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud doctor`
+
+```text
+Diagnose local account configuration and optional live connectivity
+
+Usage:
+  icloud doctor [selector] [flags]
+
+Examples:
+  icloud doctor
+  icloud doctor Personal
+  icloud doctor --live --json
+
+Flags:
+      --all       Diagnose every configured account (maximum 100)
+  -h, --help      help for doctor
+      --json      Emit one stable JSON success envelope
+      --live      Resolve credentials and run read-only IMAP/SMTP validation
+      --verbose   Include bounded protocol capability summaries
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
 ```
 
 ## `icloud help`
 
-```bash
-icloud help
-icloud help account
-icloud account credential replace --help
+```text
+Help provides help for any command in the application.
+Simply type icloud help [path to command] for full details.
+
+Usage:
+  icloud help [command] [flags]
+
+Flags:
+  -h, --help   help for help
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
 ```
 
-Help goes to stdout. Usage failures go to stderr and exit `2`.
+## `icloud mail`
 
-## Output availability
+```text
+Send, reply, forward, inspect, synchronize, and change exact iCloud Mail locations
 
-Every account and credential lifecycle command above, `account test`, every folder command, enabled-folder sync/read/local-or-remote-search/status/checkpoints, targeted hydration, outbound send/reply/forward preview and outcomes, latest/thread reads, message read and state commands, attachment list/save/save-all, `doctor`, `version`, and `capabilities` supports `--json` where a native byte stream is not requested. Validation, doctor, folder reads/status, thread reads, message reads, and outbound dry-run review support bounded `--verbose` detail where advertised. `mail message raw`, `message export --output -`, `attachments save --output - --binary`, and outbound dry-run `--format text|html|raw` retain their explicit native formats; completion and man generation do likewise. Local folder, search, and thread lists stay preview-only. Remote summaries stay metadata-only until `--cache`; stable local thread/message reads then provide explicit full-text, HTML, raw, headers, metadata-only, verbose, and JSON modes.
+Usage:
+  icloud mail [flags]
+  icloud mail [command]
 
-Compact output uses vertical blocks: result type first, stable identity plus the first field next when present, then one remaining field per line. A blank line separates consecutive records or a final summary. Errors use the same block shape on stderr.
+Examples:
+  icloud mail send --to client@example.com --subject Update --body-file message.txt --dry-run
+  icloud mail reply msg_… --body-file reply.txt --dry-run
+  icloud mail forward msg_… --to teammate@example.com --dry-run
+  icloud mail move msg_… --from inbox --to Projects --dry-run
+  icloud mail sync
+  icloud mail inbox
+  icloud mail message show msg_…
+  icloud mail folders status
+
+Available Commands:
+  archive     Move one eligible non-Sent location to the discovered Archive folder
+  attachments List and safely export decoded local attachments
+  copy        Copy one exact current message location
+  delete      Permanently delete one exact current provider location
+  draft       Compose, synchronize, inspect, send, and delete iCloud-backed drafts
+  flag        Flag one selected message location
+  folders     Discover folders, inspect provider status, and choose sync policy
+  forward     Forward one explicitly selected local message as a new conversation
+  inbox       Read and filter a bounded page from a synchronized mail folder
+  latest      List and filter the newest reconstructed conversations
+  mark-read   Mark one selected message location as read
+  mark-unread Mark one selected message location as unread
+  message     Read complete local message content by stable ID
+  move        Move one exact current message location
+  reply       Reply to one explicitly selected local message
+  reply-all   Reply to all visible participants of one explicitly selected local message
+  restore     Move one current Trash location to a deliberate destination
+  search      Search synchronized mail locally or query bounded provider metadata explicitly
+  send        Preview or send text, HTML, and attachments safely and idempotently
+  status      Show bounded local mail operation status
+  sync        Fetch and atomically commit bounded pages from enabled mail folders
+  thread      Read one locally reconstructed conversation
+  trash       Move one exact current location to the discovered Trash folder
+  unarchive   Move one current Archive location to Inbox
+  unflag      Remove the flag from one selected message location
+  watch       Keep enabled mail folders fresh with IDLE or explicit polling fallback
+
+Flags:
+  -h, --help   help for mail
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+
+Use "icloud mail [command] --help" for more information about a command.
+```
+
+## `icloud mail archive`
+
+```text
+Move one eligible non-Sent location to the discovered Archive folder
+
+Usage:
+  icloud mail archive <message-id> [flags]
+
+Examples:
+  icloud mail archive msg_… --dry-run
+  icloud mail archive msg_… --from inbox --idempotency-key archive-01 --yes
+
+Flags:
+      --dry-run                  Preview the exact location change without creating intent or contacting IMAP
+      --from string              Select one exact current source folder by ID, name, wire name, or kind
+  -h, --help                     help for archive
+      --idempotency-key string   Reuse the original operation when the same normalized request and idempotency key are repeated
+      --input-json string        Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                     Emit one stable JSON success envelope
+      --to string                Select one current destination folder by ID, name, wire name, or kind
+      --yes                      Confirm an intentional non-interactive location change
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail attachments`
+
+```text
+List and safely export decoded local attachments
+
+Usage:
+  icloud mail attachments [flags]
+  icloud mail attachments [command]
+
+Examples:
+  icloud mail attachments list msg_…
+  icloud mail attachments save att_… --output document.pdf
+  icloud mail attachments save-all msg_… --dir ./attachments
+
+Available Commands:
+  list        List bounded attachment metadata without printing bytes
+  save        Verify and stream one decoded attachment
+  save-all    Export a bounded attachment set with safe deterministic names
+
+Flags:
+  -h, --help   help for attachments
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+
+Use "icloud mail attachments [command] --help" for more information about a command.
+```
+
+## `icloud mail attachments list`
+
+```text
+List bounded attachment metadata without printing bytes
+
+Usage:
+  icloud mail attachments list <message-id> [flags]
+
+Flags:
+  -h, --help        help for list
+      --json        Emit one stable JSON success envelope
+      --limit int   Maximum attachments to list (1-100) (default 20)
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail attachments save`
+
+```text
+Verify and stream one decoded attachment
+
+Usage:
+  icloud mail attachments save <attachment-id> [flags]
+
+Flags:
+      --binary              Acknowledge binary bytes on stdout
+      --force               Replace an existing regular file
+  -h, --help                help for save
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope after file export
+      --output string       Destination path, or - for stdout
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail attachments save-all`
+
+```text
+Export a bounded attachment set with safe deterministic names
+
+Usage:
+  icloud mail attachments save-all <message-id> [flags]
+
+Flags:
+      --dir string          Destination directory
+      --force               Replace existing regular files
+  -h, --help                help for save-all
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail copy`
+
+```text
+Copy one exact current message location
+
+Usage:
+  icloud mail copy <message-id> [flags]
+
+Examples:
+  icloud mail copy msg_… --from inbox --to Projects --dry-run
+  icloud mail copy msg_… --from inbox --to Projects --idempotency-key copy-01 --yes
+
+Flags:
+      --dry-run                  Preview the exact location change without creating intent or contacting IMAP
+      --from string              Select one exact current source folder by ID, name, wire name, or kind
+  -h, --help                     help for copy
+      --idempotency-key string   Reuse the original operation when the same normalized request and idempotency key are repeated
+      --input-json string        Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                     Emit one stable JSON success envelope
+      --to string                Select one current destination folder by ID, name, wire name, or kind
+      --yes                      Confirm an intentional non-interactive location change
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail delete`
+
+```text
+Permanently delete one exact current provider location
+
+Usage:
+  icloud mail delete <message-id> [flags]
+
+Examples:
+  icloud mail delete msg_… --from trash --dry-run
+  icloud mail delete msg_… --from trash --idempotency-key delete-01 --yes
+
+Flags:
+      --dry-run                  Preview the exact location change without creating intent or contacting IMAP
+      --from string              Select one exact current source folder by ID, name, wire name, or kind
+  -h, --help                     help for delete
+      --idempotency-key string   Reuse the original operation when the same normalized request and idempotency key are repeated
+      --input-json string        Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                     Emit one stable JSON success envelope
+      --to string                Select one current destination folder by ID, name, wire name, or kind
+      --yes                      Confirm an intentional non-interactive location change
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail draft`
+
+```text
+Compose, synchronize, inspect, send, and delete iCloud-backed drafts
+
+Usage:
+  icloud mail draft [flags]
+  icloud mail draft [command]
+
+Examples:
+  icloud mail draft create --to teammate@example.com --subject 'Working note' --body-file draft.txt
+  icloud mail draft sync
+  icloud mail draft list
+  icloud mail draft send drf_… --dry-run
+
+Available Commands:
+  create      Create one local draft without contacting iCloud
+  delete      Delete one local draft and every known provider Drafts version
+  list        List local and provider-synchronized drafts
+  send        Preview or send one draft through the normal idempotent outbound path
+  show        Show a draft with bounded default content or an explicit body/raw expansion
+  sync        Synchronize provider Drafts and safely upload local revisions
+  update      Replace one draft revision locally before its next provider sync
+
+Flags:
+  -h, --help   help for draft
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+
+Use "icloud mail draft [command] --help" for more information about a command.
+```
+
+## `icloud mail draft create`
+
+```text
+Create one local draft without contacting iCloud
+
+Usage:
+  icloud mail draft create [flags]
+
+Examples:
+  icloud mail draft create --subject 'Idea' --body 'Incomplete is okay'
+  icloud mail draft update drf_… --to client@example.com --subject 'Ready soon' --body-file draft.txt
+
+Flags:
+      --attach stringArray        Regular file path to attach; repeat as needed
+      --attach-name stringArray   Override one attachment filename as path=filename
+      --attach-type stringArray   Override one attachment media type as path=type/subtype
+      --bcc stringArray           Bcc recipient preserved in the saved draft; hidden from default output
+      --body string               Inline text body; may be empty
+      --body-file string          Text body file path, or - for stdin
+      --cc stringArray            Cc recipient address; repeat as needed
+      --header stringArray        Safe custom header as Name: Value; repeat as needed
+  -h, --help                      help for create
+      --html-body string          Inline HTML body
+      --html-body-file string     HTML body file path, or - for stdin
+      --input-json string         Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                      Emit one stable JSON success envelope
+      --reply-to string           Optional Reply-To address
+      --subject string            Draft subject; may be empty
+      --to stringArray            Recipient address; repeat or provide a comma-separated address list
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail draft delete`
+
+```text
+Delete one local draft and every known provider Drafts version
+
+Usage:
+  icloud mail draft delete <draft-id> [flags]
+
+Flags:
+      --dry-run             Show the exact deletion scope without changing local or provider state
+  -h, --help                help for delete
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+      --yes                 Confirm intentional non-interactive draft deletion
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail draft list`
+
+```text
+List local and provider-synchronized drafts
+
+Usage:
+  icloud mail draft list [flags]
+
+Flags:
+  -h, --help        help for list
+      --json        Emit one stable JSON success envelope
+      --limit int   Maximum drafts to return (1-100) (default 20)
+      --verbose     Include provider recovery IDs and timestamps
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail draft send`
+
+```text
+Preview or send one draft through the normal idempotent outbound path
+
+Usage:
+  icloud mail draft send <draft-id> [flags]
+
+Flags:
+      --dry-run             Preview the normalized send without contacting SMTP or deleting the draft
+      --format string       With --dry-run, output text, html, or raw preview content
+      --headers             With --dry-run, print normalized safe headers
+  -h, --help                help for send
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+      --verbose             With --dry-run, include normalized header detail
+      --yes                 Confirm an intentional non-interactive send
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail draft show`
+
+```text
+Show a draft with bounded default content or an explicit body/raw expansion
+
+Usage:
+  icloud mail draft show <draft-id> [flags]
+
+Flags:
+      --body-only       Write only the selected body representation
+      --format string   Content format: compact, text, html, or raw (default "compact")
+      --full            Include the complete decoded text body
+      --headers         Include decoded headers (BCC remains omitted)
+  -h, --help            help for show
+      --json            Emit one stable JSON success envelope
+      --verbose         Include provider recovery IDs and MIME detail
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail draft sync`
+
+```text
+Synchronize provider Drafts and safely upload local revisions
+
+Usage:
+  icloud mail draft sync [draft-id] [flags]
+
+Flags:
+      --folder string       Explicitly select the provider Drafts mailbox by ID, name, or wire name when iCloud advertises no Drafts role
+  -h, --help                help for sync
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+      --limit int           Maximum provider messages committed per Drafts sync page (1-100) (default 20)
+      --verbose             Include resulting draft recovery state
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail draft update`
+
+```text
+Replace one draft revision locally before its next provider sync
+
+Usage:
+  icloud mail draft update <draft-id> [flags]
+
+Examples:
+  icloud mail draft create --subject 'Idea' --body 'Incomplete is okay'
+  icloud mail draft update drf_… --to client@example.com --subject 'Ready soon' --body-file draft.txt
+
+Flags:
+      --attach stringArray        Regular file path to attach; repeat as needed
+      --attach-name stringArray   Override one attachment filename as path=filename
+      --attach-type stringArray   Override one attachment media type as path=type/subtype
+      --bcc stringArray           Bcc recipient preserved in the saved draft; hidden from default output
+      --body string               Inline text body; may be empty
+      --body-file string          Text body file path, or - for stdin
+      --cc stringArray            Cc recipient address; repeat as needed
+      --header stringArray        Safe custom header as Name: Value; repeat as needed
+  -h, --help                      help for update
+      --html-body string          Inline HTML body
+      --html-body-file string     HTML body file path, or - for stdin
+      --input-json string         Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                      Emit one stable JSON success envelope
+      --reply-to string           Optional Reply-To address
+      --subject string            Draft subject; may be empty
+      --to stringArray            Recipient address; repeat or provide a comma-separated address list
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail flag`
+
+```text
+Flag one selected message location
+
+Usage:
+  icloud mail flag <message-id> [message-id...] [flags]
+
+Flags:
+      --folder string        Select one exact folder ID, name, wire name, or kind for every positional/JSON item
+  -h, --help                 help for flag
+      --input-json string    Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --input-jsonl string   Read up to 100 strict JSONL items with message_id and optional folder from a file, or - for stdin
+      --json                 Emit one stable JSON success envelope
+      --jsonl                Emit typed per-item and completed JSONL events
+      --mode string          Bulk failure mode: validate the bounded input then fail fast on target/provider errors, or continue-on-error (default "atomic")
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail folders`
+
+```text
+Discover folders, inspect provider status, and choose sync policy
+
+Usage:
+  icloud mail folders [flags]
+  icloud mail folders [command]
+
+Examples:
+  icloud mail folders status
+  icloud mail folders enable Receipts
+
+Available Commands:
+  create      Create one custom iCloud Mail folder
+  delete      Delete one custom iCloud Mail folder under explicit safety policy
+  disable     Disable local synchronization policy for one folder
+  enable      Enable local synchronization policy for one folder
+  list        List locally discovered folders without contacting iCloud
+  rename      Rename one custom iCloud Mail folder without changing its stable local ID
+  show        Show one locally discovered folder
+  status      Refresh every remote folder and its provider counts without fetching messages
+  subscribe   Subscribe one current iCloud Mail folder
+  unsubscribe Unsubscribe one current iCloud Mail folder
+
+Flags:
+  -h, --help   help for folders
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+
+Use "icloud mail folders [command] --help" for more information about a command.
+```
+
+## `icloud mail folders create`
+
+```text
+Create one custom iCloud Mail folder
+
+Usage:
+  icloud mail folders create <name> [flags]
+
+Examples:
+  icloud mail folders create 'Projects/Client' --dry-run
+  icloud mail folders create 'Projects/Client' --yes
+
+Flags:
+      --dry-run             Preview the exact folder change without contacting IMAP
+  -h, --help                help for create
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+      --yes                 Confirm an intentional non-interactive folder change
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail folders delete`
+
+```text
+Delete one custom iCloud Mail folder under explicit safety policy
+
+Usage:
+  icloud mail folders delete <folder> [flags]
+
+Examples:
+  icloud mail folders delete fld_… --dry-run
+  icloud mail folders delete fld_… --yes
+
+Flags:
+      --allow-non-empty     Allow provider deletion only after iCloud rechecks that the folder contains messages
+      --dry-run             Preview the exact folder change without contacting IMAP
+  -h, --help                help for delete
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+      --yes                 Confirm an intentional non-interactive folder change
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail folders disable`
+
+```text
+Disable local synchronization policy for one folder
+
+Usage:
+  icloud mail folders disable <folder-id|name|wire-name|kind> [flags]
+
+Examples:
+  icloud mail folders disable Receipts
+
+Flags:
+  -h, --help                help for disable
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail folders enable`
+
+```text
+Enable local synchronization policy for one folder
+
+Usage:
+  icloud mail folders enable <folder-id|name|wire-name|kind> [flags]
+
+Examples:
+  icloud mail folders enable Receipts
+
+Flags:
+  -h, --help                help for enable
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail folders list`
+
+```text
+List locally discovered folders without contacting iCloud
+
+Usage:
+  icloud mail folders list [flags]
+
+Examples:
+  icloud mail folders list
+  icloud mail folders list --include-missing --verbose
+
+Flags:
+  -h, --help              help for list
+      --include-missing   Include folders missing from the latest provider discovery
+      --json              Emit one stable JSON success envelope
+      --limit int         Maximum folders to return (1-100) (default 20)
+      --verbose           Include wire names, attributes, UID metadata, and timestamps
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail folders rename`
+
+```text
+Rename one custom iCloud Mail folder without changing its stable local ID
+
+Usage:
+  icloud mail folders rename <folder> <new-name> [flags]
+
+Examples:
+  icloud mail folders rename Receipts 'Projects/Receipts' --dry-run
+  icloud mail folders rename Receipts 'Projects/Receipts' --yes
+
+Flags:
+      --dry-run             Preview the exact folder change without contacting IMAP
+  -h, --help                help for rename
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+      --yes                 Confirm an intentional non-interactive folder change
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail folders show`
+
+```text
+Show one locally discovered folder
+
+Usage:
+  icloud mail folders show <folder-id|name|wire-name|kind> [flags]
+
+Examples:
+  icloud mail folders show INBOX
+  icloud mail folders show fld_… --verbose
+
+Flags:
+  -h, --help      help for show
+      --json      Emit one stable JSON success envelope
+      --verbose   Include wire names, attributes, UID metadata, and timestamps
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail folders status`
+
+```text
+Refresh every remote folder and its provider counts without fetching messages
+
+Usage:
+  icloud mail folders status [flags]
+
+Examples:
+  icloud mail folders status
+  icloud --account Personal mail folders status --json
+
+Flags:
+  -h, --help        help for status
+      --json        Emit one stable JSON success envelope
+      --limit int   Maximum folder records to print after refreshing all remote folders (1-100) (default 20)
+      --verbose     Include wire names, attributes, UID metadata, and timestamps
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail folders subscribe`
+
+```text
+Subscribe one current iCloud Mail folder
+
+Usage:
+  icloud mail folders subscribe <folder> [flags]
+
+Examples:
+  icloud mail folders subscribe Receipts --dry-run
+  icloud mail folders subscribe Receipts --yes
+
+Flags:
+      --dry-run             Preview the exact folder change without contacting IMAP
+  -h, --help                help for subscribe
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+      --yes                 Confirm an intentional non-interactive folder change
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail folders unsubscribe`
+
+```text
+Unsubscribe one current iCloud Mail folder
+
+Usage:
+  icloud mail folders unsubscribe <folder> [flags]
+
+Examples:
+  icloud mail folders unsubscribe Receipts --dry-run
+  icloud mail folders unsubscribe Receipts --yes
+
+Flags:
+      --dry-run             Preview the exact folder change without contacting IMAP
+  -h, --help                help for unsubscribe
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+      --yes                 Confirm an intentional non-interactive folder change
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail forward`
+
+```text
+Forward one explicitly selected local message as a new conversation
+
+Usage:
+  icloud mail forward <msg_…> [flags]
+
+Examples:
+  icloud mail forward msg_… --to teammate@example.com --body 'For context' --dry-run
+  icloud mail forward msg_… --to teammate@example.com --original eml --include-attachment att_… --idempotency-key forward-01 --yes
+
+Flags:
+      --attach stringArray               New regular file path to attach; repeat as needed
+      --attach-name stringArray          Override one new attachment filename as path=filename; repeat as needed
+      --attach-type stringArray          Override one new attachment media type as path=type/subtype; repeat as needed
+      --bcc stringArray                  Bcc envelope recipient; omitted from message headers
+      --body string                      Optional introductory text body
+      --body-file string                 Introductory text body file path, or - for stdin
+      --cc stringArray                   Cc recipient address; repeat as needed
+      --dry-run                          Preview the resolved forward without creating an attempt or contacting SMTP
+      --format string                    With --dry-run, output text, html, or raw preview content
+      --header stringArray               Safe custom header as Name: Value; repeat as needed
+      --headers                          With --dry-run, print normalized headers; forward reply headers remain absent
+  -h, --help                             help for forward
+      --html-body string                 Optional introductory HTML body
+      --html-body-file string            Introductory HTML body file path, or - for stdin
+      --idempotency-key string           Reuse the original operation when the same normalized request and idempotency key are repeated
+      --include-attachment stringArray   Include one original att_… attachment by stable ID; repeat as needed
+      --input-json string                Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                             Emit one stable JSON success envelope
+      --original string                  Original representation: quoted, eml, or none (default "quoted")
+      --reply-to string                  Optional Reply-To address
+      --retry-of string                  Link an explicit retry to one failed or unknown send_… attempt
+      --retry-unknown                    Authorize one duplicate-risk retry of an unknown attempt; requires --retry-of and --yes
+      --to stringArray                   Recipient address; repeat or provide a comma-separated address list
+      --verbose                          With --dry-run, include custom-header detail and HTML byte count
+      --yes                              Confirm an intentional non-interactive forward
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail inbox`
+
+```text
+Read and filter a bounded page from a synchronized mail folder
+
+Usage:
+  icloud mail inbox [flags]
+
+Examples:
+  icloud mail inbox
+  icloud mail inbox --unread --from billing@example.com
+  icloud mail inbox --query invoice --cursor cur_…
+  icloud mail inbox --folder sent --json
+
+Flags:
+      --after string             Include messages at or after an RFC3339 timestamp or YYYY-MM-DD UTC date
+      --attachment-name string   Restrict attachment filename text
+      --attachment-type string   Restrict attachment media type
+      --before string            Include messages before an RFC3339 timestamp or YYYY-MM-DD UTC date
+      --cursor string            Continue from a next_cursor returned by the same query
+      --flagged                  Include only messages with a flagged eligible location
+      --folder string            Folder kind, ID, name, or wire name (default "inbox")
+      --from string              Restrict sender or Reply-To text
+  -h, --help                     help for inbox
+      --json                     Emit one stable JSON success envelope
+      --limit int                Maximum local folder messages to return (1-100) (default 20)
+      --participant string       Restrict sender, Reply-To, To, or Cc participant text
+      --query string             Match indexed subject, sender, participants, decoded text, attachments, or RFC Message-ID
+      --read                     Include only messages without an unread eligible location
+      --rfc-id string            Match one RFC Message-ID
+      --subject string           Restrict subject text
+      --unflagged                Include only messages without a flagged eligible location
+      --unread                   Include only messages with an unread eligible location
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail latest`
+
+```text
+List and filter the newest reconstructed conversations
+
+Usage:
+  icloud mail latest [flags]
+
+Examples:
+  icloud mail latest
+  icloud mail latest --query launch --unread
+  icloud mail latest --participant teammate@example.com
+  icloud mail latest --cursor cur_… --json
+
+Flags:
+      --after string             Include messages at or after an RFC3339 timestamp or YYYY-MM-DD UTC date
+      --attachment-name string   Restrict attachment filename text
+      --attachment-type string   Restrict attachment media type
+      --before string            Include messages before an RFC3339 timestamp or YYYY-MM-DD UTC date
+      --cursor string            Continue from a next_cursor returned by the same query
+      --flagged                  Include only messages with a flagged eligible location
+      --folder string            Restrict matches to one folder kind, ID, name, or wire name
+      --from string              Restrict sender or Reply-To text
+  -h, --help                     help for latest
+      --json                     Emit one stable JSON success envelope
+      --limit int                Maximum reconstructed conversations to return (1-100) (default 20)
+      --participant string       Restrict sender, Reply-To, To, or Cc participant text
+      --query string             Match indexed subject, sender, participants, decoded text, attachments, or RFC Message-ID
+      --read                     Include only messages without an unread eligible location
+      --rfc-id string            Match one RFC Message-ID
+      --subject string           Restrict subject text
+      --unflagged                Include only messages without a flagged eligible location
+      --unread                   Include only messages with an unread eligible location
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail mark-read`
+
+```text
+Mark one selected message location as read
+
+Usage:
+  icloud mail mark-read <message-id> [message-id...] [flags]
+
+Flags:
+      --folder string        Select one exact folder ID, name, wire name, or kind for every positional/JSON item
+  -h, --help                 help for mark-read
+      --input-json string    Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --input-jsonl string   Read up to 100 strict JSONL items with message_id and optional folder from a file, or - for stdin
+      --json                 Emit one stable JSON success envelope
+      --jsonl                Emit typed per-item and completed JSONL events
+      --mode string          Bulk failure mode: validate the bounded input then fail fast on target/provider errors, or continue-on-error (default "atomic")
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail mark-unread`
+
+```text
+Mark one selected message location as unread
+
+Usage:
+  icloud mail mark-unread <message-id> [message-id...] [flags]
+
+Flags:
+      --folder string        Select one exact folder ID, name, wire name, or kind for every positional/JSON item
+  -h, --help                 help for mark-unread
+      --input-json string    Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --input-jsonl string   Read up to 100 strict JSONL items with message_id and optional folder from a file, or - for stdin
+      --json                 Emit one stable JSON success envelope
+      --jsonl                Emit typed per-item and completed JSONL events
+      --mode string          Bulk failure mode: validate the bounded input then fail fast on target/provider errors, or continue-on-error (default "atomic")
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail message`
+
+```text
+Read complete local message content by stable ID
+
+Usage:
+  icloud mail message [flags]
+  icloud mail message [command]
+
+Examples:
+  icloud mail message show msg_…
+  icloud mail message raw msg_…
+  icloud mail message export msg_… --output message.eml
+
+Available Commands:
+  export      Export the exact locally stored RFC822 message atomically
+  raw         Stream the exact locally stored RFC822 message to stdout
+  show        Show bounded metadata or explicitly requested complete content
+
+Flags:
+  -h, --help   help for message
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+
+Use "icloud mail message [command] --help" for more information about a command.
+```
+
+## `icloud mail message export`
+
+```text
+Export the exact locally stored RFC822 message atomically
+
+Usage:
+  icloud mail message export <message-id> [flags]
+
+Examples:
+  icloud mail message export msg_… --output message.eml
+  icloud mail message export msg_… --output - > message.eml
+
+Flags:
+      --force               Replace an existing regular file
+  -h, --help                help for export
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope after file export
+      --output string       Destination path, or - for stdout
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail message raw`
+
+```text
+Stream the exact locally stored RFC822 message to stdout
+
+Usage:
+  icloud mail message raw <message-id> [flags]
+
+Examples:
+  icloud mail message raw msg_… > message.eml
+
+Flags:
+  -h, --help   help for raw
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail message show`
+
+```text
+Show bounded metadata or explicitly requested complete content
+
+Usage:
+  icloud mail message show <message-id> [flags]
+
+Examples:
+  icloud mail message show msg_…
+  icloud mail message show rem_… --remote
+  icloud mail message show rem_… --remote --cache --full
+  icloud mail message show msg_… --format html --body-only
+  icloud mail message show msg_… --headers --json
+
+Flags:
+      --body-only       Write only the selected body representation
+      --cache           Persist the referenced remote message through the normal local ingestion path
+      --format string   Content format: compact, text, html, or raw (default "compact")
+      --full            Include the complete decoded text body
+      --headers         Include decoded headers (BCC remains omitted)
+  -h, --help            help for show
+      --json            Emit one stable JSON success envelope
+      --metadata-only   Show metadata without a decoded excerpt or content
+      --remote          Treat the argument as a stale-safe rem_… provider reference
+      --verbose         Include MIME part metadata and parse diagnostics
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail move`
+
+```text
+Move one exact current message location
+
+Usage:
+  icloud mail move <message-id> [flags]
+
+Examples:
+  icloud mail move msg_… --from inbox --to Projects --dry-run
+  icloud mail move msg_… --from inbox --to Projects --idempotency-key move-01 --yes
+
+Flags:
+      --dry-run                  Preview the exact location change without creating intent or contacting IMAP
+      --from string              Select one exact current source folder by ID, name, wire name, or kind
+  -h, --help                     help for move
+      --idempotency-key string   Reuse the original operation when the same normalized request and idempotency key are repeated
+      --input-json string        Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                     Emit one stable JSON success envelope
+      --to string                Select one current destination folder by ID, name, wire name, or kind
+      --yes                      Confirm an intentional non-interactive location change
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail reply`
+
+```text
+Reply to one explicitly selected local message
+
+Usage:
+  icloud mail reply <msg_…> [flags]
+
+Examples:
+  icloud mail reply msg_… --body-file reply.txt --dry-run
+  icloud mail reply msg_… --body 'Thanks' --idempotency-key reply-01 --yes
+
+Flags:
+      --attach stringArray        Regular file path to attach; repeat as needed
+      --attach-name stringArray   Override one attachment filename as path=filename; repeat as needed
+      --attach-type stringArray   Override one attachment media type as path=type/subtype; repeat as needed
+      --bcc stringArray           Add a new Bcc envelope recipient; prior Bcc recipients are never inferred
+      --body string               Inline text body
+      --body-file string          Text body file path, or - for stdin
+      --cc stringArray            Add a Cc recipient; repeat as needed
+      --dry-run                   Preview the resolved reply without creating an attempt or contacting SMTP
+      --format string             With --dry-run, output text, html, or raw preview content
+      --header stringArray        Safe custom header as Name: Value; repeat as needed
+      --headers                   With --dry-run, print normalized headers including RFC threading fields
+  -h, --help                      help for reply
+      --html-body string          Inline HTML body
+      --html-body-file string     HTML body file path, or - for stdin
+      --idempotency-key string    Reuse the original operation when the same normalized request and idempotency key are repeated
+      --input-json string         Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                      Emit one stable JSON success envelope
+      --replace-cc                Replace derived Cc recipients with the addresses supplied by --cc
+      --replace-to                Replace derived To recipients with the addresses supplied by --to
+      --retry-of string           Link an explicit retry to one failed or unknown send_… attempt
+      --retry-unknown             Authorize one duplicate-risk retry of an unknown attempt; requires --retry-of and --yes
+      --to stringArray            Add a To recipient; repeat or provide a comma-separated address list
+      --verbose                   With --dry-run, include custom-header detail and HTML byte count
+      --yes                       Confirm an intentional non-interactive reply
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail reply-all`
+
+```text
+Reply to all visible participants of one explicitly selected local message
+
+Usage:
+  icloud mail reply-all <msg_…> [flags]
+
+Examples:
+  icloud mail reply-all msg_… --body-file reply.txt --dry-run
+  icloud mail reply-all msg_… --body 'Thanks' --idempotency-key reply-01 --yes
+
+Flags:
+      --attach stringArray        Regular file path to attach; repeat as needed
+      --attach-name stringArray   Override one attachment filename as path=filename; repeat as needed
+      --attach-type stringArray   Override one attachment media type as path=type/subtype; repeat as needed
+      --bcc stringArray           Add a new Bcc envelope recipient; prior Bcc recipients are never inferred
+      --body string               Inline text body
+      --body-file string          Text body file path, or - for stdin
+      --cc stringArray            Add a Cc recipient; repeat as needed
+      --dry-run                   Preview the resolved reply without creating an attempt or contacting SMTP
+      --format string             With --dry-run, output text, html, or raw preview content
+      --header stringArray        Safe custom header as Name: Value; repeat as needed
+      --headers                   With --dry-run, print normalized headers including RFC threading fields
+  -h, --help                      help for reply-all
+      --html-body string          Inline HTML body
+      --html-body-file string     HTML body file path, or - for stdin
+      --idempotency-key string    Reuse the original operation when the same normalized request and idempotency key are repeated
+      --input-json string         Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                      Emit one stable JSON success envelope
+      --replace-cc                Replace derived Cc recipients with the addresses supplied by --cc
+      --replace-to                Replace derived To recipients with the addresses supplied by --to
+      --retry-of string           Link an explicit retry to one failed or unknown send_… attempt
+      --retry-unknown             Authorize one duplicate-risk retry of an unknown attempt; requires --retry-of and --yes
+      --to stringArray            Add a To recipient; repeat or provide a comma-separated address list
+      --verbose                   With --dry-run, include custom-header detail and HTML byte count
+      --yes                       Confirm an intentional non-interactive reply
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail restore`
+
+```text
+Move one current Trash location to a deliberate destination
+
+Usage:
+  icloud mail restore <message-id> [flags]
+
+Examples:
+  icloud mail restore msg_… --to inbox --dry-run
+  icloud mail restore msg_… --to inbox --idempotency-key restore-01 --yes
+
+Flags:
+      --dry-run                  Preview the exact location change without creating intent or contacting IMAP
+      --from string              Select one exact current source folder by ID, name, wire name, or kind
+  -h, --help                     help for restore
+      --idempotency-key string   Reuse the original operation when the same normalized request and idempotency key are repeated
+      --input-json string        Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                     Emit one stable JSON success envelope
+      --to string                Select one current destination folder by ID, name, wire name, or kind
+      --yes                      Confirm an intentional non-interactive location change
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail search`
+
+```text
+Search synchronized mail locally or query bounded provider metadata explicitly
+
+Usage:
+  icloud mail search [query] [flags]
+  icloud mail search [command]
+
+Examples:
+  icloud mail search invoice
+  icloud mail search --from billing@example.com --unread
+  icloud mail search launch --result threads --limit 20
+  icloud mail search invoice --remote --folder inbox
+  icloud mail search --attachment-type application/pdf --json
+
+Available Commands:
+  repair      Rebuild a bounded batch of incomplete local body-search entries
+
+Flags:
+      --after string             Include messages at or after an RFC3339 timestamp or YYYY-MM-DD UTC date
+      --all-folders              Search every current selectable folder, up to the documented fan-out bound
+      --attachment-name string   Restrict attachment filename text
+      --attachment-type string   Restrict attachment media type
+      --before string            Include messages before an RFC3339 timestamp or YYYY-MM-DD UTC date
+      --cursor string            Continue from a next_cursor returned by the same query
+      --flagged                  Include only messages with a flagged eligible location
+      --folder string            Restrict matches to one folder kind, ID, name, or wire name
+      --from string              Restrict sender or Reply-To text
+  -h, --help                     help for search
+      --json                     Emit one stable JSON success envelope
+      --limit int                Maximum hits to return (1-100) (default 20)
+      --participant string       Restrict sender, Reply-To, To, or Cc participant text
+      --read                     Include only messages without an unread eligible location
+      --remote                   Query bounded provider metadata instead of local synchronized state
+      --result string            Result kind: messages or threads (default "messages")
+      --rfc-id string            Match one RFC Message-ID
+      --subject string           Restrict subject text
+      --unflagged                Include only messages without a flagged eligible location
+      --unread                   Include only messages with an unread eligible location
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+
+Use "icloud mail search [command] --help" for more information about a command.
+```
+
+## `icloud mail search repair`
+
+```text
+Rebuild a bounded batch of incomplete local body-search entries
+
+Usage:
+  icloud mail search repair [flags]
+
+Examples:
+  icloud mail search repair
+  icloud mail search repair --limit 100 --json
+
+Flags:
+  -h, --help                help for repair
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+      --limit int           Maximum incomplete messages to repair (1-100) (default 20)
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail send`
+
+```text
+Preview or send text, HTML, and attachments safely and idempotently
+
+Usage:
+  icloud mail send [flags]
+
+Examples:
+  icloud mail send --to client@example.com --subject 'Update' --body-file message.txt --dry-run
+  icloud mail send --to 'Client <client@example.com>' --subject 'Update' --body 'Hello' --attach report.pdf --yes --idempotency-key send-01
+  icloud mail send --to client@example.com --subject 'Update' --body-file - --yes --json
+
+Flags:
+      --attach stringArray        Regular file path to attach; repeat as needed
+      --attach-name stringArray   Override one attachment filename as path=filename; repeat as needed
+      --attach-type stringArray   Override one attachment media type as path=type/subtype; repeat as needed
+      --bcc stringArray           Bcc envelope recipient; omitted from message headers
+      --body string               Inline text body
+      --body-file string          Text body file path, or - for stdin
+      --cc stringArray            Cc recipient address; repeat as needed
+      --dry-run                   Preview the normalized message without creating an attempt or contacting SMTP
+      --format string             With --dry-run, output text, html, or raw preview content
+      --header stringArray        Safe custom header as Name: Value; repeat as needed
+      --headers                   With --dry-run, print normalized safe header fields (Bcc remains omitted)
+  -h, --help                      help for send
+      --html-body string          Inline HTML body
+      --html-body-file string     HTML body file path, or - for stdin
+      --idempotency-key string    Reuse the original operation when the same normalized request and idempotency key are repeated
+      --input-json string         Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                      Emit one stable JSON success envelope
+      --reply-to string           Optional Reply-To address
+      --retry-of string           Link an explicit retry to one failed or unknown send_… attempt
+      --retry-unknown             Authorize one duplicate-risk retry of an unknown attempt; requires --retry-of and --yes
+      --subject string            Message subject
+      --to stringArray            Recipient address; repeat or provide a comma-separated address list
+      --verbose                   With --dry-run, include normalized custom-header detail and HTML byte count
+      --yes                       Confirm an intentional non-interactive send
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail status`
+
+```text
+Show bounded local mail operation status
+
+Usage:
+  icloud mail status [flags]
+
+Examples:
+  icloud mail status --outbound
+  icloud mail status --mutations
+  icloud mail status --mutations --limit 50 --json
+
+Flags:
+  -h, --help        help for status
+      --json        Emit one stable JSON success envelope
+      --limit int   Maximum attempts to return (1-100) (default 20)
+      --mutations   List recent message location mutation intents and outcomes
+      --outbound    List recent outbound send attempts
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail sync`
+
+```text
+Fetch and atomically commit bounded pages from enabled mail folders
+
+Usage:
+  icloud mail sync [flags]
+  icloud mail sync [command]
+
+Examples:
+  icloud mail sync
+  icloud mail sync --folder sent
+  icloud mail sync --hydrate rem_…
+  icloud mail sync --limit 50 --json
+  icloud mail sync status --folder sent
+
+Available Commands:
+  backfill    Resume one bounded historical page without moving the new-mail frontier
+  checkpoints List bounded local synchronization checkpoints
+  rebaseline  Move one forward sync frontier to the verified current iCloud tail without deleting cache
+  repair      Audit bounded local mail consistency and apply only deterministic repairs
+  status      Show one local folder synchronization frontier
+
+Flags:
+      --all-folders          Explicitly sync every current selectable folder, including locally disabled folders, with bounded recent bootstrap
+      --folder string        Sync one enabled folder by kind, ID, name, or wire name instead of all enabled folders
+  -h, --help                 help for sync
+      --hydrate strings      Cache one or more comma-separated rem_… references without advancing folder checkpoints
+      --input-json string    Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                 Emit one stable JSON success envelope
+      --limit int            Maximum messages to fetch and commit per folder (1-100) (default 20)
+      --reconcile-outbound   Sync Sent and reconcile recent sent/unknown attempts by exact Message-ID evidence
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+
+Use "icloud mail sync [command] --help" for more information about a command.
+```
+
+## `icloud mail sync backfill`
+
+```text
+Resume one bounded historical page without moving the new-mail frontier
+
+Usage:
+  icloud mail sync backfill [flags]
+
+Examples:
+  icloud mail sync backfill --folder inbox
+  icloud mail sync backfill --folder Receipts --after 2025-01-01 --before 2026-01-01 --limit 50
+  icloud mail sync backfill --folder fld_… --json
+
+Flags:
+      --after string        Include messages on or after this UTC date (YYYY-MM-DD)
+      --before string       Include messages before this UTC date (YYYY-MM-DD)
+      --folder string       Folder kind, ID, name, or wire name (default "inbox")
+  -h, --help                help for backfill
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+      --limit int           Maximum historical messages to fetch and commit in this page (1-100) (default 20)
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail sync checkpoints`
+
+```text
+List bounded local synchronization checkpoints
+
+Usage:
+  icloud mail sync checkpoints [flags]
+
+Examples:
+  icloud mail sync checkpoints
+  icloud mail sync checkpoints --json
+
+Flags:
+  -h, --help        help for checkpoints
+      --json        Emit one stable JSON success envelope
+      --limit int   Maximum checkpoints to return (1-100) (default 20)
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail sync rebaseline`
+
+```text
+Move one forward sync frontier to the verified current iCloud tail without deleting cache
+
+Usage:
+  icloud mail sync rebaseline [flags]
+
+Examples:
+  icloud mail sync rebaseline --folder inbox --current-tail
+  icloud mail sync rebaseline --folder fld_… --current-tail --json
+
+Flags:
+      --current-tail        Acknowledge moving only this forward frontier to UIDNEXT-1 observed now
+      --folder string       Folder kind, ID, name, or wire name (default "inbox")
+  -h, --help                help for rebaseline
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail sync repair`
+
+```text
+Audit bounded local mail consistency and apply only deterministic repairs
+
+Usage:
+  icloud mail sync repair [flags]
+
+Examples:
+  icloud mail sync repair --check
+  icloud mail sync repair --check --verbose
+  icloud mail sync repair --apply
+  icloud mail sync repair --apply --cleanup-orphans --yes
+
+Flags:
+      --apply               Apply only deterministic repairs described by the audit
+      --check               Audit only (the default when neither mode flag is supplied)
+      --cleanup-orphans     With --apply --yes, delete bounded orphan files from the private staging directory
+  -h, --help                help for repair
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope with bounded findings
+      --limit int           Maximum findings or repair candidates per bounded category (1-100) (default 20)
+      --verbose             Print bounded per-finding detail before the compact summary
+      --yes                 Authorize destructive orphan staging-file cleanup
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail sync status`
+
+```text
+Show one local folder synchronization frontier
+
+Usage:
+  icloud mail sync status [flags]
+
+Examples:
+  icloud mail sync status
+  icloud mail sync status --folder sent --json
+
+Flags:
+      --folder string   Folder kind, ID, name, or wire name (default "inbox")
+  -h, --help            help for status
+      --json            Emit one stable JSON success envelope
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail thread`
+
+```text
+Read one locally reconstructed conversation
+
+Usage:
+  icloud mail thread [flags]
+  icloud mail thread [command]
+
+Examples:
+  icloud mail thread show thr_…
+  icloud mail thread show msg_… --full
+
+Available Commands:
+  show        Show a bounded chronological page from a reconstructed conversation
+
+Flags:
+  -h, --help   help for thread
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+
+Use "icloud mail thread [command] --help" for more information about a command.
+```
+
+## `icloud mail thread show`
+
+```text
+Show a bounded chronological page from a reconstructed conversation
+
+Usage:
+  icloud mail thread show <thread-id|message-id> [flags]
+
+Examples:
+  icloud mail thread show thr_…
+  icloud mail thread show msg_… --full
+  icloud mail thread show thr_… --limit 20 --cursor cur_…
+  icloud mail thread show thr_… --format html --json
+  icloud mail thread show thr_… --headers --verbose
+
+Flags:
+      --body-only       Write only chronological decoded message bodies
+      --cursor string   Continue from a next_cursor returned by an earlier page
+      --format string   Content format: compact, text, html, or raw (raw requires --json) (default "compact")
+      --full            Include complete decoded text for every selected message
+      --headers         Include decoded public headers for every selected message
+  -h, --help            help for show
+      --json            Emit one stable JSON success envelope
+      --limit int       Maximum chronological messages to return (1-100) (default 20)
+      --metadata-only   Show thread and message metadata without excerpts or bodies
+      --verbose         Include MIME part metadata and RFC graph edge evidence
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail trash`
+
+```text
+Move one exact current location to the discovered Trash folder
+
+Usage:
+  icloud mail trash <message-id> [flags]
+
+Examples:
+  icloud mail trash msg_… --dry-run
+  icloud mail trash msg_… --from inbox --idempotency-key trash-01 --yes
+
+Flags:
+      --dry-run                  Preview the exact location change without creating intent or contacting IMAP
+      --from string              Select one exact current source folder by ID, name, wire name, or kind
+  -h, --help                     help for trash
+      --idempotency-key string   Reuse the original operation when the same normalized request and idempotency key are repeated
+      --input-json string        Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                     Emit one stable JSON success envelope
+      --to string                Select one current destination folder by ID, name, wire name, or kind
+      --yes                      Confirm an intentional non-interactive location change
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail unarchive`
+
+```text
+Move one current Archive location to Inbox
+
+Usage:
+  icloud mail unarchive <message-id> [flags]
+
+Examples:
+  icloud mail unarchive msg_… --dry-run
+  icloud mail unarchive msg_… --idempotency-key unarchive-01 --yes
+
+Flags:
+      --dry-run                  Preview the exact location change without creating intent or contacting IMAP
+      --from string              Select one exact current source folder by ID, name, wire name, or kind
+  -h, --help                     help for unarchive
+      --idempotency-key string   Reuse the original operation when the same normalized request and idempotency key are repeated
+      --input-json string        Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                     Emit one stable JSON success envelope
+      --to string                Select one current destination folder by ID, name, wire name, or kind
+      --yes                      Confirm an intentional non-interactive location change
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail unflag`
+
+```text
+Remove the flag from one selected message location
+
+Usage:
+  icloud mail unflag <message-id> [message-id...] [flags]
+
+Flags:
+      --folder string        Select one exact folder ID, name, wire name, or kind for every positional/JSON item
+  -h, --help                 help for unflag
+      --input-json string    Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --input-jsonl string   Read up to 100 strict JSONL items with message_id and optional folder from a file, or - for stdin
+      --json                 Emit one stable JSON success envelope
+      --jsonl                Emit typed per-item and completed JSONL events
+      --mode string          Bulk failure mode: validate the bounded input then fail fast on target/provider errors, or continue-on-error (default "atomic")
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail watch`
+
+```text
+Keep enabled iCloud Mail folders fresh in the foreground. The command uses IMAP IDLE for high-priority enabled folders when supported, falls back explicitly to polling otherwise, periodically refreshes folder state, and stops on Ctrl-C. --timeout bounds each provider/sync attempt rather than the lifetime of this foreground stream.
+
+Usage:
+  icloud mail watch [flags]
+
+Examples:
+  icloud mail watch
+  icloud mail watch --all-accounts
+  icloud mail watch --poll-interval 2m --reconcile-interval 15m
+  icloud mail watch --jsonl
+
+Flags:
+      --all-accounts                  Watch all configured accounts (maximum 10 workers)
+  -h, --help                          help for watch
+      --jsonl                         Emit one typed JSON object per lifecycle event
+      --limit int                     Maximum messages committed per folder sync (1-100) (default 20)
+      --poll-interval duration        Polling interval when IDLE is unavailable (default 1m0s)
+      --reconcile-interval duration   Interval for full enabled-folder and folder-state reconciliation (default 15m0s)
+      --verbose                       Include idle and unchanged synchronization lifecycle detail
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud man`
+
+```text
+Generate man pages from the current command tree
+
+Usage:
+  icloud man [flags]
+
+Examples:
+  icloud man > icloud.1
+  icloud man --output-dir ./man
+
+Flags:
+  -h, --help                help for man
+      --output-dir string   Write the complete man-page tree to this directory
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud version`
+
+```text
+Print the installed CLI version
+
+Usage:
+  icloud version [flags]
+
+Examples:
+  icloud version
+  icloud version --json
+
+Flags:
+  -h, --help   help for version
+      --json   Emit one stable JSON success envelope
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```

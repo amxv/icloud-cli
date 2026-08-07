@@ -1,0 +1,51 @@
+.nh
+.TH "ICLOUD" "1" "Jan 1970" "icloud 0.1.0" "iCloud Mail CLI Manual"
+
+.SH NAME
+icloud-account - Configure and inspect iCloud Mail accounts
+
+
+.SH SYNOPSIS
+\fBicloud account [flags]\fP
+
+
+.SH DESCRIPTION
+Configure and inspect iCloud Mail accounts
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for account
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--account\fP=""
+	Select an account by name, email, or stable ID
+
+.PP
+\fB--home\fP=""
+	Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+
+.PP
+\fB--no-input\fP[=false]
+	Never prompt for interactive input
+
+.PP
+\fB--request-id\fP=""
+	Attach a stable request ID to structured output
+
+.PP
+\fB--timeout\fP=30s
+	Maximum normal command duration; watch applies it per provider/sync attempt
+
+
+.SH EXAMPLE
+.EX
+  icloud account add --name Personal --email owner@icloud.com --password-stdin
+  icloud account list
+  icloud account show personal
+.EE
+
+
+.SH SEE ALSO
+\fBicloud(1)\fP, \fBicloud-account-add(1)\fP, \fBicloud-account-credential(1)\fP, \fBicloud-account-default(1)\fP, \fBicloud-account-list(1)\fP, \fBicloud-account-remove(1)\fP, \fBicloud-account-rename(1)\fP, \fBicloud-account-show(1)\fP, \fBicloud-account-test(1)\fP

@@ -18,7 +18,9 @@ Run:
 npm rebuild --global @amxv/icloud-cli
 ```
 
-The installer first tries the matching native release asset, then a local Go build when source and Go are available.
+The installer first downloads the matching native release asset and verifies it against the tagged release checksum. If the download or verification fails, it can use a local Go build when source and Go are available.
+
+If the warning reports a checksum mismatch, do not bypass it or copy the downloaded file into place manually. Re-run the install after confirming you are requesting the intended package version; if the release is incomplete, use the documented source-build path instead.
 
 ## The command name is not found
 
@@ -164,7 +166,7 @@ Permanent deletion requires safe exact UID EXPUNGE support before it changes the
 
 The same account and idempotency key were already used for a different normalized request. Do not change recipients, subject, body, Reply-To, headers, or the account identity while reusing a key.
 
-Run the original command unchanged to retrieve its attempt without another SMTP transaction. Use a new key only for an intentionally new message.
+Run the original command unchanged to retrieve its attempt without another SMTP submission. Use a new key only for an intentionally new message.
 
 ## Mail send outcome is unknown
 
@@ -184,7 +186,7 @@ Only after checking both Sent and the recipient may you deliberately create a li
 
 ## SMTP accepted the message but local completion is incomplete
 
-The provider returned final acceptance, but the CLI could not finish the local searchable message/thread transaction. The durable attempt remains `sent` with `error_code=local_completion` so an idempotent replay cannot submit it again.
+The provider returned final acceptance, but the CLI could not finish the local searchable message/thread update. The durable attempt remains `sent` with `error_code=local_completion` so an idempotent replay cannot submit it again.
 
 Do not resend. Preserve the `send_…` ID and run `icloud mail sync --reconcile-outbound` to restore the missing local linkage from exact Sent evidence.
 
@@ -325,6 +327,8 @@ icloud man --output-dir ./man
 ```
 
 Generating completion output does not install it automatically.
+
+The npm package also contains generated `completions/` files and a complete `man/` tree. If those packaged assets are missing or disagree with `icloud --help`, reinstall the package rather than editing them in place.
 
 ## A local command is not contacting iCloud
 

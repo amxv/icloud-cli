@@ -161,7 +161,7 @@ icloud account credential replace Personal \
   --credential-file "$HOME/.config/icloud-cli/personal-password"
 ```
 
-A replacement returns the account to `pending_validation`. When changing away from keyring storage, the old native keyring entry is removed. If the local transaction fails, the CLI attempts to restore the prior keyring value before returning an error.
+A replacement returns the account to `pending_validation`. When changing away from keyring storage, the old native keyring entry is removed. If the local update fails, the CLI attempts to restore the prior keyring value before returning an error.
 
 ## Delete a credential or account
 

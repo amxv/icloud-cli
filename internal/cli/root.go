@@ -237,8 +237,8 @@ func Execute(ctx context.Context, args []string, config Config) Result {
 func newRootCommand(state *executionState) *cobra.Command {
 	root := &cobra.Command{
 		Use:           commandName,
-		Short:         "Control iCloud services from the command line",
-		Long:          "icloud controls iCloud services from the command line. This build provides secure account setup, live read-only IMAP and SMTP validation, deliberate text, HTML, and attachment sending plus exact-message reply, reply-all, and forward with dry-run review, idempotency, explicit retry linkage, and Sent reconciliation, durable folder discovery, bounded folder synchronization, foreground IDLE/polling watch and flag reconciliation, indexed local search, explicit bounded remote search and targeted hydration, complete local message reads, verified attachment export, location-aware read/flag updates, exact message-location move/copy/archive/trash/restore/delete with durable intent and unresolved-state recovery, account health diagnostics, version and capability reporting, shell completions, and man-page generation.",
+		Short:         "Control iCloud Mail from the command line",
+		Long:          "icloud is a local-first iCloud Mail CLI for account setup, validation, folder and synchronization workflows, offline and bounded remote search, complete message and attachment reads, drafts, deliberate send/reply/forward operations, message-state and location changes, recovery diagnostics, automation-safe JSON/JSONL, shell completion, and man-page generation.",
 		Example:       "  icloud account add --name Personal --email owner@icloud.com --password-stdin\n  icloud account test\n  icloud mail send --to client@example.com --subject Update --body-file message.txt --dry-run\n  icloud mail reply msg_… --body-file reply.txt --dry-run\n  icloud mail forward msg_… --to teammate@example.com --dry-run\n  icloud mail move msg_… --from inbox --to Projects --dry-run\n  icloud mail sync\n  icloud mail message show msg_…\n  icloud doctor",
 		SilenceErrors: true,
 		SilenceUsage:  true,
@@ -303,7 +303,16 @@ func newRootCommand(state *executionState) *cobra.Command {
 		helpCommand.GroupID = "docs"
 	}
 	configureDynamicCompletion(root, state)
+	initializeDefaultFlags(root)
 	return root
+}
+
+func initializeDefaultFlags(command *cobra.Command) {
+	command.InitDefaultHelpFlag()
+	command.InitDefaultVersionFlag()
+	for _, child := range command.Commands() {
+		initializeDefaultFlags(child)
+	}
 }
 
 func newVersionCommand(state *executionState) *cobra.Command {
@@ -643,7 +652,7 @@ func newManCommand(root *cobra.Command, state *executionState) *cobra.Command {
 				Section: "1",
 				Date:    &date,
 				Source:  "icloud " + state.version,
-				Manual:  "iCloud CLI Manual",
+				Manual:  "iCloud Mail CLI Manual",
 			}
 			if strings.TrimSpace(outputDir) == "" {
 				return doc.GenMan(root, header, state.stdout)

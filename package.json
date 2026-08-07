@@ -1,7 +1,7 @@
 {
   "name": "@amxv/icloud-cli",
   "version": "0.1.0",
-  "description": "A local-first command-line client for iCloud services",
+  "description": "A local-first command-line client for iCloud Mail",
   "license": "Apache-2.0",
   "author": "amxv",
   "repository": {
@@ -15,6 +15,9 @@
   "bin": {
     "icloud": "bin/icloud.js"
   },
+  "man": [
+    "man/icloud.1"
+  ],
   "config": {
     "cliName": "icloud",
     "cliBinaryName": "icloud",
@@ -26,6 +29,8 @@
     "cmd",
     "internal",
     "schemas",
+    "man",
+    "completions",
     "go.mod",
     "go.sum",
     "README.md",
@@ -37,7 +42,7 @@
   ],
   "scripts": {
     "postinstall": "node scripts/postinstall.js",
-    "test": "node --check bin/icloud.js && node --check scripts/postinstall.js && node --test scripts/packaging.test.js",
+    "test": "node --check bin/icloud.js && node --check scripts/postinstall.js && node --check scripts/release-metadata.js && node --check scripts/package-install-smoke.js && node --test scripts/packaging.test.js scripts/docs-contract.test.js",
     "lint": "npm run test",
     "docs:dev": "astro dev",
     "docs:build": "astro build",
@@ -52,6 +57,9 @@
     "icloud",
     "apple",
     "mail",
+    "email",
+    "imap",
+    "smtp",
     "automation"
   ],
   "devDependencies": {

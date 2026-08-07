@@ -165,17 +165,4 @@ icloud --timeout 15s account test Personal
 
 Cancellation interrupts a stalled greeting, TLS handshake, command response, or authentication exchange. A timeout never changes an authentication error into success and never triggers a send.
 
-## Live integration testing for contributors
-
-The deterministic test suite uses local TLS IMAP and STARTTLS SMTP servers. An additional live harness is opt-in and must use a disposable iCloud account:
-
-```bash
-ICLOUD_LIVE_TEST=1 \
-ICLOUD_LIVE_TEST_EMAIL=disposable@icloud.com \
-ICLOUD_LIVE_TEST_PASSWORD="$DISPOSABLE_APP_PASSWORD" \
-go test -run TestLiveICloudCompatibility ./internal/transport/icloud
-```
-
-`ICLOUD_LIVE_TEST_IMAP_USERNAME` is optional. The harness skips cleanly when the explicit opt-in or required values are absent. Never use a primary Apple Account password or commit the environment values, protocol output, or generated local state.
-
 After an account is connected, continue with [Folder discovery and sync policy](/docs/folder-discovery-and-sync-policy), then [Sync and read mail](/docs/sync-and-read-inbox). Use [Troubleshooting](/docs/troubleshooting) for stage-specific next actions or [Output and automation](/docs/output-and-automation) for JSON and exit contracts.
