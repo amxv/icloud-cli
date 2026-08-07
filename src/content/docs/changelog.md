@@ -15,6 +15,7 @@ summary: Public Mail workflows, output contracts, installation, and documentatio
 - Added local-only account and folder completion. Completion suggestions never authenticate, resolve a credential, or contact iCloud.
 - Added deterministic generated command-reference, man-page, and Bash/Zsh/Fish/PowerShell completion assets derived from the same Cobra tree as the executable. Docs and repository checks fail when generated references drift.
 - Hardened npm installation so a downloaded native release binary is verified against the tagged release's SHA-256 checksums before installation. Releases also publish machine-readable metadata for all six supported OS/architecture assets; source fallback remains available when Go is installed.
+- Hardened deadline and retry behavior so a send or draft-send that reaches a provider outcome remains durably idempotent even if the caller's deadline expires, while indeterminate sends still require explicit reconciliation instead of automatic retry.
 - Consolidated the docs around task-focused journeys for installation/update, app-specific-password safety, account health, folders, synchronization/backfill/watch/repair, search, conversations, attachments, drafts/outbound mail, location changes, local-state backup/removal, automation, and troubleshooting. Exhaustive syntax now belongs to the generated command reference instead of being maintained by hand.
 
 ## 0.1.0 — 2026-08-05

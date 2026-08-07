@@ -20,6 +20,8 @@ test("npm exposes one public icloud command", () => {
   assert.ok(pkg.files.includes("man"));
   assert.ok(pkg.files.includes("completions"));
   assert.deepEqual(pkg.man, ["man/icloud.1"]);
+  assert.equal(pkg.packageManager, "bun@1.3.14");
+  assert.ok(fs.existsSync(path.join(__dirname, "..", "bun.lock")));
   assert.ok(fs.existsSync(path.join(__dirname, "..", "schemas", "v1", "message.schema.json")));
   assert.ok(fs.existsSync(path.join(__dirname, "..", "man", "icloud.1")));
   for (const completion of ["_icloud", "icloud.bash", "icloud.fish", "icloud.ps1"]) {
@@ -63,6 +65,8 @@ test("release workflow preserves every native asset target", () => {
   assert.match(workflow, /Validate release tag/);
   assert.match(workflow, /Verify runnable release version/);
   assert.match(workflow, /package-install:/);
+  assert.match(workflow, /bun install --frozen-lockfile --ignore-scripts/);
+  assert.doesNotMatch(workflow, /npm install --ignore-scripts --no-package-lock/);
   assert.match(workflow, /files: dist\/\*/);
 });
 

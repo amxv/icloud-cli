@@ -27,6 +27,27 @@ type fakeSMTPSender struct {
 	err      error
 }
 
+type deadlineSMTPSender struct {
+	calls    int
+	accepted bool
+	cancel   context.CancelFunc
+}
+
+func (sender *deadlineSMTPSender) SendSMTP(ctx context.Context, _ transport.AuthRequest, _ transport.SMTPSendRequest) (transport.SMTPSendResult, error) {
+	sender.calls++
+	if sender.cancel != nil {
+		sender.cancel()
+	}
+	<-ctx.Done()
+	if sender.accepted {
+		return transport.SMTPSendResult{Accepted: true, StatusText: "accepted at deadline"}, nil
+	}
+	return transport.SMTPSendResult{}, &transport.SMTPSendError{
+		Outcome: transport.SMTPSendFailed,
+		Failure: transport.NewFailure(transport.StageTimeout, transport.FailureUnavailable, true, ctx.Err()),
+	}
+}
+
 type fakeSentAppender struct {
 	calls    int
 	auth     []transport.AuthRequest
@@ -448,6 +469,68 @@ func TestMailSendFailedAttemptAllowsExplicitLinkedRetry(t *testing.T) {
 	code, stdout, stderr = runWithAccountCommands(t, commands, "", retryArgs...)
 	if code != 0 || stderr != "" || sender.calls != 2 || !strings.Contains(stdout, `"status":"sent"`) || !strings.Contains(stdout, `"retry_of_attempt_id":"`+originalAttemptID+`"`) {
 		t.Fatalf("failed linked retry code=%d stdout=%q stderr=%q calls=%d", code, stdout, stderr, sender.calls)
+	}
+}
+
+func TestMailSendDeadlinePersistsTerminalOutcomeAfterCallerContextExpires(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("ICLOUD_SEND_PASSWORD", "synthetic-send-secret")
+	commands, _ := newTestAccountCommands()
+	sender := &deadlineSMTPSender{}
+	commands.sender = sender
+	addSendAccount(t, commands, home)
+	request := maildomain.SendRequest{
+		To: []maildomain.Address{{Email: "primary@example.com"}}, Subject: "Deadline failure",
+		TextBody: "deadline-failure-token", IdempotencyKey: "deadline-failure-key",
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sender.cancel = cancel
+	_, attempt, reused, _, err := commands.MailSend(ctx, home, "", request)
+	if err == nil || reused || sender.calls != 1 || attempt.Status != maildomain.OutboundFailed {
+		t.Fatalf("attempt=%+v reused=%v calls=%d err=%v", attempt, reused, sender.calls, err)
+	}
+	state, openErr := openState(context.Background(), home)
+	if openErr != nil {
+		t.Fatal(openErr)
+	}
+	defer state.Close()
+	stored, readErr := state.Outbound().Attempt(context.Background(), attempt.ID)
+	if readErr != nil || stored.Status != maildomain.OutboundFailed || stored.ErrorCode != string(transport.StageTimeout) {
+		t.Fatalf("stored=%+v err=%v", stored, readErr)
+	}
+}
+
+func TestMailSendAcceptanceAtCallerDeadlinePersistsSentAndDefersSentCopy(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("ICLOUD_SEND_PASSWORD", "synthetic-send-secret")
+	commands, _ := newTestAccountCommands()
+	sender := &deadlineSMTPSender{accepted: true}
+	commands.sender = sender
+	sent := &fakeSentAppender{}
+	commands.sent = sent
+	addSendAccount(t, commands, home)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sender.cancel = cancel
+	_, attempt, reused, _, err := commands.MailSend(ctx, home, "", maildomain.SendRequest{
+		To: []maildomain.Address{{Email: "primary@example.com"}}, Subject: "Deadline acceptance",
+		TextBody: "deadline-acceptance-token", IdempotencyKey: "deadline-acceptance-key",
+	})
+	if err == nil || reused || sender.calls != 1 || sent.calls != 0 || attempt.Status != maildomain.OutboundSent || attempt.MessageID == "" {
+		t.Fatalf("attempt=%+v reused=%v smtp=%d sent=%d err=%v", attempt, reused, sender.calls, sent.calls, err)
+	}
+	if attempt.Reconciliation != maildomain.ReconciliationUnknown || attempt.ReconciliationErrorCode != "sent_copy_deferred" {
+		t.Fatalf("accepted deadline reconciliation=%s code=%q", attempt.Reconciliation, attempt.ReconciliationErrorCode)
+	}
+	state, openErr := openState(context.Background(), home)
+	if openErr != nil {
+		t.Fatal(openErr)
+	}
+	defer state.Close()
+	stored, readErr := state.Outbound().Attempt(context.Background(), attempt.ID)
+	if readErr != nil || stored.Status != maildomain.OutboundSent || stored.MessageID == "" {
+		t.Fatalf("stored=%+v err=%v", stored, readErr)
 	}
 }
 

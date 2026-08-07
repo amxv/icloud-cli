@@ -478,7 +478,13 @@ INSERT INTO message_search_documents (
 	if len(page.Hits) != 100 || !page.More || page.NextCursor == "" {
 		t.Fatalf("large page count=%d more=%v cursor=%q", len(page.Hits), page.More, page.NextCursor)
 	}
-	if duration > 5*time.Second {
+	maxDuration := 5 * time.Second
+	if raceDetectorEnabled {
+		// Keep the production responsiveness budget strict while allowing for
+		// race-detector instrumentation on the same 5,000-row query fixture.
+		maxDuration = 15 * time.Second
+	}
+	if duration > maxDuration {
 		t.Fatalf("large search took %s", duration)
 	}
 	if allocated := after.TotalAlloc - before.TotalAlloc; allocated > 64<<20 {

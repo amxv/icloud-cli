@@ -176,7 +176,7 @@ func NormalizeRFCMessageID(value string) (string, bool) {
 	if strings.HasPrefix(value, "<") && strings.HasSuffix(value, ">") && len(value) > 2 {
 		value = strings.TrimSpace(value[1 : len(value)-1])
 	}
-	if value == "" || strings.ContainsAny(value, "<>") || strings.IndexFunc(value, unicode.IsSpace) >= 0 {
+	if value == "" || len(value)+2 > MaxReplyReferencesBytes || strings.ContainsAny(value, "<>") || strings.IndexFunc(value, unicode.IsSpace) >= 0 {
 		return "", false
 	}
 	at := strings.LastIndexByte(value, '@')

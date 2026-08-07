@@ -81,6 +81,9 @@ func TestMailLocationMoveDryRunConfirmedPersistenceAndIdempotentReplay(t *testin
 	) {
 		t.Fatalf("move outcome = %q", stdout)
 	}
+	if lines, size := strings.Count(stdout, "\n"), len(stdout); lines > 20 || size > 720 {
+		t.Fatalf("move outcome budget lines=%d bytes=%d output=%q", lines, size, stdout)
+	}
 	request := client.requests[0]
 	if request.Operation != transport.LocationMutationMove ||
 		request.SourceMailbox != fixture.folders[folder.KindInbox].Name ||

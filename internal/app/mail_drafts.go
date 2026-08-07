@@ -611,15 +611,20 @@ func (commands accountCommands) MailDraftSend(ctx context.Context, home, account
 	request.IdempotencyKey = fmt.Sprintf("draft:%s:r%d", value.ID, value.Revision)
 	accountValue, attempt, existing, schemaVersion, sendErr := commands.MailSend(ctx, home, accountValue.ID, request)
 	if sendErr != nil || attempt.Status == maildomain.OutboundUnknown {
-		state, _, unlock, openErr := commands.openWriteState(ctx, home)
+		recoveryCtx, recoveryCancel := durableOutcomeContext(ctx)
+		defer recoveryCancel()
+		state, _, unlock, openErr := commands.openWriteState(recoveryCtx, home)
 		if openErr == nil {
-			stateValue, stateErr := state.Drafts().Draft(ctx, accountValue.ID, draftID)
+			stateValue, stateErr := state.Drafts().Draft(recoveryCtx, accountValue.ID, draftID)
 			if stateErr == nil {
 				stateKind := stateValue.SyncState
-				if attempt.Status == maildomain.OutboundUnknown {
+				switch attempt.Status {
+				case maildomain.OutboundUnknown:
 					stateKind = maildomain.DraftSendUnknown
+				case maildomain.OutboundSent:
+					stateKind = maildomain.DraftCleanupPending
 				}
-				_, _ = state.Drafts().SetLifecycle(ctx, accountValue.ID, draftID, stateKind, stateValue.RemoteLocationID, stateValue.PreviousLocationID, attempt.ID, string(attempt.Status), commands.timeNow())
+				_, _ = state.Drafts().SetLifecycle(recoveryCtx, accountValue.ID, draftID, stateKind, stateValue.RemoteLocationID, stateValue.PreviousLocationID, attempt.ID, string(attempt.Status), commands.timeNow())
 			}
 			state.Close()
 			unlock()
@@ -661,7 +666,9 @@ func (commands accountCommands) MailDraftSend(ctx context.Context, home, account
 }
 
 func (commands accountCommands) markSentDraftCleanupPending(ctx context.Context, state *store.Store, value maildomain.Draft, attempt maildomain.OutboundAttempt, primary error) error {
-	_, updateErr := state.Drafts().SetLifecycle(ctx, value.AccountID, value.ID, maildomain.DraftCleanupPending, value.RemoteLocationID, value.PreviousLocationID, attempt.ID, "sent_cleanup_pending", commands.timeNow())
+	recoveryCtx, cancel := durableOutcomeContext(ctx)
+	defer cancel()
+	_, updateErr := state.Drafts().SetLifecycle(recoveryCtx, value.AccountID, value.ID, maildomain.DraftCleanupPending, value.RemoteLocationID, value.PreviousLocationID, attempt.ID, "sent_cleanup_pending", commands.timeNow())
 	if updateErr != nil {
 		primary = errors.Join(primary, updateErr)
 	}

@@ -4,6 +4,8 @@
 
 It supports secure multi-account setup, IMAP/SMTP validation, folder discovery and policy, bounded forward sync and historical backfill, foreground IDLE watch, local and explicit remote search, reconstructed RFC conversations, complete message and attachment access, drafts, send/reply/reply-all/forward, read/flag state, exact-location move/copy/archive/trash/restore/delete, repair/rebaseline/reconciliation workflows, strict JSON write input, bounded JSONL bulk state changes, versioned schemas, local-only completion, and generated man pages.
 
+The scope is iCloud Mail only. Contacts, Calendar, Drive, Notes, Photos, Find My, and operating a hosted mail service are intentionally outside this CLI.
+
 ## Install or update
 
 ```bash

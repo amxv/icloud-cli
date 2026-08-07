@@ -19,6 +19,17 @@ import (
 	"github.com/amxv/icloud-cli/internal/transport"
 )
 
+const durableOutcomeTimeout = 10 * time.Second
+
+// durableOutcomeContext is only for short local persistence after an outbound
+// attempt has already been created. Provider I/O must continue to use the
+// caller's context so --timeout remains a real network-operation boundary.
+// Once an SMTP outcome exists, however, a canceled caller context must not
+// strand the durable attempt in "pending" or lose a proven acceptance.
+func durableOutcomeContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), durableOutcomeTimeout)
+}
+
 func (commands accountCommands) MailSendPreview(
 	ctx context.Context,
 	home, accountSelector string,
@@ -216,13 +227,17 @@ func (commands accountCommands) MailSend(
 		}
 		return accountValue, attempt, false, state.SchemaVersion(), withAttemptDetails(mapped, attempt)
 	}
-	completedAttempt, completionErr := state.Outbound().CompleteSent(ctx, maildomain.CompleteOutboundSend{
+	outcomeCtx, outcomeCancel := durableOutcomeContext(ctx)
+	completedAttempt, completionErr := state.Outbound().CompleteSent(outcomeCtx, maildomain.CompleteOutboundSend{
 		AttemptID: attempt.ID, Request: normalized, Content: content, AcceptedAt: commands.timeNow(),
 	})
+	outcomeCancel()
 	if completionErr != nil {
 		acceptedAt := commands.timeNow()
 		mapped := cli.WrapAppError(cli.ErrorInternal, "SMTP accepted the message but local completion is incomplete; do not retry automatically", false, completionErr)
-		acceptedAttempt, outcomeErr := state.Outbound().MarkAcceptedIncomplete(ctx, attempt.ID, "local_completion", acceptedAt)
+		outcomeCtx, outcomeCancel = durableOutcomeContext(ctx)
+		acceptedAttempt, outcomeErr := state.Outbound().MarkAcceptedIncomplete(outcomeCtx, attempt.ID, "local_completion", acceptedAt)
+		outcomeCancel()
 		if outcomeErr != nil {
 			combined := cli.WrapAppError(
 				cli.ErrorInternal,
@@ -235,6 +250,9 @@ func (commands accountCommands) MailSend(
 		return accountValue, acceptedAttempt, false, state.SchemaVersion(), withAttemptDetails(mapped, acceptedAttempt)
 	}
 	attempt = completedAttempt
+	if ctx.Err() != nil {
+		return markAcceptedSentCopyIssue(ctx, state.Outbound(), accountValue, attempt, "sent_copy_deferred", commands.timeNow(), ctx.Err(), state.SchemaVersion())
+	}
 	sentFolder, folderErr := state.Folders().Resolve(ctx, accountValue.ID, string(folder.KindSent))
 	if folderErr == nil && sentFolder.Present && sentFolder.Selectable {
 		rawReader, openErr := blob.New(paths.BlobRoot).OpenVerifiedContext(ctx, staged.StorageKey, staged.ContentHash, staged.ByteSize)
@@ -348,7 +366,9 @@ func markAcceptedSentCopyIssue(
 	cause error,
 	schemaVersion int64,
 ) (account.Account, maildomain.OutboundAttempt, bool, int64, error) {
-	updated, updateErr := repository.MarkReconciliationIssue(ctx, attempt.ID, code, now)
+	outcomeCtx, cancel := durableOutcomeContext(ctx)
+	defer cancel()
+	updated, updateErr := repository.MarkReconciliationIssue(outcomeCtx, attempt.ID, code, now)
 	if updateErr != nil {
 		combined := cli.WrapAppError(cli.ErrorInternal, "SMTP accepted the message but the Sent-copy outcome could not be recorded; do not resend", false, errors.Join(cause, updateErr))
 		return accountValue, attempt, false, schemaVersion, withAttemptDetails(combined, attempt)
@@ -479,7 +499,9 @@ func persistOutboundOutcome(
 	now time.Time,
 	primary error,
 ) (maildomain.OutboundAttempt, error) {
-	updated, err := repository.MarkOutcome(ctx, attempt.ID, status, errorCode, now)
+	outcomeCtx, cancel := durableOutcomeContext(ctx)
+	defer cancel()
+	updated, err := repository.MarkOutcome(outcomeCtx, attempt.ID, status, errorCode, now)
 	if err == nil {
 		return updated, nil
 	}

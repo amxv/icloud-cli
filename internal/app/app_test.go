@@ -32,7 +32,7 @@ func run(t *testing.T, args ...string) (int, string, string) {
 	t.Helper()
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	exitCode := Run(context.Background(), args, &stdout, &stderr)
+	exitCode := Run(context.Background(), raceCalibratedCommandArgs(args), &stdout, &stderr)
 	return exitCode, stdout.String(), stderr.String()
 }
 
@@ -147,8 +147,22 @@ func runWithAccountCommands(t *testing.T, commands accountCommands, stdin string
 	t.Helper()
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	exitCode := runWithAccounts(context.Background(), args, strings.NewReader(stdin), &stdout, &stderr, commands)
+	exitCode := runWithAccounts(context.Background(), raceCalibratedCommandArgs(args), strings.NewReader(stdin), &stdout, &stderr, commands)
 	return exitCode, stdout.String(), stderr.String()
+}
+
+func raceCalibratedCommandArgs(args []string) []string {
+	if raceTestCommandTimeout == "" {
+		return args
+	}
+	for _, arg := range args {
+		if arg == "--timeout" || strings.HasPrefix(arg, "--timeout=") {
+			return args
+		}
+	}
+	calibrated := make([]string, 0, len(args)+2)
+	calibrated = append(calibrated, "--timeout", raceTestCommandTimeout)
+	return append(calibrated, args...)
 }
 
 func compactContainsAll(output string, values ...string) bool {

@@ -105,6 +105,108 @@ func TestOpenCreatesAndReopensVersionedPrivateState(t *testing.T) {
 	}
 }
 
+func TestOpenUpgradesEveryEarlierSchemaAndPreservesStableAccountIDs(t *testing.T) {
+	for version := int64(1); version < SchemaVersion; version++ {
+		version := version
+		t.Run(fmt.Sprintf("v%d", version), func(t *testing.T) {
+			t.Parallel()
+			paths := testPaths(t, filepath.Join(t.TempDir(), "state"))
+			if err := config.EnsureAppPaths(paths); err != nil {
+				t.Fatal(err)
+			}
+			database, err := sql.Open("sqlite", paths.Database)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := configureSQLite(context.Background(), database); err != nil {
+				database.Close()
+				t.Fatal(err)
+			}
+			migrationFS, err := fs.Sub(migrations, "migrations")
+			if err != nil {
+				database.Close()
+				t.Fatal(err)
+			}
+			provider, err := goose.NewProvider(goose.DialectSQLite3, database, migrationFS, goose.WithLogger(goose.NopLogger()))
+			if err != nil {
+				database.Close()
+				t.Fatal(err)
+			}
+			if _, err := provider.UpTo(context.Background(), version); err != nil {
+				database.Close()
+				t.Fatal(err)
+			}
+			stamp := time.Date(2026, 8, 7, 5, 0, int(version), 0, time.UTC).Format(time.RFC3339Nano)
+			accountID := fmt.Sprintf("acct_019fda7b-3ba1-7000-8000-%012d", version)
+			credentialID := fmt.Sprintf("cred_019fda7b-3ba1-7000-8000-%012d", version)
+			if _, err := database.Exec(`
+INSERT INTO accounts (
+    account_id, friendly_name, email_address, imap_username,
+    status, is_default, created_at, updated_at
+) VALUES (?, ?, ?, ?, 'pending_validation', 1, ?, ?)`,
+				accountID, fmt.Sprintf("Legacy %d", version), fmt.Sprintf("legacy-%d@example.test", version), fmt.Sprintf("legacy-%d", version), stamp, stamp); err != nil {
+				database.Close()
+				t.Fatal(err)
+			}
+			if _, err := database.Exec(`
+INSERT INTO credential_refs (
+    credential_ref_id, account_id, scheme, reference, created_at, updated_at
+) VALUES (?, ?, 'env', ?, ?, ?)`, credentialID, accountID, fmt.Sprintf("env:LEGACY_%d_PASSWORD", version), stamp, stamp); err != nil {
+				database.Close()
+				t.Fatal(err)
+			}
+			if err := database.Close(); err != nil {
+				t.Fatal(err)
+			}
+
+			state, err := Open(context.Background(), paths)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer state.Close()
+			if state.SchemaVersion() != SchemaVersion {
+				t.Fatalf("schema version=%d", state.SchemaVersion())
+			}
+			value, credential, err := state.Accounts().Credential(context.Background(), accountID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if value.ID != accountID || credential.ID != credentialID || credential.Reference != fmt.Sprintf("env:LEGACY_%d_PASSWORD", version) {
+				t.Fatalf("stable IDs/reference changed: account=%+v credential=%+v", value, credential)
+			}
+			var integrity string
+			if err := state.db.QueryRowContext(context.Background(), "PRAGMA integrity_check").Scan(&integrity); err != nil {
+				t.Fatal(err)
+			}
+			if integrity != "ok" {
+				t.Fatalf("integrity=%q", integrity)
+			}
+		})
+	}
+}
+
+func TestOpenRejectsCorruptSQLiteWithoutReplacingIt(t *testing.T) {
+	paths := testPaths(t, filepath.Join(t.TempDir(), "state"))
+	if err := config.EnsureAppPaths(paths); err != nil {
+		t.Fatal(err)
+	}
+	want := []byte("not-a-sqlite-database\x00synthetic-corruption")
+	if err := os.WriteFile(paths.Database, want, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if state, err := Open(context.Background(), paths); err == nil {
+		state.Close()
+		t.Fatal("corrupt database unexpectedly opened")
+	}
+	got, err := os.ReadFile(paths.Database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("corrupt database was replaced or rewritten: got=%q want=%q", got, want)
+	}
+}
+
 func TestOpenUpgradesPhaseFourteenOutboundAttemptsWithEmptyAttachmentMetadata(t *testing.T) {
 	t.Parallel()
 	paths := testPaths(t, filepath.Join(t.TempDir(), "state"))

@@ -445,6 +445,38 @@ func TestMailDraftUnknownSendPreservesDraftAndProviderCopy(t *testing.T) {
 	}
 }
 
+func TestMailDraftDeadlineFailurePersistsAttemptAndPreservesProviderCopy(t *testing.T) {
+	commands, _ := newTestAccountCommands()
+	appender := &fakeDraftAppender{results: []transport.MailboxAppendResult{{Mailbox: "Drafts", UIDValidity: 300, UID: 10}}}
+	commands.appendMailbox = appender
+	commands.mail = &fakeInboxClient{results: []fakeInboxPageResult{emptyDraftSyncResult("Drafts", 300)}}
+	sender := &deadlineSMTPSender{}
+	commands.sender = sender
+	locations := &fakeLocationClient{}
+	commands.locations = locations
+	home := setupDraftAccount(t, commands)
+	_, created, _, err := commands.MailDraftCreate(context.Background(), home, "", maildomain.SendRequest{
+		To: []maildomain.Address{{Email: "primary@example.test"}}, Subject: "Deadline draft", TextBody: "deadline-draft-token",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, _, err := commands.MailDraftSync(context.Background(), home, "", "", created.ID, 20); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sender.cancel = cancel
+	_, _, attempt, _, _, sendErr := commands.MailDraftSend(ctx, home, "", created.ID)
+	if sendErr == nil || attempt.Status != maildomain.OutboundFailed || sender.calls != 1 || locations.calls != 0 {
+		t.Fatalf("attempt=%+v smtp=%d cleanup=%d err=%v", attempt, sender.calls, locations.calls, sendErr)
+	}
+	_, preserved, _, _, err := commands.MailDraftShow(context.Background(), home, "", created.ID)
+	if err != nil || preserved.SyncState != maildomain.DraftSynced || preserved.RemoteLocationID == "" || preserved.OutboundAttemptID != attempt.ID {
+		t.Fatalf("preserved=%+v err=%v", preserved, err)
+	}
+}
+
 func TestMailDraftDeleteRemovesKnownProviderVersionsThenLocalState(t *testing.T) {
 	commands, _ := newTestAccountCommands()
 	appender := &fakeDraftAppender{results: []transport.MailboxAppendResult{{Mailbox: "Drafts", UIDValidity: 300, UID: 10}}}
