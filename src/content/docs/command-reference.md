@@ -1274,6 +1274,7 @@ Examples:
   icloud mail folders list --include-missing --verbose
 
 Flags:
+      --cursor string     Continue from a next_cursor returned by an earlier folder page
   -h, --help              help for list
       --include-missing   Include folders missing from the latest provider discovery
       --json              Emit one stable JSON success envelope
@@ -1353,10 +1354,11 @@ Examples:
   icloud --account Personal mail folders status --json
 
 Flags:
-  -h, --help        help for status
-      --json        Emit one stable JSON success envelope
-      --limit int   Maximum folder records to print after refreshing all remote folders (1-100) (default 20)
-      --verbose     Include wire names, attributes, UID metadata, and timestamps
+      --cursor string   Continue from a next_cursor returned by an earlier refreshed folder page
+  -h, --help            help for status
+      --json            Emit one stable JSON success envelope
+      --limit int       Maximum folder records to print after refreshing all remote folders (1-100) (default 20)
+      --verbose         Include wire names, attributes, UID metadata, and timestamps
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID

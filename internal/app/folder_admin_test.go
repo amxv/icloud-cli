@@ -244,18 +244,33 @@ func TestExplicitAllFolderSyncSelectionIncludesDisabledSelectableFolders(t *test
 		_ = state.Close()
 		t.Fatal(err)
 	}
-	enabled, err := resolveSyncFolders(context.Background(), state, accountValue.ID, "")
+	enabled, err := state.Folders().CountSelectable(context.Background(), accountValue.ID, true)
 	if err != nil {
 		_ = state.Close()
 		t.Fatal(err)
 	}
-	all, err := resolveAllSyncFolders(context.Background(), state, accountValue.ID)
-	_ = state.Close()
+	allCount, err := state.Folders().CountSelectable(context.Background(), accountValue.ID, false)
 	if err != nil {
+		_ = state.Close()
 		t.Fatal(err)
 	}
-	if len(enabled) != 2 || len(all) != 5 {
-		t.Fatalf("enabled=%d all=%d", len(enabled), len(all))
+	all, more, next, err := state.Folders().ListSelectablePage(context.Background(), accountValue.ID, 3, "")
+	if err != nil {
+		_ = state.Close()
+		t.Fatal(err)
+	}
+	if more {
+		second, secondMore, _, pageErr := state.Folders().ListSelectablePage(context.Background(), accountValue.ID, 3, next)
+		if pageErr != nil {
+			_ = state.Close()
+			t.Fatal(pageErr)
+		}
+		all = append(all, second...)
+		more = secondMore
+	}
+	_ = state.Close()
+	if enabled != 2 || allCount != 5 || len(all) != 5 || more {
+		t.Fatalf("enabled=%d all_count=%d paged=%d more=%v", enabled, allCount, len(all), more)
 	}
 	for _, value := range all {
 		if !value.Selectable || !value.Present || value.Stale {

@@ -1406,6 +1406,106 @@ VALUES (?, 0, 'migration-root@example.test')`, replyID); err != nil {
 	}
 }
 
+func TestOpenThreadBackfillUsesPersistedBoundedFrontier(t *testing.T) {
+	paths := testPaths(t, filepath.Join(t.TempDir(), "state"))
+	if err := config.EnsureAppPaths(paths); err != nil {
+		t.Fatal(err)
+	}
+	database, err := sql.Open("sqlite", paths.Database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := configureSQLite(context.Background(), database); err != nil {
+		t.Fatal(err)
+	}
+	migrationFS, err := fs.Sub(migrations, "migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider, err := goose.NewProvider(goose.DialectSQLite3, database, migrationFS, goose.WithLogger(goose.NopLogger()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.UpTo(context.Background(), 8); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 8, 8, 3, 0, 0, 0, time.UTC).Format(time.RFC3339Nano)
+	accountID := "acct_0198d704-6c00-7000-8000-000000000981"
+	if _, err := database.Exec(`
+INSERT INTO accounts (
+    account_id, friendly_name, email_address, imap_username,
+    status, is_default, created_at, updated_at
+) VALUES (?, 'Bounded thread migration', 'bounded-thread@icloud.com',
+          'bounded-thread', 'connected', 1, ?, ?)`, accountID, now, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(`
+WITH RECURSIVE n(x) AS (
+    SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x < 130
+)
+INSERT INTO messages (
+    message_id, account_id, rfc_message_id, in_reply_to, direction,
+    from_email, subject, snippet, attachment_count,
+    internal_date, sort_at, date_source, created_at, updated_at
+)
+SELECT printf('msg_backfill_%03d', x), ?, printf('bounded-%03d@example.test', x), '', 'inbound',
+       'sender@example.test', printf('Bounded %03d', x), '', 0,
+       ?, ?, 'internal_date', ?, ?
+FROM n`, accountID, now, now, now, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(`
+INSERT INTO app_metadata (key, value, updated_at)
+VALUES ('thread_graph_backfill_v1', 'complete', ?)
+ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	checks := []struct {
+		state  string
+		cursor string
+	}{
+		{state: "pending", cursor: "msg_backfill_064"},
+		{state: "pending", cursor: "msg_backfill_128"},
+		{state: "ready", cursor: "msg_backfill_130"},
+	}
+	for index, check := range checks {
+		state, err := Open(context.Background(), paths)
+		if err != nil {
+			t.Fatalf("open %d: %v", index+1, err)
+		}
+		var projectionState, cursor string
+		if err := state.db.QueryRow(`
+SELECT state, backfill_cursor FROM thread_projection_state WHERE account_id=?`, accountID).Scan(&projectionState, &cursor); err != nil {
+			state.Close()
+			t.Fatal(err)
+		}
+		if projectionState != check.state || cursor != check.cursor {
+			state.Close()
+			t.Fatalf("open %d frontier state=%q cursor=%q want state=%q cursor=%q", index+1, projectionState, cursor, check.state, check.cursor)
+		}
+		if err := state.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	state, err := Open(context.Background(), paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	var complete string
+	if err := state.db.QueryRow(`SELECT value FROM app_metadata WHERE key='thread_graph_backfill_v1'`).Scan(&complete); err != nil {
+		t.Fatal(err)
+	}
+	if complete != "complete" {
+		t.Fatalf("thread backfill completion marker = %q", complete)
+	}
+}
+
 func TestOpenUpgradesPhaseThirteenStateWithEmptyOutboundLedger(t *testing.T) {
 	t.Parallel()
 	paths := testPaths(t, filepath.Join(t.TempDir(), "state"))
@@ -1664,7 +1764,7 @@ func TestOpenUpgradesSchemaFourteenForwardAndLocationStateIntoEmptyMutationLedge
 		t.Fatal(err)
 	}
 	defer state.Close()
-	if state.SchemaVersion() != 18 {
+	if state.SchemaVersion() != SchemaVersion {
 		t.Fatalf("schema version = %d", state.SchemaVersion())
 	}
 	attempt, err := state.Outbound().Attempt(context.Background(), attemptID)

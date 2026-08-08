@@ -14,7 +14,7 @@ func TestSendSMTPRequiresSTARTTLSAndStreamsEnvelopeWithHiddenBcc(t *testing.T) {
 	server := newSMTPServer(t, smtpServerOptions{AdvertiseSTARTTLS: true, AuthOK: true, AcceptSend: true})
 	defer server.Close()
 	client := New(Config{
-		SMTPHost: "127.0.0.1", SMTPPort: server.Port(), StageTimeout: time.Second,
+		SMTPHost: "127.0.0.1", SMTPPort: server.Port(), StageTimeout: smtpFunctionalStageTimeout,
 		TLSConfig: server.ClientTLSConfig(),
 	})
 	raw := strings.Join([]string{
@@ -56,7 +56,7 @@ func TestSendSMTPFailsBeforeMutationWithoutSTARTTLS(t *testing.T) {
 	server := newSMTPServer(t, smtpServerOptions{AdvertiseSTARTTLS: false, AuthOK: true, AcceptSend: true})
 	defer server.Close()
 	client := New(Config{
-		SMTPHost: "127.0.0.1", SMTPPort: server.Port(), StageTimeout: time.Second,
+		SMTPHost: "127.0.0.1", SMTPPort: server.Port(), StageTimeout: smtpFunctionalStageTimeout,
 		TLSConfig: server.ClientTLSConfig(),
 	})
 	_, err := client.SendSMTP(context.Background(), transport.AuthRequest{
@@ -88,7 +88,7 @@ func TestSendSMTPRecordsPostDataDisconnectAsUnknownAndFinalRejectionAsFailed(t *
 			server := newSMTPServer(t, testCase.options)
 			defer server.Close()
 			client := New(Config{
-				SMTPHost: "127.0.0.1", SMTPPort: server.Port(), StageTimeout: time.Second,
+				SMTPHost: "127.0.0.1", SMTPPort: server.Port(), StageTimeout: smtpFunctionalStageTimeout,
 				TLSConfig: server.ClientTLSConfig(),
 			})
 			_, err := client.SendSMTP(context.Background(), transport.AuthRequest{
@@ -124,7 +124,7 @@ func TestSendSMTPCancellationBeforeAndDuringDataPreservesOutcomeBoundary(t *test
 		if !errors.As(err, &sendErr) || sendErr.Outcome != transport.SMTPSendFailed {
 			t.Fatalf("pre-DATA cancellation = %#v", err)
 		}
-		if time.Since(started) > 500*time.Millisecond {
+		if time.Since(started) > smtpCancellationPromptBudget {
 			t.Fatalf("pre-DATA cancellation was not prompt: %s", time.Since(started))
 		}
 	})
@@ -145,7 +145,7 @@ func TestSendSMTPCancellationBeforeAndDuringDataPreservesOutcomeBoundary(t *test
 		if !errors.As(err, &sendErr) || sendErr.Outcome != transport.SMTPSendUnknown {
 			t.Fatalf("mid-DATA cancellation = %#v", err)
 		}
-		if time.Since(started) > 500*time.Millisecond {
+		if time.Since(started) > smtpCancellationPromptBudget {
 			t.Fatalf("mid-DATA cancellation was not prompt: %s", time.Since(started))
 		}
 	})

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -222,6 +223,11 @@ func TestFolderAdministrationPreservesStableIdentityPolicyLocationsAndSubscripti
 		t.Fatal(err)
 	}
 	customRecord := mailRecordFixture(accountID, custom.ID, 200, 7, "folder-admin@example.test")
+	// This fixture represents a provider copy of the same immutable message, so
+	// corroborate the shared RFC Message-ID with identical content evidence.
+	customRecord.ContentFingerprint = inboxRecord.ContentFingerprint
+	customRecord.RawContentHash = inboxRecord.RawContentHash
+	customRecord.RawStorageKey = inboxRecord.RawStorageKey
 	if _, err := state.Mail().CommitInboxPage(context.Background(), maildomain.CommitPage{
 		CheckpointID: "chk_0198d704-6c00-7000-b000-000000000603", AccountID: accountID, FolderID: custom.ID,
 		UIDValidity: 200, Bootstrap: true, LastCommittedUID: 7, LastScannedUID: 7, AttemptedAt: now.Add(3 * time.Minute),
@@ -402,6 +408,106 @@ func TestFolderRenameRecoveryPreservesStableIdentityWhenProviderOmitsOldName(t *
 		t.Fatalf("not-applied recovery = %+v err=%v", retry, err)
 	}
 	_ = inboxID
+}
+
+func TestFolderInventoryKeysetPaginationReachesPastOneThousand(t *testing.T) {
+	state, accountValue := newFolderTestState(t)
+	defer state.Close()
+	now := time.Date(2026, 8, 8, 4, 0, 0, 0, time.UTC).Format(time.RFC3339Nano)
+	if _, err := state.db.ExecContext(context.Background(), `
+WITH RECURSIVE n(x) AS (
+    SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x < 1005
+)
+INSERT INTO folders (
+    folder_id, account_id, name, wire_name, delimiter, attributes_json,
+    kind, kind_source, selectable, subscription, present, stale, sync_enabled,
+    discovered_at, created_at, updated_at
+)
+SELECT printf('fld_scale_%04d', x), ?, printf('Scale/%04d', x), printf('Scale/%04d', x), '/', '[]',
+       'other', '', 1, 'subscribed', 1, 0, 1, ?, ?, ?
+FROM n`, accountValue.ID, now, now, now); err != nil {
+		t.Fatal(err)
+	}
+
+	seen := map[string]struct{}{}
+	cursor := ""
+	pages := 0
+	for {
+		values, more, next, err := state.Folders().ListPage(context.Background(), accountValue.ID, 137, false, cursor)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pages++
+		for _, value := range values {
+			if _, duplicate := seen[value.ID]; duplicate {
+				t.Fatalf("folder %s repeated across keyset pages", value.ID)
+			}
+			seen[value.ID] = struct{}{}
+		}
+		if !more {
+			if next != "" {
+				t.Fatalf("terminal folder page returned cursor %q", next)
+			}
+			break
+		}
+		if next == "" || next == cursor {
+			t.Fatalf("folder cursor did not advance: current=%q next=%q", cursor, next)
+		}
+		cursor = next
+	}
+	if len(seen) != 1005 || pages < 2 {
+		t.Fatalf("paged folder inventory reached %d folders in %d pages", len(seen), pages)
+	}
+
+	seen = map[string]struct{}{}
+	cursor = ""
+	for {
+		values, more, next, err := state.Folders().ListSyncEnabledPage(context.Background(), accountValue.ID, 113, cursor)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, value := range values {
+			seen[value.ID] = struct{}{}
+		}
+		if !more {
+			break
+		}
+		if next == "" || next == cursor {
+			t.Fatalf("enabled scheduling cursor did not advance: current=%q next=%q", cursor, next)
+		}
+		cursor = next
+	}
+	if len(seen) != 1005 {
+		t.Fatalf("enabled folder scheduler reached %d folders; want 1005", len(seen))
+	}
+
+	planRows, err := state.db.QueryContext(context.Background(), `
+EXPLAIN QUERY PLAN
+SELECT folder_id
+FROM folders
+WHERE account_id = ? AND present = 1 AND stale = 0 AND selectable = 1
+  AND sync_enabled = 1 AND folder_id > ?
+ORDER BY folder_id
+LIMIT 114`, accountValue.ID, "fld_scale_0500")
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := ""
+	for planRows.Next() {
+		var id, parent, notUsed int
+		var detail string
+		if err := planRows.Scan(&id, &parent, &notUsed, &detail); err != nil {
+			planRows.Close()
+			t.Fatal(err)
+		}
+		plan += detail + "\n"
+	}
+	if err := planRows.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(plan, "folders_account_enabled_page_idx") {
+		t.Fatalf("enabled folder keyset query plan did not use its pagination index:\n%s", plan)
+	}
 }
 
 func newFolderTestState(t *testing.T) (*Store, account.Account) {

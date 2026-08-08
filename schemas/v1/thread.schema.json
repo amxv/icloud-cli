@@ -9,6 +9,9 @@
     "attachment_count": {
       "type": "integer"
     },
+    "edge_evidence_truncated": {
+      "type": "boolean"
+    },
     "edges": {
       "items": {
         "additionalProperties": false,
@@ -565,6 +568,19 @@
       },
       "type": "array"
     },
+    "projection_pending": {
+      "type": "integer"
+    },
+    "projection_reason": {
+      "type": "string"
+    },
+    "projection_state": {
+      "type": "string"
+    },
+    "projection_updated_at": {
+      "format": "date-time",
+      "type": "string"
+    },
     "reconstruction": {
       "type": "string"
     },
@@ -593,6 +609,7 @@
     "id",
     "message_count",
     "messages",
+    "projection_state",
     "reconstruction",
     "status",
     "unread_count"

@@ -235,7 +235,21 @@ func (commands accountCommands) MailRepair(ctx context.Context, home, accountSel
 		return account.Account{}, maildomain.RepairSummary{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot audit local mail state", false, err)
 	}
 	changed := 0
+	threadProjectionAdvanced := 0
+	threadProjectionRepaired := 0
 	if options.Mode == maildomain.RepairApply {
+		advanced, _, projectionErr := state.AdvanceThreadGraphBackfill(ctx, options.Limit)
+		if projectionErr != nil {
+			return account.Account{}, maildomain.RepairSummary{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot resume the bounded thread backfill frontier", false, projectionErr)
+		}
+		threadProjectionAdvanced += advanced
+		projectionRepair, projectionErr := state.RepairThreadProjection(ctx, accountValue.ID, options.Limit, commands.timeNow())
+		if projectionErr != nil {
+			return account.Account{}, maildomain.RepairSummary{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot resume deferred thread projection", false, projectionErr)
+		}
+		threadProjectionAdvanced += projectionRepair.Advanced
+		threadProjectionRepaired += projectionRepair.Completed
+		changed += projectionRepair.Completed
 		if repaired, err := state.Search().RefreshMetadata(ctx, accountValue.ID, audit.StaleSearchMessageIDs, commands.timeNow()); err != nil {
 			return account.Account{}, maildomain.RepairSummary{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot refresh stale local search metadata", false, err)
 		} else {
@@ -346,6 +360,8 @@ func (commands accountCommands) MailRepair(ctx context.Context, home, accountSel
 	}
 	finalAudit.Summary.Mode = options.Mode
 	finalAudit.Summary.Changed = changed
+	finalAudit.Summary.ThreadProjectionAdvanced = threadProjectionAdvanced
+	finalAudit.Summary.ThreadProjectionRepaired = threadProjectionRepaired
 	finalAudit.Summary.OrphanTempFiles = len(orphans)
 	if orphanMore {
 		finalAudit.Summary.More = true
@@ -515,7 +531,10 @@ func repairNextAction(summary maildomain.RepairSummary, options maildomain.Repai
 		}
 		return "run_apply_cleanup_orphans"
 	}
-	deterministic := summary.PendingSearch + summary.FailedSearch + summary.StaleFTSRows + summary.RepairCheckpoints + summary.FrontierProblems + summary.OutboundUnknown
+	deterministic := summary.PendingSearch + summary.FailedSearch + summary.StaleFTSRows + summary.RepairCheckpoints + summary.FrontierProblems + summary.OutboundUnknown + summary.ThreadProjectionPending
+	if summary.ThreadProjectionState != "" && summary.ThreadProjectionState != "ready" {
+		deterministic++
+	}
 	if deterministic > 0 {
 		if options.Mode == maildomain.RepairCheck {
 			return "run_apply"

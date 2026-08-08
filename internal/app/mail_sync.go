@@ -16,6 +16,8 @@ import (
 	"github.com/amxv/icloud-cli/internal/transport"
 )
 
+const syncFolderSchedulePageSize = 100
+
 func (commands accountCommands) MailSync(ctx context.Context, home, accountSelector, folderSelector string, limit int) (account.Account, []folder.Folder, []maildomain.SyncSummary, int64, error) {
 	return commands.mailSync(ctx, home, accountSelector, folderSelector, limit, false, false)
 }
@@ -44,14 +46,33 @@ func (commands accountCommands) mailSync(ctx context.Context, home, accountSelec
 	if err != nil {
 		return account.Account{}, nil, nil, state.SchemaVersion(), mapAccountError(err)
 	}
-	var folders []folder.Folder
-	if allFolders {
-		folders, err = resolveAllSyncFolders(ctx, state, accountValue.ID)
+	selector := strings.TrimSpace(folderSelector)
+	var selectedFolder *folder.Folder
+	requestedCount := 0
+	if selector != "" {
+		value, resolveErr := state.Folders().Resolve(ctx, accountValue.ID, selector)
+		if resolveErr != nil {
+			return account.Account{}, nil, nil, state.SchemaVersion(), mapFolderError(resolveErr)
+		}
+		if allFolders {
+			return account.Account{}, nil, nil, state.SchemaVersion(), cli.NewAppError(cli.ErrorUsage, "--all-folders cannot be combined with --folder", false)
+		}
+		if err := validateSyncFolder(value); err != nil {
+			return account.Account{}, nil, nil, state.SchemaVersion(), err
+		}
+		selectedFolder = &value
+		requestedCount = 1
 	} else {
-		folders, err = resolveSyncFolders(ctx, state, accountValue.ID, folderSelector)
-	}
-	if err != nil {
-		return account.Account{}, nil, nil, state.SchemaVersion(), err
+		requestedCount, err = state.Folders().CountSelectable(ctx, accountValue.ID, !allFolders)
+		if err != nil {
+			return account.Account{}, nil, nil, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot count schedulable mail folders", false, err)
+		}
+		if requestedCount == 0 {
+			if allFolders {
+				return account.Account{}, nil, nil, state.SchemaVersion(), cli.NewAppError(cli.ErrorConfiguration, "no current selectable mail folders are available; refresh folder status", false)
+			}
+			return account.Account{}, nil, nil, state.SchemaVersion(), cli.WrapAppError(cli.ErrorConfiguration, "no selectable mail folders are enabled; refresh folder status or enable a folder", false, nil)
+		}
 	}
 	_, credential, err := state.Accounts().Credential(ctx, accountValue.ID)
 	if err != nil {
@@ -63,30 +84,41 @@ func (commands accountCommands) mailSync(ctx context.Context, home, accountSelec
 	}
 	defer zeroBytes(password)
 
-	summaries := make([]maildomain.SyncSummary, 0, len(folders))
-	completedFolders := make([]folder.Folder, 0, len(folders))
+	summaries := make([]maildomain.SyncSummary, 0, min(requestedCount, syncFolderSchedulePageSize))
+	completedFolders := make([]folder.Folder, 0, min(requestedCount, syncFolderSchedulePageSize))
 	failures := make([]map[string]any, 0)
+	attempts := make([]map[string]any, 0, min(requestedCount, syncFolderSchedulePageSize))
 	var firstFailure *cli.AppError
-	for _, folderValue := range folders {
+	var stopErr error
+	processFolder := func(index int, folderValue folder.Folder) bool {
 		summary, usedUsername, syncErr := commands.syncMailbox(
 			ctx, state, paths, accountValue, password, folderValue, limit,
 		)
 		if syncErr != nil {
 			normalized := cli.NormalizeError(syncErr)
+			committed := summary.FolderID != ""
+			if committed {
+				completedFolders = append(completedFolders, folderValue)
+				summaries = append(summaries, summary)
+			}
 			if firstFailure == nil {
 				firstFailure = normalized
 			}
-			failures = append(failures, map[string]any{"folder_id": folderValue.ID, "folder_name": folderValue.Name, "error": normalized})
-			if !continueOnError {
-				if len(completedFolders) == 0 {
-					return accountValue, completedFolders, summaries, state.SchemaVersion(), normalized
-				}
-				return accountValue, completedFolders, summaries, state.SchemaVersion(), syncPartialError(normalized, folders, completedFolders, summaries, failures)
+			failure := map[string]any{"index": index, "folder_id": folderValue.ID, "folder_name": folderValue.Name, "error": normalized, "committed": committed}
+			if committed {
+				failure["summary"] = summary
 			}
-			continue
+			failures = append(failures, failure)
+			attempts = append(attempts, failure)
+			if !continueOnError {
+				stopErr = syncPartialError(normalized, requestedCount, completedFolders, summaries, failures, attempts)
+				return false
+			}
+			return true
 		}
 		completedFolders = append(completedFolders, folderValue)
 		summaries = append(summaries, summary)
+		attempt := map[string]any{"index": index, "folder_id": folderValue.ID, "folder_name": folderValue.Name, "summary": summary, "committed": true}
 		if usedUsername != "" && usedUsername != accountValue.IMAPUsername {
 			accountValue, err = state.Accounts().UpdateIMAPUsername(ctx, accountValue.ID, usedUsername, commands.timeNow())
 			if err != nil {
@@ -94,76 +126,80 @@ func (commands accountCommands) mailSync(ctx context.Context, home, accountSelec
 				if firstFailure == nil {
 					firstFailure = normalized
 				}
-				failures = append(failures, map[string]any{"folder_id": folderValue.ID, "folder_name": folderValue.Name, "error": normalized, "sync_committed": true})
+				attempt["error"] = normalized
+				failure := map[string]any{"index": index, "folder_id": folderValue.ID, "folder_name": folderValue.Name, "error": normalized, "committed": true, "summary": summary}
+				failures = append(failures, failure)
+				attempts = append(attempts, attempt)
 				if !continueOnError {
-					return accountValue, completedFolders, summaries, state.SchemaVersion(), syncPartialError(normalized, folders, completedFolders, summaries, failures)
+					stopErr = syncPartialError(normalized, requestedCount, completedFolders, summaries, failures, attempts)
+					return false
 				}
+				return true
 			}
 		}
+		attempts = append(attempts, attempt)
+		return true
+	}
+
+	if selectedFolder != nil {
+		processFolder(0, *selectedFolder)
+	} else {
+		cursor := ""
+		index := 0
+		for {
+			var values []folder.Folder
+			var more bool
+			var next string
+			if allFolders {
+				values, more, next, err = state.Folders().ListSelectablePage(ctx, accountValue.ID, syncFolderSchedulePageSize, cursor)
+			} else {
+				values, more, next, err = state.Folders().ListSyncEnabledPage(ctx, accountValue.ID, syncFolderSchedulePageSize, cursor)
+			}
+			if err != nil {
+				return accountValue, completedFolders, summaries, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot page schedulable mail folders", false, err)
+			}
+			for _, folderValue := range values {
+				if !processFolder(index, folderValue) {
+					break
+				}
+				index++
+			}
+			if stopErr != nil || !more {
+				break
+			}
+			if next == "" || next == cursor {
+				return accountValue, completedFolders, summaries, state.SchemaVersion(), cli.NewAppError(cli.ErrorInternal, "folder scheduling pagination did not advance", false)
+			}
+			cursor = next
+		}
+	}
+	if stopErr != nil {
+		return accountValue, completedFolders, summaries, state.SchemaVersion(), stopErr
 	}
 	if firstFailure != nil {
-		return accountValue, completedFolders, summaries, state.SchemaVersion(), syncPartialError(firstFailure, folders, completedFolders, summaries, failures)
+		return accountValue, completedFolders, summaries, state.SchemaVersion(), syncPartialError(firstFailure, requestedCount, completedFolders, summaries, failures, attempts)
 	}
 	return accountValue, completedFolders, summaries, state.SchemaVersion(), nil
 }
 
-func syncPartialError(first *cli.AppError, requested []folder.Folder, completed []folder.Folder, summaries []maildomain.SyncSummary, failures []map[string]any) error {
+func syncPartialError(first *cli.AppError, requested int, completed []folder.Folder, summaries []maildomain.SyncSummary, failures, attempts []map[string]any) error {
 	if first == nil {
 		first = cli.NewAppError(cli.ErrorInternal, "multi-folder synchronization failed", false)
 	}
 	copyErr := *first
-	copyErr.Message = "multi-folder synchronization partially completed; committed folder results are reported in error details"
+	if len(completed) > 0 {
+		copyErr.Message = "multi-folder synchronization partially completed; ordered attempted-folder results are reported in error details"
+	}
 	copyErr.Details = map[string]any{
-		"requested":           len(requested),
+		"requested":           requested,
 		"completed_count":     len(completed),
 		"completed_folders":   append([]folder.Folder(nil), completed...),
 		"completed_summaries": append([]maildomain.SyncSummary(nil), summaries...),
 		"failures":            failures,
+		"items":               attempts,
 		"partial":             len(completed) > 0,
 	}
 	return &copyErr
-}
-
-func resolveAllSyncFolders(ctx context.Context, state *store.Store, accountID string) ([]folder.Folder, error) {
-	values, more, err := state.Folders().ListSelectable(ctx, accountID, 1000)
-	if err != nil {
-		return nil, cli.WrapAppError(cli.ErrorInternal, "cannot read current selectable mail folders", false, err)
-	}
-	if more {
-		return nil, cli.NewAppError(cli.ErrorConflict, "current selectable folder count exceeds the explicit all-folder safety bound", false)
-	}
-	if len(values) == 0 {
-		return nil, cli.NewAppError(cli.ErrorConfiguration, "no current selectable mail folders are available; refresh folder status", false)
-	}
-	return values, nil
-}
-
-func resolveSyncFolders(ctx context.Context, state *store.Store, accountID, selector string) ([]folder.Folder, error) {
-	selector = strings.TrimSpace(selector)
-	if selector != "" {
-		value, err := state.Folders().Resolve(ctx, accountID, selector)
-		if err != nil {
-			return nil, mapFolderError(err)
-		}
-		if err := validateSyncFolder(value); err != nil {
-			return nil, err
-		}
-		return []folder.Folder{value}, nil
-	}
-	values, _, err := state.Folders().List(ctx, accountID, 1000, false)
-	if err != nil {
-		return nil, cli.WrapAppError(cli.ErrorInternal, "cannot read enabled mail folders", false, err)
-	}
-	enabled := make([]folder.Folder, 0, len(values))
-	for _, value := range values {
-		if value.SyncEnabled && value.Present && !value.Stale && value.Selectable {
-			enabled = append(enabled, value)
-		}
-	}
-	if len(enabled) == 0 {
-		return nil, cli.WrapAppError(cli.ErrorConfiguration, "no selectable mail folders are enabled; refresh folder status or enable a folder", false, nil)
-	}
-	return enabled, nil
 }
 
 func validateSyncFolder(value folder.Folder) error {
@@ -298,8 +334,16 @@ func (commands accountCommands) syncMailbox(
 		_, _ = state.Mail().RecordFailure(ctx, checkpointID, accountValue.ID, folderValue.ID, checkpoint.UIDValidity, "transaction", attemptedAt)
 		return maildomain.SyncSummary{}, "", cli.WrapAppError(cli.ErrorInternal, "cannot atomically commit the folder page", true, err)
 	}
+	summary := maildomain.SyncSummary{
+		AccountID: accountValue.ID, FolderID: folderValue.ID, FolderName: folderValue.Name,
+		Fetched: len(records), Created: commit.Created, Updated: commit.Updated,
+		Reconciled: commit.Reconciled, StateChanges: commit.StateChanges,
+		IdentityMerges: commit.IdentityMerges, DedupeConflicts: commit.DedupeConflicts,
+		LastUID: commit.Checkpoint.LastCommittedUID, MoreAvailable: commit.Checkpoint.MoreAvailable,
+		Bootstrap: page.Bootstrap, CompletedAt: attemptedAt, Checkpoint: commit.Checkpoint,
+	}
 	if commit.Created+commit.Updated != len(records) {
-		return maildomain.SyncSummary{}, "", cli.WrapAppError(
+		return summary, usedUsername, cli.WrapAppError(
 			cli.ErrorInternal,
 			"mail synchronization committed an inconsistent message count",
 			false,
@@ -308,21 +352,14 @@ func (commands accountCommands) syncMailbox(
 	}
 	var outboundReconcile *maildomain.OutboundReconcileSummary
 	if folderValue.Kind == folder.KindSent {
-		summary, reconcileErr := state.Outbound().Reconcile(ctx, accountValue.ID, 100, attemptedAt)
+		outboundSummary, reconcileErr := state.Outbound().Reconcile(ctx, accountValue.ID, 100, attemptedAt)
 		if reconcileErr != nil {
-			return maildomain.SyncSummary{}, "", cli.WrapAppError(cli.ErrorInternal, "Sent mail committed but outbound reconciliation failed", true, reconcileErr)
+			return summary, usedUsername, cli.WrapAppError(cli.ErrorInternal, "Sent mail committed but outbound reconciliation failed", true, reconcileErr)
 		}
-		outboundReconcile = &summary
+		outboundReconcile = &outboundSummary
 	}
-	return maildomain.SyncSummary{
-		AccountID: accountValue.ID, FolderID: folderValue.ID, FolderName: folderValue.Name,
-		Fetched: len(records), Created: commit.Created, Updated: commit.Updated,
-		Reconciled: commit.Reconciled, StateChanges: commit.StateChanges,
-		IdentityMerges: commit.IdentityMerges, DedupeConflicts: commit.DedupeConflicts,
-		LastUID: commit.Checkpoint.LastCommittedUID, MoreAvailable: commit.Checkpoint.MoreAvailable,
-		Bootstrap: page.Bootstrap, CompletedAt: attemptedAt, Checkpoint: commit.Checkpoint,
-		OutboundReconcile: outboundReconcile,
-	}, usedUsername, nil
+	summary.OutboundReconcile = outboundReconcile
+	return summary, usedUsername, nil
 }
 
 func messageDirection(accountValue account.Account, folderValue folder.Folder, parsed maildomain.ParsedMessage, flags maildomain.LocationFlags) maildomain.Direction {

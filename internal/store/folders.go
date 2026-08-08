@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,53 +25,200 @@ SELECT folder_id, account_id, name, wire_name, parent_name, parent_wire_name,
 FROM folders`
 
 func (repository *FolderRepository) List(ctx context.Context, accountID string, limit int, includeMissing bool) ([]folder.Folder, bool, error) {
+	values, more, _, err := repository.ListPage(ctx, accountID, limit, includeMissing, "")
+	return values, more, err
+}
+
+type storedFolderCursor struct {
+	AccountID      string `json:"account_id"`
+	IncludeMissing bool   `json:"include_missing"`
+	Present        int    `json:"present"`
+	SyncEnabled    int    `json:"sync_enabled"`
+	KindOrder      int    `json:"kind_order"`
+	Name           string `json:"name"`
+	FolderID       string `json:"folder_id"`
+}
+
+func (repository *FolderRepository) ListPage(ctx context.Context, accountID string, limit int, includeMissing bool, cursor string) ([]folder.Folder, bool, string, error) {
 	if limit < 1 {
-		return nil, false, fmt.Errorf("list folders: limit must be positive")
+		return nil, false, "", fmt.Errorf("list folders: limit must be positive")
 	}
+	accountID = strings.TrimSpace(accountID)
 	where := ` WHERE account_id = ?`
+	arguments := []any{accountID}
 	if !includeMissing {
 		where += ` AND present = 1`
 	}
+	cursorValue, err := decodeFolderCursor(cursor, accountID, includeMissing)
+	if err != nil {
+		return nil, false, "", err
+	}
+	const kindOrder = `CASE kind WHEN 'inbox' THEN 0 WHEN 'sent' THEN 1 ELSE 2 END`
+	if cursorValue.FolderID != "" {
+		where += ` AND (
+    present < ? OR
+    (present = ? AND sync_enabled < ?) OR
+    (present = ? AND sync_enabled = ? AND ` + kindOrder + ` > ?) OR
+    (present = ? AND sync_enabled = ? AND ` + kindOrder + ` = ? AND lower(name) > ?) OR
+    (present = ? AND sync_enabled = ? AND ` + kindOrder + ` = ? AND lower(name) = ? AND folder_id > ?)
+)`
+		arguments = append(arguments,
+			cursorValue.Present,
+			cursorValue.Present, cursorValue.SyncEnabled,
+			cursorValue.Present, cursorValue.SyncEnabled, cursorValue.KindOrder,
+			cursorValue.Present, cursorValue.SyncEnabled, cursorValue.KindOrder, cursorValue.Name,
+			cursorValue.Present, cursorValue.SyncEnabled, cursorValue.KindOrder, cursorValue.Name, cursorValue.FolderID,
+		)
+	}
+	arguments = append(arguments, limit+1)
 	rows, err := repository.db.QueryContext(ctx, folderColumns+where+`
 ORDER BY present DESC, sync_enabled DESC,
-         CASE kind WHEN 'inbox' THEN 0 WHEN 'sent' THEN 1 ELSE 2 END,
+         `+kindOrder+`,
          lower(name), folder_id
-LIMIT ?`, accountID, limit+1)
+LIMIT ?`, arguments...)
 	if err != nil {
-		return nil, false, fmt.Errorf("list folders: %w", err)
+		return nil, false, "", fmt.Errorf("list folders: %w", err)
 	}
 	values, err := scanFolders(rows, limit+1)
 	if err != nil {
-		return nil, false, err
+		return nil, false, "", err
 	}
 	more := len(values) > limit
 	if more {
 		values = values[:limit]
 	}
-	return values, more, nil
+	next := ""
+	if more && len(values) > 0 {
+		last := values[len(values)-1]
+		next, err = encodeFolderCursor(storedFolderCursor{
+			AccountID: accountID, IncludeMissing: includeMissing,
+			Present: boolInt(last.Present), SyncEnabled: boolInt(last.SyncEnabled),
+			KindOrder: folderKindOrder(last.Kind), Name: strings.ToLower(last.Name), FolderID: last.ID,
+		})
+		if err != nil {
+			return nil, false, "", err
+		}
+	}
+	return values, more, next, nil
 }
 
 func (repository *FolderRepository) ListSelectable(ctx context.Context, accountID string, limit int) ([]folder.Folder, bool, error) {
+	values, more, _, err := repository.ListSelectablePage(ctx, accountID, limit, "")
+	return values, more, err
+}
+
+func (repository *FolderRepository) ListSelectablePage(ctx context.Context, accountID string, limit int, afterFolderID string) ([]folder.Folder, bool, string, error) {
 	if limit < 1 {
-		return nil, false, fmt.Errorf("list selectable folders: limit must be positive")
+		return nil, false, "", fmt.Errorf("list selectable folders: limit must be positive")
 	}
 	rows, err := repository.db.QueryContext(ctx, folderColumns+`
-WHERE account_id = ? AND present = 1 AND stale = 0 AND selectable = 1
-ORDER BY CASE kind WHEN 'inbox' THEN 0 WHEN 'sent' THEN 1 ELSE 2 END,
-         lower(name), folder_id
-LIMIT ?`, strings.TrimSpace(accountID), limit+1)
+WHERE account_id = ? AND present = 1 AND stale = 0 AND selectable = 1 AND folder_id > ?
+ORDER BY folder_id
+LIMIT ?`, strings.TrimSpace(accountID), strings.TrimSpace(afterFolderID), limit+1)
 	if err != nil {
-		return nil, false, fmt.Errorf("list selectable folders: %w", err)
+		return nil, false, "", fmt.Errorf("list selectable folders: %w", err)
 	}
 	values, err := scanFolders(rows, limit+1)
 	if err != nil {
-		return nil, false, err
+		return nil, false, "", err
 	}
 	more := len(values) > limit
 	if more {
 		values = values[:limit]
 	}
-	return values, more, nil
+	next := ""
+	if more && len(values) > 0 {
+		next = values[len(values)-1].ID
+	}
+	return values, more, next, nil
+}
+
+func (repository *FolderRepository) ListSyncEnabledPage(ctx context.Context, accountID string, limit int, afterFolderID string) ([]folder.Folder, bool, string, error) {
+	if limit < 1 {
+		return nil, false, "", fmt.Errorf("list enabled folders: limit must be positive")
+	}
+	rows, err := repository.db.QueryContext(ctx, folderColumns+`
+WHERE account_id = ? AND present = 1 AND stale = 0 AND selectable = 1 AND sync_enabled = 1 AND folder_id > ?
+ORDER BY folder_id
+LIMIT ?`, strings.TrimSpace(accountID), strings.TrimSpace(afterFolderID), limit+1)
+	if err != nil {
+		return nil, false, "", fmt.Errorf("list enabled folders: %w", err)
+	}
+	values, err := scanFolders(rows, limit+1)
+	if err != nil {
+		return nil, false, "", err
+	}
+	more := len(values) > limit
+	if more {
+		values = values[:limit]
+	}
+	next := ""
+	if more && len(values) > 0 {
+		next = values[len(values)-1].ID
+	}
+	return values, more, next, nil
+}
+
+func (repository *FolderRepository) CountSelectable(ctx context.Context, accountID string, enabledOnly bool) (int, error) {
+	query := `SELECT count(*) FROM folders WHERE account_id = ? AND present = 1 AND stale = 0 AND selectable = 1`
+	if enabledOnly {
+		query += ` AND sync_enabled = 1`
+	}
+	var count int
+	if err := repository.db.QueryRowContext(ctx, query, strings.TrimSpace(accountID)).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count selectable folders: %w", err)
+	}
+	return count, nil
+}
+
+func (repository *FolderRepository) Count(ctx context.Context, accountID string, includeMissing bool) (int, error) {
+	query := `SELECT count(*) FROM folders WHERE account_id = ?`
+	if !includeMissing {
+		query += ` AND present = 1`
+	}
+	var count int
+	if err := repository.db.QueryRowContext(ctx, query, strings.TrimSpace(accountID)).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count folders: %w", err)
+	}
+	return count, nil
+}
+
+func folderKindOrder(kind folder.Kind) int {
+	switch kind {
+	case folder.KindInbox:
+		return 0
+	case folder.KindSent:
+		return 1
+	default:
+		return 2
+	}
+}
+
+func encodeFolderCursor(value storedFolderCursor) (string, error) {
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return "", fmt.Errorf("encode folder cursor: %w", err)
+	}
+	return "fcur_" + base64.RawURLEncoding.EncodeToString(payload), nil
+}
+
+func decodeFolderCursor(value, accountID string, includeMissing bool) (storedFolderCursor, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return storedFolderCursor{}, nil
+	}
+	if !strings.HasPrefix(value, "fcur_") {
+		return storedFolderCursor{}, fmt.Errorf("invalid folder cursor")
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(value, "fcur_"))
+	if err != nil {
+		return storedFolderCursor{}, fmt.Errorf("invalid folder cursor")
+	}
+	var cursor storedFolderCursor
+	if err := json.Unmarshal(payload, &cursor); err != nil || cursor.AccountID != strings.TrimSpace(accountID) || cursor.IncludeMissing != includeMissing || strings.TrimSpace(cursor.FolderID) == "" {
+		return storedFolderCursor{}, fmt.Errorf("invalid folder cursor")
+	}
+	return cursor, nil
 }
 
 func (repository *FolderRepository) Resolve(ctx context.Context, accountID, selector string) (folder.Folder, error) {
@@ -322,7 +470,7 @@ WHERE folder_id = ? AND account_id = ?`, timestamp, timestamp, folderID, account
 		return folder.Folder{}, fmt.Errorf("mark folder deleted: %w", err)
 	}
 	if len(messageIDs) > 0 {
-		if err := rebuildAffectedThreadGraph(ctx, tx, accountID, messageIDs, now); err != nil {
+		if err := rebuildCanonicalThreadProjection(ctx, tx, accountID, messageIDs, now); err != nil {
 			return folder.Folder{}, err
 		}
 	}
@@ -342,6 +490,31 @@ func (repository *FolderRepository) Reconcile(
 	observations []folder.RemoteObservation,
 	now time.Time,
 	newID func() (string, error),
+) ([]folder.Folder, error) {
+	return repository.reconcile(ctx, accountID, observations, now, newID, true)
+}
+
+// ReconcileOnly persists a complete provider inventory without materializing
+// the entire local folder table again after commit. Callers that expose paged
+// inventory should use this and follow it with ListPage/Count.
+func (repository *FolderRepository) ReconcileOnly(
+	ctx context.Context,
+	accountID string,
+	observations []folder.RemoteObservation,
+	now time.Time,
+	newID func() (string, error),
+) error {
+	_, err := repository.reconcile(ctx, accountID, observations, now, newID, false)
+	return err
+}
+
+func (repository *FolderRepository) reconcile(
+	ctx context.Context,
+	accountID string,
+	observations []folder.RemoteObservation,
+	now time.Time,
+	newID func() (string, error),
+	returnValues bool,
 ) ([]folder.Folder, error) {
 	if newID == nil {
 		return nil, errors.New("reconcile folders: ID generator is required")
@@ -438,7 +611,10 @@ WHERE folder_id = ?`, timestamp, timestamp, value.ID); err != nil {
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit folder reconciliation: %w", err)
 	}
-	values, _, err := repository.List(ctx, accountID, 1000, true)
+	if !returnValues {
+		return nil, nil
+	}
+	values, err := listAllFolders(ctx, repository.db, accountID)
 	return values, err
 }
 

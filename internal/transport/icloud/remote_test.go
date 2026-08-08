@@ -153,6 +153,70 @@ func TestRemoteSearchCandidateScanIsBoundedAndVisible(t *testing.T) {
 	}
 }
 
+func TestRemoteSearchPreciseAfterRejectsDoNotConsumeResultQuota(t *testing.T) {
+	client, auth, closeServer := newRemoteDateBoundaryFixture(t, func(index int) time.Time {
+		if index == 1 {
+			return time.Date(2026, 8, 5, 13, 0, 0, 0, time.UTC)
+		}
+		return time.Date(2026, 8, 5, 9, 0, 0, 0, time.UTC)
+	})
+	defer closeServer()
+	after := time.Date(2026, 8, 5, 12, 0, 0, 0, time.UTC)
+	page, err := client.SearchRemote(context.Background(), auth, transport.RemoteSearchRequest{
+		Mailbox: "INBOX", Limit: 1, MaxCandidateUIDs: 300,
+		Criteria: transport.RemoteSearchCriteria{After: &after},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Messages) != 1 || page.Messages[0].UID != 1 || page.MoreAvailable || page.Partial || page.CandidateUIDs != 300 {
+		t.Fatalf("precise --after page = %+v", page)
+	}
+}
+
+func TestRemoteSearchPreciseBeforeRejectsDoNotConsumeResultQuota(t *testing.T) {
+	client, auth, closeServer := newRemoteDateBoundaryFixture(t, func(index int) time.Time {
+		if index == 1 {
+			return time.Date(2026, 8, 5, 9, 0, 0, 0, time.UTC)
+		}
+		return time.Date(2026, 8, 5, 11, 0, 0, 0, time.UTC)
+	})
+	defer closeServer()
+	before := time.Date(2026, 8, 5, 10, 0, 0, 0, time.UTC)
+	page, err := client.SearchRemote(context.Background(), auth, transport.RemoteSearchRequest{
+		Mailbox: "INBOX", Limit: 1, MaxCandidateUIDs: 300,
+		Criteria: transport.RemoteSearchCriteria{Before: &before},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Messages) != 1 || page.Messages[0].UID != 1 || page.MoreAvailable || page.Partial || page.CandidateUIDs != 300 {
+		t.Fatalf("precise --before page = %+v", page)
+	}
+}
+
+func newRemoteDateBoundaryFixture(t *testing.T, dateForIndex func(int) time.Time) (*Client, transport.AuthRequest, func()) {
+	t.Helper()
+	const (
+		username = "date-boundary-user"
+		password = "date-boundary-password"
+	)
+	memServer := imapmemserver.New()
+	user := imapmemserver.NewUser(username, password)
+	if err := user.Create("INBOX", nil); err != nil {
+		t.Fatal(err)
+	}
+	for index := 1; index <= 300; index++ {
+		raw := remoteMailFixture("date-boundary@example.test", "Date boundary", "date boundary body")
+		if _, err := user.Append("INBOX", &literalReader{Reader: strings.NewReader(raw), size: int64(len(raw))}, &imap.AppendOptions{Time: dateForIndex(index)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	memServer.AddUser(user)
+	client, closeServer := newRemoteMemoryClient(t, memServer)
+	return client, transport.AuthRequest{Username: username, Password: []byte(password)}, closeServer
+}
+
 func TestRemoteSearchCancellationClosesStalledSearchWithoutFetching(t *testing.T) {
 	server := newIMAPServer(t, imapServerOptions{AuthOK: true, UIDValidity: 77, StallUIDSearch: true})
 	defer server.Close()

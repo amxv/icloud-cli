@@ -448,6 +448,8 @@ func seedLocationMutationFixture(t *testing.T, home string, seeds []locationSeed
 	}
 	messageID := "msg_location_fixture"
 	subject := "Location mutation fixture"
+	sharedRawHash := strings.Repeat("a", 64)
+	sharedRawKey := "raw/sha256/aa/" + sharedRawHash + ".eml"
 	for index, seed := range seeds {
 		folderValue := folders[seed.kind]
 		internal := base.Add(time.Duration(index) * time.Minute)
@@ -457,8 +459,8 @@ func seedLocationMutationFixture(t *testing.T, home string, seeds []locationSeed
 			AccountID:  accountValue.ID, FolderID: folderValue.ID,
 			UIDValidity: folderValue.UIDValidity, UID: seed.uid,
 			Flags: []string{seed.flag, `$Fixture`}, InternalDate: internal,
-			RFC822Size: 512, RawContentHash: strings.Repeat(fmt.Sprintf("%x", index+10), 64)[:64],
-			RawStorageKey: fmt.Sprintf("raw/sha256/%02d/location-%d.eml", index, index), RawByteSize: 512,
+			RFC822Size: 512, RawContentHash: sharedRawHash,
+			RawStorageKey: sharedRawKey, RawByteSize: 512,
 			Parsed: maildomain.ParsedMessage{
 				RFCMessageID: "location-fixture@example.test",
 				From:         maildomain.Address{Email: "sender@example.test"},

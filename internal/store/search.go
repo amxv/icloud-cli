@@ -289,6 +289,24 @@ func (repository *SearchRepository) searchThreads(
 	if more {
 		hits = hits[:options.Limit]
 	}
+	projected := make([]maildomain.Thread, 0, len(hits))
+	for _, hit := range hits {
+		if hit.Thread != nil {
+			projected = append(projected, *hit.Thread)
+		}
+	}
+	if err := applyThreadProjectionState(ctx, repository.db, accountID, projected); err != nil {
+		return maildomain.SearchPage{}, err
+	}
+	projectedIndex := 0
+	for index := range hits {
+		if hits[index].Thread == nil {
+			continue
+		}
+		value := projected[projectedIndex]
+		hits[index].Thread = &value
+		projectedIndex++
+	}
 	next := ""
 	if more && len(hits) > 0 {
 		last := hits[len(hits)-1]

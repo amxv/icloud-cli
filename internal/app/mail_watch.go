@@ -403,18 +403,25 @@ func (commands accountCommands) openWatchSessions(ctx context.Context, home, acc
 	if err != nil {
 		return nil, "", "", nil, mapAccountError(err)
 	}
-	folders, more, err := state.Folders().List(setupCtx, value.ID, 1000, false)
-	if err != nil {
-		return nil, "", "", nil, cli.WrapAppError(cli.ErrorInternal, "cannot read folders for mail watch", false, err)
-	}
-	if more {
-		return nil, "", "", nil, cli.NewAppError(cli.ErrorConflict, "mail watch requires fewer than 1000 current folders per account", false)
-	}
 	targets := make([]folder.Folder, 0, 2)
-	for _, candidate := range folders {
-		if candidate.SyncEnabled && candidate.Present && !candidate.Stale && candidate.Selectable && folder.DefaultSyncEnabled(candidate.Kind) {
-			targets = append(targets, candidate)
+	cursor := ""
+	for {
+		folders, more, next, err := state.Folders().ListSyncEnabledPage(setupCtx, value.ID, syncFolderSchedulePageSize, cursor)
+		if err != nil {
+			return nil, "", "", nil, cli.WrapAppError(cli.ErrorInternal, "cannot page enabled folders for mail watch", false, err)
 		}
+		for _, candidate := range folders {
+			if folder.DefaultSyncEnabled(candidate.Kind) {
+				targets = append(targets, candidate)
+			}
+		}
+		if !more {
+			break
+		}
+		if next == "" || next == cursor {
+			return nil, "", "", nil, cli.NewAppError(cli.ErrorInternal, "mail watch folder pagination did not advance", false)
+		}
+		cursor = next
 	}
 	sort.Slice(targets, func(i, j int) bool {
 		if targets[i].Kind != targets[j].Kind {

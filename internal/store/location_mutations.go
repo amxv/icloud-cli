@@ -243,7 +243,7 @@ WHERE mutation_id = ?`,
 	); err != nil {
 		return maildomain.LocationMutation{}, fmt.Errorf("update location mutation outcome: %w", err)
 	}
-	if err := rebuildAffectedThreadGraph(ctx, tx, mutation.AccountID, []string{mutation.MessageID}, input.Now); err != nil {
+	if err := rebuildCanonicalThreadProjection(ctx, tx, mutation.AccountID, []string{mutation.MessageID}, input.Now); err != nil {
 		return maildomain.LocationMutation{}, err
 	}
 	value, err := scanLocationMutation(tx.QueryRowContext(ctx, locationMutationColumns+` WHERE mutation_id = ?`, mutation.ID))

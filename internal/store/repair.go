@@ -149,6 +149,33 @@ func (store *Store) AuditMailRepair(ctx context.Context, accountID string, limit
 		audit.Summary.More = true
 	}
 
+	projectionState, projectionReason := "ready", ""
+	if err := store.db.QueryRowContext(ctx, `
+SELECT state, reason FROM thread_projection_state WHERE account_id = ?`, accountID).Scan(&projectionState, &projectionReason); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return RepairAudit{}, fmt.Errorf("read thread projection repair state: %w", err)
+	}
+	projectionIDs, projectionMore, err := boundedIDs(ctx, store.db, `
+SELECT seed_message_id FROM thread_projection_jobs
+WHERE account_id=? ORDER BY updated_at, seed_message_id LIMIT ?`, accountID, limit)
+	if err != nil {
+		return RepairAudit{}, fmt.Errorf("list deferred thread projection jobs: %w", err)
+	}
+	audit.Summary.ThreadProjectionState = projectionState
+	audit.Summary.ThreadProjectionPending = len(projectionIDs)
+	if projectionMore {
+		audit.Summary.More = true
+	}
+	if projectionState != "ready" || len(projectionIDs) > 0 {
+		detail := "thread projection has deferred bounded work"
+		if projectionReason != "" {
+			detail += ": " + projectionReason
+		}
+		if projectionMore {
+			detail += fmt.Sprintf("; at least %d jobs are pending", len(projectionIDs))
+		}
+		add("thread_projection_degraded", "", "", "resume_thread_projection", detail, true)
+	}
+
 	stale, more, err := store.Search().StaleMetadata(ctx, accountID, limit)
 	if err != nil {
 		return RepairAudit{}, err

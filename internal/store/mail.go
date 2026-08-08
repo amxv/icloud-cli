@@ -468,7 +468,7 @@ WHERE account_id = ? AND location_id = ?`,
 	if err != nil {
 		return maildomain.Location{}, err
 	}
-	if err := rebuildAffectedThreadGraph(ctx, tx, accountID, []string{current.MessageID}, now); err != nil {
+	if err := rebuildCanonicalThreadProjection(ctx, tx, accountID, []string{current.MessageID}, now); err != nil {
 		return maildomain.Location{}, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -1267,8 +1267,25 @@ WHERE account_id = ? AND folder_id = ? AND uid_validity = ? AND uid = ?`,
 			}, nil
 		}
 		if len(rfcCandidates) == 1 {
-			strongMessageID = rfcCandidates[0].MessageID
-			strongLocations = rfcCandidates[0].Locations
+			candidate := rfcCandidates[0]
+			corroborated, corroborationErr := rfcIdentityCorroborated(ctx, tx, record.AccountID, candidate.MessageID, rfcValue, record.ContentFingerprint, record.RawContentHash)
+			if corroborationErr != nil {
+				return identityResolution{}, corroborationErr
+			}
+			if locationMessageID == "" && !corroborated {
+				return identityResolution{
+					MessageID: proposed, Created: true,
+					MatchKind: maildomain.IdentityProviderLocation,
+					Conflicts: []pendingIdentityConflict{{
+						Kind: maildomain.IdentityRFCMessageID, Value: rfcValue,
+						ExistingMessageID: candidate.MessageID, ObservedMessageID: proposed,
+						ExistingLocationID: candidate.LocationID, ObservedLocationID: record.LocationID,
+						Reason: "rfc_message_id_uncorroborated_provider_collision",
+					}},
+				}, nil
+			}
+			strongMessageID = candidate.MessageID
+			strongLocations = candidate.Locations
 			strongKind = maildomain.IdentityRFCMessageID
 		}
 		if strongMessageID == "" {
@@ -1349,6 +1366,58 @@ WHERE e.account_id = ? AND e.kind = 'generated_message_id' AND e.value = ?`,
 		}
 	}
 	return identityResolution{MessageID: proposed, Created: true, MatchKind: maildomain.IdentityProviderLocation}, nil
+}
+
+// rfcIdentityCorroborated deliberately treats RFC Message-ID as evidence, not
+// logical identity. A second provider location may join an existing canonical
+// message only when independent evidence says it is the same message: either
+// the locally generated outbound Message-ID is known, or the canonical content
+// fingerprint agrees. Provider-location identity itself is handled before this
+// helper and remains authoritative for re-observations of the same UID.
+func rfcIdentityCorroborated(ctx context.Context, tx *sql.Tx, accountID, messageID, rfcMessageID, fingerprint, rawContentHash string) (bool, error) {
+	var generated int
+	if err := tx.QueryRowContext(ctx, `
+SELECT EXISTS(
+    SELECT 1
+    FROM message_identity_evidence
+    WHERE account_id = ? AND message_id = ?
+      AND kind = 'generated_message_id' AND value = ?
+)`, strings.TrimSpace(accountID), strings.TrimSpace(messageID), strings.TrimSpace(rfcMessageID)).Scan(&generated); err != nil {
+		return false, fmt.Errorf("corroborate RFC Message-ID with generated identity: %w", err)
+	}
+	if generated == 1 {
+		return true, nil
+	}
+	fingerprint = strings.TrimSpace(fingerprint)
+	if fingerprint != "" {
+		var matchingContent int
+		if err := tx.QueryRowContext(ctx, `
+SELECT EXISTS(
+    SELECT 1
+    FROM message_identity_evidence
+    WHERE account_id = ? AND message_id = ?
+      AND kind = 'content_fingerprint' AND value = ?
+)`, strings.TrimSpace(accountID), strings.TrimSpace(messageID), fingerprint).Scan(&matchingContent); err != nil {
+			return false, fmt.Errorf("corroborate RFC Message-ID with content fingerprint: %w", err)
+		}
+		if matchingContent == 1 {
+			return true, nil
+		}
+	}
+	rawContentHash = strings.ToLower(strings.TrimSpace(rawContentHash))
+	if rawContentHash == "" {
+		return false, nil
+	}
+	var matchingRaw int
+	if err := tx.QueryRowContext(ctx, `
+SELECT EXISTS(
+    SELECT 1
+    FROM message_locations
+    WHERE account_id = ? AND message_id = ? AND lower(raw_content_hash) = ?
+)`, strings.TrimSpace(accountID), strings.TrimSpace(messageID), rawContentHash).Scan(&matchingRaw); err != nil {
+		return false, fmt.Errorf("corroborate RFC Message-ID with raw content hash: %w", err)
+	}
+	return matchingRaw == 1, nil
 }
 
 func rfcIdentityCandidates(ctx context.Context, tx *sql.Tx, accountID, rfcMessageID string, limit int) ([]identityCandidate, error) {

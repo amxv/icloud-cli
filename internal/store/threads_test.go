@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -233,6 +234,9 @@ func TestThreadGraphSplitFoldersAndUnreadAggregateRefresh(t *testing.T) {
 	inbox.Flags = nil
 	commitThreadRecords(t, state, accountID, inboxID, "chk_thread_split_inbox", 100, base.Add(time.Minute), inbox)
 	sent := threadRecordFixture(accountID, sentID, 200, 7, "split-location@example.test", "Split folder", "owner@example.test", "alice@example.test", base.Add(2*time.Minute))
+	sent.RawContentHash = inbox.RawContentHash
+	sent.RawStorageKey = inbox.RawStorageKey
+	sent.RawByteSize = inbox.RawByteSize
 	sent.Direction = maildomain.DirectionOutbound
 	sent.Flags = nil
 	commitThreadRecords(t, state, accountID, sentID, "chk_thread_split_sent", 200, base.Add(3*time.Minute), sent)
@@ -308,7 +312,7 @@ INSERT INTO threads (
     thread_id, account_id, root_rfc_message_id, canonical_subject, snippet,
     participants_json, folder_ids_json, message_count, unread_count,
     attachment_count, first_message_at, last_message_at, created_at, updated_at
-) VALUES (?, ?, 'root@example.test', 'Large projection', '', '[]', '[]', ?, 0, 0, ?, ?, ?, ?)`,
+) VALUES (?, ?, '', 'Large projection', '', '[]', '[]', ?, 0, 0, ?, ?, ?, ?)`,
 		threadID, accountID, maxAffectedThreadMessages+1, timestamp, timestamp, timestamp, timestamp); err != nil {
 		t.Fatal(err)
 	}
@@ -325,7 +329,7 @@ INSERT INTO messages (
     created_at, updated_at
 )
 SELECT printf('msg_large_projection_%05d', x), ?,
-       CASE WHEN x = 1 THEN 'root@example.test' ELSE printf('large-projection-%05d@example.test', x) END,
+       printf('large-projection-%05d@example.test', x),
        '', 'inbound', '', 'sender@example.test', '', '', 'Large projection', '',
        NULL, NULL, NULL, 'unknown', 0, ?, ?
 FROM n`, maxAffectedThreadMessages+1, accountID, timestamp, timestamp); err != nil {
@@ -336,10 +340,25 @@ INSERT INTO thread_messages (thread_id, message_id, joined_at)
 SELECT ?, message_id, ? FROM messages WHERE message_id LIKE 'msg_large_projection_%'`, threadID, timestamp); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := state.db.ExecContext(ctx, `
+WITH RECURSIVE n(x) AS (
+    SELECT 1
+    UNION ALL
+    SELECT x + 1 FROM n WHERE x < ?
+)
+INSERT INTO thread_edges (
+    edge_id, account_id, child_message_id, relation, ordinal, token,
+    parent_message_id, status, created_at, updated_at
+)
+SELECT printf('ted_large_projection_%05d', x), ?, printf('msg_large_projection_%05d', x),
+       'in_reply_to', 0, 'late-root@example.test', NULL, 'unresolved', ?, ?
+FROM n`, maxAffectedThreadMessages+1, accountID, timestamp, timestamp); err != nil {
+		t.Fatal(err)
+	}
 
-	first := mailRecordFixture(accountID, folderID, 100, 50001, "new-after-large-thread@example.test")
-	first.Parsed.InReplyTo = "root@example.test"
-	first.Parsed.References = []string{"root@example.test"}
+	first := mailRecordFixture(accountID, folderID, 100, 50001, "late-root@example.test")
+	first.Parsed.InReplyTo = ""
+	first.Parsed.References = nil
 	result, err := state.Mail().CommitInboxPage(ctx, maildomain.CommitPage{
 		CheckpointID:     "chk_large_projection_fixture",
 		AccountID:        accountID,
@@ -360,10 +379,63 @@ SELECT ?, message_id, ? FROM messages WHERE message_id LIKE 'msg_large_projectio
 	if _, err := state.Mail().Message(ctx, accountID, first.MessageID); err != nil {
 		t.Fatalf("canonical message was not retained: %v", err)
 	}
+	degraded, err := state.Threads().Show(ctx, accountID, first.MessageID, "", 20)
+	if err != nil {
+		t.Fatalf("deferred seed did not retain a readable thread handle: %v", err)
+	}
+	if degraded.Thread.ProjectionState != "degraded" || degraded.Thread.ProjectionReason != "affected_scope_limit" || degraded.Thread.ProjectionPending == 0 {
+		t.Fatalf("oversized projection was not surfaced as degraded: %+v", degraded.Thread)
+	}
+	var pendingJobs int
+	if err := state.db.QueryRowContext(ctx, `SELECT count(*) FROM thread_projection_jobs WHERE account_id=?`, accountID).Scan(&pendingJobs); err != nil {
+		t.Fatal(err)
+	}
+	if pendingJobs == 0 {
+		t.Fatal("oversized projection did not persist resumable work")
+	}
+	updatedLocation, err := state.Mail().UpdateLocationState(
+		ctx, accountID, first.LocationID, 0,
+		maildomain.LocationFlags{Seen: true, Flagged: true}, 2, true,
+		now.Add(30*time.Second),
+	)
+	if err != nil {
+		t.Fatalf("provider location write was blocked by oversized derived thread projection: %v", err)
+	}
+	if !updatedLocation.Flags.Seen || updatedLocation.ModSequence != 2 {
+		t.Fatalf("provider location write did not commit: %+v", updatedLocation)
+	}
+	degradedAfterProviderWrite, err := state.Threads().Show(ctx, accountID, first.MessageID, "", 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if degradedAfterProviderWrite.Thread.ProjectionState != "degraded" || degradedAfterProviderWrite.Thread.ProjectionPending == 0 {
+		t.Fatalf("provider write lost deferred projection state: %+v", degradedAfterProviderWrite.Thread)
+	}
+	var unresolvedChildren int
+	if err := state.db.QueryRowContext(ctx, `
+SELECT count(*) FROM thread_edges WHERE account_id=? AND token='late-root@example.test'`, accountID).Scan(&unresolvedChildren); err != nil {
+		t.Fatal(err)
+	}
+	if unresolvedChildren != maxAffectedThreadMessages+1 {
+		t.Fatalf("late-root unresolved children=%d", unresolvedChildren)
+	}
+	tx, err := state.db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	targets, err := deferredProjectionTargetThreads(ctx, tx, accountID, first.MessageID)
+	_ = tx.Rollback()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(targets, threadID) {
+		t.Fatalf("deferred late-root repair targets=%v; missing giant thread %s", targets, threadID)
+	}
 
 	second := mailRecordFixture(accountID, folderID, 100, 50002, "unrelated-after-large-thread@example.test")
 	second.Parsed.InReplyTo = ""
 	second.Parsed.References = nil
+	second.Parsed.Subject = "Independent after oversized projection"
 	result, err = state.Mail().CommitInboxPage(ctx, maildomain.CommitPage{
 		CheckpointID:     "chk_large_projection_fixture",
 		AccountID:        accountID,
@@ -379,6 +451,37 @@ SELECT ?, message_id, ? FROM messages WHERE message_id LIKE 'msg_large_projectio
 	}
 	if result.Checkpoint.LastCommittedUID != 50002 {
 		t.Fatalf("canonical sync frontier remained wedged: %+v", result.Checkpoint)
+	}
+
+	for attempt := 0; attempt < 64; attempt++ {
+		repair, err := state.RepairThreadProjection(ctx, accountID, 1, now.Add(time.Duration(attempt+2)*time.Minute))
+		if err != nil {
+			t.Fatalf("resume oversized thread projection attempt %d: %v", attempt, err)
+		}
+		if repair.Pending == 0 {
+			break
+		}
+	}
+	repaired, err := state.Threads().Show(ctx, accountID, first.MessageID, "", 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repaired.Thread.ProjectionState != "ready" || repaired.Thread.ProjectionPending != 0 {
+		t.Fatalf("repaired projection state = %+v", repaired.Thread)
+	}
+	if repaired.Thread.ID != threadID || repaired.Thread.MessageCount != maxAffectedThreadMessages+2 {
+		t.Fatalf("bounded repair did not join the deferred reply: %+v", repaired.Thread)
+	}
+	var unresolvedAfterRepair int
+	if err := state.db.QueryRowContext(ctx, `
+SELECT count(*)
+FROM thread_edges
+WHERE account_id = ? AND token = 'late-root@example.test'
+  AND (status <> 'resolved' OR parent_message_id <> ?)`, accountID, first.MessageID).Scan(&unresolvedAfterRepair); err != nil {
+		t.Fatal(err)
+	}
+	if unresolvedAfterRepair != 0 {
+		t.Fatalf("bounded repair left %d late-root edges unresolved", unresolvedAfterRepair)
 	}
 }
 
@@ -460,6 +563,35 @@ func TestThreadShowCursorResumesChronologicallyAndIsThreadBound(t *testing.T) {
 	_, err = state.Threads().Show(context.Background(), accountID, other.MessageID, first.NextCursor, 1)
 	if !errors.Is(err, maildomain.ErrInvalidThreadCursor) {
 		t.Fatalf("cross-thread cursor error = %v", err)
+	}
+}
+
+func TestThreadShowMarksVerboseEdgeEvidenceTruncation(t *testing.T) {
+	state, accountID, folderID := newMailStoreFixture(t)
+	defer state.Close()
+	base := time.Date(2026, 8, 8, 4, 30, 0, 0, time.UTC)
+	record := threadRecordFixture(accountID, folderID, 100, 194, "edge-truncation@example.test", "Edge truncation", "alice@example.test", "owner@example.test", base)
+	commitThreadRecords(t, state, accountID, folderID, "chk_thread_edge_truncation", 100, base.Add(time.Minute), record)
+	timestamp := base.Add(2 * time.Minute).Format(time.RFC3339Nano)
+	if _, err := state.db.ExecContext(context.Background(), `
+WITH RECURSIVE n(x) AS (
+    SELECT 0 UNION ALL SELECT x+1 FROM n WHERE x < ?
+)
+INSERT INTO thread_edges (
+    edge_id, account_id, child_message_id, relation, ordinal, token,
+    parent_message_id, status, created_at, updated_at
+)
+SELECT printf('ted_truncation_%03d', x), ?, ?, 'reference', x,
+       printf('missing-edge-%03d@example.test', x), NULL, 'unresolved', ?, ?
+FROM n`, maxVerboseThreadEdges, accountID, record.MessageID, timestamp, timestamp); err != nil {
+		t.Fatal(err)
+	}
+	page, err := state.Threads().Show(context.Background(), accountID, record.MessageID, "", 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Edges) != maxVerboseThreadEdges || !page.Thread.EdgeEvidenceTruncated {
+		t.Fatalf("edge evidence len=%d truncated=%v", len(page.Edges), page.Thread.EdgeEvidenceTruncated)
 	}
 }
 

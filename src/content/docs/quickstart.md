@@ -30,7 +30,7 @@ version
 capabilities
 command=icloud
 version=0.1.0
-schema=18
+schema=19
 account_mode=validated_lifecycle
 credentials=keyring,env,file
 network_validation=true

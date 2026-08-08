@@ -244,6 +244,12 @@ func TestMailSearchKeepsIndexedBodyBoundToRepresentativeContent(t *testing.T) {
 
 	second := searchRecordFixture(accountID, folderID, 100, 226, "representative-search@example.test", base.Add(2*time.Minute),
 		"Representative content", "Alice", "alice@example.test", "nonrepresentativetoken", "", "")
+	// This test exercises representative-content selection for another provider
+	// location of the same immutable message, not an RFC Message-ID collision.
+	// Corroborate the identity with the same immutable raw evidence.
+	second.RawContentHash = first.RawContentHash
+	second.RawStorageKey = first.RawStorageKey
+	second.RawByteSize = first.RawByteSize
 	commitSearchRecords(t, state, accountID, folderID, "chk_search_representative_a", base.Add(3*time.Minute), second)
 
 	original, err := state.Search().Search(context.Background(), accountID, maildomain.SearchOptions{
@@ -482,7 +488,7 @@ INSERT INTO message_search_documents (
 	if raceDetectorEnabled {
 		// Keep the production responsiveness budget strict while allowing for
 		// race-detector instrumentation on the same 5,000-row query fixture.
-		maxDuration = 15 * time.Second
+		maxDuration = 30 * time.Second
 	}
 	if duration > maxDuration {
 		t.Fatalf("large search took %s", duration)

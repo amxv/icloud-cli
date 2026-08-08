@@ -39,6 +39,27 @@ type AppError struct {
 	cause     error
 }
 
+// jsonlHandledError preserves the command's non-zero exit status after a bulk
+// JSONL command has already emitted its ordered item records and terminal
+// completed event. The root must not append a second, detached stderr error
+// event because the item stream already contains the authoritative failures.
+type jsonlHandledError struct{ err error }
+
+func (e jsonlHandledError) Error() string { return e.err.Error() }
+func (e jsonlHandledError) Unwrap() error { return e.err }
+
+func markJSONLHandled(err error) error {
+	if err == nil {
+		return nil
+	}
+	return jsonlHandledError{err: err}
+}
+
+func isJSONLHandled(err error) bool {
+	var handled jsonlHandledError
+	return errors.As(err, &handled)
+}
+
 func (e *AppError) Error() string {
 	if e == nil {
 		return ""

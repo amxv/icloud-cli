@@ -659,23 +659,14 @@ func (commands accountCommands) MailDraftSend(ctx context.Context, home, account
 	request.IdempotencyKey = fmt.Sprintf("draft:%s:r%d", value.ID, value.Revision)
 	accountValue, attempt, existing, schemaVersion, sendErr := commands.MailSend(ctx, home, accountValue.ID, request)
 	if sendErr != nil || attempt.Status == maildomain.OutboundUnknown {
-		recoveryCtx, recoveryCancel := durableOutcomeContext(ctx)
-		defer recoveryCancel()
-		state, _, unlock, openErr := commands.openWriteState(recoveryCtx, home)
-		if openErr == nil {
-			stateValue, stateErr := state.Drafts().Draft(recoveryCtx, accountValue.ID, draftID)
-			if stateErr == nil {
-				stateKind := stateValue.SyncState
-				switch attempt.Status {
-				case maildomain.OutboundUnknown:
-					stateKind = maildomain.DraftSendUnknown
-				case maildomain.OutboundSent:
-					stateKind = maildomain.DraftCleanupPending
-				}
-				_, _ = state.Drafts().SetLifecycle(recoveryCtx, accountValue.ID, draftID, stateKind, stateValue.RemoteLocationID, stateValue.PreviousLocationID, attempt.ID, string(attempt.Status), commands.timeNow())
+		recoveryErr := commands.persistDraftSendRecovery(ctx, home, accountValue.ID, draftID, attempt)
+		if recoveryErr != nil {
+			if sendErr == nil {
+				sendErr = cli.WrapAppError(cli.ErrorInternal, "draft send outcome exists but its recovery lifecycle could not be persisted; inspect the outbound attempt before retrying", false, recoveryErr)
+			} else {
+				sendErr = errors.Join(sendErr, cli.WrapAppError(cli.ErrorInternal, "draft send recovery lifecycle could not be persisted", false, recoveryErr))
 			}
-			state.Close()
-			unlock()
+			sendErr = withAttemptDetails(sendErr, attempt)
 		}
 		return accountValue, value, attempt, existing, schemaVersion, sendErr
 	}
@@ -711,6 +702,32 @@ func (commands accountCommands) MailDraftSend(ctx context.Context, home, account
 		return accountValue, value, attempt, existing, state.SchemaVersion(), commands.markSentDraftCleanupPending(ctx, state, value, attempt, cli.WrapAppError(cli.ErrorInternal, "message is sent and provider drafts are removed but local draft cleanup is incomplete; do not resend", false, err))
 	}
 	return accountValue, value, attempt, existing, state.SchemaVersion(), nil
+}
+
+func (commands accountCommands) persistDraftSendRecovery(ctx context.Context, home, accountID, draftID string, attempt maildomain.OutboundAttempt) error {
+	recoveryCtx, recoveryCancel := durableOutcomeContext(ctx)
+	defer recoveryCancel()
+	state, _, unlock, err := commands.openWriteState(recoveryCtx, home)
+	if err != nil {
+		return fmt.Errorf("open draft recovery state: %w", err)
+	}
+	defer unlock()
+	defer state.Close()
+	stateValue, err := state.Drafts().Draft(recoveryCtx, accountID, draftID)
+	if err != nil {
+		return fmt.Errorf("read draft recovery lifecycle: %w", err)
+	}
+	stateKind := stateValue.SyncState
+	switch attempt.Status {
+	case maildomain.OutboundUnknown:
+		stateKind = maildomain.DraftSendUnknown
+	case maildomain.OutboundSent:
+		stateKind = maildomain.DraftCleanupPending
+	}
+	if _, err := state.Drafts().SetLifecycle(recoveryCtx, accountID, draftID, stateKind, stateValue.RemoteLocationID, stateValue.PreviousLocationID, attempt.ID, string(attempt.Status), commands.timeNow()); err != nil {
+		return fmt.Errorf("persist draft recovery lifecycle: %w", err)
+	}
+	return nil
 }
 
 func (commands accountCommands) markSentDraftCleanupPending(ctx context.Context, state *store.Store, value maildomain.Draft, attempt maildomain.OutboundAttempt, primary error) error {

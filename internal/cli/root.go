@@ -227,9 +227,11 @@ func Execute(ctx context.Context, args []string, config Config) Result {
 			Meta:  EnvelopeMeta{RequestID: state.requestID},
 		})
 	} else if requestedJSONL(args) {
-		_ = WriteJSONLEvent(config.Stderr, JSONLEvent{
-			Event: "error", Sequence: 1, Timestamp: time.Now().UTC(), Error: appErr,
-		})
+		if !isJSONLHandled(err) {
+			_ = WriteJSONLEvent(config.Stderr, JSONLEvent{
+				Event: "error", Sequence: 1, Timestamp: time.Now().UTC(), Error: appErr,
+			})
+		}
 	} else {
 		_ = NewCompactTextRenderer(config.Stderr).Error(appErr)
 	}

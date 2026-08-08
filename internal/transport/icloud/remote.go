@@ -51,14 +51,11 @@ func (client *Client) SearchRemote(ctx context.Context, auth transport.AuthReque
 	defer session.close()
 
 	base := buildRemoteSearchCriteria(request.Criteria)
-	uids, more, partial, candidates, err := searchRemoteUIDs(
+	summaries, more, partial, candidates, err := searchRemoteSummaries(
 		ctx, session.conn, session.client, session.selected, base,
+		request.Criteria.After, request.Criteria.Before,
 		request.Limit, request.MaxCandidateUIDs, client.config.StageTimeout,
 	)
-	if err != nil {
-		return transport.RemoteSearchPage{}, err
-	}
-	summaries, err := fetchRemoteSummaries(ctx, session.conn, session.client, uids, client.config.StageTimeout)
 	if err != nil {
 		return transport.RemoteSearchPage{}, err
 	}
@@ -268,21 +265,22 @@ func orSearchCriteria(values []imap.SearchCriteria) imap.SearchCriteria {
 	return imap.SearchCriteria{Or: [][2]imap.SearchCriteria{{values[0], orSearchCriteria(values[1:])}}}
 }
 
-func searchRemoteUIDs(
+func searchRemoteSummaries(
 	ctx context.Context,
 	conn net.Conn,
 	client *imapclient.Client,
 	selected *imap.SelectData,
 	base imap.SearchCriteria,
+	after, before *time.Time,
 	limit, maxCandidates int,
 	timeout time.Duration,
-) ([]imap.UID, bool, bool, int, error) {
+) ([]transport.RemoteMessageSummary, bool, bool, int, error) {
 	tail := uidTail(selected.UIDNext)
 	if tail == 0 {
 		return nil, false, false, 0, nil
 	}
 	needed := limit + 1
-	found := make([]imap.UID, 0, needed)
+	found := make([]transport.RemoteMessageSummary, 0, needed)
 	end := tail
 	candidates := 0
 	for end > 0 && candidates < maxCandidates && len(found) < needed {
@@ -313,7 +311,21 @@ func searchRemoteUIDs(
 			}
 		}
 		sort.Slice(uids, func(i, j int) bool { return uids[i] > uids[j] })
-		found = append(found, uids...)
+		if len(uids) > 0 {
+			summaries, fetchErr := fetchRemoteSummaries(ctx, conn, client, uids, timeout)
+			if fetchErr != nil {
+				return nil, false, false, candidates, fetchErr
+			}
+			for _, summary := range summaries {
+				if !remoteSummaryDateMatches(summary.InternalDate, after, before) {
+					continue
+				}
+				found = append(found, summary)
+				if len(found) == needed {
+					break
+				}
+			}
+		}
 		candidates += int(end-start) + 1
 		if start == 1 {
 			end = 0
@@ -327,6 +339,16 @@ func searchRemoteUIDs(
 	}
 	partial := !more && end > 0
 	return found, more, partial, candidates, nil
+}
+
+func remoteSummaryDateMatches(value time.Time, after, before *time.Time) bool {
+	if after != nil && value.Before(after.UTC()) {
+		return false
+	}
+	if before != nil && !value.Before(before.UTC()) {
+		return false
+	}
+	return true
 }
 
 func fetchRemoteSummaries(ctx context.Context, conn net.Conn, client *imapclient.Client, uids []imap.UID, timeout time.Duration) ([]transport.RemoteMessageSummary, error) {

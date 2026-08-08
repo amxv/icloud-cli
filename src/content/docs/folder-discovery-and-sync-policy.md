@@ -59,6 +59,15 @@ Increase the display bound without changing what gets discovered:
 icloud mail folders status --limit 50
 ```
 
+Large folder inventories use keyset continuation rather than a hidden 1,000-folder ceiling. When either `folders status` or `folders list` reports `more=yes`, pass its opaque `next_cursor` back unchanged:
+
+```bash
+icloud mail folders status --limit 100 --cursor 'fcur_…'
+icloud mail folders list --limit 100 --cursor 'fcur_…'
+```
+
+The cursor is bound to the selected account and inventory mode. The final page omits `next_cursor`.
+
 ## Read the saved inventory offline
 
 ```bash
@@ -187,6 +196,12 @@ icloud mail folders disable Receipts
 These commands change local policy only. They do not immediately fetch, move, or modify mail. Non-selectable container folders cannot be enabled.
 
 The sync command processes every enabled, current, selectable folder:
+
+```bash
+icloud mail sync
+```
+
+Folder scheduling itself is paged internally, so an account with more than 1,000 enabled folders is not silently truncated. `--all-folders` applies the same rule to every current selectable folder, including folders whose normal sync policy is disabled.
 
 ```bash
 icloud mail sync

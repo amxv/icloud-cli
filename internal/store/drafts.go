@@ -96,7 +96,7 @@ ON CONFLICT(message_id) DO UPDATE SET
 	if err := refreshMessageSearchDocument(ctx, tx, input.MessageID, &input.Content.SearchText, &input.Content.SearchTextTruncated, "complete", "", timestamp); err != nil {
 		return maildomain.Draft{}, err
 	}
-	if err := rebuildAffectedThreadGraph(ctx, tx, input.AccountID, []string{input.MessageID}, input.Now); err != nil {
+	if err := rebuildCanonicalThreadProjection(ctx, tx, input.AccountID, []string{input.MessageID}, input.Now); err != nil {
 		return maildomain.Draft{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `
@@ -407,7 +407,7 @@ WHERE tm.thread_id = ? AND tm.message_id <> ? ORDER BY tm.message_id`, threadID,
 		return fmt.Errorf("delete draft message: %w", err)
 	}
 	if len(remaining) > 0 {
-		if err := rebuildAffectedThreadGraph(ctx, tx, accountID, remaining, now); err != nil {
+		if err := rebuildCanonicalThreadProjection(ctx, tx, accountID, remaining, now); err != nil {
 			return fmt.Errorf("rebuild thread after draft delete: %w", err)
 		}
 	} else if threadID != "" {
@@ -507,7 +507,7 @@ UPDATE mail_drafts SET sync_state = ?, remote_location_id = ?, last_error_code =
 WHERE draft_id = ?`, state, strings.TrimSpace(locationID), timestamp, value.ID); err != nil {
 		return maildomain.Draft{}, fmt.Errorf("update confirmed draft lifecycle: %w", err)
 	}
-	if err := rebuildAffectedThreadGraph(ctx, tx, accountID, []string{value.MessageID}, now); err != nil {
+	if err := rebuildCanonicalThreadProjection(ctx, tx, accountID, []string{value.MessageID}, now); err != nil {
 		return maildomain.Draft{}, err
 	}
 	updated, err := scanDraft(tx.QueryRowContext(ctx, draftColumns+` WHERE draft_id = ?`, value.ID))

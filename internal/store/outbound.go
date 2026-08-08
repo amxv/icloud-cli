@@ -320,7 +320,7 @@ ON CONFLICT(message_id) DO UPDATE SET
 	if err := refreshMessageSearchDocument(ctx, tx, attempt.ProposedMessageID, &input.Content.SearchText, &input.Content.SearchTextTruncated, "complete", "", timestamp); err != nil {
 		return maildomain.OutboundAttempt{}, err
 	}
-	if err := rebuildAffectedThreadGraph(ctx, tx, attempt.AccountID, []string{attempt.ProposedMessageID}, input.AcceptedAt); err != nil {
+	if err := rebuildCanonicalThreadProjection(ctx, tx, attempt.AccountID, []string{attempt.ProposedMessageID}, input.AcceptedAt); err != nil {
 		return maildomain.OutboundAttempt{}, err
 	}
 	var threadID string

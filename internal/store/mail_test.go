@@ -394,6 +394,9 @@ INSERT INTO folders (
 		t.Fatal(err)
 	}
 	archiveRecord := mailRecordFixture(accountID, archiveID, 200, 9, "state-summary@example.test")
+	archiveRecord.RawContentHash = inboxRecord.RawContentHash
+	archiveRecord.RawStorageKey = inboxRecord.RawStorageKey
+	archiveRecord.RawByteSize = inboxRecord.RawByteSize
 	archiveRecord.Flags = []string{`\Flagged`, `$ArchiveKeyword`}
 	archiveRecord.ModSequence = 20
 	if _, err := state.Mail().CommitInboxPage(context.Background(), maildomain.CommitPage{
@@ -626,6 +629,70 @@ func TestMailContentFingerprintDoesNotCollapseDistinctProviderLocations(t *testi
 		if len(message.DedupeConflicts) != 1 || message.DedupeConflicts[0].Reason != "content_fingerprint_provider_collision" {
 			t.Fatalf("message conflict telemetry = %+v", message.DedupeConflicts)
 		}
+	}
+}
+
+func TestMailReusedRFCMessageIDDoesNotCollapseContradictoryProviderMessages(t *testing.T) {
+	state, accountID, folderID := newMailStoreFixture(t)
+	defer state.Close()
+	now := time.Date(2026, 8, 8, 2, 30, 0, 0, time.UTC)
+	sharedRFC := "reused-rfc-message-id@example.test"
+
+	first := mailRecordFixture(accountID, folderID, 100, 83, sharedRFC)
+	first.Parsed.Subject = "First logical message"
+	first.Parsed.Snippet = "first provider body"
+	first.ContentFingerprint = "content:" + strings.Repeat("6", 64)
+	first.RawContentHash = strings.Repeat("6", 64)
+	if _, err := state.Mail().CommitInboxPage(context.Background(), maildomain.CommitPage{
+		CheckpointID: "chk_0198d704-6c00-7000-8000-000000000913",
+		AccountID:    accountID, FolderID: folderID, UIDValidity: 100, Bootstrap: true,
+		LastCommittedUID: 83, LastScannedUID: 83, AttemptedAt: now,
+		Records: []maildomain.IngestRecord{first},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	second := mailRecordFixture(accountID, folderID, 100, 84, sharedRFC)
+	second.Parsed.Subject = "Second logical message"
+	second.Parsed.Snippet = "different provider body"
+	second.ContentFingerprint = "content:" + strings.Repeat("7", 64)
+	second.RawContentHash = strings.Repeat("7", 64)
+	commit, err := state.Mail().CommitInboxPage(context.Background(), maildomain.CommitPage{
+		CheckpointID: "chk_0198d704-6c00-7000-8000-000000000913",
+		AccountID:    accountID, FolderID: folderID, UIDValidity: 100,
+		LastCommittedUID: 84, LastScannedUID: 84, AttemptedAt: now.Add(time.Minute),
+		Records: []maildomain.IngestRecord{second},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if commit.Created != 1 || commit.IdentityMerges != 0 || commit.DedupeConflicts != 1 {
+		t.Fatalf("reused RFC Message-ID commit = %+v", commit)
+	}
+	if first.MessageID == second.MessageID {
+		t.Fatalf("fixture unexpectedly reused immutable message ID %q", first.MessageID)
+	}
+	firstMessage, err := state.Mail().Message(context.Background(), accountID, first.MessageID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondMessage, err := state.Mail().Message(context.Background(), accountID, second.MessageID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstMessage.Subject != first.Parsed.Subject || secondMessage.Subject != second.Parsed.Subject ||
+		len(firstMessage.Locations) != 1 || firstMessage.Locations[0].UID != 83 ||
+		len(secondMessage.Locations) != 1 || secondMessage.Locations[0].UID != 84 {
+		t.Fatalf("distinct provider messages collapsed: first=%+v second=%+v", firstMessage, secondMessage)
+	}
+	if len(firstMessage.DedupeConflicts) != 1 || len(secondMessage.DedupeConflicts) != 1 {
+		t.Fatalf("reused RFC conflict telemetry: first=%+v second=%+v", firstMessage.DedupeConflicts, secondMessage.DedupeConflicts)
+	}
+	conflict := secondMessage.DedupeConflicts[0]
+	if conflict.EvidenceKind != maildomain.IdentityRFCMessageID || conflict.EvidenceValue != sharedRFC ||
+		conflict.Reason != "rfc_message_id_uncorroborated_provider_collision" ||
+		conflict.ExistingMessageID != first.MessageID || conflict.ObservedMessageID != second.MessageID {
+		t.Fatalf("reused RFC conflict = %+v", conflict)
 	}
 }
 

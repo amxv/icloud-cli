@@ -75,6 +75,8 @@ candidate_uids=184
 
 The provider path supports text, sender, participant, subject, RFC Message-ID, read/flag state, and date filters. It does not provide local FTS ranking, reconstructed-thread results, attachment filename/type filters, or local cursors. Those choices return a usage error rather than silently changing meaning.
 
+Precise RFC3339 `--after` and `--before` filters are enforced after iCloud's day-granularity IMAP match, but same-day candidates rejected by the exact timestamp do not consume the requested result quota. The CLI continues through bounded UID windows until it has enough exact matches or reaches its candidate-position bound; `partial=true` means older matching state may still exist beyond that bound.
+
 Use `--all-folders` only when you deliberately want every current selectable folder. The fan-out is capped at 10 folders. Each folder examines a bounded recent provider range; `partial=true` means older provider positions were not examined, so narrow the folder, dates, sender, subject, or Message-ID. `more=true` means additional matches were truncated by the result limit.
 
 Remote text previews are bounded and decoded from the provider response when possible. They are useful for selection, not a substitute for the verified local MIME parser.
@@ -102,6 +104,8 @@ icloud mail sync --hydrate rem_…,rem_… --json
 ```
 
 Hydration verifies that the account, folder, UIDVALIDITY, and UID still identify the same provider location, then sends the raw message through the normal parser, blob, identity, search, attachment, and thread path. It returns stable `msg_…` and `loc_…` IDs without echoing the remote reference. Repeating the same hydration reports `cached` and performs no duplicate ingestion.
+
+For bulk `--hydrate … --jsonl`, each attempted reference produces one item record in original input order. The record carries its original index/reference identity, result or error, and committed state; the terminal counts are derived from those item records. A handled item failure is not followed by a contradictory second stderr completion/error stream.
 
 Targeted hydration does not create, advance, reset, or repair the ordinary folder checkpoint. A later normal sync recognizes the cached provider location and remains idempotent.
 

@@ -21,23 +21,28 @@ type mailLatestData struct {
 }
 
 type publicThread struct {
-	ID               string                `json:"id"`
-	AccountID        string                `json:"account_id"`
-	RootRFCMessageID string                `json:"root_rfc_message_id,omitempty"`
-	Subject          string                `json:"subject,omitempty"`
-	Snippet          string                `json:"snippet,omitempty"`
-	Participants     []string              `json:"participants,omitempty"`
-	FolderIDs        []string              `json:"folder_ids,omitempty"`
-	MessageCount     int                   `json:"message_count"`
-	UnreadCount      int                   `json:"unread_count"`
-	AttachmentCount  int                   `json:"attachment_count"`
-	FirstMessageAt   *time.Time            `json:"first_message_at,omitempty"`
-	LastMessageAt    *time.Time            `json:"last_message_at,omitempty"`
-	Status           string                `json:"status"`
-	Reconstruction   string                `json:"reconstruction"`
-	RedirectedFrom   string                `json:"redirected_from,omitempty"`
-	Messages         []publicThreadMessage `json:"messages"`
-	Edges            []publicThreadEdge    `json:"edges,omitempty"`
+	ID                    string                `json:"id"`
+	AccountID             string                `json:"account_id"`
+	RootRFCMessageID      string                `json:"root_rfc_message_id,omitempty"`
+	Subject               string                `json:"subject,omitempty"`
+	Snippet               string                `json:"snippet,omitempty"`
+	Participants          []string              `json:"participants,omitempty"`
+	FolderIDs             []string              `json:"folder_ids,omitempty"`
+	MessageCount          int                   `json:"message_count"`
+	UnreadCount           int                   `json:"unread_count"`
+	AttachmentCount       int                   `json:"attachment_count"`
+	FirstMessageAt        *time.Time            `json:"first_message_at,omitempty"`
+	LastMessageAt         *time.Time            `json:"last_message_at,omitempty"`
+	Status                string                `json:"status"`
+	Reconstruction        string                `json:"reconstruction"`
+	RedirectedFrom        string                `json:"redirected_from,omitempty"`
+	ProjectionState       string                `json:"projection_state"`
+	ProjectionReason      string                `json:"projection_reason,omitempty"`
+	ProjectionPending     int                   `json:"projection_pending,omitempty"`
+	ProjectionUpdatedAt   *time.Time            `json:"projection_updated_at,omitempty"`
+	EdgeEvidenceTruncated bool                  `json:"edge_evidence_truncated,omitempty"`
+	Messages              []publicThreadMessage `json:"messages"`
+	Edges                 []publicThreadEdge    `json:"edges,omitempty"`
 }
 
 type publicThreadEdge struct {
@@ -239,6 +244,14 @@ func newMailThreadShowCommand(state *executionState) *cobra.Command {
 						return err
 					}
 				}
+				if page.Thread.EdgeEvidenceTruncated {
+					if err := renderer.Record("thread-edge-evidence", "",
+						Field("shown", len(page.Thread.Edges)),
+						Field("truncated", true),
+					); err != nil {
+						return err
+					}
+				}
 			}
 			return renderer.Summary("thread-page", Field("thread", page.Thread.ID), Field("count", len(page.Thread.Messages)), Field("more", fmt.Sprintf("%t", page.More)), Field("next_cursor", page.NextCursor))
 		},
@@ -256,6 +269,14 @@ func newMailThreadShowCommand(state *executionState) *cobra.Command {
 }
 
 func renderThreadSummary(renderer *CompactTextRenderer, thread maildomain.Thread) error {
+	var projectionState, projectionReason, projectionPending any
+	if thread.ProjectionState != "" && thread.ProjectionState != "ready" {
+		projectionState = thread.ProjectionState
+		projectionReason = thread.ProjectionReason
+		if thread.ProjectionPending > 0 {
+			projectionPending = thread.ProjectionPending
+		}
+	}
 	return renderer.Record("thread", thread.ID,
 		Field("subject", thread.CanonicalSubject),
 		Field("messages", thread.MessageCount),
@@ -266,6 +287,9 @@ func renderThreadSummary(renderer *CompactTextRenderer, thread maildomain.Thread
 		Field("last", thread.LastMessageAt),
 		Field("redirected_from", thread.RedirectedFrom),
 		Field("reconstruction", thread.Reconstruction),
+		Field("projection", projectionState),
+		Field("projection_reason", projectionReason),
+		Field("projection_pending", projectionPending),
 	)
 }
 
@@ -325,7 +349,11 @@ func buildPublicThread(ctx context.Context, thread maildomain.Thread, sources []
 		Participants: append([]string(nil), thread.Participants...), FolderIDs: append([]string(nil), thread.FolderIDs...),
 		MessageCount: thread.MessageCount, UnreadCount: thread.UnreadCount, AttachmentCount: thread.AttachmentCount,
 		FirstMessageAt: first, LastMessageAt: last, Status: thread.Status, Reconstruction: thread.Reconstruction,
-		RedirectedFrom: thread.RedirectedFrom, Messages: messages, Edges: edges,
+		RedirectedFrom:  thread.RedirectedFrom,
+		ProjectionState: thread.ProjectionState, ProjectionReason: thread.ProjectionReason,
+		ProjectionPending: thread.ProjectionPending, ProjectionUpdatedAt: thread.ProjectionUpdatedAt,
+		EdgeEvidenceTruncated: thread.EdgeEvidenceTruncated,
+		Messages:              messages, Edges: edges,
 	}, nil
 }
 

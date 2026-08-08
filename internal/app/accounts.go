@@ -41,20 +41,25 @@ type accountCommands struct {
 }
 
 func (commands accountCommands) FolderList(ctx context.Context, home, accountSelector string, limit int, includeMissing bool) (account.Account, []folder.Folder, bool, int64, error) {
+	value, values, more, _, schemaVersion, err := commands.FolderListPage(ctx, home, accountSelector, limit, includeMissing, "")
+	return value, values, more, schemaVersion, err
+}
+
+func (commands accountCommands) FolderListPage(ctx context.Context, home, accountSelector string, limit int, includeMissing bool, cursor string) (account.Account, []folder.Folder, bool, string, int64, error) {
 	state, err := openState(ctx, home)
 	if err != nil {
-		return account.Account{}, nil, false, 0, err
+		return account.Account{}, nil, false, "", 0, err
 	}
 	defer state.Close()
 	value, err := state.Accounts().ResolveSelected(ctx, accountSelector)
 	if err != nil {
-		return account.Account{}, nil, false, state.SchemaVersion(), mapAccountError(err)
+		return account.Account{}, nil, false, "", state.SchemaVersion(), mapAccountError(err)
 	}
-	values, more, err := state.Folders().List(ctx, value.ID, limit, includeMissing)
+	values, more, nextCursor, err := state.Folders().ListPage(ctx, value.ID, limit, includeMissing, cursor)
 	if err != nil {
-		return account.Account{}, nil, false, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot read local folders", false, err)
+		return account.Account{}, nil, false, "", state.SchemaVersion(), cli.WrapAppError(cli.ErrorUsage, "folder cursor is invalid or cannot be resumed", false, err)
 	}
-	return value, values, more, state.SchemaVersion(), nil
+	return value, values, more, nextCursor, state.SchemaVersion(), nil
 }
 
 func (commands accountCommands) FolderShow(ctx context.Context, home, accountSelector, folderSelector string) (account.Account, folder.Folder, int64, error) {
@@ -75,23 +80,70 @@ func (commands accountCommands) FolderShow(ctx context.Context, home, accountSel
 }
 
 func (commands accountCommands) FolderStatus(ctx context.Context, home, accountSelector string) (account.Account, []folder.Folder, int64, error) {
-	state, _, unlock, err := commands.openWriteState(ctx, home)
+	state, value, err := commands.refreshFolderInventory(ctx, home, accountSelector)
 	if err != nil {
 		return account.Account{}, nil, 0, err
 	}
 	defer state.Close()
-	defer unlock()
+	values := []folder.Folder{}
+	cursor := ""
+	for {
+		page, more, next, pageErr := state.Folders().ListPage(ctx, value.ID, syncFolderSchedulePageSize, true, cursor)
+		if pageErr != nil {
+			return account.Account{}, nil, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot read refreshed folders", false, pageErr)
+		}
+		values = append(values, page...)
+		if !more {
+			break
+		}
+		if next == "" || next == cursor {
+			return account.Account{}, nil, state.SchemaVersion(), cli.NewAppError(cli.ErrorInternal, "folder status pagination did not advance", false)
+		}
+		cursor = next
+	}
+	return value, values, state.SchemaVersion(), nil
+}
+
+func (commands accountCommands) FolderStatusPage(ctx context.Context, home, accountSelector string, limit int, cursor string) (account.Account, []folder.Folder, bool, string, int, int64, error) {
+	state, value, err := commands.refreshFolderInventory(ctx, home, accountSelector)
+	if err != nil {
+		return account.Account{}, nil, false, "", 0, 0, err
+	}
+	defer state.Close()
+	values, more, nextCursor, err := state.Folders().ListPage(ctx, value.ID, limit, true, cursor)
+	if err != nil {
+		return account.Account{}, nil, false, "", 0, state.SchemaVersion(), cli.WrapAppError(cli.ErrorUsage, "folder cursor is invalid or cannot be resumed", false, err)
+	}
+	total, err := state.Folders().Count(ctx, value.ID, true)
+	if err != nil {
+		return account.Account{}, nil, false, "", 0, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot count refreshed folders", false, err)
+	}
+	return value, values, more, nextCursor, total, state.SchemaVersion(), nil
+}
+
+func (commands accountCommands) refreshFolderInventory(ctx context.Context, home, accountSelector string) (*store.Store, account.Account, error) {
+	state, _, unlock, err := commands.openWriteState(ctx, home)
+	if err != nil {
+		return nil, account.Account{}, err
+	}
+	// The caller owns the returned store; release the write lock before the
+	// read-only pagination/count phase so inventory reads do not hold it.
+	closeWithError := func(err error) (*store.Store, account.Account, error) {
+		state.Close()
+		unlock()
+		return nil, account.Account{}, err
+	}
 	value, err := state.Accounts().ResolveSelected(ctx, accountSelector)
 	if err != nil {
-		return account.Account{}, nil, state.SchemaVersion(), mapAccountError(err)
+		return closeWithError(mapAccountError(err))
 	}
 	_, credential, err := state.Accounts().Credential(ctx, value.ID)
 	if err != nil {
-		return account.Account{}, nil, state.SchemaVersion(), mapAccountError(err)
+		return closeWithError(mapAccountError(err))
 	}
 	password, err := secret.NewManager(commands.keyring).Resolve(ctx, credential)
 	if err != nil {
-		return account.Account{}, nil, state.SchemaVersion(), mapCredentialError(err)
+		return closeWithError(mapCredentialError(err))
 	}
 	defer zeroBytes(password)
 
@@ -117,12 +169,12 @@ func (commands accountCommands) FolderStatus(ctx context.Context, home, accountS
 		}
 	}
 	if lastFailure != nil {
-		return account.Account{}, nil, state.SchemaVersion(), mapFolderTransportError(lastFailure)
+		return closeWithError(mapFolderTransportError(lastFailure))
 	}
 	if usedUsername != "" && usedUsername != value.IMAPUsername {
 		value, err = state.Accounts().UpdateIMAPUsername(ctx, value.ID, usedUsername, commands.timeNow())
 		if err != nil {
-			return account.Account{}, nil, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot persist the working IMAP username", false, err)
+			return closeWithError(cli.WrapAppError(cli.ErrorInternal, "cannot persist the working IMAP username", false, err))
 		}
 	}
 	observations := make([]folder.RemoteObservation, 0, len(result.Folders))
@@ -130,15 +182,15 @@ func (commands accountCommands) FolderStatus(ctx context.Context, home, accountS
 		observations = append(observations, remoteFolderObservation(remote))
 	}
 	if _, _, err := state.Folders().ReconcilePendingRenames(ctx, value.ID, observations, commands.timeNow()); err != nil {
-		return account.Account{}, nil, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot reconcile an interrupted folder rename", false, err)
+		return closeWithError(cli.WrapAppError(cli.ErrorInternal, "cannot reconcile an interrupted folder rename", false, err))
 	}
-	values, err := state.Folders().Reconcile(ctx, value.ID, observations, commands.timeNow(), func() (string, error) {
+	if err := state.Folders().ReconcileOnly(ctx, value.ID, observations, commands.timeNow(), func() (string, error) {
 		return commands.generateID("fld")
-	})
-	if err != nil {
-		return account.Account{}, nil, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot persist folder discovery", false, err)
+	}); err != nil {
+		return closeWithError(cli.WrapAppError(cli.ErrorInternal, "cannot persist folder discovery", false, err))
 	}
-	return value, values, state.SchemaVersion(), nil
+	unlock()
+	return state, value, nil
 }
 
 func (commands accountCommands) FolderSetSync(ctx context.Context, home, accountSelector, folderSelector string, enabled bool) (account.Account, folder.Folder, int64, error) {

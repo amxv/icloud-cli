@@ -280,8 +280,46 @@ func TestMailHydrateReportsCommittedPartialResultsAndJSONLItemFailures(t *testin
 		!strings.Contains(lines[2], `"event":"completed"`) || !strings.Contains(lines[2], `"failed":1`) || !strings.Contains(lines[2], `"partial":true`) {
 		t.Fatalf("partial JSONL hydrate stdout=%q", stdout)
 	}
-	if !strings.Contains(stderr, `"event":"error"`) {
-		t.Fatalf("partial JSONL hydrate stderr=%q", stderr)
+	if stderr != "" {
+		t.Fatalf("partial JSONL hydrate emitted contradictory terminal stderr=%q", stderr)
+	}
+}
+
+func TestMailHydrateJSONLPreservesOriginalOrderWhenFirstItemFails(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("ICLOUD_REMOTE_PASSWORD", "synthetic-remote-secret")
+	commands, _ := newTestAccountCommands()
+	commands.folders = &fakeFolderClient{results: map[string][]transport.FolderDiscoveryResult{
+		"owner@icloud.com": {{Folders: []transport.RemoteFolder{{
+			Name: "INBOX", WireName: "INBOX", Kind: "inbox", KindSource: "inbox", Selectable: true,
+			Subscription: "subscribed", Status: &transport.MailboxStatus{Mailbox: "INBOX", Messages: 2, UIDNext: 503, UIDValidity: 100},
+		}}}},
+	}}
+	raw := syntheticMailFixture(502, "hydrate-502@example.test", "Hydrate second", "hydrate-second-token", "")
+	commands.remote = &fakeRemoteClient{uidValidity: 100, rawByUID: map[uint32]string{502: raw}}
+	addAndDiscoverInbox(t, commands, home, "ICLOUD_REMOTE_PASSWORD")
+	accountID := searchAccountID(t, home)
+	folderID := searchFolderID(t, home)
+	firstRef, err := maildomain.EncodeRemoteReference(maildomain.RemoteReference{AccountID: accountID, FolderID: folderID, UIDValidity: 100, UID: 501})
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondRef, err := maildomain.EncodeRemoteReference(maildomain.RemoteReference{AccountID: accountID, FolderID: folderID, UIDValidity: 100, UID: 502})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	code, stdout, stderr := runWithAccountCommands(t, commands, "", "--home", home, "mail", "sync",
+		"--hydrate", firstRef+","+secondRef, "--continue-on-error", "--jsonl")
+	if code == 0 || stderr != "" {
+		t.Fatalf("ordered hydrate exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	if len(lines) != 3 ||
+		!strings.Contains(lines[0], `"index":0`) || !strings.Contains(lines[0], `"status":"error"`) || !strings.Contains(lines[0], firstRef) ||
+		!strings.Contains(lines[1], `"index":1`) || !strings.Contains(lines[1], secondRef) || !strings.Contains(lines[1], `"committed_state":"committed"`) ||
+		!strings.Contains(lines[2], `"attempted":2`) || !strings.Contains(lines[2], `"completed":1`) || !strings.Contains(lines[2], `"failed":1`) {
+		t.Fatalf("ordered hydrate JSONL=%q", stdout)
 	}
 }
 

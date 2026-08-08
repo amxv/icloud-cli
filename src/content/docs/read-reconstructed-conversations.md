@@ -58,6 +58,15 @@ Subject similarity never overrides RFC evidence. Two provider messages are not j
 
 Malformed, missing, self-referential, or cyclic relationships remain observable instead of being repaired by guesswork. Use verbose or metadata JSON when you need the evidence that produced a grouping.
 
+Thread reconstruction is derived local state and is never allowed to block a canonical message/provider-location commit merely because a conversation is exceptionally large. If bounded reconstruction is deferred, thread reads report `projection_state=pending` or `projection_state=degraded` plus a reason and pending-work count instead of pretending the cached grouping is complete. Resume the persisted work locally with:
+
+```bash
+icloud mail sync repair --check --verbose
+icloud mail sync repair --apply
+```
+
+Repeat bounded apply passes while repair reports remaining projection work. Existing message and provider-location identities remain usable while reconstruction catches up.
+
 ## Read one conversation chronologically
 
 Use a stable thread ID from `mail latest`:
@@ -127,6 +136,8 @@ icloud mail thread show thr_… --json
 ```
 
 `--full` returns complete decoded text for each selected message in chronological order. `--body-only` removes thread and message wrappers and writes only the selected bodies, separated by a blank line, which is useful for redirection. HTML, decoded public headers, MIME-part detail, and JSON remain separate opt-ins.
+
+Verbose RFC edge evidence is also bounded. If more than the displayed evidence limit exists, JSON sets `edge_evidence_truncated=true` and compact verbose output prints an explicit truncation record rather than silently implying the evidence list is complete.
 
 Compact reads and plain `--metadata-only` use stored summaries and do not require raw message files to be opened. Complete text, HTML, headers that still need decoding, verbose MIME detail that has not yet been indexed, and raw MIME require the corresponding synchronized raw content to remain available locally.
 

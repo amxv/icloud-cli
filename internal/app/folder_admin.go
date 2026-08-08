@@ -248,40 +248,51 @@ func buildFolderAdminPlan(ctx context.Context, state *store.Store, accountID str
 }
 
 func folderHasCurrentChildren(ctx context.Context, state *store.Store, accountID, name string) (bool, error) {
-	values, more, err := state.Folders().List(ctx, accountID, 1000, false)
-	if err != nil {
-		return false, cli.WrapAppError(cli.ErrorInternal, "cannot inspect folder hierarchy", false, err)
-	}
-	if more {
-		return false, cli.NewAppError(cli.ErrorConflict, "folder inventory exceeds the safe hierarchy bound", false)
-	}
-	for _, value := range values {
-		if value.ParentName == name && value.Present && !value.Stale {
-			return true, nil
+	cursor := ""
+	for {
+		values, more, next, err := state.Folders().ListPage(ctx, accountID, syncFolderSchedulePageSize, false, cursor)
+		if err != nil {
+			return false, cli.WrapAppError(cli.ErrorInternal, "cannot inspect folder hierarchy", false, err)
 		}
+		for _, value := range values {
+			if value.ParentName == name && value.Present && !value.Stale {
+				return true, nil
+			}
+		}
+		if !more {
+			return false, nil
+		}
+		if next == "" || next == cursor {
+			return false, cli.NewAppError(cli.ErrorInternal, "folder hierarchy pagination did not advance", false)
+		}
+		cursor = next
 	}
-	return false, nil
 }
 
 func accountFolderDelimiter(ctx context.Context, state *store.Store, accountID string) (string, error) {
-	values, more, err := state.Folders().List(ctx, accountID, 1000, false)
-	if err != nil {
-		return "", cli.WrapAppError(cli.ErrorInternal, "cannot read folder hierarchy", false, err)
-	}
-	if more {
-		return "", cli.NewAppError(cli.ErrorConflict, "folder inventory exceeds the safe administration bound", false)
-	}
-	for _, value := range values {
-		if value.Kind == folder.KindInbox && value.Delimiter != "" {
-			return value.Delimiter, nil
+	cursor := ""
+	fallback := ""
+	for {
+		values, more, next, err := state.Folders().ListPage(ctx, accountID, syncFolderSchedulePageSize, false, cursor)
+		if err != nil {
+			return "", cli.WrapAppError(cli.ErrorInternal, "cannot read folder hierarchy", false, err)
 		}
-	}
-	for _, value := range values {
-		if value.Delimiter != "" {
-			return value.Delimiter, nil
+		for _, value := range values {
+			if value.Kind == folder.KindInbox && value.Delimiter != "" {
+				return value.Delimiter, nil
+			}
+			if fallback == "" && value.Delimiter != "" {
+				fallback = value.Delimiter
+			}
 		}
+		if !more {
+			return fallback, nil
+		}
+		if next == "" || next == cursor {
+			return "", cli.NewAppError(cli.ErrorInternal, "folder hierarchy pagination did not advance", false)
+		}
+		cursor = next
 	}
-	return "", nil
 }
 
 func transportFolderAdminAction(action folder.AdminAction) transport.FolderAdminAction {

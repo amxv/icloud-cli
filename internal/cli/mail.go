@@ -56,6 +56,22 @@ type MailService interface {
 	MailLocationMutationStatus(context.Context, string, string, int) (account.Account, []maildomain.LocationMutation, bool, int64, error)
 }
 
+// HydrateItemResult is the ordered truth record for one attempted remote
+// hydration input. Item-level failures live beside their input identity and
+// durable canonical state instead of being separated into success/failure
+// slices that lose ordering and accounting information.
+type HydrateItemResult struct {
+	Index          int
+	Reference      string
+	Outcome        *maildomain.HydrateOutcome
+	Error          *AppError
+	CommittedState string
+}
+
+type orderedHydrateService interface {
+	MailHydrateItems(context.Context, string, string, []string, bool) (account.Account, []HydrateItemResult, int64, error)
+}
+
 type mailSyncData struct {
 	AccountID     string                   `json:"account_id"`
 	Summary       maildomain.SyncSummary   `json:"summary"`
@@ -197,6 +213,9 @@ func newMailSyncCommand(state *executionState) *cobra.Command {
 				if strings.TrimSpace(folderSelector) != "" || allFolders {
 					return NewAppError(ErrorUsage, "--hydrate cannot be combined with --folder or --all-folders", false)
 				}
+				if jsonlOutput {
+					return runHydrateJSONL(cmd, state, hydrate, continueOnError)
+				}
 				var accountValue account.Account
 				var outcomes []maildomain.HydrateOutcome
 				var schemaVersion int64
@@ -254,29 +273,6 @@ func newMailSyncCommand(state *executionState) *cobra.Command {
 						AccountID: accountValue.ID, Outcomes: outcomes, Count: len(outcomes), SchemaVersion: schemaVersion,
 					}, Meta: EnvelopeMeta{RequestID: state.requestID}})
 				}
-				if jsonlOutput {
-					sequence := uint64(0)
-					for index, outcome := range outcomes {
-						sequence++
-						if err := WriteJSONLEvent(state.stdout, JSONLEvent{Event: "item", Sequence: sequence, AccountID: accountValue.ID, Timestamp: time.Now().UTC(), Payload: map[string]any{"index": index, "status": hydrateOutcomeStatus(outcome), "result": outcome}}); err != nil {
-							return err
-						}
-					}
-					for index, failure := range hydrateFailures {
-						sequence++
-						if err := WriteJSONLEvent(state.stdout, JSONLEvent{Event: "item", Sequence: sequence, AccountID: accountValue.ID, Timestamp: time.Now().UTC(), Payload: map[string]any{"index": len(outcomes) + index, "status": "error", "reference": failure.Reference}, Error: failure.Error}); err != nil {
-							return err
-						}
-					}
-					sequence++
-					if err := WriteJSONLEvent(state.stdout, JSONLEvent{Event: "completed", Sequence: sequence, AccountID: accountValue.ID, Timestamp: time.Now().UTC(), Payload: map[string]any{"requested": len(hydrate), "completed": len(outcomes), "failed": len(hydrateFailures), "partial": operationErr != nil && len(outcomes) > 0, "mode": bulkFailureMode(continueOnError)}}); err != nil {
-						return err
-					}
-					if operationErr != nil {
-						return operationErr
-					}
-					return nil
-				}
 				renderer := NewCompactTextRenderer(state.stdout)
 				for _, outcome := range outcomes {
 					if err := renderer.Record("mail-hydrate", outcome.MessageID,
@@ -322,32 +318,7 @@ func newMailSyncCommand(state *executionState) *cobra.Command {
 				}, Meta: EnvelopeMeta{RequestID: state.requestID}})
 			}
 			if jsonlOutput {
-				sequence := uint64(0)
-				for index, summary := range summaries {
-					sequence++
-					if writeErr := WriteJSONLEvent(state.stdout, JSONLEvent{Event: "item", Sequence: sequence, AccountID: accountValue.ID, Timestamp: time.Now().UTC(), Payload: map[string]any{"index": index, "status": "committed", "folder_id": summary.FolderID, "summary": summary}}); writeErr != nil {
-						return writeErr
-					}
-				}
-				syncFailures := bulkFailuresFromError(err)
-				for index, failure := range syncFailures {
-					sequence++
-					payload := map[string]any{"index": len(summaries) + index, "status": "error"}
-					if failure.FolderID != "" {
-						payload["folder_id"] = failure.FolderID
-					}
-					if failure.FolderName != "" {
-						payload["folder_name"] = failure.FolderName
-					}
-					if writeErr := WriteJSONLEvent(state.stdout, JSONLEvent{Event: "item", Sequence: sequence, AccountID: accountValue.ID, Timestamp: time.Now().UTC(), Payload: payload, Error: failure.Error}); writeErr != nil {
-						return writeErr
-					}
-				}
-				sequence++
-				if writeErr := WriteJSONLEvent(state.stdout, JSONLEvent{Event: "completed", Sequence: sequence, AccountID: accountValue.ID, Timestamp: time.Now().UTC(), Payload: map[string]any{"completed": len(summaries), "failed": len(syncFailures), "partial": err != nil && len(summaries) > 0, "mode": bulkFailureMode(continueOnError)}}); writeErr != nil {
-					return writeErr
-				}
-				return err
+				return renderSyncJSONL(state, accountValue.ID, summaries, err, continueOnError)
 			}
 			renderer := NewCompactTextRenderer(state.stdout)
 			for _, summary := range summaries {
@@ -414,6 +385,191 @@ type bulkItemFailure struct {
 	FolderID   string
 	FolderName string
 	Error      *AppError
+}
+
+type bulkItemRecord struct {
+	Index       int
+	Reference   string
+	FolderID    string
+	FolderName  string
+	Status      string
+	CommitState string
+	Result      any
+	Error       *AppError
+}
+
+func runHydrateJSONL(cmd *cobra.Command, state *executionState, references []string, continueOnError bool) error {
+	if service, ok := state.mail.(orderedHydrateService); ok {
+		accountValue, items, _, err := service.MailHydrateItems(cmd.Context(), state.global.Home, state.global.Account, references, continueOnError)
+		if err != nil {
+			return err
+		}
+		records := make([]bulkItemRecord, 0, len(items))
+		var terminal error
+		for _, item := range items {
+			record := bulkItemRecord{
+				Index: item.Index, Reference: item.Reference, Status: "error",
+				CommitState: item.CommittedState, Error: item.Error,
+			}
+			if item.Outcome != nil {
+				record.Status = hydrateOutcomeStatus(*item.Outcome)
+				record.Result = *item.Outcome
+			}
+			if item.Error != nil {
+				record.Status = "error"
+				if terminal == nil {
+					terminal = item.Error
+				}
+			}
+			records = append(records, record)
+		}
+		if err := writeBulkJSONLRecords(state, accountValue.ID, records, len(references), bulkFailureMode(continueOnError)); err != nil {
+			return err
+		}
+		return markJSONLHandled(terminal)
+	}
+
+	records := make([]bulkItemRecord, 0, len(references))
+	seen := make(map[string]struct{}, len(references))
+	accountID := ""
+	var terminal error
+	for index, raw := range references {
+		reference := strings.TrimSpace(raw)
+		if reference == "" {
+			continue
+		}
+		if _, duplicate := seen[reference]; duplicate {
+			continue
+		}
+		seen[reference] = struct{}{}
+		accountValue, outcomes, _, itemErr := state.mail.MailHydrate(cmd.Context(), state.global.Home, state.global.Account, []string{reference})
+		if accountValue.ID != "" {
+			accountID = accountValue.ID
+		}
+		record := bulkItemRecord{Index: index, Reference: reference, Status: "error", CommitState: "unknown"}
+		if len(outcomes) == 1 {
+			record.Status = hydrateOutcomeStatus(outcomes[0])
+			record.Result = outcomes[0]
+			if outcomes[0].Created || outcomes[0].Updated {
+				record.CommitState = "committed"
+			} else {
+				record.CommitState = "already_committed"
+			}
+		}
+		if itemErr != nil {
+			record.Error = NormalizeError(itemErr)
+			if len(outcomes) == 0 {
+				record.Status = "error"
+			}
+			if terminal == nil {
+				terminal = itemErr
+			}
+		}
+		records = append(records, record)
+		if itemErr != nil && !continueOnError {
+			break
+		}
+	}
+	if err := writeBulkJSONLRecords(state, accountID, records, len(references), bulkFailureMode(continueOnError)); err != nil {
+		return err
+	}
+	return markJSONLHandled(terminal)
+}
+
+func renderSyncJSONL(state *executionState, accountID string, summaries []maildomain.SyncSummary, operationErr error, continueOnError bool) error {
+	records := syncBulkItemRecords(summaries, operationErr)
+	if operationErr != nil && len(records) == 0 {
+		// No folder attempt exists to account for this error (for example account,
+		// credential, or local-state resolution failed before scheduling). Let the
+		// root emit the ordinary JSONL error event instead of fabricating a
+		// successful-looking completed bulk stream with failed=0.
+		return operationErr
+	}
+	requested := len(records)
+	if operationErr != nil {
+		if value, ok := NormalizeError(operationErr).Details["requested"].(int); ok {
+			requested = value
+		}
+	}
+	if err := writeBulkJSONLRecords(state, accountID, records, requested, bulkFailureMode(continueOnError)); err != nil {
+		return err
+	}
+	return markJSONLHandled(operationErr)
+}
+
+func syncBulkItemRecords(summaries []maildomain.SyncSummary, operationErr error) []bulkItemRecord {
+	if operationErr == nil {
+		values := make([]bulkItemRecord, 0, len(summaries))
+		for index, summary := range summaries {
+			values = append(values, bulkItemRecord{Index: index, FolderID: summary.FolderID, FolderName: summary.FolderName, Status: "committed", CommitState: "committed", Result: summary})
+		}
+		return values
+	}
+	raw, ok := NormalizeError(operationErr).Details["items"].([]map[string]any)
+	if !ok {
+		return nil
+	}
+	values := make([]bulkItemRecord, 0, len(raw))
+	for _, item := range raw {
+		record := bulkItemRecord{Status: "error", CommitState: "not_committed"}
+		record.Index, _ = item["index"].(int)
+		record.FolderID, _ = item["folder_id"].(string)
+		record.FolderName, _ = item["folder_name"].(string)
+		committed, _ := item["committed"].(bool)
+		if committed {
+			record.CommitState = "committed"
+		}
+		if summary, ok := item["summary"].(maildomain.SyncSummary); ok {
+			record.Result = summary
+			if item["error"] == nil {
+				record.Status = "committed"
+			}
+		}
+		if appErr, ok := item["error"].(*AppError); ok {
+			record.Error = appErr
+		} else if nested, ok := item["error"].(error); ok {
+			record.Error = NormalizeError(nested)
+		}
+		values = append(values, record)
+	}
+	return values
+}
+
+func writeBulkJSONLRecords(state *executionState, accountID string, records []bulkItemRecord, requested int, mode string) error {
+	sequence := uint64(0)
+	completed, failed, committed := 0, 0, 0
+	for _, record := range records {
+		sequence++
+		payload := map[string]any{"index": record.Index, "status": record.Status, "committed_state": record.CommitState}
+		if record.Reference != "" {
+			payload["reference"] = record.Reference
+		}
+		if record.FolderID != "" {
+			payload["folder_id"] = record.FolderID
+		}
+		if record.FolderName != "" {
+			payload["folder_name"] = record.FolderName
+		}
+		if record.Result != nil {
+			payload["result"] = record.Result
+		}
+		if record.CommitState == "committed" || record.CommitState == "already_committed" {
+			committed++
+		}
+		if record.Error != nil {
+			failed++
+		} else {
+			completed++
+		}
+		if err := WriteJSONLEvent(state.stdout, JSONLEvent{Event: "item", Sequence: sequence, AccountID: accountID, Timestamp: time.Now().UTC(), Payload: payload, Error: record.Error}); err != nil {
+			return err
+		}
+	}
+	sequence++
+	return WriteJSONLEvent(state.stdout, JSONLEvent{Event: "completed", Sequence: sequence, AccountID: accountID, Timestamp: time.Now().UTC(), Payload: map[string]any{
+		"requested": requested, "attempted": len(records), "completed": completed, "failed": failed, "committed": committed,
+		"partial": completed > 0 && failed > 0, "mode": mode,
+	}})
 }
 
 func bulkFailuresFromError(err error) []bulkItemFailure {
@@ -767,11 +923,26 @@ func newMailSyncRepairCommand(state *executionState) *cobra.Command {
 					}
 				}
 			}
+			var projectionState, projectionPending, projectionAdvanced, projectionRepaired any
+			if summary.ThreadProjectionState != "" && summary.ThreadProjectionState != "ready" {
+				projectionState = summary.ThreadProjectionState
+				if summary.ThreadProjectionPending > 0 {
+					projectionPending = summary.ThreadProjectionPending
+				}
+			}
+			if summary.ThreadProjectionAdvanced > 0 {
+				projectionAdvanced = summary.ThreadProjectionAdvanced
+			}
+			if summary.ThreadProjectionRepaired > 0 {
+				projectionRepaired = summary.ThreadProjectionRepaired
+			}
 			return renderer.Summary("mail-repair",
 				Field("account", summary.AccountID), Field("mode", summary.Mode), Field("checked", fmt.Sprint(summary.Checked)), Field("changed", fmt.Sprint(summary.Changed)),
 				Field("pending_search", fmt.Sprint(summary.PendingSearch)), Field("search_errors", fmt.Sprint(summary.FailedSearch)), Field("stale_search", fmt.Sprint(summary.StaleFTSRows)),
 				Field("temp_orphans", fmt.Sprint(summary.OrphanTempFiles)), Field("blob_issues", fmt.Sprint(summary.CanonicalBlobIssues)), Field("dedupe_conflicts", fmt.Sprint(summary.DedupeConflicts)),
 				Field("uid_repairs", fmt.Sprint(summary.RepairCheckpoints)), Field("frontier_problems", fmt.Sprint(summary.FrontierProblems)), Field("outbound_unknown", fmt.Sprint(summary.OutboundUnknown)),
+				Field("thread_projection", projectionState), Field("thread_projection_pending", projectionPending),
+				Field("thread_projection_advanced", projectionAdvanced), Field("thread_projection_repaired", projectionRepaired),
 				Field("more", yesNo(summary.More)), Field("next", summary.NextAction),
 			)
 		},

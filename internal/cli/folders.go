@@ -20,7 +20,16 @@ type folderListData struct {
 	Count         int             `json:"count"`
 	Total         int             `json:"total,omitempty"`
 	More          bool            `json:"more,omitempty"`
+	NextCursor    string          `json:"next_cursor,omitempty"`
 	SchemaVersion int64           `json:"schema_version"`
+}
+
+type folderListPager interface {
+	FolderListPage(context.Context, string, string, int, bool, string) (account.Account, []folder.Folder, bool, string, int64, error)
+}
+
+type folderStatusPager interface {
+	FolderStatusPage(context.Context, string, string, int, string) (account.Account, []folder.Folder, bool, string, int, int64, error)
 }
 
 type folderShowData struct {
@@ -115,6 +124,7 @@ func newMailFoldersCommand(state *executionState) *cobra.Command {
 func newFolderListCommand(state *executionState) *cobra.Command {
 	var jsonOutput, verbose, includeMissing bool
 	var limit int
+	var cursor string
 	command := &cobra.Command{
 		Use:     "list",
 		Short:   "List locally discovered folders without contacting iCloud",
@@ -127,11 +137,24 @@ func newFolderListCommand(state *executionState) *cobra.Command {
 			if limit < 1 || limit > MaximumPageSize {
 				return NewAppError(ErrorUsage, fmt.Sprintf("--limit must be between 1 and %d", MaximumPageSize), false)
 			}
-			accountValue, values, more, schemaVersion, err := state.folders.FolderList(cmd.Context(), state.global.Home, state.global.Account, limit, includeMissing)
+			var accountValue account.Account
+			var values []folder.Folder
+			var more bool
+			var nextCursor string
+			var schemaVersion int64
+			var err error
+			if pager, ok := state.folders.(folderListPager); ok {
+				accountValue, values, more, nextCursor, schemaVersion, err = pager.FolderListPage(cmd.Context(), state.global.Home, state.global.Account, limit, includeMissing, cursor)
+			} else {
+				if strings.TrimSpace(cursor) != "" {
+					return NewAppError(ErrorConfiguration, "folder continuation is unavailable", false)
+				}
+				accountValue, values, more, schemaVersion, err = state.folders.FolderList(cmd.Context(), state.global.Home, state.global.Account, limit, includeMissing)
+			}
 			if err != nil {
 				return err
 			}
-			data := folderListData{AccountID: accountValue.ID, Folders: values, Count: len(values), More: more, SchemaVersion: schemaVersion}
+			data := folderListData{AccountID: accountValue.ID, Folders: values, Count: len(values), More: more, NextCursor: nextCursor, SchemaVersion: schemaVersion}
 			if jsonOutput {
 				return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: data, Meta: EnvelopeMeta{RequestID: state.requestID}})
 			}
@@ -141,13 +164,14 @@ func newFolderListCommand(state *executionState) *cobra.Command {
 					return err
 				}
 			}
-			return renderer.Summary("folders", Field("account", accountValue.ID), Field("count", fmt.Sprintf("%d", len(values))), Field("more", more))
+			return renderer.Summary("folders", Field("account", accountValue.ID), Field("count", fmt.Sprintf("%d", len(values))), Field("more", more), Field("next_cursor", nextCursor))
 		},
 	}
 	command.Flags().IntVar(&limit, "limit", DefaultPageSize, fmt.Sprintf("Maximum folders to return (1-%d)", MaximumPageSize))
 	command.Flags().BoolVar(&includeMissing, "include-missing", false, "Include folders missing from the latest provider discovery")
 	command.Flags().BoolVar(&verbose, "verbose", false, "Include wire names, attributes, UID metadata, and timestamps")
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
+	command.Flags().StringVar(&cursor, "cursor", "", "Continue from a next_cursor returned by an earlier folder page")
 	return command
 }
 
@@ -180,6 +204,7 @@ func newFolderShowCommand(state *executionState) *cobra.Command {
 func newFolderStatusCommand(state *executionState) *cobra.Command {
 	var jsonOutput, verbose bool
 	var limit int
+	var cursor string
 	command := &cobra.Command{
 		Use:     "status",
 		Short:   "Refresh every remote folder and its provider counts without fetching messages",
@@ -192,25 +217,43 @@ func newFolderStatusCommand(state *executionState) *cobra.Command {
 			if limit < 1 || limit > MaximumPageSize {
 				return NewAppError(ErrorUsage, fmt.Sprintf("--limit must be between 1 and %d", MaximumPageSize), false)
 			}
-			accountValue, values, schemaVersion, err := state.folders.FolderStatus(cmd.Context(), state.global.Home, state.global.Account)
+			var accountValue account.Account
+			var shown []folder.Folder
+			var more bool
+			var nextCursor string
+			var total int
+			var schemaVersion int64
+			var err error
+			if pager, ok := state.folders.(folderStatusPager); ok {
+				accountValue, shown, more, nextCursor, total, schemaVersion, err = pager.FolderStatusPage(cmd.Context(), state.global.Home, state.global.Account, limit, cursor)
+			} else {
+				if strings.TrimSpace(cursor) != "" {
+					return NewAppError(ErrorConfiguration, "folder status continuation is unavailable", false)
+				}
+				var values []folder.Folder
+				accountValue, values, schemaVersion, err = state.folders.FolderStatus(cmd.Context(), state.global.Home, state.global.Account)
+				if err == nil {
+					total = len(values)
+					shown = values
+					more = len(shown) > limit
+					if more {
+						shown = shown[:limit]
+					}
+				}
+			}
 			if err != nil {
 				return err
 			}
-			shown := values
-			more := len(values) > limit
-			if more {
-				shown = values[:limit]
-			}
-			data := folderListData{AccountID: accountValue.ID, Folders: shown, Count: len(shown), More: more, SchemaVersion: schemaVersion}
-			if more {
-				data.Total = len(values)
+			data := folderListData{AccountID: accountValue.ID, Folders: shown, Count: len(shown), More: more, NextCursor: nextCursor, SchemaVersion: schemaVersion}
+			if more || total != len(shown) {
+				data.Total = total
 			}
 			if jsonOutput {
 				return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: data, Meta: EnvelopeMeta{RequestID: state.requestID}})
 			}
 			renderer := NewCompactTextRenderer(state.stdout)
 			present, stale, enabled := 0, 0, 0
-			for _, value := range values {
+			for _, value := range shown {
 				if value.Present {
 					present++
 				}
@@ -226,15 +269,16 @@ func newFolderStatusCommand(state *executionState) *cobra.Command {
 					return err
 				}
 			}
-			var total any
+			var totalValue any
 			if more {
-				total = len(values)
+				totalValue = total
 			}
 			return renderer.Summary("folder-status",
 				Field("account", accountValue.ID),
 				Field("count", fmt.Sprintf("%d", len(shown))),
-				Field("total", total),
+				Field("total", totalValue),
 				Field("more", more),
+				Field("next_cursor", nextCursor),
 				Field("present", fmt.Sprintf("%d", present)),
 				Field("stale", fmt.Sprintf("%d", stale)),
 				Field("enabled", fmt.Sprintf("%d", enabled)),
@@ -244,6 +288,7 @@ func newFolderStatusCommand(state *executionState) *cobra.Command {
 	command.Flags().BoolVar(&verbose, "verbose", false, "Include wire names, attributes, UID metadata, and timestamps")
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
 	command.Flags().IntVar(&limit, "limit", DefaultPageSize, fmt.Sprintf("Maximum folder records to print after refreshing all remote folders (1-%d)", MaximumPageSize))
+	command.Flags().StringVar(&cursor, "cursor", "", "Continue from a next_cursor returned by an earlier refreshed folder page")
 	return command
 }
 
