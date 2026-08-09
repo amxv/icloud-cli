@@ -268,9 +268,10 @@ Examples:
   ICLOUD_HOME=./icloud-state icloud account list --json
 
 Flags:
-  -h, --help        help for list
-      --json        Emit one stable JSON success envelope
-      --limit int   Maximum accounts to return (1-100) (default 20)
+      --cursor string   Continue from a next_cursor returned by account list
+  -h, --help            help for list
+      --json            Emit one stable JSON success envelope
+      --limit int       Maximum accounts to return (1-100) (default 20)
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID
@@ -708,9 +709,10 @@ Examples:
   icloud mail attachments list thr_… --json
 
 Flags:
-  -h, --help        help for list
-      --json        Emit one stable JSON success envelope
-      --limit int   Maximum attachments to list (1-100) (default 20)
+      --cursor string   Continue from a next_cursor returned for the same attachment target
+  -h, --help            help for list
+      --json            Emit one stable JSON success envelope
+      --limit int       Maximum attachments to list (1-100) (default 20)
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID
@@ -2017,11 +2019,12 @@ Examples:
   icloud mail status --mutations --limit 50 --json
 
 Flags:
-  -h, --help        help for status
-      --json        Emit one stable JSON success envelope
-      --limit int   Maximum attempts to return (1-100) (default 20)
-      --mutations   List recent message location mutation intents and outcomes
-      --outbound    List recent outbound send attempts
+      --cursor string   Continue from a next_cursor returned by the same status mode
+  -h, --help            help for status
+      --json            Emit one stable JSON success envelope
+      --limit int       Maximum attempts to return (1-100) (default 20)
+      --mutations       List recent message location mutation intents and outcomes
+      --outbound        List recent outbound send attempts
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID
@@ -2120,9 +2123,10 @@ Examples:
   icloud mail sync checkpoints --json
 
 Flags:
-  -h, --help        help for checkpoints
-      --json        Emit one stable JSON success envelope
-      --limit int   Maximum checkpoints to return (1-100) (default 20)
+      --cursor string   Continue from a next_cursor returned for the same account
+  -h, --help            help for checkpoints
+      --json            Emit one stable JSON success envelope
+      --limit int       Maximum checkpoints to return (1-100) (default 20)
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID

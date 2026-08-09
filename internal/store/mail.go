@@ -58,33 +58,91 @@ func (repository *MailRepository) Checkpoint(ctx context.Context, accountID, fol
 }
 
 func (repository *MailRepository) Checkpoints(ctx context.Context, accountID string, limit int) ([]maildomain.Checkpoint, bool, error) {
+	values, more, _, err := repository.CheckpointsPage(ctx, accountID, limit, "")
+	return values, more, err
+}
+
+type storedCheckpointCursor struct {
+	Version        int    `json:"version"`
+	AccountID      string `json:"account_id"`
+	RepairRequired int    `json:"repair_required"`
+	Failed         int    `json:"failed"`
+	UpdatedAt      string `json:"updated_at"`
+	FolderID       string `json:"folder_id"`
+}
+
+func (repository *MailRepository) CheckpointsPage(ctx context.Context, accountID string, limit int, cursor string) ([]maildomain.Checkpoint, bool, string, error) {
 	if limit < 1 {
-		return nil, false, errors.New("list checkpoints: limit must be positive")
+		return nil, false, "", errors.New("list checkpoints: limit must be positive")
 	}
-	rows, err := repository.db.QueryContext(ctx, checkpointColumns+`
-WHERE account_id = ?
-ORDER BY state = 'repair_required' DESC, state = 'failed' DESC, updated_at DESC, folder_id
-LIMIT ?`, accountID, limit+1)
+	accountID = strings.TrimSpace(accountID)
+	const repairOrder = `(state = 'repair_required')`
+	const failedOrder = `(state = 'failed')`
+	where := ` WHERE account_id = ?`
+	arguments := []any{accountID}
+	if strings.TrimSpace(cursor) != "" {
+		var decoded storedCheckpointCursor
+		if err := decodeOpaqueCursor("ccur_", cursor, &decoded); err != nil || decoded.Version != 1 || decoded.AccountID != accountID || strings.TrimSpace(decoded.FolderID) == "" || (decoded.RepairRequired != 0 && decoded.RepairRequired != 1) || (decoded.Failed != 0 && decoded.Failed != 1) {
+			return nil, false, "", maildomain.ErrInvalidListCursor
+		}
+		if parsed, err := time.Parse(time.RFC3339Nano, decoded.UpdatedAt); err != nil || parsed.IsZero() {
+			return nil, false, "", maildomain.ErrInvalidListCursor
+		}
+		where += ` AND (
+    ` + repairOrder + ` < ? OR
+    (` + repairOrder + ` = ? AND ` + failedOrder + ` < ?) OR
+    (` + repairOrder + ` = ? AND ` + failedOrder + ` = ? AND updated_at < ?) OR
+    (` + repairOrder + ` = ? AND ` + failedOrder + ` = ? AND updated_at = ? AND folder_id > ?)
+)`
+		arguments = append(arguments,
+			decoded.RepairRequired,
+			decoded.RepairRequired, decoded.Failed,
+			decoded.RepairRequired, decoded.Failed, decoded.UpdatedAt,
+			decoded.RepairRequired, decoded.Failed, decoded.UpdatedAt, decoded.FolderID,
+		)
+	}
+	arguments = append(arguments, limit+1)
+	rows, err := repository.db.QueryContext(ctx, checkpointColumns+where+`
+ORDER BY `+repairOrder+` DESC, `+failedOrder+` DESC, updated_at DESC, folder_id
+LIMIT ?`, arguments...)
 	if err != nil {
-		return nil, false, fmt.Errorf("list checkpoints: %w", err)
+		return nil, false, "", fmt.Errorf("list checkpoints: %w", err)
 	}
 	defer rows.Close()
 	values := make([]maildomain.Checkpoint, 0, limit+1)
 	for rows.Next() {
 		value, scanErr := scanCheckpoint(rows)
 		if scanErr != nil {
-			return nil, false, scanErr
+			return nil, false, "", scanErr
 		}
 		values = append(values, value)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, false, fmt.Errorf("list checkpoints: %w", err)
+		return nil, false, "", fmt.Errorf("list checkpoints: %w", err)
 	}
 	more := len(values) > limit
 	if more {
 		values = values[:limit]
 	}
-	return values, more, nil
+	nextCursor := ""
+	if more && len(values) > 0 {
+		last := values[len(values)-1]
+		repairRequired, failed := 0, 0
+		if last.State == maildomain.CheckpointRepairRequired {
+			repairRequired = 1
+		}
+		if last.State == maildomain.CheckpointFailed {
+			failed = 1
+		}
+		nextCursor, err = encodeOpaqueCursor("ccur_", storedCheckpointCursor{
+			Version: 1, AccountID: accountID, RepairRequired: repairRequired, Failed: failed,
+			UpdatedAt: last.UpdatedAt.UTC().Format(time.RFC3339Nano), FolderID: last.FolderID,
+		})
+		if err != nil {
+			return nil, false, "", fmt.Errorf("encode checkpoint cursor: %w", err)
+		}
+	}
+	return values, more, nextCursor, nil
 }
 
 func (repository *MailRepository) CommitInboxPage(ctx context.Context, page maildomain.CommitPage) (maildomain.CommitResult, error) {
@@ -478,66 +536,153 @@ WHERE account_id = ? AND location_id = ?`,
 }
 
 func (repository *MailRepository) Attachments(ctx context.Context, accountID, messageID string, limit int) ([]maildomain.Attachment, bool, error) {
+	values, more, _, err := repository.AttachmentsPage(ctx, accountID, messageID, limit, "")
+	return values, more, err
+}
+
+type storedAttachmentCursor struct {
+	Version      int    `json:"version"`
+	AccountID    string `json:"account_id"`
+	TargetKind   string `json:"target_kind"`
+	TargetID     string `json:"target_id"`
+	SortAt       string `json:"sort_at,omitempty"`
+	MessageID    string `json:"message_id,omitempty"`
+	Ordinal      int    `json:"ordinal"`
+	AttachmentID string `json:"attachment_id"`
+}
+
+func (repository *MailRepository) AttachmentsPage(ctx context.Context, accountID, messageID string, limit int, cursor string) ([]maildomain.Attachment, bool, string, error) {
 	if limit < 1 {
-		return nil, false, errors.New("list attachments: limit must be positive")
+		return nil, false, "", errors.New("list attachments: limit must be positive")
 	}
+	accountID = strings.TrimSpace(accountID)
+	messageID = strings.TrimSpace(messageID)
+	where := ` WHERE m.account_id = ? AND a.message_id = ?`
+	arguments := []any{accountID, messageID}
+	if strings.TrimSpace(cursor) != "" {
+		var decoded storedAttachmentCursor
+		if err := decodeOpaqueCursor("atcur_", cursor, &decoded); err != nil || decoded.Version != 1 || decoded.AccountID != accountID || decoded.TargetKind != "message" || decoded.TargetID != messageID || strings.TrimSpace(decoded.AttachmentID) == "" || decoded.Ordinal < 0 {
+			return nil, false, "", maildomain.ErrInvalidListCursor
+		}
+		where += ` AND (a.ordinal > ? OR (a.ordinal = ? AND a.attachment_id > ?))`
+		arguments = append(arguments, decoded.Ordinal, decoded.Ordinal, decoded.AttachmentID)
+	}
+	arguments = append(arguments, limit+1)
 	rows, err := repository.db.QueryContext(ctx, attachmentColumns+`
 JOIN messages AS m ON m.message_id = a.message_id
-WHERE m.account_id = ? AND a.message_id = ?
+`+where+`
 ORDER BY a.ordinal, a.attachment_id
-LIMIT ?`, strings.TrimSpace(accountID), strings.TrimSpace(messageID), limit+1)
+LIMIT ?`, arguments...)
 	if err != nil {
-		return nil, false, fmt.Errorf("list attachments: %w", err)
+		return nil, false, "", fmt.Errorf("list attachments: %w", err)
 	}
 	defer rows.Close()
 	values := make([]maildomain.Attachment, 0, limit+1)
 	for rows.Next() {
 		value, scanErr := scanAttachment(rows)
 		if scanErr != nil {
-			return nil, false, scanErr
+			return nil, false, "", scanErr
 		}
 		values = append(values, value)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, false, fmt.Errorf("list attachments: %w", err)
+		return nil, false, "", fmt.Errorf("list attachments: %w", err)
 	}
 	more := len(values) > limit
 	if more {
 		values = values[:limit]
 	}
-	return values, more, nil
+	nextCursor := ""
+	if more && len(values) > 0 {
+		last := values[len(values)-1]
+		nextCursor, err = encodeOpaqueCursor("atcur_", storedAttachmentCursor{
+			Version: 1, AccountID: accountID, TargetKind: "message", TargetID: messageID,
+			Ordinal: last.Ordinal, AttachmentID: last.ID,
+		})
+		if err != nil {
+			return nil, false, "", fmt.Errorf("encode attachment cursor: %w", err)
+		}
+	}
+	return values, more, nextCursor, nil
 }
 
 func (repository *MailRepository) AttachmentsForThread(ctx context.Context, accountID, threadID string, limit int) ([]maildomain.Attachment, bool, error) {
+	values, more, _, err := repository.AttachmentsForThreadPage(ctx, accountID, threadID, limit, "")
+	return values, more, err
+}
+
+func (repository *MailRepository) AttachmentsForThreadPage(ctx context.Context, accountID, threadID string, limit int, cursor string) ([]maildomain.Attachment, bool, string, error) {
 	if limit < 1 {
-		return nil, false, errors.New("list thread attachments: limit must be positive")
+		return nil, false, "", errors.New("list thread attachments: limit must be positive")
 	}
+	accountID = strings.TrimSpace(accountID)
+	threadID = strings.TrimSpace(threadID)
+	const sortExpression = `COALESCE(m.sort_at, m.created_at)`
+	where := ` WHERE m.account_id = ? AND tm.thread_id = ?`
+	arguments := []any{accountID, threadID}
+	if strings.TrimSpace(cursor) != "" {
+		var decoded storedAttachmentCursor
+		if err := decodeOpaqueCursor("atcur_", cursor, &decoded); err != nil || decoded.Version != 1 || decoded.AccountID != accountID || decoded.TargetKind != "thread" || decoded.TargetID != threadID || strings.TrimSpace(decoded.SortAt) == "" || strings.TrimSpace(decoded.MessageID) == "" || strings.TrimSpace(decoded.AttachmentID) == "" || decoded.Ordinal < 0 {
+			return nil, false, "", maildomain.ErrInvalidListCursor
+		}
+		if parsed, err := time.Parse(time.RFC3339Nano, decoded.SortAt); err != nil || parsed.IsZero() {
+			return nil, false, "", maildomain.ErrInvalidListCursor
+		}
+		where += ` AND (
+    ` + sortExpression + ` > ? OR
+    (` + sortExpression + ` = ? AND m.message_id > ?) OR
+    (` + sortExpression + ` = ? AND m.message_id = ? AND a.ordinal > ?) OR
+    (` + sortExpression + ` = ? AND m.message_id = ? AND a.ordinal = ? AND a.attachment_id > ?)
+)`
+		arguments = append(arguments,
+			decoded.SortAt,
+			decoded.SortAt, decoded.MessageID,
+			decoded.SortAt, decoded.MessageID, decoded.Ordinal,
+			decoded.SortAt, decoded.MessageID, decoded.Ordinal, decoded.AttachmentID,
+		)
+	}
+	arguments = append(arguments, limit+1)
 	rows, err := repository.db.QueryContext(ctx, attachmentColumns+`
 JOIN messages AS m ON m.message_id = a.message_id
 JOIN thread_messages AS tm ON tm.message_id = a.message_id
-WHERE m.account_id = ? AND tm.thread_id = ?
-ORDER BY COALESCE(m.sort_at, m.created_at), m.message_id, a.ordinal, a.attachment_id
-LIMIT ?`, strings.TrimSpace(accountID), strings.TrimSpace(threadID), limit+1)
+`+where+`
+ORDER BY `+sortExpression+`, m.message_id, a.ordinal, a.attachment_id
+LIMIT ?`, arguments...)
 	if err != nil {
-		return nil, false, fmt.Errorf("list thread attachments: %w", err)
+		return nil, false, "", fmt.Errorf("list thread attachments: %w", err)
 	}
 	defer rows.Close()
 	values := make([]maildomain.Attachment, 0, limit+1)
 	for rows.Next() {
 		value, scanErr := scanAttachment(rows)
 		if scanErr != nil {
-			return nil, false, scanErr
+			return nil, false, "", scanErr
 		}
 		values = append(values, value)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, false, fmt.Errorf("list thread attachments: %w", err)
+		return nil, false, "", fmt.Errorf("list thread attachments: %w", err)
 	}
 	more := len(values) > limit
 	if more {
 		values = values[:limit]
 	}
-	return values, more, nil
+	nextCursor := ""
+	if more && len(values) > 0 {
+		last := values[len(values)-1]
+		var sortAt string
+		if err := repository.db.QueryRowContext(ctx, `SELECT COALESCE(sort_at, created_at) FROM messages WHERE account_id = ? AND message_id = ?`, accountID, last.MessageID).Scan(&sortAt); err != nil {
+			return nil, false, "", fmt.Errorf("read attachment cursor order: %w", err)
+		}
+		nextCursor, err = encodeOpaqueCursor("atcur_", storedAttachmentCursor{
+			Version: 1, AccountID: accountID, TargetKind: "thread", TargetID: threadID,
+			SortAt: sortAt, MessageID: last.MessageID, Ordinal: last.Ordinal, AttachmentID: last.ID,
+		})
+		if err != nil {
+			return nil, false, "", fmt.Errorf("encode thread attachment cursor: %w", err)
+		}
+	}
+	return values, more, nextCursor, nil
 }
 
 func (repository *MailRepository) Attachment(ctx context.Context, accountID, attachmentID string) (maildomain.Attachment, error) {

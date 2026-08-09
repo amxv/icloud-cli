@@ -144,33 +144,72 @@ func (repository *LocationMutationRepository) List(
 	accountID string,
 	limit int,
 ) ([]maildomain.LocationMutation, bool, error) {
+	values, more, _, err := repository.ListPage(ctx, accountID, limit, "")
+	return values, more, err
+}
+
+type storedLocationMutationCursor struct {
+	Version    int    `json:"version"`
+	AccountID  string `json:"account_id"`
+	UpdatedAt  string `json:"updated_at"`
+	MutationID string `json:"mutation_id"`
+}
+
+func (repository *LocationMutationRepository) ListPage(
+	ctx context.Context,
+	accountID string,
+	limit int,
+	cursor string,
+) ([]maildomain.LocationMutation, bool, string, error) {
 	if limit < 1 {
-		return nil, false, errors.New("list location mutations: limit must be positive")
+		return nil, false, "", errors.New("list location mutations: limit must be positive")
 	}
-	rows, err := repository.db.QueryContext(ctx, locationMutationColumns+`
-WHERE account_id = ?
+	accountID = strings.TrimSpace(accountID)
+	where := ` WHERE account_id = ?`
+	arguments := []any{accountID}
+	if strings.TrimSpace(cursor) != "" {
+		var decoded storedLocationMutationCursor
+		if err := decodeOpaqueCursor("mcur_", cursor, &decoded); err != nil || decoded.Version != 1 || decoded.AccountID != accountID || strings.TrimSpace(decoded.MutationID) == "" {
+			return nil, false, "", maildomain.ErrInvalidListCursor
+		}
+		if parsed, err := time.Parse(time.RFC3339Nano, decoded.UpdatedAt); err != nil || parsed.IsZero() {
+			return nil, false, "", maildomain.ErrInvalidListCursor
+		}
+		where += ` AND (updated_at < ? OR (updated_at = ? AND mutation_id < ?))`
+		arguments = append(arguments, decoded.UpdatedAt, decoded.UpdatedAt, decoded.MutationID)
+	}
+	arguments = append(arguments, limit+1)
+	rows, err := repository.db.QueryContext(ctx, locationMutationColumns+where+`
 ORDER BY updated_at DESC, mutation_id DESC
-LIMIT ?`, strings.TrimSpace(accountID), limit+1)
+LIMIT ?`, arguments...)
 	if err != nil {
-		return nil, false, fmt.Errorf("list location mutations: %w", err)
+		return nil, false, "", fmt.Errorf("list location mutations: %w", err)
 	}
 	defer rows.Close()
 	values := make([]maildomain.LocationMutation, 0, limit+1)
 	for rows.Next() {
 		value, scanErr := scanLocationMutation(rows)
 		if scanErr != nil {
-			return nil, false, scanErr
+			return nil, false, "", scanErr
 		}
 		values = append(values, value)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, false, fmt.Errorf("list location mutations: %w", err)
+		return nil, false, "", fmt.Errorf("list location mutations: %w", err)
 	}
 	more := len(values) > limit
 	if more {
 		values = values[:limit]
 	}
-	return values, more, nil
+	nextCursor := ""
+	if more && len(values) > 0 {
+		last := values[len(values)-1]
+		nextCursor, err = encodeOpaqueCursor("mcur_", storedLocationMutationCursor{Version: 1, AccountID: accountID, UpdatedAt: last.UpdatedAt.UTC().Format(time.RFC3339Nano), MutationID: last.ID})
+		if err != nil {
+			return nil, false, "", fmt.Errorf("encode location mutation cursor: %w", err)
+		}
+	}
+	return values, more, nextCursor, nil
 }
 
 func (repository *LocationMutationRepository) MarkFailed(

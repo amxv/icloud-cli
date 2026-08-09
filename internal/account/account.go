@@ -12,6 +12,7 @@ var (
 	ErrAmbiguous         = errors.New("account selector is ambiguous")
 	ErrInvalidInput      = errors.New("account input is invalid")
 	ErrConflict          = errors.New("account conflicts with existing state")
+	ErrInvalidCursor     = errors.New("invalid account list cursor")
 	ErrDefaultRemoval    = errors.New("default account cannot be removed while other accounts exist")
 	ErrCredentialMissing = errors.New("account credential is not configured")
 	ErrTooManyAccounts   = errors.New("too many accounts for one bounded operation")

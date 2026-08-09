@@ -322,7 +322,10 @@ Inspect bounded payload-free status, then synchronize Sent and reconcile exact g
 icloud mail status --outbound
 icloud mail sync --reconcile-outbound
 icloud mail status --outbound --json
+icloud mail status --outbound --limit 100 --cursor 'ocur_…' --json
 ```
+
+Outbound history is newest-first. When a bounded page reports `more=true`, pass its opaque `next_cursor` back with `--cursor`; the cursor belongs to that account and outbound-status inventory, and the terminal page omits it.
 
 A unique Sent observation confirms the attempt and associates the provider location with the existing local message. Similar subjects, bodies, times, or attachments are never enough. No match remains pending/unknown, and conflicting exact evidence remains visibly ambiguous.
 

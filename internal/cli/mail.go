@@ -33,10 +33,12 @@ type MailService interface {
 	MailInbox(context.Context, string, string, string, int) (account.Account, folder.Folder, []maildomain.Message, bool, int64, error)
 	MailSyncStatus(context.Context, string, string, string) (account.Account, folder.Folder, maildomain.Checkpoint, int64, error)
 	MailSyncCheckpoints(context.Context, string, string, int) (account.Account, []maildomain.Checkpoint, bool, int64, error)
+	MailSyncCheckpointsPage(context.Context, string, string, string, int) (account.Account, []maildomain.Checkpoint, bool, string, int64, error)
 	MailMessage(context.Context, string, string, string) (account.Account, maildomain.Message, maildomain.ContentSource, int64, error)
 	MailLatest(context.Context, string, string, int) (account.Account, []maildomain.Thread, bool, int64, error)
 	MailThread(context.Context, string, string, string, maildomain.ThreadReadOptions) (account.Account, maildomain.ThreadPage, []maildomain.ContentSource, int64, error)
 	MailAttachments(context.Context, string, string, string, int) (account.Account, maildomain.AttachmentTarget, []maildomain.Attachment, bool, int64, error)
+	MailAttachmentsPage(context.Context, string, string, string, string, int) (account.Account, maildomain.AttachmentTarget, []maildomain.Attachment, bool, string, int64, error)
 	MailAttachment(context.Context, string, string, string) (account.Account, maildomain.Attachment, maildomain.AttachmentSource, int64, error)
 	MailUpdateFlag(context.Context, string, string, string, string, maildomain.FlagMutation) (account.Account, folder.Folder, maildomain.Message, maildomain.Location, int64, error)
 	MailSearch(context.Context, string, string, string, maildomain.SearchOptions) (account.Account, folder.Folder, maildomain.SearchPage, int64, error)
@@ -51,9 +53,11 @@ type MailService interface {
 	MailForwardPreview(context.Context, string, string, maildomain.ForwardRequest) (account.Account, maildomain.ForwardPreview, int64, error)
 	MailForward(context.Context, string, string, maildomain.ForwardRequest) (account.Account, maildomain.OutboundAttempt, bool, int64, error)
 	MailOutboundStatus(context.Context, string, string, int) (account.Account, []maildomain.OutboundAttempt, bool, int64, error)
+	MailOutboundStatusPage(context.Context, string, string, string, int) (account.Account, []maildomain.OutboundAttempt, bool, string, int64, error)
 	MailLocationPreview(context.Context, string, string, maildomain.LocationMutationRequest) (account.Account, maildomain.LocationMutationPlan, int64, error)
 	MailMutateLocation(context.Context, string, string, maildomain.LocationMutationRequest) (account.Account, maildomain.LocationMutationPlan, maildomain.Message, maildomain.LocationMutation, bool, int64, error)
 	MailLocationMutationStatus(context.Context, string, string, int) (account.Account, []maildomain.LocationMutation, bool, int64, error)
+	MailLocationMutationStatusPage(context.Context, string, string, string, int) (account.Account, []maildomain.LocationMutation, bool, string, int64, error)
 }
 
 // HydrateItemResult is the ordered truth record for one attempted remote
@@ -110,6 +114,7 @@ type mailCheckpointData struct {
 	Checkpoints   []maildomain.Checkpoint `json:"checkpoints"`
 	Count         int                     `json:"count"`
 	More          bool                    `json:"more,omitempty"`
+	NextCursor    string                  `json:"next_cursor,omitempty"`
 	SchemaVersion int64                   `json:"schema_version"`
 }
 
@@ -712,6 +717,7 @@ func newMailSyncStatusCommand(state *executionState) *cobra.Command {
 func newMailSyncCheckpointsCommand(state *executionState) *cobra.Command {
 	var jsonOutput bool
 	var limit int
+	var cursor string
 	command := &cobra.Command{
 		Use:     "checkpoints",
 		Short:   "List bounded local synchronization checkpoints",
@@ -724,12 +730,12 @@ func newMailSyncCheckpointsCommand(state *executionState) *cobra.Command {
 			if limit < 1 || limit > MaximumPageSize {
 				return NewAppError(ErrorUsage, fmt.Sprintf("--limit must be between 1 and %d", MaximumPageSize), false)
 			}
-			accountValue, values, more, schemaVersion, err := state.mail.MailSyncCheckpoints(cmd.Context(), state.global.Home, state.global.Account, limit)
+			accountValue, values, more, nextCursor, schemaVersion, err := state.mail.MailSyncCheckpointsPage(cmd.Context(), state.global.Home, state.global.Account, cursor, limit)
 			if err != nil {
 				return err
 			}
 			if jsonOutput {
-				return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: mailCheckpointData{AccountID: accountValue.ID, Checkpoints: values, Count: len(values), More: more, SchemaVersion: schemaVersion}, Meta: EnvelopeMeta{RequestID: state.requestID}})
+				return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: mailCheckpointData{AccountID: accountValue.ID, Checkpoints: values, Count: len(values), More: more, NextCursor: nextCursor, SchemaVersion: schemaVersion}, Meta: EnvelopeMeta{RequestID: state.requestID}})
 			}
 			renderer := NewCompactTextRenderer(state.stdout)
 			for _, checkpoint := range values {
@@ -737,10 +743,11 @@ func newMailSyncCheckpointsCommand(state *executionState) *cobra.Command {
 					return err
 				}
 			}
-			return renderer.Summary("checkpoints", Field("account", accountValue.ID), Field("count", fmt.Sprintf("%d", len(values))), Field("more", fmt.Sprintf("%t", more)))
+			return renderer.Summary("checkpoints", Field("account", accountValue.ID), Field("count", fmt.Sprintf("%d", len(values))), Field("more", fmt.Sprintf("%t", more)), Field("next_cursor", nextCursor))
 		},
 	}
 	command.Flags().IntVar(&limit, "limit", DefaultPageSize, fmt.Sprintf("Maximum checkpoints to return (1-%d)", MaximumPageSize))
+	command.Flags().StringVar(&cursor, "cursor", "", "Continue from a next_cursor returned for the same account")
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
 	return command
 }
@@ -1109,6 +1116,9 @@ func (unavailableMailService) MailSyncStatus(context.Context, string, string, st
 func (unavailableMailService) MailSyncCheckpoints(context.Context, string, string, int) (account.Account, []maildomain.Checkpoint, bool, int64, error) {
 	return account.Account{}, nil, false, 0, NewAppError(ErrorConfiguration, "mail synchronization checkpoints are unavailable", false)
 }
+func (unavailableMailService) MailSyncCheckpointsPage(context.Context, string, string, string, int) (account.Account, []maildomain.Checkpoint, bool, string, int64, error) {
+	return account.Account{}, nil, false, "", 0, NewAppError(ErrorConfiguration, "mail synchronization checkpoints are unavailable", false)
+}
 func (unavailableMailService) MailMessage(context.Context, string, string, string) (account.Account, maildomain.Message, maildomain.ContentSource, int64, error) {
 	return account.Account{}, maildomain.Message{}, nil, 0, NewAppError(ErrorConfiguration, "local message content is unavailable", false)
 }
@@ -1120,6 +1130,9 @@ func (unavailableMailService) MailThread(context.Context, string, string, string
 }
 func (unavailableMailService) MailAttachments(context.Context, string, string, string, int) (account.Account, maildomain.AttachmentTarget, []maildomain.Attachment, bool, int64, error) {
 	return account.Account{}, maildomain.AttachmentTarget{}, nil, false, 0, NewAppError(ErrorConfiguration, "local attachments are unavailable", false)
+}
+func (unavailableMailService) MailAttachmentsPage(context.Context, string, string, string, string, int) (account.Account, maildomain.AttachmentTarget, []maildomain.Attachment, bool, string, int64, error) {
+	return account.Account{}, maildomain.AttachmentTarget{}, nil, false, "", 0, NewAppError(ErrorConfiguration, "local attachments are unavailable", false)
 }
 func (unavailableMailService) MailAttachment(context.Context, string, string, string) (account.Account, maildomain.Attachment, maildomain.AttachmentSource, int64, error) {
 	return account.Account{}, maildomain.Attachment{}, nil, 0, NewAppError(ErrorConfiguration, "local attachment content is unavailable", false)
@@ -1163,6 +1176,9 @@ func (unavailableMailService) MailForward(context.Context, string, string, maild
 func (unavailableMailService) MailOutboundStatus(context.Context, string, string, int) (account.Account, []maildomain.OutboundAttempt, bool, int64, error) {
 	return account.Account{}, nil, false, 0, NewAppError(ErrorConfiguration, "outbound mail status is unavailable", false)
 }
+func (unavailableMailService) MailOutboundStatusPage(context.Context, string, string, string, int) (account.Account, []maildomain.OutboundAttempt, bool, string, int64, error) {
+	return account.Account{}, nil, false, "", 0, NewAppError(ErrorConfiguration, "outbound mail status is unavailable", false)
+}
 func (unavailableMailService) MailLocationPreview(context.Context, string, string, maildomain.LocationMutationRequest) (account.Account, maildomain.LocationMutationPlan, int64, error) {
 	return account.Account{}, maildomain.LocationMutationPlan{}, 0, NewAppError(ErrorConfiguration, "mail location mutation preview is unavailable", false)
 }
@@ -1171,4 +1187,7 @@ func (unavailableMailService) MailMutateLocation(context.Context, string, string
 }
 func (unavailableMailService) MailLocationMutationStatus(context.Context, string, string, int) (account.Account, []maildomain.LocationMutation, bool, int64, error) {
 	return account.Account{}, nil, false, 0, NewAppError(ErrorConfiguration, "mail location mutation status is unavailable", false)
+}
+func (unavailableMailService) MailLocationMutationStatusPage(context.Context, string, string, string, int) (account.Account, []maildomain.LocationMutation, bool, string, int64, error) {
+	return account.Account{}, nil, false, "", 0, NewAppError(ErrorConfiguration, "mail location mutation status is unavailable", false)
 }

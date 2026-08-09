@@ -212,17 +212,25 @@ func (commands accountCommands) FolderSetSync(ctx context.Context, home, account
 }
 
 func (commands accountCommands) List(ctx context.Context, home string, limit int) ([]account.Account, bool, int64, error) {
+	accounts, more, _, schemaVersion, err := commands.ListPage(ctx, home, limit, "")
+	return accounts, more, schemaVersion, err
+}
+
+func (commands accountCommands) ListPage(ctx context.Context, home string, limit int, cursor string) ([]account.Account, bool, string, int64, error) {
 	state, err := openState(ctx, home)
 	if err != nil {
-		return nil, false, 0, err
+		return nil, false, "", 0, err
 	}
 	defer state.Close()
 
-	accounts, more, err := state.Accounts().List(ctx, limit)
+	accounts, more, nextCursor, err := state.Accounts().ListPage(ctx, limit, cursor)
 	if err != nil {
-		return nil, false, 0, cli.WrapAppError(cli.ErrorInternal, "cannot read local accounts", false, err)
+		if errors.Is(err, account.ErrInvalidCursor) {
+			return nil, false, "", state.SchemaVersion(), cli.WrapAppError(cli.ErrorUsage, "account list cursor is invalid", false, err)
+		}
+		return nil, false, "", state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot read local accounts", false, err)
 	}
-	return accounts, more, state.SchemaVersion(), nil
+	return accounts, more, nextCursor, state.SchemaVersion(), nil
 }
 
 func (commands accountCommands) Show(ctx context.Context, home, selector string) (account.Account, int64, error) {

@@ -26,14 +26,40 @@ FROM accounts AS a
 LEFT JOIN credential_refs AS c ON c.account_id = a.account_id`
 
 func (r *AccountRepository) List(ctx context.Context, limit int) ([]account.Account, bool, error) {
+	accounts, more, _, err := r.ListPage(ctx, limit, "")
+	return accounts, more, err
+}
+
+type storedAccountCursor struct {
+	Version   int    `json:"version"`
+	Default   int    `json:"default"`
+	Name      string `json:"name"`
+	AccountID string `json:"account_id"`
+}
+
+func (r *AccountRepository) ListPage(ctx context.Context, limit int, cursor string) ([]account.Account, bool, string, error) {
 	if limit < 1 {
-		return nil, false, fmt.Errorf("list accounts: limit must be positive")
+		return nil, false, "", fmt.Errorf("list accounts: limit must be positive")
 	}
-	rows, err := r.db.QueryContext(ctx, accountColumns+`
+	where := ""
+	arguments := make([]any, 0, 5)
+	var cursorValue storedAccountCursor
+	if strings.TrimSpace(cursor) != "" {
+		if err := decodeOpaqueCursor("acur_", cursor, &cursorValue); err != nil || cursorValue.Version != 1 || (cursorValue.Default != 0 && cursorValue.Default != 1) || strings.TrimSpace(cursorValue.AccountID) == "" {
+			return nil, false, "", account.ErrInvalidCursor
+		}
+		where = `
+WHERE a.is_default < ?
+   OR (a.is_default = ? AND lower(a.friendly_name) > ?)
+   OR (a.is_default = ? AND lower(a.friendly_name) = ? AND a.account_id > ?)`
+		arguments = append(arguments, cursorValue.Default, cursorValue.Default, cursorValue.Name, cursorValue.Default, cursorValue.Name, cursorValue.AccountID)
+	}
+	arguments = append(arguments, limit+1)
+	rows, err := r.db.QueryContext(ctx, accountColumns+where+`
 ORDER BY a.is_default DESC, lower(a.friendly_name), a.account_id
-LIMIT ?`, limit+1)
+LIMIT ?`, arguments...)
 	if err != nil {
-		return nil, false, fmt.Errorf("list accounts: %w", err)
+		return nil, false, "", fmt.Errorf("list accounts: %w", err)
 	}
 	defer rows.Close()
 
@@ -41,18 +67,32 @@ LIMIT ?`, limit+1)
 	for rows.Next() {
 		value, err := scanAccount(rows)
 		if err != nil {
-			return nil, false, err
+			return nil, false, "", err
 		}
 		accounts = append(accounts, value)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, false, fmt.Errorf("list accounts: %w", err)
+		return nil, false, "", fmt.Errorf("list accounts: %w", err)
 	}
 	more := len(accounts) > limit
 	if more {
 		accounts = accounts[:limit]
 	}
-	return accounts, more, nil
+	nextCursor := ""
+	if more && len(accounts) > 0 {
+		last := accounts[len(accounts)-1]
+		var sortName string
+		if err := r.db.QueryRowContext(ctx, `SELECT lower(friendly_name) FROM accounts WHERE account_id = ?`, last.ID).Scan(&sortName); err != nil {
+			return nil, false, "", fmt.Errorf("read account cursor order: %w", err)
+		}
+		nextCursor, err = encodeOpaqueCursor("acur_", storedAccountCursor{
+			Version: 1, Default: boolInt(last.Default), Name: sortName, AccountID: last.ID,
+		})
+		if err != nil {
+			return nil, false, "", fmt.Errorf("encode account cursor: %w", err)
+		}
+	}
+	return accounts, more, nextCursor, nil
 }
 
 func (r *AccountRepository) Resolve(ctx context.Context, selector string) (account.Account, error) {

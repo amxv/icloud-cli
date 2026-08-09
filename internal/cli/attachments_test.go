@@ -16,17 +16,33 @@ import (
 
 type attachmentSelectorMailService struct {
 	unavailableMailService
-	selectors   []string
-	attachments []maildomain.Attachment
+	selectors    []string
+	pageLimits   []int
+	legacyLimits []int
+	attachments  []maildomain.Attachment
 }
 
-func (service *attachmentSelectorMailService) MailAttachments(_ context.Context, _, _, selector string, _ int) (account.Account, maildomain.AttachmentTarget, []maildomain.Attachment, bool, int64, error) {
+func (service *attachmentSelectorMailService) MailAttachments(_ context.Context, _, _, selector string, limit int) (account.Account, maildomain.AttachmentTarget, []maildomain.Attachment, bool, int64, error) {
 	service.selectors = append(service.selectors, selector)
+	service.legacyLimits = append(service.legacyLimits, limit)
 	kind := "message"
 	if strings.HasPrefix(selector, "thr_") {
 		kind = "thread"
 	}
 	return account.Account{ID: "acct_test"}, maildomain.AttachmentTarget{Kind: kind, ID: selector}, append([]maildomain.Attachment(nil), service.attachments...), false, 18, nil
+}
+
+func (service *attachmentSelectorMailService) MailAttachmentsPage(_ context.Context, _, _, selector, cursor string, limit int) (account.Account, maildomain.AttachmentTarget, []maildomain.Attachment, bool, string, int64, error) {
+	if cursor != "" {
+		return account.Account{}, maildomain.AttachmentTarget{}, nil, false, "", 18, NewAppError(ErrorUsage, "unexpected cursor", false)
+	}
+	service.selectors = append(service.selectors, selector)
+	service.pageLimits = append(service.pageLimits, limit)
+	kind := "message"
+	if strings.HasPrefix(selector, "thr_") {
+		kind = "thread"
+	}
+	return account.Account{ID: "acct_test"}, maildomain.AttachmentTarget{Kind: kind, ID: selector}, append([]maildomain.Attachment(nil), service.attachments...), false, "", 18, nil
 }
 
 func (service *attachmentSelectorMailService) MailAttachment(_ context.Context, _, _, attachmentID string) (account.Account, maildomain.Attachment, maildomain.AttachmentSource, int64, error) {
@@ -107,6 +123,9 @@ func TestAttachmentCommandsAcceptThreadTargetForListAndSaveAll(t *testing.T) {
 	}
 	if len(service.selectors) != 2 || service.selectors[0] != threadID || service.selectors[1] != threadID {
 		t.Fatalf("attachment selectors=%v", service.selectors)
+	}
+	if len(service.pageLimits) != 1 || service.pageLimits[0] != DefaultPageSize || len(service.legacyLimits) != 1 || service.legacyLimits[0] != maximumAttachmentSetSize {
+		t.Fatalf("attachment limits page=%v save-all=%v", service.pageLimits, service.legacyLimits)
 	}
 }
 

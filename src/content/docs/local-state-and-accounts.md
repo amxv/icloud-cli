@@ -50,6 +50,7 @@ The root contains `mail.db`, `blobs/`, and `locks/`. Keep it out of repositories
 ```bash
 icloud account list
 icloud account list --limit 50
+icloud account list --limit 50 --cursor 'acur_…'
 ```
 
 The default returns at most 20 account records; `--limit` accepts `1` through `100`. A populated state has this shape:
@@ -67,7 +68,7 @@ accounts
 count=1
 ```
 
-When more records exist, the summary includes `more=true`. The output exposes only the credential scheme. It never prints a keyring reference, environment-variable name, file path, or secret value.
+When more records exist, the summary includes `more=true` and an opaque `next_cursor`. Pass that value back unchanged with `--cursor` to continue the same local inventory; the final page omits `next_cursor`. The output exposes only the credential scheme. It never prints a keyring reference, environment-variable name, file path, or secret value.
 
 ## Show and select one account
 

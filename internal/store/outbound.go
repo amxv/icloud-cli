@@ -347,33 +347,67 @@ WHERE attempt_id = ? AND status = 'pending'`,
 }
 
 func (repository *OutboundRepository) List(ctx context.Context, accountID string, limit int) ([]maildomain.OutboundAttempt, bool, error) {
+	values, more, _, err := repository.ListPage(ctx, accountID, limit, "")
+	return values, more, err
+}
+
+type storedOutboundCursor struct {
+	Version   int    `json:"version"`
+	AccountID string `json:"account_id"`
+	CreatedAt string `json:"created_at"`
+	AttemptID string `json:"attempt_id"`
+}
+
+func (repository *OutboundRepository) ListPage(ctx context.Context, accountID string, limit int, cursor string) ([]maildomain.OutboundAttempt, bool, string, error) {
 	if strings.TrimSpace(accountID) == "" || limit < 1 {
-		return nil, false, errors.New("list outbound attempts: account and positive limit are required")
+		return nil, false, "", errors.New("list outbound attempts: account and positive limit are required")
 	}
-	rows, err := repository.db.QueryContext(ctx, outboundAttemptColumns+`
-WHERE account_id = ?
+	accountID = strings.TrimSpace(accountID)
+	where := ` WHERE account_id = ?`
+	arguments := []any{accountID}
+	if strings.TrimSpace(cursor) != "" {
+		var decoded storedOutboundCursor
+		if err := decodeOpaqueCursor("ocur_", cursor, &decoded); err != nil || decoded.Version != 1 || decoded.AccountID != accountID || strings.TrimSpace(decoded.AttemptID) == "" {
+			return nil, false, "", maildomain.ErrInvalidListCursor
+		}
+		if parsed, err := time.Parse(time.RFC3339Nano, decoded.CreatedAt); err != nil || parsed.IsZero() {
+			return nil, false, "", maildomain.ErrInvalidListCursor
+		}
+		where += ` AND (created_at < ? OR (created_at = ? AND attempt_id < ?))`
+		arguments = append(arguments, decoded.CreatedAt, decoded.CreatedAt, decoded.AttemptID)
+	}
+	arguments = append(arguments, limit+1)
+	rows, err := repository.db.QueryContext(ctx, outboundAttemptColumns+where+`
 ORDER BY created_at DESC, attempt_id DESC
-LIMIT ?`, strings.TrimSpace(accountID), limit+1)
+LIMIT ?`, arguments...)
 	if err != nil {
-		return nil, false, fmt.Errorf("list outbound attempts: %w", err)
+		return nil, false, "", fmt.Errorf("list outbound attempts: %w", err)
 	}
 	defer rows.Close()
 	values := make([]maildomain.OutboundAttempt, 0, limit+1)
 	for rows.Next() {
 		value, scanErr := scanOutboundAttempt(rows)
 		if scanErr != nil {
-			return nil, false, scanErr
+			return nil, false, "", scanErr
 		}
 		values = append(values, value)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, false, fmt.Errorf("list outbound attempts: %w", err)
+		return nil, false, "", fmt.Errorf("list outbound attempts: %w", err)
 	}
 	more := len(values) > limit
 	if more {
 		values = values[:limit]
 	}
-	return values, more, nil
+	nextCursor := ""
+	if more && len(values) > 0 {
+		last := values[len(values)-1]
+		nextCursor, err = encodeOpaqueCursor("ocur_", storedOutboundCursor{Version: 1, AccountID: accountID, CreatedAt: last.CreatedAt.UTC().Format(time.RFC3339Nano), AttemptID: last.ID})
+		if err != nil {
+			return nil, false, "", fmt.Errorf("encode outbound cursor: %w", err)
+		}
+	}
+	return values, more, nextCursor, nil
 }
 
 func (repository *OutboundRepository) Reconcile(ctx context.Context, accountID string, limit int, now time.Time) (maildomain.OutboundReconcileSummary, error) {

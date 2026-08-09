@@ -85,11 +85,14 @@ Compact success reports the stable target ID, target kind, and count. It does no
 ```bash
 icloud mail attachments list msg_… --json
 icloud mail attachments list thr_… --json
+icloud mail attachments list thr_… --limit 100 --cursor 'atcur_…' --json
 icloud mail attachments save att_… --output invoice.pdf --json
 icloud mail attachments save-all msg_… --dir ./message-attachments --json
 ```
 
-List JSON includes the stable `target` (`message` or `thread`), stable attachment and MIME-part IDs, decoded size, content hash, media parameters, inline state, and availability. It omits private storage coordinates. Save JSON reports the verified outcome without returning the destination path; batch JSON returns only safe output basenames. Automation should use `target_id` for `save-all`; the older `message_id` request property remains accepted for message-target compatibility.
+List JSON includes the stable `target` (`message` or `thread`), stable attachment and MIME-part IDs, decoded size, content hash, media parameters, inline state, and availability. It omits private storage coordinates. When `more=true`, continue with the returned `next_cursor`; that cursor is bound to the selected account and exact message or reconstructed thread, so it cannot be reused for another target. The final page omits `next_cursor`.
+
+`save-all` keeps its separate bounded export contract: it reviews the complete target attachment set up to its documented safety ceiling rather than inheriting the metadata list page size. Save JSON reports the verified outcome without returning the destination path; batch JSON returns only safe output basenames. Automation should use `target_id` for `save-all`; the older `message_id` request property remains accepted for message-target compatibility.
 
 ## Recover from common failures
 

@@ -772,9 +772,9 @@ func TestAccountListIsBoundedAndReportsMore(t *testing.T) {
 	if exitCode != 0 || stderr != "" {
 		t.Fatalf("code=%d stderr=%q", exitCode, stderr)
 	}
-	const want = "account\nacct_0198d704-6c00-7000-8000-000000000001 name=Personal\nemail=owner@example.com\nimap_username=owner\nstatus=pending_validation\ndefault=true\ncredential=env\n\naccounts\ncount=1\nmore=true\n"
-	if stdout != want {
-		t.Fatalf("stdout mismatch\nwant: %q\n got: %q", want, stdout)
+	const wantPrefix = "account\nacct_0198d704-6c00-7000-8000-000000000001 name=Personal\nemail=owner@example.com\nimap_username=owner\nstatus=pending_validation\ndefault=true\ncredential=env\n\naccounts\ncount=1\nmore=true\nnext_cursor=acur_"
+	if !strings.HasPrefix(stdout, wantPrefix) || !strings.HasSuffix(stdout, "\n") {
+		t.Fatalf("stdout mismatch\nwant prefix: %q\n got: %q", wantPrefix, stdout)
 	}
 
 	exitCode, stdout, stderr = run(t,
@@ -788,15 +788,16 @@ func TestAccountListIsBoundedAndReportsMore(t *testing.T) {
 	var envelope struct {
 		OK   bool `json:"ok"`
 		Data struct {
-			Accounts []any `json:"accounts"`
-			Count    int   `json:"count"`
-			More     bool  `json:"more"`
+			Accounts   []any  `json:"accounts"`
+			Count      int    `json:"count"`
+			More       bool   `json:"more"`
+			NextCursor string `json:"next_cursor"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal([]byte(stdout), &envelope); err != nil {
 		t.Fatalf("invalid JSON: %v\n%s", err, stdout)
 	}
-	if !envelope.OK || envelope.Data.Count != 1 || len(envelope.Data.Accounts) != 1 || !envelope.Data.More {
+	if !envelope.OK || envelope.Data.Count != 1 || len(envelope.Data.Accounts) != 1 || !envelope.Data.More || !strings.HasPrefix(envelope.Data.NextCursor, "acur_") {
 		t.Fatalf("unexpected envelope: %+v", envelope)
 	}
 

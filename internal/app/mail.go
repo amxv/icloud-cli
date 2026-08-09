@@ -59,20 +59,28 @@ func (commands accountCommands) MailSyncStatus(ctx context.Context, home, accoun
 }
 
 func (commands accountCommands) MailSyncCheckpoints(ctx context.Context, home, accountSelector string, limit int) (account.Account, []maildomain.Checkpoint, bool, int64, error) {
+	accountValue, values, more, _, schemaVersion, err := commands.MailSyncCheckpointsPage(ctx, home, accountSelector, "", limit)
+	return accountValue, values, more, schemaVersion, err
+}
+
+func (commands accountCommands) MailSyncCheckpointsPage(ctx context.Context, home, accountSelector, cursor string, limit int) (account.Account, []maildomain.Checkpoint, bool, string, int64, error) {
 	state, err := openState(ctx, home)
 	if err != nil {
-		return account.Account{}, nil, false, 0, err
+		return account.Account{}, nil, false, "", 0, err
 	}
 	defer state.Close()
 	accountValue, err := state.Accounts().ResolveSelected(ctx, accountSelector)
 	if err != nil {
-		return account.Account{}, nil, false, state.SchemaVersion(), mapAccountError(err)
+		return account.Account{}, nil, false, "", state.SchemaVersion(), mapAccountError(err)
 	}
-	values, more, err := state.Mail().Checkpoints(ctx, accountValue.ID, limit)
+	values, more, nextCursor, err := state.Mail().CheckpointsPage(ctx, accountValue.ID, limit, cursor)
 	if err != nil {
-		return account.Account{}, nil, false, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot read synchronization checkpoints", false, err)
+		if errors.Is(err, maildomain.ErrInvalidListCursor) {
+			return account.Account{}, nil, false, "", state.SchemaVersion(), cli.WrapAppError(cli.ErrorUsage, "sync checkpoint cursor is invalid or belongs to another account", false, err)
+		}
+		return account.Account{}, nil, false, "", state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot read synchronization checkpoints", false, err)
 	}
-	return accountValue, values, more, state.SchemaVersion(), nil
+	return accountValue, values, more, nextCursor, state.SchemaVersion(), nil
 }
 
 func resolveMailFolder(ctx context.Context, state *store.Store, accountID, selector string) (folder.Folder, error) {

@@ -42,6 +42,7 @@ type mailAttachmentsData struct {
 	Attachments   []publicAttachment          `json:"attachments"`
 	Count         int                         `json:"count"`
 	More          bool                        `json:"more,omitempty"`
+	NextCursor    string                      `json:"next_cursor,omitempty"`
 	SchemaVersion int64                       `json:"schema_version"`
 }
 
@@ -73,6 +74,7 @@ func newMailAttachmentsCommand(state *executionState) *cobra.Command {
 func newMailAttachmentsListCommand(state *executionState) *cobra.Command {
 	var jsonOutput bool
 	var limit int
+	var cursor string
 	command := &cobra.Command{
 		Use:     "list <message-or-thread-id>",
 		Short:   "List bounded attachment metadata without printing bytes",
@@ -85,8 +87,8 @@ func newMailAttachmentsListCommand(state *executionState) *cobra.Command {
 			if limit < 1 || limit > MaximumPageSize {
 				return NewAppError(ErrorUsage, fmt.Sprintf("--limit must be between 1 and %d", MaximumPageSize), false)
 			}
-			accountValue, target, attachments, more, schemaVersion, err := state.mail.MailAttachments(
-				cmd.Context(), state.global.Home, state.global.Account, args[0], limit,
+			accountValue, target, attachments, more, nextCursor, schemaVersion, err := state.mail.MailAttachmentsPage(
+				cmd.Context(), state.global.Home, state.global.Account, args[0], cursor, limit,
 			)
 			if err != nil {
 				return err
@@ -101,7 +103,7 @@ func newMailAttachmentsListCommand(state *executionState) *cobra.Command {
 			if jsonOutput {
 				return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: mailAttachmentsData{
 					AccountID: accountValue.ID, Target: target, MessageID: messageID, ThreadID: threadID, Attachments: public,
-					Count: len(public), More: more, SchemaVersion: schemaVersion,
+					Count: len(public), More: more, NextCursor: nextCursor, SchemaVersion: schemaVersion,
 				}, Meta: EnvelopeMeta{RequestID: state.requestID}})
 			}
 			renderer := NewCompactTextRenderer(state.stdout)
@@ -115,10 +117,12 @@ func newMailAttachmentsListCommand(state *executionState) *cobra.Command {
 				Field("target_kind", target.Kind),
 				Field("count", len(attachments)),
 				Field("more", fmt.Sprintf("%t", more)),
+				Field("next_cursor", nextCursor),
 			)
 		},
 	}
 	command.Flags().IntVar(&limit, "limit", DefaultPageSize, fmt.Sprintf("Maximum attachments to list (1-%d)", MaximumPageSize))
+	command.Flags().StringVar(&cursor, "cursor", "", "Continue from a next_cursor returned for the same attachment target")
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
 	return command
 }

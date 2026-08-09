@@ -13,6 +13,7 @@ type mailOutboundStatusData struct {
 	Attempts      []publicOutboundAttempt `json:"attempts"`
 	Count         int                     `json:"count"`
 	More          bool                    `json:"more,omitempty"`
+	NextCursor    string                  `json:"next_cursor,omitempty"`
 	SchemaVersion int64                   `json:"schema_version"`
 }
 
@@ -21,6 +22,7 @@ type mailLocationMutationStatusData struct {
 	Mutations     []maildomain.LocationMutation `json:"mutations"`
 	Count         int                           `json:"count"`
 	More          bool                          `json:"more,omitempty"`
+	NextCursor    string                        `json:"next_cursor,omitempty"`
 	SchemaVersion int64                         `json:"schema_version"`
 }
 
@@ -29,6 +31,7 @@ func newMailStatusCommand(state *executionState) *cobra.Command {
 	var mutations bool
 	var jsonOutput bool
 	var limit int
+	var cursor string
 	command := &cobra.Command{
 		Use:     "status",
 		Short:   "Show bounded local mail operation status",
@@ -42,13 +45,13 @@ func newMailStatusCommand(state *executionState) *cobra.Command {
 				return NewAppError(ErrorUsage, fmt.Sprintf("--limit must be between 1 and %d", MaximumPageSize), false)
 			}
 			if mutations {
-				accountValue, values, more, schemaVersion, err := state.mail.MailLocationMutationStatus(cmd.Context(), state.global.Home, state.global.Account, limit)
+				accountValue, values, more, nextCursor, schemaVersion, err := state.mail.MailLocationMutationStatusPage(cmd.Context(), state.global.Home, state.global.Account, cursor, limit)
 				if err != nil {
 					return err
 				}
 				if jsonOutput {
 					return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: mailLocationMutationStatusData{
-						AccountID: accountValue.ID, Mutations: values, Count: len(values), More: more, SchemaVersion: schemaVersion,
+						AccountID: accountValue.ID, Mutations: values, Count: len(values), More: more, NextCursor: nextCursor, SchemaVersion: schemaVersion,
 					}, Meta: EnvelopeMeta{RequestID: state.requestID}})
 				}
 				renderer := NewCompactTextRenderer(state.stdout)
@@ -72,9 +75,9 @@ func newMailStatusCommand(state *executionState) *cobra.Command {
 						return err
 					}
 				}
-				return renderer.Summary("mutation-status", Field("account", accountValue.ID), Field("count", len(values)), Field("more", more))
+				return renderer.Summary("mutation-status", Field("account", accountValue.ID), Field("count", len(values)), Field("more", more), Field("next_cursor", nextCursor))
 			}
-			accountValue, attempts, more, schemaVersion, err := state.mail.MailOutboundStatus(cmd.Context(), state.global.Home, state.global.Account, limit)
+			accountValue, attempts, more, nextCursor, schemaVersion, err := state.mail.MailOutboundStatusPage(cmd.Context(), state.global.Home, state.global.Account, cursor, limit)
 			if err != nil {
 				return err
 			}
@@ -84,7 +87,7 @@ func newMailStatusCommand(state *executionState) *cobra.Command {
 					public = append(public, sanitizeOutboundAttempt(attempt))
 				}
 				return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: mailOutboundStatusData{
-					AccountID: accountValue.ID, Attempts: public, Count: len(public), More: more, SchemaVersion: schemaVersion,
+					AccountID: accountValue.ID, Attempts: public, Count: len(public), More: more, NextCursor: nextCursor, SchemaVersion: schemaVersion,
 				}, Meta: EnvelopeMeta{RequestID: state.requestID}})
 			}
 			renderer := NewCompactTextRenderer(state.stdout)
@@ -112,12 +115,14 @@ func newMailStatusCommand(state *executionState) *cobra.Command {
 				Field("account", accountValue.ID),
 				Field("count", len(attempts)),
 				Field("more", more),
+				Field("next_cursor", nextCursor),
 			)
 		},
 	}
 	command.Flags().BoolVar(&outbound, "outbound", false, "List recent outbound send attempts")
 	command.Flags().BoolVar(&mutations, "mutations", false, "List recent message location mutation intents and outcomes")
 	command.Flags().IntVar(&limit, "limit", DefaultPageSize, fmt.Sprintf("Maximum attempts to return (1-%d)", MaximumPageSize))
+	command.Flags().StringVar(&cursor, "cursor", "", "Continue from a next_cursor returned by the same status mode")
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
 	return command
 }

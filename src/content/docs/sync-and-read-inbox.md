@@ -364,7 +364,10 @@ List bounded checkpoints for every synchronized folder in the selected account:
 
 ```bash
 icloud mail sync checkpoints
+icloud mail sync checkpoints --limit 100 --cursor 'ccur_…'
 ```
+
+Checkpoint history keeps repair-required and failed folders prominent while remaining fully traversable. When `more=true`, continue with the returned opaque `next_cursor` for the same selected account. The final page omits `next_cursor`.
 
 ## Rebaseline one forward frontier deliberately
 

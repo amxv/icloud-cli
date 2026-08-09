@@ -45,6 +45,7 @@ type FolderService interface {
 // Implementations may initialize durable state lazily from the selected home.
 type AccountService interface {
 	List(context.Context, string, int) ([]account.Account, bool, int64, error)
+	ListPage(context.Context, string, int, string) ([]account.Account, bool, string, int64, error)
 	Show(context.Context, string, string) (account.Account, int64, error)
 	Add(context.Context, string, account.AddInput) (account.Account, int64, error)
 	Rename(context.Context, string, string, string) (account.Account, int64, error)
@@ -147,6 +148,7 @@ type accountListData struct {
 	Accounts      []account.Account `json:"accounts"`
 	Count         int               `json:"count"`
 	More          bool              `json:"more,omitempty"`
+	NextCursor    string            `json:"next_cursor,omitempty"`
 	SchemaVersion int64             `json:"schema_version"`
 }
 
@@ -479,6 +481,7 @@ func newAccountCommand(state *executionState) *cobra.Command {
 func newAccountListCommand(state *executionState) *cobra.Command {
 	var jsonOutput bool
 	var limit int
+	var cursor string
 	command := &cobra.Command{
 		Use:     "list",
 		Short:   "List accounts from the local state database",
@@ -491,11 +494,11 @@ func newAccountListCommand(state *executionState) *cobra.Command {
 			if limit < 1 || limit > MaximumPageSize {
 				return NewAppError(ErrorUsage, fmt.Sprintf("--limit must be between 1 and %d", MaximumPageSize), false)
 			}
-			accounts, more, schemaVersion, err := state.accounts.List(cmd.Context(), state.global.Home, limit)
+			accounts, more, nextCursor, schemaVersion, err := state.accounts.ListPage(cmd.Context(), state.global.Home, limit, cursor)
 			if err != nil {
 				return err
 			}
-			data := accountListData{Accounts: accounts, Count: len(accounts), More: more, SchemaVersion: schemaVersion}
+			data := accountListData{Accounts: accounts, Count: len(accounts), More: more, NextCursor: nextCursor, SchemaVersion: schemaVersion}
 			if jsonOutput {
 				return WriteJSON(state.stdout, OutputEnvelope{
 					OK:   true,
@@ -512,11 +515,13 @@ func newAccountListCommand(state *executionState) *cobra.Command {
 			return renderer.Summary("accounts",
 				Field("count", fmt.Sprintf("%d", len(accounts))),
 				Field("more", more),
+				Field("next_cursor", nextCursor),
 			)
 		},
 	}
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
 	command.Flags().IntVar(&limit, "limit", DefaultPageSize, fmt.Sprintf("Maximum accounts to return (1-%d)", MaximumPageSize))
+	command.Flags().StringVar(&cursor, "cursor", "", "Continue from a next_cursor returned by account list")
 	return command
 }
 
@@ -568,6 +573,10 @@ type unavailableAccountService struct{}
 
 func (unavailableAccountService) List(context.Context, string, int) ([]account.Account, bool, int64, error) {
 	return nil, false, 0, NewAppError(ErrorConfiguration, "local account state is unavailable", false)
+}
+
+func (unavailableAccountService) ListPage(context.Context, string, int, string) ([]account.Account, bool, string, int64, error) {
+	return nil, false, "", 0, NewAppError(ErrorConfiguration, "local account state is unavailable", false)
 }
 
 func (unavailableAccountService) Show(context.Context, string, string) (account.Account, int64, error) {

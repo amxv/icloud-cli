@@ -252,20 +252,32 @@ func (commands accountCommands) MailLocationMutationStatus(
 	home, accountSelector string,
 	limit int,
 ) (account.Account, []maildomain.LocationMutation, bool, int64, error) {
+	accountValue, values, more, _, schemaVersion, err := commands.MailLocationMutationStatusPage(ctx, home, accountSelector, "", limit)
+	return accountValue, values, more, schemaVersion, err
+}
+
+func (commands accountCommands) MailLocationMutationStatusPage(
+	ctx context.Context,
+	home, accountSelector, cursor string,
+	limit int,
+) (account.Account, []maildomain.LocationMutation, bool, string, int64, error) {
 	state, err := openState(ctx, home)
 	if err != nil {
-		return account.Account{}, nil, false, 0, err
+		return account.Account{}, nil, false, "", 0, err
 	}
 	defer state.Close()
 	accountValue, err := state.Accounts().ResolveSelected(ctx, accountSelector)
 	if err != nil {
-		return account.Account{}, nil, false, state.SchemaVersion(), mapAccountError(err)
+		return account.Account{}, nil, false, "", state.SchemaVersion(), mapAccountError(err)
 	}
-	values, more, err := state.LocationMutations().List(ctx, accountValue.ID, limit)
+	values, more, nextCursor, err := state.LocationMutations().ListPage(ctx, accountValue.ID, limit, cursor)
 	if err != nil {
-		return account.Account{}, nil, false, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot read location mutation status", false, err)
+		if errors.Is(err, maildomain.ErrInvalidListCursor) {
+			return account.Account{}, nil, false, "", state.SchemaVersion(), cli.WrapAppError(cli.ErrorUsage, "location mutation status cursor is invalid or belongs to another account", false, err)
+		}
+		return account.Account{}, nil, false, "", state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot read location mutation status", false, err)
 	}
-	return accountValue, values, more, state.SchemaVersion(), nil
+	return accountValue, values, more, nextCursor, state.SchemaVersion(), nil
 }
 
 func resolveLocationMutationPlan(
