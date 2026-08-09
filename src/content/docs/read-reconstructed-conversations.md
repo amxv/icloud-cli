@@ -11,10 +11,12 @@ summary: Offline latest-thread summaries, chronological thread reads, RFC eviden
 After synchronizing mail, run:
 
 ```bash
-icloud mail latest
+icloud mail threads list
 ```
 
 The command reads local state only. It does not contact Apple, change read state, or hydrate missing mailboxes.
+
+`icloud mail latest` remains a compatibility alias for this same list path. New scripts and interactive use should prefer `mail threads list`.
 
 Each compact record is one reconstructed conversation:
 
@@ -40,8 +42,8 @@ The default returns 20 conversations and accepts `--limit` through 100. `more=tr
 Filter conversations with the same local index used by message search:
 
 ```bash
-icloud mail latest --query launch --unread
-icloud mail latest --participant teammate@example.com --folder sent
+icloud mail threads list --query launch --unread
+icloud mail threads list --participant teammate@example.com --folder sent
 ```
 
 When a filtered page reports `more=true`, continue with its query-bound `next_cursor`. Use `icloud mail search <text> --result threads` for the same conversation result shape with an explicit search command. See [Search synchronized mail](/docs/search-synchronized-mail).
@@ -69,17 +71,19 @@ Repeat bounded apply passes while repair reports remaining projection work. Exis
 
 ## Read one conversation chronologically
 
-Use a stable thread ID from `mail latest`:
+Use a stable thread ID from `mail threads list`:
 
 ```bash
-icloud mail thread show thr_…
+icloud mail threads show thr_…
 ```
 
 You can also start with any stable message ID:
 
 ```bash
-icloud mail thread show msg_…
+icloud mail threads show msg_…
 ```
+
+The singular `icloud mail thread show` path remains a compatibility alias for `mail threads show` and returns the same pages, cursors, errors, and content modes.
 
 The compact default prints the thread aggregate once, followed by a bounded chronological entry for each selected message. Each message keeps its immutable `msg_…` identity and independent provider locations.
 
@@ -115,7 +119,7 @@ The default is bounded and preview-only. It never prints BCC, private blob paths
 When a page ends with `more=true`, continue from the returned cursor instead of rereading earlier messages:
 
 ```bash
-icloud mail thread show thr_… --limit 20 --cursor cur_…
+icloud mail threads show thr_… --limit 20 --cursor cur_…
 ```
 
 Compact output reports the value as `next_cursor`; JSON uses the same field. A cursor belongs to one reconstructed thread, so passing it to another thread fails instead of silently skipping messages. The final page has no next cursor.
@@ -125,14 +129,14 @@ Compact output reports the value as `next_cursor`; JSON uses the same field. A c
 Use the same content choices as a single-message read:
 
 ```bash
-icloud mail thread show thr_… --full
-icloud mail thread show thr_… --format text
-icloud mail thread show thr_… --format html
-icloud mail thread show thr_… --body-only
-icloud mail thread show thr_… --headers
-icloud mail thread show thr_… --metadata-only
-icloud mail thread show thr_… --verbose
-icloud mail thread show thr_… --json
+icloud mail threads show thr_… --full
+icloud mail threads show thr_… --format text
+icloud mail threads show thr_… --format html
+icloud mail threads show thr_… --body-only
+icloud mail threads show thr_… --headers
+icloud mail threads show thr_… --metadata-only
+icloud mail threads show thr_… --verbose
+icloud mail threads show thr_… --json
 ```
 
 `--full` returns complete decoded text for each selected message in chronological order. `--body-only` removes thread and message wrappers and writes only the selected bodies, separated by a blank line, which is useful for redirection. HTML, decoded public headers, MIME-part detail, and JSON remain separate opt-ins.
@@ -144,7 +148,7 @@ Compact reads and plain `--metadata-only` use stored summaries and do not requir
 Plain multi-message raw output is rejected because concatenated RFC822 streams are ambiguous. Use one of these explicit forms instead:
 
 ```bash
-icloud mail thread show thr_… --format raw --json
+icloud mail threads show thr_… --format raw --json
 icloud mail message raw msg_… > message.eml
 ```
 
@@ -153,7 +157,7 @@ Raw JSON remains subject to the existing per-message size bound. Exact raw strea
 ## Inspect graph evidence
 
 ```bash
-icloud mail thread show thr_… --metadata-only --verbose --json
+icloud mail threads show thr_… --metadata-only --verbose --json
 ```
 
 The response includes bounded edge evidence for the selected messages. Internal evidence-row identifiers are not part of the public response. Each edge identifies:
@@ -174,7 +178,7 @@ A reply can arrive before its root, or a later message can bridge two provisiona
 When two provisional threads merge, one existing `thr_…` ID remains canonical. Retired IDs become durable aliases:
 
 ```bash
-icloud mail thread show thr_old…
+icloud mail threads show thr_old…
 ```
 
 The command resolves the alias and reports `redirected_from=thr_old…`. Message, location, MIME-part, attachment, and blob IDs never change during a thread merge.
@@ -201,7 +205,7 @@ Synchronize the folder that may contain the root, then inspect the graph again:
 
 ```bash
 icloud mail sync --folder inbox
-icloud mail thread show thr_… --metadata-only --verbose --json
+icloud mail threads show thr_… --metadata-only --verbose --json
 ```
 
 An unresolved token is preserved. If the matching root arrives later, it joins the existing conversation without replacing immutable message IDs.

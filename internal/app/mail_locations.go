@@ -280,6 +280,29 @@ func (commands accountCommands) MailLocationMutationStatusPage(
 	return accountValue, values, more, nextCursor, state.SchemaVersion(), nil
 }
 
+func (commands accountCommands) MailLocationMutation(
+	ctx context.Context,
+	home, accountSelector, mutationID string,
+) (account.Account, maildomain.LocationMutation, int64, error) {
+	state, err := openState(ctx, home)
+	if err != nil {
+		return account.Account{}, maildomain.LocationMutation{}, 0, err
+	}
+	defer state.Close()
+	accountValue, err := state.Accounts().ResolveSelected(ctx, accountSelector)
+	if err != nil {
+		return account.Account{}, maildomain.LocationMutation{}, state.SchemaVersion(), mapAccountError(err)
+	}
+	mutation, err := state.LocationMutations().Mutation(ctx, accountValue.ID, mutationID)
+	if err != nil {
+		if errors.Is(err, maildomain.ErrMutationNotFound) {
+			return account.Account{}, maildomain.LocationMutation{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorNotFound, "location mutation not found", false, err)
+		}
+		return account.Account{}, maildomain.LocationMutation{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot read location mutation", false, err)
+	}
+	return accountValue, mutation, state.SchemaVersion(), nil
+}
+
 func resolveLocationMutationPlan(
 	ctx context.Context,
 	state *store.Store,

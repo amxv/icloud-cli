@@ -2,7 +2,7 @@
 .TH "ICLOUD" "1" "Jan 1970" "icloud 0.1.0" "iCloud Mail CLI Manual"
 
 .SH NAME
-icloud-mail-latest - List and filter the newest reconstructed conversations
+icloud-mail-latest - Compatibility alias for \fBmail threads list\fR
 
 
 .SH SYNOPSIS
@@ -10,7 +10,7 @@ icloud-mail-latest - List and filter the newest reconstructed conversations
 
 
 .SH DESCRIPTION
-List and filter the newest reconstructed conversations
+Compatibility alias for \fBmail threads list\fR
 
 
 .SH OPTIONS
@@ -109,10 +109,9 @@ List and filter the newest reconstructed conversations
 
 .SH EXAMPLE
 .EX
-  icloud mail latest
-  icloud mail latest --query launch --unread
-  icloud mail latest --participant teammate@example.com
-  icloud mail latest --cursor cur_… --json
+  icloud mail threads list
+  icloud mail threads list --query launch --unread
+  icloud mail threads list --cursor cur_… --json
 .EE
 
 

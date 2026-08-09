@@ -124,12 +124,14 @@ A provider may accept COPY, MOVE, STORE, or EXPUNGE and then disconnect before t
 Inspect recent operations:
 
 ```bash
-icloud mail status --mutations
-icloud mail status --mutations --json
-icloud mail status --mutations --limit 100 --cursor 'mcur_…' --json
+icloud mail operations mutations list
+icloud mail operations mutations list --json
+icloud mail operations mutations list --limit 100 --cursor 'mcur_…' --json
+icloud mail operations mutations show mut_… --json
 ```
 
 Operation history is newest-first. If the page reports `more=true`, continue with its opaque `next_cursor`; cursors are bound to the selected account and mutation-status inventory, and the final page omits the cursor.
+Use `show mut_…` to inspect any exact stable mutation directly, including one reached on an older page. `icloud mail status --mutations` remains a compatibility alias for `mail operations mutations list`.
 
 Then synchronize the exact source and destination folders:
 

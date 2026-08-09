@@ -183,7 +183,7 @@ icloud mail draft create \
 icloud mail draft sync drf_…
 ```
 
-If `icloud mail folders status` shows the real provider Drafts mailbox as `kind=other`, iCloud did not advertise a Drafts role. Keep that classification truthful and select the discovered mailbox explicitly for this workflow:
+If `icloud mail folders refresh` shows the real provider Drafts mailbox as `kind=other`, iCloud did not advertise a Drafts role. Keep that classification truthful and select the discovered mailbox explicitly for this workflow:
 
 ```bash
 icloud mail draft sync drf_… --folder Drafts
@@ -212,7 +212,7 @@ Reply preserves RFC relationship headers when the selected parent has usable ide
 ## Discover folders
 
 ```bash
-icloud mail folders status
+icloud mail folders refresh
 ```
 
 This saves the current mailbox tree and counts. It is required before message sync so the CLI can use confirmed provider folder identities rather than guessing.
@@ -281,7 +281,7 @@ The watcher uses IMAP IDLE for enabled Inbox and Sent when available, reports an
 ## Read compact previews offline
 
 ```bash
-icloud mail inbox
+icloud mail messages list
 ```
 
 ```text
@@ -304,7 +304,7 @@ The command reads local state only and never marks messages read. It intentional
 Read locally synchronized Sent copies with:
 
 ```bash
-icloud mail inbox --folder sent
+icloud mail messages list --folder sent
 ```
 
 The same logical `msg_…` record may contain separate Inbox and Sent locations. Each location retains its own UID and flags; an unseen Sent copy does not make outbound mail unread.
@@ -346,14 +346,14 @@ Targeted caching returns stable local IDs and leaves the ordinary folder checkpo
 List the newest local conversations without contacting Apple:
 
 ```bash
-icloud mail latest
+icloud mail threads list
 ```
 
 Open one by stable thread ID, or start from any message ID:
 
 ```bash
-icloud mail thread show thr_…
-icloud mail thread show msg_…
+icloud mail threads show thr_…
+icloud mail threads show msg_…
 ```
 
 Threads are reconstructed locally from ordered RFC `References`, then `In-Reply-To`, with a narrow subject-and-participant fallback only when relationship headers are absent. Late roots can merge provisional conversations while retired thread IDs remain usable aliases. The compact default shows one aggregate plus chronological bounded message excerpts.
@@ -361,15 +361,15 @@ Threads are reconstructed locally from ordered RFC `References`, then `In-Reply-
 Expand content only when needed:
 
 ```bash
-icloud mail thread show thr_… --full
-icloud mail thread show thr_… --metadata-only --verbose --json
+icloud mail threads show thr_… --full
+icloud mail threads show thr_… --metadata-only --verbose --json
 ```
 
 Read [Reconstructed conversations](/docs/read-reconstructed-conversations) for graph evidence, aliases, cycles, fallback boundaries, and multi-message content modes.
 
 ## Read one complete message explicitly
 
-Copy a stable `msg_…` ID from `mail inbox`, then inspect a bounded message block:
+Copy a stable `msg_…` ID from `mail messages list`, then inspect a bounded message block:
 
 ```bash
 icloud mail message show msg_…
@@ -403,7 +403,7 @@ Attachment filenames are treated as untrusted metadata. Existing files are not r
 
 ## Change read or flag state deliberately
 
-Use the stable message ID from `mail inbox`:
+Use the stable message ID from `mail messages list`:
 
 ```bash
 icloud mail mark-read msg_…
@@ -439,7 +439,7 @@ icloud mail move msg_… \
   --yes
 ```
 
-`move` prefers atomic UID MOVE and otherwise uses only a safe exact-UID fallback. `copy` keeps the source. Archive, unarchive, trash, restore, and permanent delete are also location-scoped; they never mutate an entire reconstructed thread. Check `icloud mail status --mutations` when a provider write becomes unresolved, then synchronize the exact affected folders instead of retrying automatically.
+`move` prefers atomic UID MOVE and otherwise uses only a safe exact-UID fallback. `copy` keeps the source. Archive, unarchive, trash, restore, and permanent delete are also location-scoped; they never mutate an entire reconstructed thread. Check `icloud mail operations mutations list` when a provider write becomes unresolved, then synchronize the exact affected folders instead of retrying automatically.
 
 Read [Move, copy, archive, and delete mail](/docs/manage-mail-locations) before permanent deletion or when a message has several provider locations.
 
@@ -483,7 +483,7 @@ Read [Sync and read mail](/docs/sync-and-read-inbox) for enabled-folder selectio
 
 ```bash
 icloud --account Work mail sync
-icloud --account owner@icloud.com mail inbox
+icloud --account owner@icloud.com mail messages list
 ```
 
 Without a selector, commands use the default account, then a sole account. The CLI never guesses between multiple non-default profiles.
@@ -491,7 +491,7 @@ Without a selector, commands use the default account, then a sole account. The C
 ## Use JSON deliberately
 
 ```bash
-icloud --request-id inbox-01 mail inbox --json
+icloud --request-id inbox-01 mail messages list --json
 ```
 
 JSON is opt-in. Redirecting stdout does not change the compact default. Passwords, credential references, BCC recipients, raw storage paths, and full bodies stay out of Inbox, default message JSON, and successful send JSON. A message body or raw payload appears only when the matching explicit content mode is requested. Dry-run send JSON is an intentional request review and therefore includes normalized recipients, BCC, subject, and bodies.

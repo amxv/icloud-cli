@@ -11,15 +11,17 @@ summary: Safe folder administration, Unicode and nested names, protected system 
 Run a live, read-only refresh after the account passes validation:
 
 ```bash
-icloud mail folders status
+icloud mail folders refresh
 ```
 
 The command lists every mailbox iCloud currently exposes and reads counts for selectable folders. It does not download messages or change mail. Run it before administration so names, hierarchy, roles, and counts come from current provider evidence.
 
+`icloud mail folders status` remains a compatibility alias for this same network-backed refresh. New scripts and interactive use should prefer `mail folders refresh`; `mail folders list` and `show` remain offline reads of the saved inventory.
+
 Use the global account selector when several profiles exist:
 
 ```bash
-icloud --account Personal mail folders status
+icloud --account Personal mail folders refresh
 ```
 
 Compact output is bounded to 20 records by default:
@@ -56,13 +58,13 @@ enabled=2
 Increase the display bound without changing what gets discovered:
 
 ```bash
-icloud mail folders status --limit 50
+icloud mail folders refresh --limit 50
 ```
 
-Large folder inventories use keyset continuation rather than a hidden 1,000-folder ceiling. When either `folders status` or `folders list` reports `more=yes`, pass its opaque `next_cursor` back unchanged:
+Large folder inventories use keyset continuation rather than a hidden 1,000-folder ceiling. When either `folders refresh` or `folders list` reports `more=yes`, pass its opaque `next_cursor` back unchanged:
 
 ```bash
-icloud mail folders status --limit 100 --cursor 'fcur_…'
+icloud mail folders refresh --limit 100 --cursor 'fcur_…'
 icloud mail folders list --limit 100 --cursor 'fcur_…'
 ```
 
@@ -98,7 +100,7 @@ The preview is local and reports that IMAP was not contacted. Apply the reviewed
 
 ```bash
 icloud mail folders create 'Projects/Client-日本語' --yes
-icloud mail folders status
+icloud mail folders refresh
 ```
 
 New custom folders begin with local synchronization disabled. Enable one only when you want it included in normal future sync:
@@ -129,7 +131,7 @@ A successful rename keeps the same stable `fld_…` identity, local sync choice,
 If a rename times out, **do not immediately repeat it**. iCloud may have accepted the command even when the final response was lost. Refresh instead:
 
 ```bash
-icloud mail folders status
+icloud mail folders refresh
 ```
 
 The CLI records enough recovery information before the rename to reconnect the provider's new name to the original stable folder even when the next LIST response omits rename metadata. If the old name is still present, the interrupted attempt is closed as not applied; if the new name is present and the old one is gone, the original folder identity is repaired.
@@ -244,7 +246,7 @@ When the same folder returns and can be matched safely, its stable ID and sync c
 ## Request JSON
 
 ```bash
-icloud --request-id folders-01 mail folders status --json
+icloud --request-id folders-01 mail folders refresh --json
 icloud mail folders list --include-missing --json
 ```
 

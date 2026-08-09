@@ -64,7 +64,7 @@ func newMailCommand(state *executionState) *cobra.Command {
 		Short:   "Send, reply, forward, inspect, synchronize, and change exact iCloud Mail locations",
 		GroupID: "mail",
 		Args:    cobra.NoArgs,
-		Example: "  icloud mail send --to client@example.com --subject Update --body-file message.txt --dry-run\n  icloud mail reply msg_… --body-file reply.txt --dry-run\n  icloud mail forward msg_… --to teammate@example.com --dry-run\n  icloud mail move msg_… --from inbox --to Projects --dry-run\n  icloud mail sync\n  icloud mail inbox\n  icloud mail message show msg_…\n  icloud mail folders status",
+		Example: "  icloud mail send --to client@example.com --subject Update --body-file message.txt --dry-run\n  icloud mail reply msg_… --body-file reply.txt --dry-run\n  icloud mail forward msg_… --to teammate@example.com --dry-run\n  icloud mail move msg_… --from inbox --to Projects --dry-run\n  icloud mail sync\n  icloud mail messages list\n  icloud mail message show msg_…\n  icloud mail folders refresh",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
 		},
@@ -73,9 +73,11 @@ func newMailCommand(state *executionState) *cobra.Command {
 	command.AddCommand(newMailSyncCommand(state))
 	command.AddCommand(newMailWatchCommand(state))
 	command.AddCommand(newMailDraftCommand(state))
+	command.AddCommand(newMailMessagesCommand(state))
 	command.AddCommand(newMailInboxCommand(state))
 	command.AddCommand(newMailSearchCommand(state))
 	command.AddCommand(newMailMessageCommand(state))
+	command.AddCommand(newMailThreadsCommand(state))
 	command.AddCommand(newMailThreadCommand(state))
 	command.AddCommand(newMailLatestCommand(state))
 	command.AddCommand(newMailAttachmentsCommand(state))
@@ -83,6 +85,7 @@ func newMailCommand(state *executionState) *cobra.Command {
 	command.AddCommand(newMailReplyCommand(state, false))
 	command.AddCommand(newMailReplyCommand(state, true))
 	command.AddCommand(newMailForwardCommand(state))
+	command.AddCommand(newMailOperationsCommand(state))
 	command.AddCommand(newMailStatusCommand(state))
 	command.AddCommand(newMailFlagMutationCommand(state, "mark-read", "Mark one selected message location as read", maildomain.FlagMutationMarkRead))
 	command.AddCommand(newMailFlagMutationCommand(state, "mark-unread", "Mark one selected message location as unread", maildomain.FlagMutationMarkUnread))
@@ -103,13 +106,14 @@ func newMailFoldersCommand(state *executionState) *cobra.Command {
 		Use:     "folders",
 		Short:   "Discover folders, inspect provider status, and choose sync policy",
 		Args:    cobra.NoArgs,
-		Example: "  icloud mail folders status\n  icloud mail folders enable Receipts",
+		Example: "  icloud mail folders refresh\n  icloud mail folders enable Receipts",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
 		},
 	}
 	command.AddCommand(newFolderListCommand(state))
 	command.AddCommand(newFolderShowCommand(state))
+	command.AddCommand(newFolderRefreshCommand(state))
 	command.AddCommand(newFolderStatusCommand(state))
 	command.AddCommand(newFolderPolicyCommand(state, true))
 	command.AddCommand(newFolderPolicyCommand(state, false))
@@ -201,15 +205,33 @@ func newFolderShowCommand(state *executionState) *cobra.Command {
 	return command
 }
 
+func newFolderRefreshCommand(state *executionState) *cobra.Command {
+	return newFolderRefreshLeafCommand(
+		state,
+		"refresh",
+		"Refresh every remote folder and its provider counts without fetching messages",
+		"  icloud mail folders refresh\n  icloud --account Personal mail folders refresh --json",
+	)
+}
+
 func newFolderStatusCommand(state *executionState) *cobra.Command {
+	return newFolderRefreshLeafCommand(
+		state,
+		"status",
+		"Compatibility alias for `mail folders refresh`",
+		"  icloud mail folders refresh\n  icloud --account Personal mail folders refresh --json",
+	)
+}
+
+func newFolderRefreshLeafCommand(state *executionState, use, short, example string) *cobra.Command {
 	var jsonOutput, verbose bool
 	var limit int
 	var cursor string
 	command := &cobra.Command{
-		Use:     "status",
-		Short:   "Refresh every remote folder and its provider counts without fetching messages",
+		Use:     use,
+		Short:   short,
 		Args:    cobra.NoArgs,
-		Example: "  icloud mail folders status\n  icloud --account Personal mail folders status --json",
+		Example: example,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput, Verbose: verbose}, OutputSupport{JSON: true, Verbose: true}); err != nil {
 				return err
@@ -513,7 +535,7 @@ func renderFolderAdminOutcome(renderer *CompactTextRenderer, outcome folder.Admi
 		Field("subscription", outcome.Folder.Subscription),
 		Field("sync", enabledDisabled(outcome.Folder.SyncEnabled)),
 		Field("deleted", outcome.Deleted),
-		Field("next", "run mail folders status to refresh provider metadata"),
+		Field("next", "run mail folders refresh to refresh provider metadata"),
 	)
 }
 

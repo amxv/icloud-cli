@@ -2,7 +2,7 @@
 .TH "ICLOUD" "1" "Jan 1970" "icloud 0.1.0" "iCloud Mail CLI Manual"
 
 .SH NAME
-icloud-mail-inbox - Read and filter a bounded page from a synchronized mail folder
+icloud-mail-inbox - Compatibility alias for \fBmail messages list\fR
 
 
 .SH SYNOPSIS
@@ -10,7 +10,7 @@ icloud-mail-inbox - Read and filter a bounded page from a synchronized mail fold
 
 
 .SH DESCRIPTION
-Read and filter a bounded page from a synchronized mail folder
+Compatibility alias for \fBmail messages list\fR
 
 
 .SH OPTIONS
@@ -109,10 +109,9 @@ Read and filter a bounded page from a synchronized mail folder
 
 .SH EXAMPLE
 .EX
-  icloud mail inbox
-  icloud mail inbox --unread --from billing@example.com
-  icloud mail inbox --query invoice --cursor cur_…
-  icloud mail inbox --folder sent --json
+  icloud mail messages list
+  icloud mail messages list --unread --from billing@example.com
+  icloud mail messages list --folder sent --json
 .EE
 
 

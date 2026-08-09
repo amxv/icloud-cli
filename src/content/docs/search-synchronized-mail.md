@@ -159,11 +159,11 @@ excerpt="The revised [launch] plan…"
 You can apply the same filters directly while browsing normal local views:
 
 ```bash
-icloud mail inbox --query invoice --unread
-icloud mail latest --query launch --participant teammate@example.com
+icloud mail messages list --query invoice --unread
+icloud mail threads list --query launch --participant teammate@example.com
 ```
 
-Without filters, `mail inbox` and `mail latest` keep their familiar compact records.
+Without filters, `mail messages list` and `mail threads list` keep their familiar compact records.
 
 ## Continue a bounded local result page
 

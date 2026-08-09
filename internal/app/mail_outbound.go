@@ -33,3 +33,26 @@ func (commands accountCommands) MailOutboundStatusPage(ctx context.Context, home
 	}
 	return accountValue, values, more, nextCursor, state.SchemaVersion(), nil
 }
+
+func (commands accountCommands) MailOutboundAttempt(ctx context.Context, home, accountSelector, attemptID string) (account.Account, maildomain.OutboundAttempt, int64, error) {
+	state, err := openState(ctx, home)
+	if err != nil {
+		return account.Account{}, maildomain.OutboundAttempt{}, 0, err
+	}
+	defer state.Close()
+	accountValue, err := state.Accounts().ResolveSelected(ctx, accountSelector)
+	if err != nil {
+		return account.Account{}, maildomain.OutboundAttempt{}, state.SchemaVersion(), mapAccountError(err)
+	}
+	attempt, err := state.Outbound().Attempt(ctx, attemptID)
+	if err != nil {
+		if errors.Is(err, maildomain.ErrOutboundAttemptNotFound) {
+			return account.Account{}, maildomain.OutboundAttempt{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorNotFound, "outbound attempt not found", false, err)
+		}
+		return account.Account{}, maildomain.OutboundAttempt{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot read outbound attempt", false, err)
+	}
+	if attempt.AccountID != accountValue.ID {
+		return account.Account{}, maildomain.OutboundAttempt{}, state.SchemaVersion(), cli.NewAppError(cli.ErrorNotFound, "outbound attempt not found", false)
+	}
+	return accountValue, attempt, state.SchemaVersion(), nil
+}

@@ -316,16 +316,18 @@ Every real send persists a pending attempt before SMTP submission. The final res
 | `unknown` | The connection failed after message data may have reached iCloud, so acceptance could not be proved either way. | Reconcile Sent and check the recipient. Retry only after explicitly accepting duplicate risk. |
 | `pending` | An earlier process stopped before a final durable outcome was recorded. | Treat it as unresolved; do not create an automatic duplicate. |
 
-Inspect bounded payload-free status, then synchronize Sent and reconcile exact generated Message-ID evidence:
+Inspect bounded payload-free operation history, then synchronize Sent and reconcile exact generated Message-ID evidence:
 
 ```bash
-icloud mail status --outbound
+icloud mail operations outbound list
 icloud mail sync --reconcile-outbound
-icloud mail status --outbound --json
-icloud mail status --outbound --limit 100 --cursor 'ocur_…' --json
+icloud mail operations outbound list --json
+icloud mail operations outbound list --limit 100 --cursor 'ocur_…' --json
+icloud mail operations outbound show send_… --json
 ```
 
 Outbound history is newest-first. When a bounded page reports `more=true`, pass its opaque `next_cursor` back with `--cursor`; the cursor belongs to that account and outbound-status inventory, and the terminal page omits it.
+Use `show send_…` to inspect any exact stable attempt directly, including one reached on an older page. Exact inspection keeps the same payload-free privacy boundary as the list. `icloud mail status --outbound` remains a compatibility alias for `mail operations outbound list`.
 
 A unique Sent observation confirms the attempt and associates the provider location with the existing local message. Similar subjects, bodies, times, or attachments are never enough. No match remains pending/unknown, and conflicting exact evidence remains visibly ambiguous.
 
@@ -371,7 +373,7 @@ A dry-run `--json` response is different: it is an explicit review mode and ther
 - `selected attachment does not belong to the forward source message`: list attachments for the exact source `msg_…` and choose IDs from that result.
 - `mail body consumed stdin`: stdin cannot also answer an interactive prompt; rerun with `--yes` after review.
 - `idempotency key was already used`: keep the original request or choose a new key for an intentionally different message.
-- `mail send outcome is unknown`: preserve the attempt ID, run `mail sync --reconcile-outbound`, inspect `mail status --outbound`, and verify the recipient before considering `--retry-unknown`.
+- `mail send outcome is unknown`: preserve the attempt ID, run `mail sync --reconcile-outbound`, inspect `mail operations outbound show send_…`, and verify the recipient before considering `--retry-unknown`.
 - `SMTP accepted the message but local completion is incomplete`: the provider accepted it; preserve the `send_…` ID and do not resend.
 - `SMTP accepted the message but its Sent copy could not be confirmed`: the message was accepted; do not resend. Refresh folder discovery if needed, then synchronize and reconcile Sent.
 - `composed message exceeds iCloud Mail's 20 MiB message limit`: reduce attachment/body size; MIME encoding overhead counts toward the limit.

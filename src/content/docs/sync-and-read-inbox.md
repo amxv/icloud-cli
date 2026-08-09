@@ -168,7 +168,7 @@ icloud mail sync backfill --folder Receipts --after 2025-01-01 --before 2026-01-
 A successful SMTP submission creates the local message immediately, then Sent synchronization confirms the provider copy. Run the focused workflow when an attempt is still pending or its SMTP outcome was unknown:
 
 ```bash
-icloud mail status --outbound
+icloud mail operations outbound list
 icloud mail sync --reconcile-outbound
 ```
 
@@ -178,26 +178,28 @@ Compact sync output adds nonzero `outbound_confirmed`, `outbound_resolved_unknow
 
 ## Read Inbox or Sent locally
 
-The existing local list command defaults to Inbox:
+The canonical local message list defaults to Inbox:
 
 ```bash
-icloud mail inbox
-icloud mail inbox --limit 50
+icloud mail messages list
+icloud mail messages list --limit 50
 ```
 
 Read another synchronized folder explicitly:
 
 ```bash
-icloud mail inbox --folder sent
-icloud mail inbox --folder fld_…
+icloud mail messages list --folder sent
+icloud mail messages list --folder fld_…
 ```
 
 Filter the local folder without contacting iCloud:
 
 ```bash
-icloud mail inbox --query invoice --unread
-icloud mail inbox --from billing@example.com --after 2026-08-01
+icloud mail messages list --query invoice --unread
+icloud mail messages list --from billing@example.com --after 2026-08-01
 ```
+
+`icloud mail inbox` remains a compatibility alias for the same local request, cursor, and rendering path. New scripts and interactive use should prefer `mail messages list`.
 
 The same indexed filters are available through `icloud mail search` across synchronized folders. See [Search synchronized mail](/docs/search-synchronized-mail) for message or thread results, attachment filters, and cursors.
 
@@ -427,7 +429,7 @@ Complete text, HTML, headers, MIME-part metadata, attachment bytes, and raw MIME
 ### A folder has not been discovered
 
 ```bash
-icloud mail folders status
+icloud mail folders refresh
 icloud mail sync --folder sent
 ```
 
@@ -446,9 +448,9 @@ Send or append a new test message through the normal mail workflow, then run `ic
 ### A sent or unknown attempt is not confirmed
 
 ```bash
-icloud mail folders status
+icloud mail folders refresh
 icloud mail sync --reconcile-outbound
-icloud mail status --outbound
+icloud mail operations outbound list
 ```
 
 `unmatched` means the bounded Sent synchronization has not observed one exact generated Message-ID yet. Repeat after the provider copy appears. `ambiguous_sent_evidence` means more than one current Sent location matches; keep the attempt unresolved and inspect the mailbox before any duplicate-risk retry.

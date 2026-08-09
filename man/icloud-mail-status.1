@@ -2,7 +2,7 @@
 .TH "ICLOUD" "1" "Jan 1970" "icloud 0.1.0" "iCloud Mail CLI Manual"
 
 .SH NAME
-icloud-mail-status - Show bounded local mail operation status
+icloud-mail-status - Compatibility alias for \fBmail operations … list\fR
 
 
 .SH SYNOPSIS
@@ -10,7 +10,7 @@ icloud-mail-status - Show bounded local mail operation status
 
 
 .SH DESCRIPTION
-Show bounded local mail operation status
+Compatibility alias for \fBmail operations … list\fR
 
 
 .SH OPTIONS
@@ -61,9 +61,9 @@ Show bounded local mail operation status
 
 .SH EXAMPLE
 .EX
-  icloud mail status --outbound
-  icloud mail status --mutations
-  icloud mail status --mutations --limit 50 --json
+  icloud mail operations outbound list
+  icloud mail operations mutations list
+  icloud mail operations mutations list --limit 50 --json
 .EE
 
 

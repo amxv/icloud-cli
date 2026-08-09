@@ -2,7 +2,7 @@
 .TH "ICLOUD" "1" "Jan 1970" "icloud 0.1.0" "iCloud Mail CLI Manual"
 
 .SH NAME
-icloud-mail-thread-show - Show a bounded chronological page from a reconstructed conversation
+icloud-mail-thread-show - Compatibility alias for \fBmail threads show\fR
 
 
 .SH SYNOPSIS
@@ -10,7 +10,7 @@ icloud-mail-thread-show - Show a bounded chronological page from a reconstructed
 
 
 .SH DESCRIPTION
-Show a bounded chronological page from a reconstructed conversation
+Compatibility alias for \fBmail threads show\fR
 
 
 .SH OPTIONS
@@ -77,11 +77,11 @@ Show a bounded chronological page from a reconstructed conversation
 
 .SH EXAMPLE
 .EX
-  icloud mail thread show thr_…
-  icloud mail thread show msg_… --full
-  icloud mail thread show thr_… --limit 20 --cursor cur_…
-  icloud mail thread show thr_… --format html --json
-  icloud mail thread show thr_… --headers --verbose
+  icloud mail threads show thr_…
+  icloud mail threads show msg_… --full
+  icloud mail threads show thr_… --limit 20 --cursor cur_…
+  icloud mail threads show thr_… --format html --json
+  icloud mail threads show thr_… --headers --verbose
 .EE
 
 

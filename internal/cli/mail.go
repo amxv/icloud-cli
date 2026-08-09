@@ -54,10 +54,12 @@ type MailService interface {
 	MailForward(context.Context, string, string, maildomain.ForwardRequest) (account.Account, maildomain.OutboundAttempt, bool, int64, error)
 	MailOutboundStatus(context.Context, string, string, int) (account.Account, []maildomain.OutboundAttempt, bool, int64, error)
 	MailOutboundStatusPage(context.Context, string, string, string, int) (account.Account, []maildomain.OutboundAttempt, bool, string, int64, error)
+	MailOutboundAttempt(context.Context, string, string, string) (account.Account, maildomain.OutboundAttempt, int64, error)
 	MailLocationPreview(context.Context, string, string, maildomain.LocationMutationRequest) (account.Account, maildomain.LocationMutationPlan, int64, error)
 	MailMutateLocation(context.Context, string, string, maildomain.LocationMutationRequest) (account.Account, maildomain.LocationMutationPlan, maildomain.Message, maildomain.LocationMutation, bool, int64, error)
 	MailLocationMutationStatus(context.Context, string, string, int) (account.Account, []maildomain.LocationMutation, bool, int64, error)
 	MailLocationMutationStatusPage(context.Context, string, string, string, int) (account.Account, []maildomain.LocationMutation, bool, string, int64, error)
+	MailLocationMutation(context.Context, string, string, string) (account.Account, maildomain.LocationMutation, int64, error)
 }
 
 // HydrateItemResult is the ordered truth record for one attempted remote
@@ -622,16 +624,46 @@ func outboundReconcileValue(summary *maildomain.OutboundReconcileSummary, field 
 	}
 }
 
+func newMailMessagesCommand(state *executionState) *cobra.Command {
+	command := &cobra.Command{
+		Use:     "messages",
+		Short:   "Read synchronized messages through the canonical message-list surface",
+		Args:    cobra.NoArgs,
+		Example: "  icloud mail messages list\n  icloud mail messages list --folder sent --json",
+		RunE:    func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
+	}
+	command.AddCommand(newMailMessagesListCommand(state))
+	return command
+}
+
+func newMailMessagesListCommand(state *executionState) *cobra.Command {
+	return newMailMessageListCommand(
+		state,
+		"list",
+		"List and filter a bounded page from a synchronized mail folder",
+		"  icloud mail messages list\n  icloud mail messages list --unread --from billing@example.com\n  icloud mail messages list --query invoice --cursor cur_…\n  icloud mail messages list --folder sent --json",
+	)
+}
+
 func newMailInboxCommand(state *executionState) *cobra.Command {
+	return newMailMessageListCommand(
+		state,
+		"inbox",
+		"Compatibility alias for `mail messages list`",
+		"  icloud mail messages list\n  icloud mail messages list --unread --from billing@example.com\n  icloud mail messages list --folder sent --json",
+	)
+}
+
+func newMailMessageListCommand(state *executionState, use, short, example string) *cobra.Command {
 	var jsonOutput bool
 	var limit int
 	var folderSelector string
 	var filters mailSearchFlags
 	command := &cobra.Command{
-		Use:     "inbox",
-		Short:   "Read and filter a bounded page from a synchronized mail folder",
+		Use:     use,
+		Short:   short,
 		Args:    cobra.NoArgs,
-		Example: "  icloud mail inbox\n  icloud mail inbox --unread --from billing@example.com\n  icloud mail inbox --query invoice --cursor cur_…\n  icloud mail inbox --folder sent --json",
+		Example: example,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput}, OutputSupport{JSON: true}); err != nil {
 				return err
@@ -1179,6 +1211,9 @@ func (unavailableMailService) MailOutboundStatus(context.Context, string, string
 func (unavailableMailService) MailOutboundStatusPage(context.Context, string, string, string, int) (account.Account, []maildomain.OutboundAttempt, bool, string, int64, error) {
 	return account.Account{}, nil, false, "", 0, NewAppError(ErrorConfiguration, "outbound mail status is unavailable", false)
 }
+func (unavailableMailService) MailOutboundAttempt(context.Context, string, string, string) (account.Account, maildomain.OutboundAttempt, int64, error) {
+	return account.Account{}, maildomain.OutboundAttempt{}, 0, NewAppError(ErrorConfiguration, "outbound mail status is unavailable", false)
+}
 func (unavailableMailService) MailLocationPreview(context.Context, string, string, maildomain.LocationMutationRequest) (account.Account, maildomain.LocationMutationPlan, int64, error) {
 	return account.Account{}, maildomain.LocationMutationPlan{}, 0, NewAppError(ErrorConfiguration, "mail location mutation preview is unavailable", false)
 }
@@ -1190,4 +1225,7 @@ func (unavailableMailService) MailLocationMutationStatus(context.Context, string
 }
 func (unavailableMailService) MailLocationMutationStatusPage(context.Context, string, string, string, int) (account.Account, []maildomain.LocationMutation, bool, string, int64, error) {
 	return account.Account{}, nil, false, "", 0, NewAppError(ErrorConfiguration, "mail location mutation status is unavailable", false)
+}
+func (unavailableMailService) MailLocationMutation(context.Context, string, string, string) (account.Account, maildomain.LocationMutation, int64, error) {
+	return account.Account{}, maildomain.LocationMutation{}, 0, NewAppError(ErrorConfiguration, "mail location mutation status is unavailable", false)
 }

@@ -589,9 +589,9 @@ Examples:
   icloud mail forward msg_… --to teammate@example.com --dry-run
   icloud mail move msg_… --from inbox --to Projects --dry-run
   icloud mail sync
-  icloud mail inbox
+  icloud mail messages list
   icloud mail message show msg_…
-  icloud mail folders status
+  icloud mail folders refresh
 
 Available Commands:
   archive     Move one eligible non-Sent location to the discovered Archive folder
@@ -602,20 +602,23 @@ Available Commands:
   flag        Flag one selected message location
   folders     Discover folders, inspect provider status, and choose sync policy
   forward     Forward one explicitly selected local message as a new conversation
-  inbox       Read and filter a bounded page from a synchronized mail folder
-  latest      List and filter the newest reconstructed conversations
+  inbox       Compatibility alias for `mail messages list`
+  latest      Compatibility alias for `mail threads list`
   mark-read   Mark one selected message location as read
   mark-unread Mark one selected message location as unread
   message     Read complete local message content by stable ID
+  messages    Read synchronized messages through the canonical message-list surface
   move        Move one exact current message location
+  operations  Inspect local mail operation history by stable ID
   reply       Reply to one explicitly selected local message
   reply-all   Reply to all visible participants of one explicitly selected local message
   restore     Move one current Trash location to a deliberate destination
   search      Search synchronized mail locally or query bounded provider metadata explicitly
   send        Preview or send text, HTML, and attachments safely and idempotently
-  status      Show bounded local mail operation status
+  status      Compatibility alias for `mail operations … list`
   sync        Fetch and atomically commit bounded pages from enabled mail folders
-  thread      Read one locally reconstructed conversation
+  thread      Compatibility namespace for `mail threads show`
+  threads     List and read locally reconstructed conversations
   trash       Move one exact current location to the discovered Trash folder
   unarchive   Move one current Archive location to Inbox
   unflag      Remove the flag from one selected message location
@@ -1132,7 +1135,7 @@ Usage:
   icloud mail folders [command]
 
 Examples:
-  icloud mail folders status
+  icloud mail folders refresh
   icloud mail folders enable Receipts
 
 Available Commands:
@@ -1141,9 +1144,10 @@ Available Commands:
   disable     Disable local synchronization policy for one folder
   enable      Enable local synchronization policy for one folder
   list        List locally discovered folders without contacting iCloud
+  refresh     Refresh every remote folder and its provider counts without fetching messages
   rename      Rename one custom iCloud Mail folder without changing its stable local ID
   show        Show one locally discovered folder
-  status      Refresh every remote folder and its provider counts without fetching messages
+  status      Compatibility alias for `mail folders refresh`
   subscribe   Subscribe one current iCloud Mail folder
   unsubscribe Unsubscribe one current iCloud Mail folder
 
@@ -1291,6 +1295,33 @@ Global Flags:
       --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
 ```
 
+## `icloud mail folders refresh`
+
+```text
+Refresh every remote folder and its provider counts without fetching messages
+
+Usage:
+  icloud mail folders refresh [flags]
+
+Examples:
+  icloud mail folders refresh
+  icloud --account Personal mail folders refresh --json
+
+Flags:
+      --cursor string   Continue from a next_cursor returned by an earlier refreshed folder page
+  -h, --help            help for refresh
+      --json            Emit one stable JSON success envelope
+      --limit int       Maximum folder records to print after refreshing all remote folders (1-100) (default 20)
+      --verbose         Include wire names, attributes, UID metadata, and timestamps
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
 ## `icloud mail folders rename`
 
 ```text
@@ -1346,14 +1377,14 @@ Global Flags:
 ## `icloud mail folders status`
 
 ```text
-Refresh every remote folder and its provider counts without fetching messages
+Compatibility alias for `mail folders refresh`
 
 Usage:
   icloud mail folders status [flags]
 
 Examples:
-  icloud mail folders status
-  icloud --account Personal mail folders status --json
+  icloud mail folders refresh
+  icloud --account Personal mail folders refresh --json
 
 Flags:
       --cursor string   Continue from a next_cursor returned by an earlier refreshed folder page
@@ -1474,16 +1505,15 @@ Global Flags:
 ## `icloud mail inbox`
 
 ```text
-Read and filter a bounded page from a synchronized mail folder
+Compatibility alias for `mail messages list`
 
 Usage:
   icloud mail inbox [flags]
 
 Examples:
-  icloud mail inbox
-  icloud mail inbox --unread --from billing@example.com
-  icloud mail inbox --query invoice --cursor cur_…
-  icloud mail inbox --folder sent --json
+  icloud mail messages list
+  icloud mail messages list --unread --from billing@example.com
+  icloud mail messages list --folder sent --json
 
 Flags:
       --after string             Include messages at or after an RFC3339 timestamp or YYYY-MM-DD UTC date
@@ -1516,16 +1546,15 @@ Global Flags:
 ## `icloud mail latest`
 
 ```text
-List and filter the newest reconstructed conversations
+Compatibility alias for `mail threads list`
 
 Usage:
   icloud mail latest [flags]
 
 Examples:
-  icloud mail latest
-  icloud mail latest --query launch --unread
-  icloud mail latest --participant teammate@example.com
-  icloud mail latest --cursor cur_… --json
+  icloud mail threads list
+  icloud mail threads list --query launch --unread
+  icloud mail threads list --cursor cur_… --json
 
 Flags:
       --after string             Include messages at or after an RFC3339 timestamp or YYYY-MM-DD UTC date
@@ -1729,6 +1758,77 @@ Global Flags:
       --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
 ```
 
+## `icloud mail messages`
+
+```text
+Read synchronized messages through the canonical message-list surface
+
+Usage:
+  icloud mail messages [flags]
+  icloud mail messages [command]
+
+Examples:
+  icloud mail messages list
+  icloud mail messages list --folder sent --json
+
+Available Commands:
+  list        List and filter a bounded page from a synchronized mail folder
+
+Flags:
+  -h, --help   help for messages
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+
+Use "icloud mail messages [command] --help" for more information about a command.
+```
+
+## `icloud mail messages list`
+
+```text
+List and filter a bounded page from a synchronized mail folder
+
+Usage:
+  icloud mail messages list [flags]
+
+Examples:
+  icloud mail messages list
+  icloud mail messages list --unread --from billing@example.com
+  icloud mail messages list --query invoice --cursor cur_…
+  icloud mail messages list --folder sent --json
+
+Flags:
+      --after string             Include messages at or after an RFC3339 timestamp or YYYY-MM-DD UTC date
+      --attachment-name string   Restrict attachment filename text
+      --attachment-type string   Restrict attachment media type
+      --before string            Include messages before an RFC3339 timestamp or YYYY-MM-DD UTC date
+      --cursor string            Continue from a next_cursor returned by the same query
+      --flagged                  Include only messages with a flagged eligible location
+      --folder string            Folder kind, ID, name, or wire name (default "inbox")
+      --from string              Restrict sender or Reply-To text
+  -h, --help                     help for list
+      --json                     Emit one stable JSON success envelope
+      --limit int                Maximum local folder messages to return (1-100) (default 20)
+      --participant string       Restrict sender, Reply-To, To, or Cc participant text
+      --query string             Match indexed subject, sender, participants, decoded text, attachments, or RFC Message-ID
+      --read                     Include only messages without an unread eligible location
+      --rfc-id string            Match one RFC Message-ID
+      --subject string           Restrict subject text
+      --unflagged                Include only messages without a flagged eligible location
+      --unread                   Include only messages with an unread eligible location
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
 ## `icloud mail move`
 
 ```text
@@ -1750,6 +1850,196 @@ Flags:
       --json                     Emit one stable JSON success envelope
       --to string                Select one current destination folder by ID, name, wire name, or kind
       --yes                      Confirm an intentional non-interactive location change
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail operations`
+
+```text
+Inspect local mail operation history by stable ID
+
+Usage:
+  icloud mail operations [flags]
+  icloud mail operations [command]
+
+Examples:
+  icloud mail operations outbound list
+  icloud mail operations mutations show mut_…
+
+Available Commands:
+  mutations   Inspect message location mutation history
+  outbound    Inspect outbound send attempts
+
+Flags:
+  -h, --help   help for operations
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+
+Use "icloud mail operations [command] --help" for more information about a command.
+```
+
+## `icloud mail operations mutations`
+
+```text
+Inspect message location mutation history
+
+Usage:
+  icloud mail operations mutations [flags]
+  icloud mail operations mutations [command]
+
+Examples:
+  icloud mail operations mutations list
+  icloud mail operations mutations show mut_…
+
+Available Commands:
+  list        List bounded local message location mutations
+  show        Show one message location mutation by stable ID
+
+Flags:
+  -h, --help   help for mutations
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+
+Use "icloud mail operations mutations [command] --help" for more information about a command.
+```
+
+## `icloud mail operations mutations list`
+
+```text
+List bounded local message location mutations
+
+Usage:
+  icloud mail operations mutations list [flags]
+
+Examples:
+  icloud mail operations mutations list
+  icloud mail operations mutations list --limit 50 --cursor mcur_… --json
+
+Flags:
+      --cursor string   Continue from a next_cursor returned by this operation list
+  -h, --help            help for list
+      --json            Emit one stable JSON success envelope
+      --limit int       Maximum attempts to return (1-100) (default 20)
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail operations mutations show`
+
+```text
+Show one message location mutation by stable ID
+
+Usage:
+  icloud mail operations mutations show <mutation-id> [flags]
+
+Examples:
+  icloud mail operations mutations show mut_…
+  icloud mail operations mutations show mut_… --json
+
+Flags:
+  -h, --help   help for show
+      --json   Emit one stable JSON success envelope
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail operations outbound`
+
+```text
+Inspect outbound send attempts
+
+Usage:
+  icloud mail operations outbound [flags]
+  icloud mail operations outbound [command]
+
+Examples:
+  icloud mail operations outbound list
+  icloud mail operations outbound show send_…
+
+Available Commands:
+  list        List bounded local outbound send attempts
+  show        Show one outbound send attempt by stable ID
+
+Flags:
+  -h, --help   help for outbound
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+
+Use "icloud mail operations outbound [command] --help" for more information about a command.
+```
+
+## `icloud mail operations outbound list`
+
+```text
+List bounded local outbound send attempts
+
+Usage:
+  icloud mail operations outbound list [flags]
+
+Examples:
+  icloud mail operations outbound list
+  icloud mail operations outbound list --limit 50 --cursor ocur_… --json
+
+Flags:
+      --cursor string   Continue from a next_cursor returned by this operation list
+  -h, --help            help for list
+      --json            Emit one stable JSON success envelope
+      --limit int       Maximum attempts to return (1-100) (default 20)
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail operations outbound show`
+
+```text
+Show one outbound send attempt by stable ID
+
+Usage:
+  icloud mail operations outbound show <attempt-id> [flags]
+
+Examples:
+  icloud mail operations outbound show send_…
+  icloud mail operations outbound show send_… --json
+
+Flags:
+  -h, --help   help for show
+      --json   Emit one stable JSON success envelope
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID
@@ -2008,15 +2298,15 @@ Global Flags:
 ## `icloud mail status`
 
 ```text
-Show bounded local mail operation status
+Compatibility alias for `mail operations … list`
 
 Usage:
   icloud mail status [flags]
 
 Examples:
-  icloud mail status --outbound
-  icloud mail status --mutations
-  icloud mail status --mutations --limit 50 --json
+  icloud mail operations outbound list
+  icloud mail operations mutations list
+  icloud mail operations mutations list --limit 50 --json
 
 Flags:
       --cursor string   Continue from a next_cursor returned by the same status mode
@@ -2224,18 +2514,18 @@ Global Flags:
 ## `icloud mail thread`
 
 ```text
-Read one locally reconstructed conversation
+Compatibility namespace for `mail threads show`
 
 Usage:
   icloud mail thread [flags]
   icloud mail thread [command]
 
 Examples:
-  icloud mail thread show thr_…
-  icloud mail thread show msg_… --full
+  icloud mail threads show thr_…
+  icloud mail threads show msg_… --full
 
 Available Commands:
-  show        Show a bounded chronological page from a reconstructed conversation
+  show        Compatibility alias for `mail threads show`
 
 Flags:
   -h, --help   help for thread
@@ -2253,17 +2543,124 @@ Use "icloud mail thread [command] --help" for more information about a command.
 ## `icloud mail thread show`
 
 ```text
-Show a bounded chronological page from a reconstructed conversation
+Compatibility alias for `mail threads show`
 
 Usage:
   icloud mail thread show <thread-id|message-id> [flags]
 
 Examples:
-  icloud mail thread show thr_…
-  icloud mail thread show msg_… --full
-  icloud mail thread show thr_… --limit 20 --cursor cur_…
-  icloud mail thread show thr_… --format html --json
-  icloud mail thread show thr_… --headers --verbose
+  icloud mail threads show thr_…
+  icloud mail threads show msg_… --full
+  icloud mail threads show thr_… --limit 20 --cursor cur_…
+  icloud mail threads show thr_… --format html --json
+  icloud mail threads show thr_… --headers --verbose
+
+Flags:
+      --body-only       Write only chronological decoded message bodies
+      --cursor string   Continue from a next_cursor returned by an earlier page
+      --format string   Content format: compact, text, html, or raw (raw requires --json) (default "compact")
+      --full            Include complete decoded text for every selected message
+      --headers         Include decoded public headers for every selected message
+  -h, --help            help for show
+      --json            Emit one stable JSON success envelope
+      --limit int       Maximum chronological messages to return (1-100) (default 20)
+      --metadata-only   Show thread and message metadata without excerpts or bodies
+      --verbose         Include MIME part metadata and RFC graph edge evidence
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail threads`
+
+```text
+List and read locally reconstructed conversations
+
+Usage:
+  icloud mail threads [flags]
+  icloud mail threads [command]
+
+Examples:
+  icloud mail threads list
+  icloud mail threads show thr_…
+
+Available Commands:
+  list        List and filter the newest reconstructed conversations
+  show        Show a bounded chronological page from a reconstructed conversation
+
+Flags:
+  -h, --help   help for threads
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+
+Use "icloud mail threads [command] --help" for more information about a command.
+```
+
+## `icloud mail threads list`
+
+```text
+List and filter the newest reconstructed conversations
+
+Usage:
+  icloud mail threads list [flags]
+
+Examples:
+  icloud mail threads list
+  icloud mail threads list --query launch --unread
+  icloud mail threads list --participant teammate@example.com
+  icloud mail threads list --cursor cur_… --json
+
+Flags:
+      --after string             Include messages at or after an RFC3339 timestamp or YYYY-MM-DD UTC date
+      --attachment-name string   Restrict attachment filename text
+      --attachment-type string   Restrict attachment media type
+      --before string            Include messages before an RFC3339 timestamp or YYYY-MM-DD UTC date
+      --cursor string            Continue from a next_cursor returned by the same query
+      --flagged                  Include only messages with a flagged eligible location
+      --folder string            Restrict matches to one folder kind, ID, name, or wire name
+      --from string              Restrict sender or Reply-To text
+  -h, --help                     help for list
+      --json                     Emit one stable JSON success envelope
+      --limit int                Maximum reconstructed conversations to return (1-100) (default 20)
+      --participant string       Restrict sender, Reply-To, To, or Cc participant text
+      --query string             Match indexed subject, sender, participants, decoded text, attachments, or RFC Message-ID
+      --read                     Include only messages without an unread eligible location
+      --rfc-id string            Match one RFC Message-ID
+      --subject string           Restrict subject text
+      --unflagged                Include only messages without a flagged eligible location
+      --unread                   Include only messages with an unread eligible location
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail threads show`
+
+```text
+Show a bounded chronological page from a reconstructed conversation
+
+Usage:
+  icloud mail threads show <thread-id|message-id> [flags]
+
+Examples:
+  icloud mail threads show thr_…
+  icloud mail threads show msg_… --full
+  icloud mail threads show thr_… --limit 20 --cursor cur_…
+  icloud mail threads show thr_… --format html --json
+  icloud mail threads show thr_… --headers --verbose
 
 Flags:
       --body-only       Write only chronological decoded message bodies

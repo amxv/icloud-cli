@@ -11,7 +11,7 @@ summary: Offline attachment inspection, verified streaming, safe filenames, no-c
 Copy a stable message ID from the local Inbox:
 
 ```bash
-icloud mail inbox
+icloud mail messages list
 icloud mail attachments list msg_…
 icloud mail attachments list thr_…
 ```

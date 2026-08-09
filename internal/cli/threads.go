@@ -68,15 +68,46 @@ type mailThreadData struct {
 	SchemaVersion int64        `json:"schema_version"`
 }
 
+func newMailThreadsCommand(state *executionState) *cobra.Command {
+	command := &cobra.Command{
+		Use:     "threads",
+		Short:   "List and read locally reconstructed conversations",
+		Args:    cobra.NoArgs,
+		Example: "  icloud mail threads list\n  icloud mail threads show thr_…",
+		RunE:    func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
+	}
+	command.AddCommand(newMailThreadsListCommand(state))
+	command.AddCommand(newMailThreadsShowCommand(state))
+	return command
+}
+
+func newMailThreadsListCommand(state *executionState) *cobra.Command {
+	return newMailThreadListCommand(
+		state,
+		"list",
+		"List and filter the newest reconstructed conversations",
+		"  icloud mail threads list\n  icloud mail threads list --query launch --unread\n  icloud mail threads list --participant teammate@example.com\n  icloud mail threads list --cursor cur_… --json",
+	)
+}
+
 func newMailLatestCommand(state *executionState) *cobra.Command {
+	return newMailThreadListCommand(
+		state,
+		"latest",
+		"Compatibility alias for `mail threads list`",
+		"  icloud mail threads list\n  icloud mail threads list --query launch --unread\n  icloud mail threads list --cursor cur_… --json",
+	)
+}
+
+func newMailThreadListCommand(state *executionState, use, short, example string) *cobra.Command {
 	var jsonOutput bool
 	var limit int
 	var filters mailSearchFlags
 	command := &cobra.Command{
-		Use:     "latest",
-		Short:   "List and filter the newest reconstructed conversations",
+		Use:     use,
+		Short:   short,
 		Args:    cobra.NoArgs,
-		Example: "  icloud mail latest\n  icloud mail latest --query launch --unread\n  icloud mail latest --participant teammate@example.com\n  icloud mail latest --cursor cur_… --json",
+		Example: example,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if limit < 1 || limit > MaximumPageSize {
 				return NewAppError(ErrorUsage, fmt.Sprintf("--limit must be between 1 and %d", MaximumPageSize), false)
@@ -125,9 +156,9 @@ func newMailLatestCommand(state *executionState) *cobra.Command {
 func newMailThreadCommand(state *executionState) *cobra.Command {
 	command := &cobra.Command{
 		Use:     "thread",
-		Short:   "Read one locally reconstructed conversation",
+		Short:   "Compatibility namespace for `mail threads show`",
 		Args:    cobra.NoArgs,
-		Example: "  icloud mail thread show thr_…\n  icloud mail thread show msg_… --full",
+		Example: "  icloud mail threads show thr_…\n  icloud mail threads show msg_… --full",
 		RunE:    func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
 	command.AddCommand(newMailThreadShowCommand(state))
@@ -135,14 +166,32 @@ func newMailThreadCommand(state *executionState) *cobra.Command {
 }
 
 func newMailThreadShowCommand(state *executionState) *cobra.Command {
+	return newMailThreadShowLeafCommand(
+		state,
+		"show <thread-id|message-id>",
+		"Compatibility alias for `mail threads show`",
+		"  icloud mail threads show thr_…\n  icloud mail threads show msg_… --full\n  icloud mail threads show thr_… --limit 20 --cursor cur_…\n  icloud mail threads show thr_… --format html --json\n  icloud mail threads show thr_… --headers --verbose",
+	)
+}
+
+func newMailThreadsShowCommand(state *executionState) *cobra.Command {
+	return newMailThreadShowLeafCommand(
+		state,
+		"show <thread-id|message-id>",
+		"Show a bounded chronological page from a reconstructed conversation",
+		"  icloud mail threads show thr_…\n  icloud mail threads show msg_… --full\n  icloud mail threads show thr_… --limit 20 --cursor cur_…\n  icloud mail threads show thr_… --format html --json\n  icloud mail threads show thr_… --headers --verbose",
+	)
+}
+
+func newMailThreadShowLeafCommand(state *executionState, use, short, example string) *cobra.Command {
 	var options OutputOptions
 	var limit int
 	var cursor string
 	command := &cobra.Command{
-		Use:     "show <thread-id|message-id>",
-		Short:   "Show a bounded chronological page from a reconstructed conversation",
+		Use:     use,
+		Short:   short,
 		Args:    cobra.ExactArgs(1),
-		Example: "  icloud mail thread show thr_…\n  icloud mail thread show msg_… --full\n  icloud mail thread show thr_… --limit 20 --cursor cur_…\n  icloud mail thread show thr_… --format html --json\n  icloud mail thread show thr_… --headers --verbose",
+		Example: example,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if limit < 1 || limit > MaximumPageSize {
 				return NewAppError(ErrorUsage, fmt.Sprintf("--limit must be between 1 and %d", MaximumPageSize), false)

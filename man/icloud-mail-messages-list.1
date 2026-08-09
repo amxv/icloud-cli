@@ -1,0 +1,120 @@
+.nh
+.TH "ICLOUD" "1" "Jan 1970" "icloud 0.1.0" "iCloud Mail CLI Manual"
+
+.SH NAME
+icloud-mail-messages-list - List and filter a bounded page from a synchronized mail folder
+
+
+.SH SYNOPSIS
+\fBicloud mail messages list [flags]\fP
+
+
+.SH DESCRIPTION
+List and filter a bounded page from a synchronized mail folder
+
+
+.SH OPTIONS
+\fB--after\fP=""
+	Include messages at or after an RFC3339 timestamp or YYYY-MM-DD UTC date
+
+.PP
+\fB--attachment-name\fP=""
+	Restrict attachment filename text
+
+.PP
+\fB--attachment-type\fP=""
+	Restrict attachment media type
+
+.PP
+\fB--before\fP=""
+	Include messages before an RFC3339 timestamp or YYYY-MM-DD UTC date
+
+.PP
+\fB--cursor\fP=""
+	Continue from a next_cursor returned by the same query
+
+.PP
+\fB--flagged\fP[=false]
+	Include only messages with a flagged eligible location
+
+.PP
+\fB--folder\fP="inbox"
+	Folder kind, ID, name, or wire name
+
+.PP
+\fB--from\fP=""
+	Restrict sender or Reply-To text
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for list
+
+.PP
+\fB--json\fP[=false]
+	Emit one stable JSON success envelope
+
+.PP
+\fB--limit\fP=20
+	Maximum local folder messages to return (1-100)
+
+.PP
+\fB--participant\fP=""
+	Restrict sender, Reply-To, To, or Cc participant text
+
+.PP
+\fB--query\fP=""
+	Match indexed subject, sender, participants, decoded text, attachments, or RFC Message-ID
+
+.PP
+\fB--read\fP[=false]
+	Include only messages without an unread eligible location
+
+.PP
+\fB--rfc-id\fP=""
+	Match one RFC Message-ID
+
+.PP
+\fB--subject\fP=""
+	Restrict subject text
+
+.PP
+\fB--unflagged\fP[=false]
+	Include only messages without a flagged eligible location
+
+.PP
+\fB--unread\fP[=false]
+	Include only messages with an unread eligible location
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--account\fP=""
+	Select an account by name, email, or stable ID
+
+.PP
+\fB--home\fP=""
+	Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+
+.PP
+\fB--no-input\fP[=false]
+	Never prompt for interactive input
+
+.PP
+\fB--request-id\fP=""
+	Attach a stable request ID to structured output
+
+.PP
+\fB--timeout\fP=30s
+	Maximum normal command duration; watch applies it per provider/sync attempt
+
+
+.SH EXAMPLE
+.EX
+  icloud mail messages list
+  icloud mail messages list --unread --from billing@example.com
+  icloud mail messages list --query invoice --cursor cur_…
+  icloud mail messages list --folder sent --json
+.EE
+
+
+.SH SEE ALSO
+\fBicloud-mail-messages(1)\fP
