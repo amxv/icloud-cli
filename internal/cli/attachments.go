@@ -75,12 +75,28 @@ func newMailAttachmentsListCommand(state *executionState) *cobra.Command {
 	var jsonOutput bool
 	var limit int
 	var cursor string
+	var input jsonInputOptions
 	command := &cobra.Command{
 		Use:     "list <message-or-thread-id>",
 		Short:   "List bounded attachment metadata without printing bytes",
-		Args:    cobra.ExactArgs(1),
-		Example: "  icloud mail attachments list msg_…\n  icloud mail attachments list thr_… --json",
+		Args:    exactReadArgsOrJSONInput(&input, 1),
+		Example: "  icloud mail attachments list msg_…\n  icloud mail attachments list thr_… --json\n  icloud mail attachments list --input-json request.json --json",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			targetID := ""
+			if len(args) == 1 {
+				targetID = args[0]
+			}
+			request := attachmentListReadJSONRequest{Target: targetID, Limit: DefaultPageSize}
+			if used, err := readJSONInput(cmd, state, input, &request, "limit", "cursor"); err != nil {
+				return err
+			} else if used {
+				targetID = request.Target
+				limit = request.Limit
+				cursor = request.Cursor
+			}
+			if strings.TrimSpace(targetID) == "" {
+				return NewAppError(ErrorUsage, "attachment target is required", false)
+			}
 			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput}, OutputSupport{JSON: true}); err != nil {
 				return err
 			}
@@ -88,7 +104,7 @@ func newMailAttachmentsListCommand(state *executionState) *cobra.Command {
 				return NewAppError(ErrorUsage, fmt.Sprintf("--limit must be between 1 and %d", MaximumPageSize), false)
 			}
 			accountValue, target, attachments, more, nextCursor, schemaVersion, err := state.mail.MailAttachmentsPage(
-				cmd.Context(), state.global.Home, state.global.Account, args[0], cursor, limit,
+				cmd.Context(), state.global.Home, state.global.Account, targetID, cursor, limit,
 			)
 			if err != nil {
 				return err
@@ -124,6 +140,7 @@ func newMailAttachmentsListCommand(state *executionState) *cobra.Command {
 	command.Flags().IntVar(&limit, "limit", DefaultPageSize, fmt.Sprintf("Maximum attachments to list (1-%d)", MaximumPageSize))
 	command.Flags().StringVar(&cursor, "cursor", "", "Continue from a next_cursor returned for the same attachment target")
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
+	bindReadJSONInput(command, &input)
 	return command
 }
 

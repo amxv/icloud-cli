@@ -1,0 +1,40 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/thread-show-read-input.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "body_only": {
+      "type": "boolean"
+    },
+    "cursor": {
+      "type": "string"
+    },
+    "format": {
+      "type": "string"
+    },
+    "full": {
+      "type": "boolean"
+    },
+    "headers": {
+      "type": "boolean"
+    },
+    "limit": {
+      "type": "integer"
+    },
+    "metadata_only": {
+      "type": "boolean"
+    },
+    "target": {
+      "type": "string"
+    },
+    "verbose": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "target"
+  ],
+  "title": "thread show JSON read request",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

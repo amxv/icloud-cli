@@ -1,0 +1,58 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/thread-list-read-input.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "after": {
+      "type": "string"
+    },
+    "attachment_name": {
+      "type": "string"
+    },
+    "attachment_type": {
+      "type": "string"
+    },
+    "before": {
+      "type": "string"
+    },
+    "cursor": {
+      "type": "string"
+    },
+    "flagged": {
+      "type": "boolean"
+    },
+    "folder": {
+      "type": "string"
+    },
+    "from": {
+      "type": "string"
+    },
+    "limit": {
+      "type": "integer"
+    },
+    "participant": {
+      "type": "string"
+    },
+    "query": {
+      "type": "string"
+    },
+    "read": {
+      "type": "boolean"
+    },
+    "rfc_id": {
+      "type": "string"
+    },
+    "subject": {
+      "type": "string"
+    },
+    "unflagged": {
+      "type": "boolean"
+    },
+    "unread": {
+      "type": "boolean"
+    }
+  },
+  "title": "thread list JSON read request",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

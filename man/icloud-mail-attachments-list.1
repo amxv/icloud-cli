@@ -22,6 +22,10 @@ List bounded attachment metadata without printing bytes
 	help for list
 
 .PP
+\fB--input-json\fP=""
+	Read one strict JSON read request from a file, or - for stdin; cannot be mixed with equivalent read flags or positional read arguments
+
+.PP
 \fB--json\fP[=false]
 	Emit one stable JSON success envelope
 
@@ -55,6 +59,7 @@ List bounded attachment metadata without printing bytes
 .EX
   icloud mail attachments list msg_…
   icloud mail attachments list thr_… --json
+  icloud mail attachments list --input-json request.json --json
 .EE
 
 

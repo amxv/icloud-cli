@@ -482,12 +482,20 @@ func newAccountListCommand(state *executionState) *cobra.Command {
 	var jsonOutput bool
 	var limit int
 	var cursor string
+	var input jsonInputOptions
 	command := &cobra.Command{
 		Use:     "list",
 		Short:   "List accounts from the local state database",
 		Args:    cobra.NoArgs,
-		Example: "  icloud account list\n  ICLOUD_HOME=./icloud-state icloud account list --json",
+		Example: "  icloud account list\n  ICLOUD_HOME=./icloud-state icloud account list --json\n  icloud account list --input-json request.json --json",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			request := accountListReadJSONRequest{Limit: DefaultPageSize}
+			if used, err := readJSONInput(cmd, state, input, &request, "limit", "cursor"); err != nil {
+				return err
+			} else if used {
+				limit = request.Limit
+				cursor = request.Cursor
+			}
 			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput}, OutputSupport{JSON: true}); err != nil {
 				return err
 			}
@@ -522,6 +530,7 @@ func newAccountListCommand(state *executionState) *cobra.Command {
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
 	command.Flags().IntVar(&limit, "limit", DefaultPageSize, fmt.Sprintf("Maximum accounts to return (1-%d)", MaximumPageSize))
 	command.Flags().StringVar(&cursor, "cursor", "", "Continue from a next_cursor returned by account list")
+	bindReadJSONInput(command, &input)
 	return command
 }
 

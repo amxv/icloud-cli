@@ -266,12 +266,14 @@ Usage:
 Examples:
   icloud account list
   ICLOUD_HOME=./icloud-state icloud account list --json
+  icloud account list --input-json request.json --json
 
 Flags:
-      --cursor string   Continue from a next_cursor returned by account list
-  -h, --help            help for list
-      --json            Emit one stable JSON success envelope
-      --limit int       Maximum accounts to return (1-100) (default 20)
+      --cursor string       Continue from a next_cursor returned by account list
+  -h, --help                help for list
+      --input-json string   Read one strict JSON read request from a file, or - for stdin; cannot be mixed with equivalent read flags or positional read arguments
+      --json                Emit one stable JSON success envelope
+      --limit int           Maximum accounts to return (1-100) (default 20)
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID
@@ -710,12 +712,14 @@ Usage:
 Examples:
   icloud mail attachments list msg_…
   icloud mail attachments list thr_… --json
+  icloud mail attachments list --input-json request.json --json
 
 Flags:
-      --cursor string   Continue from a next_cursor returned for the same attachment target
-  -h, --help            help for list
-      --json            Emit one stable JSON success envelope
-      --limit int       Maximum attachments to list (1-100) (default 20)
+      --cursor string       Continue from a next_cursor returned for the same attachment target
+  -h, --help                help for list
+      --input-json string   Read one strict JSON read request from a file, or - for stdin; cannot be mixed with equivalent read flags or positional read arguments
+      --json                Emit one stable JSON success envelope
+      --limit int           Maximum attachments to list (1-100) (default 20)
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID
@@ -1278,14 +1282,16 @@ Usage:
 Examples:
   icloud mail folders list
   icloud mail folders list --include-missing --verbose
+  icloud mail folders list --input-json request.json --json
 
 Flags:
-      --cursor string     Continue from a next_cursor returned by an earlier folder page
-  -h, --help              help for list
-      --include-missing   Include folders missing from the latest provider discovery
-      --json              Emit one stable JSON success envelope
-      --limit int         Maximum folders to return (1-100) (default 20)
-      --verbose           Include wire names, attributes, UID metadata, and timestamps
+      --cursor string       Continue from a next_cursor returned by an earlier folder page
+  -h, --help                help for list
+      --include-missing     Include folders missing from the latest provider discovery
+      --input-json string   Read one strict JSON read request from a file, or - for stdin; cannot be mixed with equivalent read flags or positional read arguments
+      --json                Emit one stable JSON success envelope
+      --limit int           Maximum folders to return (1-100) (default 20)
+      --verbose             Include wire names, attributes, UID metadata, and timestamps
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID
@@ -1306,13 +1312,15 @@ Usage:
 Examples:
   icloud mail folders refresh
   icloud --account Personal mail folders refresh --json
+  icloud mail folders refresh --input-json request.json --json
 
 Flags:
-      --cursor string   Continue from a next_cursor returned by an earlier refreshed folder page
-  -h, --help            help for refresh
-      --json            Emit one stable JSON success envelope
-      --limit int       Maximum folder records to print after refreshing all remote folders (1-100) (default 20)
-      --verbose         Include wire names, attributes, UID metadata, and timestamps
+      --cursor string       Continue from a next_cursor returned by an earlier refreshed folder page
+  -h, --help                help for refresh
+      --input-json string   Read one strict JSON read request from a file, or - for stdin; cannot be mixed with equivalent read flags or positional read arguments
+      --json                Emit one stable JSON success envelope
+      --limit int           Maximum folder records to print after refreshing all remote folders (1-100) (default 20)
+      --verbose             Include wire names, attributes, UID metadata, and timestamps
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID
@@ -1360,11 +1368,13 @@ Usage:
 Examples:
   icloud mail folders show INBOX
   icloud mail folders show fld_… --verbose
+  icloud mail folders show --input-json request.json --json
 
 Flags:
-  -h, --help      help for show
-      --json      Emit one stable JSON success envelope
-      --verbose   Include wire names, attributes, UID metadata, and timestamps
+  -h, --help                help for show
+      --input-json string   Read one strict JSON read request from a file, or - for stdin; cannot be mixed with equivalent read flags or positional read arguments
+      --json                Emit one stable JSON success envelope
+      --verbose             Include wire names, attributes, UID metadata, and timestamps
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID
@@ -1387,11 +1397,12 @@ Examples:
   icloud --account Personal mail folders refresh --json
 
 Flags:
-      --cursor string   Continue from a next_cursor returned by an earlier refreshed folder page
-  -h, --help            help for status
-      --json            Emit one stable JSON success envelope
-      --limit int       Maximum folder records to print after refreshing all remote folders (1-100) (default 20)
-      --verbose         Include wire names, attributes, UID metadata, and timestamps
+      --cursor string       Continue from a next_cursor returned by an earlier refreshed folder page
+  -h, --help                help for status
+      --input-json string   Read one strict JSON read request from a file, or - for stdin; cannot be mixed with equivalent read flags or positional read arguments
+      --json                Emit one stable JSON success envelope
+      --limit int           Maximum folder records to print after refreshing all remote folders (1-100) (default 20)
+      --verbose             Include wire names, attributes, UID metadata, and timestamps
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID
@@ -1525,6 +1536,7 @@ Flags:
       --folder string            Folder kind, ID, name, or wire name (default "inbox")
       --from string              Restrict sender or Reply-To text
   -h, --help                     help for inbox
+      --input-json string        Read one strict JSON read request from a file, or - for stdin; cannot be mixed with equivalent read flags or positional read arguments
       --json                     Emit one stable JSON success envelope
       --limit int                Maximum local folder messages to return (1-100) (default 20)
       --participant string       Restrict sender, Reply-To, To, or Cc participant text
@@ -1566,6 +1578,7 @@ Flags:
       --folder string            Restrict matches to one folder kind, ID, name, or wire name
       --from string              Restrict sender or Reply-To text
   -h, --help                     help for latest
+      --input-json string        Read one strict JSON read request from a file, or - for stdin; cannot be mixed with equivalent read flags or positional read arguments
       --json                     Emit one stable JSON success envelope
       --limit int                Maximum reconstructed conversations to return (1-100) (default 20)
       --participant string       Restrict sender, Reply-To, To, or Cc participant text
@@ -1737,18 +1750,20 @@ Examples:
   icloud mail message show rem_… --remote --cache --full
   icloud mail message show msg_… --format html --body-only
   icloud mail message show msg_… --headers --json
+  icloud mail message show --input-json request.json --json
 
 Flags:
-      --body-only       Write only the selected body representation
-      --cache           Persist the referenced remote message through the normal local ingestion path
-      --format string   Content format: compact, text, html, or raw (default "compact")
-      --full            Include the complete decoded text body
-      --headers         Include decoded headers (BCC remains omitted)
-  -h, --help            help for show
-      --json            Emit one stable JSON success envelope
-      --metadata-only   Show metadata without a decoded excerpt or content
-      --remote          Treat the argument as a stale-safe rem_… provider reference
-      --verbose         Include MIME part metadata and parse diagnostics
+      --body-only           Write only the selected body representation
+      --cache               Persist the referenced remote message through the normal local ingestion path
+      --format string       Content format: compact, text, html, or raw (default "compact")
+      --full                Include the complete decoded text body
+      --headers             Include decoded headers (BCC remains omitted)
+  -h, --help                help for show
+      --input-json string   Read one strict JSON read request from a file, or - for stdin; cannot be mixed with equivalent read flags or positional read arguments
+      --json                Emit one stable JSON success envelope
+      --metadata-only       Show metadata without a decoded excerpt or content
+      --remote              Treat the argument as a stale-safe rem_… provider reference
+      --verbose             Include MIME part metadata and parse diagnostics
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID
@@ -1800,6 +1815,7 @@ Examples:
   icloud mail messages list --unread --from billing@example.com
   icloud mail messages list --query invoice --cursor cur_…
   icloud mail messages list --folder sent --json
+  icloud mail messages list --input-json request.json --json
 
 Flags:
       --after string             Include messages at or after an RFC3339 timestamp or YYYY-MM-DD UTC date
@@ -1811,6 +1827,7 @@ Flags:
       --folder string            Folder kind, ID, name, or wire name (default "inbox")
       --from string              Restrict sender or Reply-To text
   -h, --help                     help for list
+      --input-json string        Read one strict JSON read request from a file, or - for stdin; cannot be mixed with equivalent read flags or positional read arguments
       --json                     Emit one stable JSON success envelope
       --limit int                Maximum local folder messages to return (1-100) (default 20)
       --participant string       Restrict sender, Reply-To, To, or Cc participant text
@@ -1930,12 +1947,14 @@ Usage:
 Examples:
   icloud mail operations mutations list
   icloud mail operations mutations list --limit 50 --cursor mcur_… --json
+  icloud mail operations mutations list --input-json request.json --json
 
 Flags:
-      --cursor string   Continue from a next_cursor returned by this operation list
-  -h, --help            help for list
-      --json            Emit one stable JSON success envelope
-      --limit int       Maximum attempts to return (1-100) (default 20)
+      --cursor string       Continue from a next_cursor returned by this operation list
+  -h, --help                help for list
+      --input-json string   Read one strict JSON read request from a file, or - for stdin; cannot be mixed with equivalent read flags or positional read arguments
+      --json                Emit one stable JSON success envelope
+      --limit int           Maximum attempts to return (1-100) (default 20)
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID
@@ -2010,12 +2029,14 @@ Usage:
 Examples:
   icloud mail operations outbound list
   icloud mail operations outbound list --limit 50 --cursor ocur_… --json
+  icloud mail operations outbound list --input-json request.json --json
 
 Flags:
-      --cursor string   Continue from a next_cursor returned by this operation list
-  -h, --help            help for list
-      --json            Emit one stable JSON success envelope
-      --limit int       Maximum attempts to return (1-100) (default 20)
+      --cursor string       Continue from a next_cursor returned by this operation list
+  -h, --help                help for list
+      --input-json string   Read one strict JSON read request from a file, or - for stdin; cannot be mixed with equivalent read flags or positional read arguments
+      --json                Emit one stable JSON success envelope
+      --limit int           Maximum attempts to return (1-100) (default 20)
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID
@@ -2186,6 +2207,7 @@ Examples:
   icloud mail search launch --result threads --limit 20
   icloud mail search invoice --remote --folder inbox
   icloud mail search --attachment-type application/pdf --json
+  icloud mail search --input-json request.json --json
 
 Available Commands:
   repair      Rebuild a bounded batch of incomplete local body-search entries
@@ -2201,6 +2223,7 @@ Flags:
       --folder string            Restrict matches to one folder kind, ID, name, or wire name
       --from string              Restrict sender or Reply-To text
   -h, --help                     help for search
+      --input-json string        Read one strict JSON read request from a file, or - for stdin; cannot be mixed with equivalent read flags or positional read arguments
       --json                     Emit one stable JSON success envelope
       --limit int                Maximum hits to return (1-100) (default 20)
       --participant string       Restrict sender, Reply-To, To, or Cc participant text
@@ -2307,14 +2330,16 @@ Examples:
   icloud mail operations outbound list
   icloud mail operations mutations list
   icloud mail operations mutations list --limit 50 --json
+  icloud mail status --input-json request.json --json
 
 Flags:
-      --cursor string   Continue from a next_cursor returned by the same status mode
-  -h, --help            help for status
-      --json            Emit one stable JSON success envelope
-      --limit int       Maximum attempts to return (1-100) (default 20)
-      --mutations       List recent message location mutation intents and outcomes
-      --outbound        List recent outbound send attempts
+      --cursor string       Continue from a next_cursor returned by the same status mode
+  -h, --help                help for status
+      --input-json string   Read one strict JSON read request from a file, or - for stdin; cannot be mixed with equivalent read flags or positional read arguments
+      --json                Emit one stable JSON success envelope
+      --limit int           Maximum attempts to return (1-100) (default 20)
+      --mutations           List recent message location mutation intents and outcomes
+      --outbound            List recent outbound send attempts
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID
@@ -2411,12 +2436,14 @@ Usage:
 Examples:
   icloud mail sync checkpoints
   icloud mail sync checkpoints --json
+  icloud mail sync checkpoints --input-json request.json --json
 
 Flags:
-      --cursor string   Continue from a next_cursor returned for the same account
-  -h, --help            help for checkpoints
-      --json            Emit one stable JSON success envelope
-      --limit int       Maximum checkpoints to return (1-100) (default 20)
+      --cursor string       Continue from a next_cursor returned for the same account
+  -h, --help                help for checkpoints
+      --input-json string   Read one strict JSON read request from a file, or - for stdin; cannot be mixed with equivalent read flags or positional read arguments
+      --json                Emit one stable JSON success envelope
+      --limit int           Maximum checkpoints to return (1-100) (default 20)
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID
@@ -2497,11 +2524,13 @@ Usage:
 Examples:
   icloud mail sync status
   icloud mail sync status --folder sent --json
+  icloud mail sync status --input-json request.json --json
 
 Flags:
-      --folder string   Folder kind, ID, name, or wire name (default "inbox")
-  -h, --help            help for status
-      --json            Emit one stable JSON success envelope
+      --folder string       Folder kind, ID, name, or wire name (default "inbox")
+  -h, --help                help for status
+      --input-json string   Read one strict JSON read request from a file, or - for stdin; cannot be mixed with equivalent read flags or positional read arguments
+      --json                Emit one stable JSON success envelope
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID
@@ -2556,16 +2585,17 @@ Examples:
   icloud mail threads show thr_… --headers --verbose
 
 Flags:
-      --body-only       Write only chronological decoded message bodies
-      --cursor string   Continue from a next_cursor returned by an earlier page
-      --format string   Content format: compact, text, html, or raw (raw requires --json) (default "compact")
-      --full            Include complete decoded text for every selected message
-      --headers         Include decoded public headers for every selected message
-  -h, --help            help for show
-      --json            Emit one stable JSON success envelope
-      --limit int       Maximum chronological messages to return (1-100) (default 20)
-      --metadata-only   Show thread and message metadata without excerpts or bodies
-      --verbose         Include MIME part metadata and RFC graph edge evidence
+      --body-only           Write only chronological decoded message bodies
+      --cursor string       Continue from a next_cursor returned by an earlier page
+      --format string       Content format: compact, text, html, or raw (raw requires --json) (default "compact")
+      --full                Include complete decoded text for every selected message
+      --headers             Include decoded public headers for every selected message
+  -h, --help                help for show
+      --input-json string   Read one strict JSON read request from a file, or - for stdin; cannot be mixed with equivalent read flags or positional read arguments
+      --json                Emit one stable JSON success envelope
+      --limit int           Maximum chronological messages to return (1-100) (default 20)
+      --metadata-only       Show thread and message metadata without excerpts or bodies
+      --verbose             Include MIME part metadata and RFC graph edge evidence
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID
@@ -2618,6 +2648,7 @@ Examples:
   icloud mail threads list --query launch --unread
   icloud mail threads list --participant teammate@example.com
   icloud mail threads list --cursor cur_… --json
+  icloud mail threads list --input-json request.json --json
 
 Flags:
       --after string             Include messages at or after an RFC3339 timestamp or YYYY-MM-DD UTC date
@@ -2629,6 +2660,7 @@ Flags:
       --folder string            Restrict matches to one folder kind, ID, name, or wire name
       --from string              Restrict sender or Reply-To text
   -h, --help                     help for list
+      --input-json string        Read one strict JSON read request from a file, or - for stdin; cannot be mixed with equivalent read flags or positional read arguments
       --json                     Emit one stable JSON success envelope
       --limit int                Maximum reconstructed conversations to return (1-100) (default 20)
       --participant string       Restrict sender, Reply-To, To, or Cc participant text
@@ -2661,18 +2693,20 @@ Examples:
   icloud mail threads show thr_… --limit 20 --cursor cur_…
   icloud mail threads show thr_… --format html --json
   icloud mail threads show thr_… --headers --verbose
+  icloud mail threads show --input-json request.json --json
 
 Flags:
-      --body-only       Write only chronological decoded message bodies
-      --cursor string   Continue from a next_cursor returned by an earlier page
-      --format string   Content format: compact, text, html, or raw (raw requires --json) (default "compact")
-      --full            Include complete decoded text for every selected message
-      --headers         Include decoded public headers for every selected message
-  -h, --help            help for show
-      --json            Emit one stable JSON success envelope
-      --limit int       Maximum chronological messages to return (1-100) (default 20)
-      --metadata-only   Show thread and message metadata without excerpts or bodies
-      --verbose         Include MIME part metadata and RFC graph edge evidence
+      --body-only           Write only chronological decoded message bodies
+      --cursor string       Continue from a next_cursor returned by an earlier page
+      --format string       Content format: compact, text, html, or raw (raw requires --json) (default "compact")
+      --full                Include complete decoded text for every selected message
+      --headers             Include decoded public headers for every selected message
+  -h, --help                help for show
+      --input-json string   Read one strict JSON read request from a file, or - for stdin; cannot be mixed with equivalent read flags or positional read arguments
+      --json                Emit one stable JSON success envelope
+      --limit int           Maximum chronological messages to return (1-100) (default 20)
+      --metadata-only       Show thread and message metadata without excerpts or bodies
+      --verbose             Include MIME part metadata and RFC graph edge evidence
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID

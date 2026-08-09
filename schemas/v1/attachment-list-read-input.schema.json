@@ -1,0 +1,22 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/attachment-list-read-input.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "cursor": {
+      "type": "string"
+    },
+    "limit": {
+      "type": "integer"
+    },
+    "target": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "target"
+  ],
+  "title": "attachment list JSON read request",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

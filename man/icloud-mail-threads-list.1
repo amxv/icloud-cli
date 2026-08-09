@@ -50,6 +50,10 @@ List and filter the newest reconstructed conversations
 	help for list
 
 .PP
+\fB--input-json\fP=""
+	Read one strict JSON read request from a file, or - for stdin; cannot be mixed with equivalent read flags or positional read arguments
+
+.PP
 \fB--json\fP[=false]
 	Emit one stable JSON success envelope
 
@@ -113,6 +117,7 @@ List and filter the newest reconstructed conversations
   icloud mail threads list --query launch --unread
   icloud mail threads list --participant teammate@example.com
   icloud mail threads list --cursor cur_… --json
+  icloud mail threads list --input-json request.json --json
 .EE
 
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	maildomain "github.com/amxv/icloud-cli/internal/mail"
@@ -86,7 +87,7 @@ func newMailThreadsListCommand(state *executionState) *cobra.Command {
 		state,
 		"list",
 		"List and filter the newest reconstructed conversations",
-		"  icloud mail threads list\n  icloud mail threads list --query launch --unread\n  icloud mail threads list --participant teammate@example.com\n  icloud mail threads list --cursor cur_… --json",
+		"  icloud mail threads list\n  icloud mail threads list --query launch --unread\n  icloud mail threads list --participant teammate@example.com\n  icloud mail threads list --cursor cur_… --json\n  icloud mail threads list --input-json request.json --json",
 	)
 }
 
@@ -103,12 +104,22 @@ func newMailThreadListCommand(state *executionState, use, short, example string)
 	var jsonOutput bool
 	var limit int
 	var filters mailSearchFlags
+	var input jsonInputOptions
 	command := &cobra.Command{
 		Use:     use,
 		Short:   short,
 		Args:    cobra.NoArgs,
 		Example: example,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			request := threadListReadJSONRequest{Limit: DefaultPageSize}
+			if used, err := readJSONInput(cmd, state, input, &request,
+				"folder", "query", "from", "participant", "subject", "rfc-id", "attachment-name", "attachment-type",
+				"after", "before", "cursor", "unread", "read", "flagged", "unflagged", "limit"); err != nil {
+				return err
+			} else if used {
+				limit = request.Limit
+				filters = request.searchFlags()
+			}
 			if limit < 1 || limit > MaximumPageSize {
 				return NewAppError(ErrorUsage, fmt.Sprintf("--limit must be between 1 and %d", MaximumPageSize), false)
 			}
@@ -150,6 +161,7 @@ func newMailThreadListCommand(state *executionState, use, short, example string)
 	command.Flags().IntVar(&limit, "limit", DefaultPageSize, fmt.Sprintf("Maximum reconstructed conversations to return (1-%d)", MaximumPageSize))
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
 	addMailSearchFlags(command, &filters, true, true)
+	bindReadJSONInput(command, &input)
 	return command
 }
 
@@ -179,7 +191,7 @@ func newMailThreadsShowCommand(state *executionState) *cobra.Command {
 		state,
 		"show <thread-id|message-id>",
 		"Show a bounded chronological page from a reconstructed conversation",
-		"  icloud mail threads show thr_…\n  icloud mail threads show msg_… --full\n  icloud mail threads show thr_… --limit 20 --cursor cur_…\n  icloud mail threads show thr_… --format html --json\n  icloud mail threads show thr_… --headers --verbose",
+		"  icloud mail threads show thr_…\n  icloud mail threads show msg_… --full\n  icloud mail threads show thr_… --limit 20 --cursor cur_…\n  icloud mail threads show thr_… --format html --json\n  icloud mail threads show thr_… --headers --verbose\n  icloud mail threads show --input-json request.json --json",
 	)
 }
 
@@ -187,12 +199,30 @@ func newMailThreadShowLeafCommand(state *executionState, use, short, example str
 	var options OutputOptions
 	var limit int
 	var cursor string
+	var input jsonInputOptions
 	command := &cobra.Command{
 		Use:     use,
 		Short:   short,
-		Args:    cobra.ExactArgs(1),
+		Args:    exactReadArgsOrJSONInput(&input, 1),
 		Example: example,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			target := ""
+			if len(args) == 1 {
+				target = args[0]
+			}
+			request := threadShowReadJSONRequest{Target: target, Limit: DefaultPageSize, Format: "compact"}
+			if used, err := readJSONInput(cmd, state, input, &request,
+				"limit", "cursor", "full", "verbose", "format", "headers", "body-only", "metadata-only"); err != nil {
+				return err
+			} else if used {
+				target = request.Target
+				limit = request.Limit
+				cursor = request.Cursor
+				options = request.outputOptions(options.JSON)
+			}
+			if strings.TrimSpace(target) == "" {
+				return NewAppError(ErrorUsage, "thread or message target is required", false)
+			}
 			if limit < 1 || limit > MaximumPageSize {
 				return NewAppError(ErrorUsage, fmt.Sprintf("--limit must be between 1 and %d", MaximumPageSize), false)
 			}
@@ -210,7 +240,7 @@ func newMailThreadShowLeafCommand(state *executionState, use, short, example str
 				return NewAppError(ErrorUsage, "plain multi-message raw output is ambiguous; use --format raw --json or `mail message raw <message-id>`", false)
 			}
 			accountValue, page, sources, schemaVersion, err := state.mail.MailThread(
-				cmd.Context(), state.global.Home, state.global.Account, args[0], maildomain.ThreadReadOptions{
+				cmd.Context(), state.global.Home, state.global.Account, target, maildomain.ThreadReadOptions{
 					Cursor: cursor, Limit: limit,
 					RequireSource:  format == maildomain.ContentRaw || format == maildomain.ContentText || format == maildomain.ContentHTML,
 					HydrateContent: options.Headers || options.Verbose || format == maildomain.ContentText || format == maildomain.ContentHTML,
@@ -314,6 +344,7 @@ func newMailThreadShowLeafCommand(state *executionState, use, short, example str
 	command.Flags().BoolVar(&options.Headers, "headers", false, "Include decoded public headers for every selected message")
 	command.Flags().BoolVar(&options.BodyOnly, "body-only", false, "Write only chronological decoded message bodies")
 	command.Flags().BoolVar(&options.MetadataOnly, "metadata-only", false, "Show thread and message metadata without excerpts or bodies")
+	bindReadJSONInput(command, &input)
 	return command
 }
 

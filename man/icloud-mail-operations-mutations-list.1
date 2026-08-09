@@ -22,6 +22,10 @@ List bounded local message location mutations
 	help for list
 
 .PP
+\fB--input-json\fP=""
+	Read one strict JSON read request from a file, or - for stdin; cannot be mixed with equivalent read flags or positional read arguments
+
+.PP
 \fB--json\fP[=false]
 	Emit one stable JSON success envelope
 
@@ -55,6 +59,7 @@ List bounded local message location mutations
 .EX
   icloud mail operations mutations list
   icloud mail operations mutations list --limit 50 --cursor mcur_… --json
+  icloud mail operations mutations list --input-json request.json --json
 .EE
 
 

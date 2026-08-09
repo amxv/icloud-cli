@@ -17,6 +17,7 @@ const (
 	MaximumJSONInputBytes  = 1 << 20
 	MaximumBulkItems       = 100
 	writeCommandAnnotation = "icloud.write"
+	readCommandAnnotation  = "icloud.read"
 	idempotencyKeyHelp     = "Reuse the original operation when the same normalized request and idempotency key are repeated"
 )
 
@@ -30,6 +31,14 @@ func bindJSONInput(command *cobra.Command, options *jsonInputOptions) {
 	}
 	command.Annotations[writeCommandAnnotation] = "true"
 	command.Flags().StringVar(&options.Path, "input-json", "", "Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments")
+}
+
+func bindReadJSONInput(command *cobra.Command, options *jsonInputOptions) {
+	if command.Annotations == nil {
+		command.Annotations = map[string]string{}
+	}
+	command.Annotations[readCommandAnnotation] = "true"
+	command.Flags().StringVar(&options.Path, "input-json", "", "Read one strict JSON read request from a file, or - for stdin; cannot be mixed with equivalent read flags or positional read arguments")
 }
 
 func exactArgsOrJSONInput(options *jsonInputOptions, count int) cobra.PositionalArgs {
@@ -49,6 +58,30 @@ func maximumArgsOrJSONInput(options *jsonInputOptions, count int) cobra.Position
 		if strings.TrimSpace(options.Path) != "" {
 			if len(args) != 0 {
 				return NewAppError(ErrorUsage, "positional write arguments cannot be combined with --input-json", false)
+			}
+			return nil
+		}
+		return cobra.MaximumNArgs(count)(cmd, args)
+	}
+}
+
+func exactReadArgsOrJSONInput(options *jsonInputOptions, count int) cobra.PositionalArgs {
+	return func(cmd *cobra.Command, args []string) error {
+		if strings.TrimSpace(options.Path) != "" {
+			if len(args) != 0 {
+				return NewAppError(ErrorUsage, "positional read arguments cannot be combined with --input-json", false)
+			}
+			return nil
+		}
+		return cobra.ExactArgs(count)(cmd, args)
+	}
+}
+
+func maximumReadArgsOrJSONInput(options *jsonInputOptions, count int) cobra.PositionalArgs {
+	return func(cmd *cobra.Command, args []string) error {
+		if strings.TrimSpace(options.Path) != "" {
+			if len(args) != 0 {
+				return NewAppError(ErrorUsage, "positional read arguments cannot be combined with --input-json", false)
 			}
 			return nil
 		}

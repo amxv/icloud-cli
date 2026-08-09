@@ -22,6 +22,10 @@ Show one local folder synchronization frontier
 	help for status
 
 .PP
+\fB--input-json\fP=""
+	Read one strict JSON read request from a file, or - for stdin; cannot be mixed with equivalent read flags or positional read arguments
+
+.PP
 \fB--json\fP[=false]
 	Emit one stable JSON success envelope
 
@@ -51,6 +55,7 @@ Show one local folder synchronization frontier
 .EX
   icloud mail sync status
   icloud mail sync status --folder sent --json
+  icloud mail sync status --input-json request.json --json
 .EE
 
 

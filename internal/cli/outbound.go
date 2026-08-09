@@ -88,10 +88,11 @@ func newMailOperationListCommand(state *executionState, kind mailOperationKind) 
 	var jsonOutput bool
 	var limit int
 	var cursor string
-	example := "  icloud mail operations outbound list\n  icloud mail operations outbound list --limit 50 --cursor ocur_… --json"
+	var input jsonInputOptions
+	example := "  icloud mail operations outbound list\n  icloud mail operations outbound list --limit 50 --cursor ocur_… --json\n  icloud mail operations outbound list --input-json request.json --json"
 	short := "List bounded local outbound send attempts"
 	if kind == mailOperationMutations {
-		example = "  icloud mail operations mutations list\n  icloud mail operations mutations list --limit 50 --cursor mcur_… --json"
+		example = "  icloud mail operations mutations list\n  icloud mail operations mutations list --limit 50 --cursor mcur_… --json\n  icloud mail operations mutations list --input-json request.json --json"
 		short = "List bounded local message location mutations"
 	}
 	command := &cobra.Command{
@@ -100,12 +101,24 @@ func newMailOperationListCommand(state *executionState, kind mailOperationKind) 
 		Args:    cobra.NoArgs,
 		Example: example,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			request := operationListReadJSONRequest{Operation: string(kind), Limit: DefaultPageSize}
+			if used, err := readJSONInput(cmd, state, input, &request, "limit", "cursor"); err != nil {
+				return err
+			} else if used {
+				operation := mailOperationKind(strings.ToLower(strings.TrimSpace(request.Operation)))
+				if operation != kind {
+					return NewAppError(ErrorUsage, fmt.Sprintf("operation must match %s for this command", kind), false)
+				}
+				limit = request.Limit
+				cursor = request.Cursor
+			}
 			return runMailOperationList(cmd, state, kind, jsonOutput, limit, cursor)
 		},
 	}
 	command.Flags().IntVar(&limit, "limit", DefaultPageSize, fmt.Sprintf("Maximum attempts to return (1-%d)", MaximumPageSize))
 	command.Flags().StringVar(&cursor, "cursor", "", "Continue from a next_cursor returned by this operation list")
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
+	bindReadJSONInput(command, &input)
 	return command
 }
 
@@ -163,12 +176,28 @@ func newMailStatusCommand(state *executionState) *cobra.Command {
 	var jsonOutput bool
 	var limit int
 	var cursor string
+	var input jsonInputOptions
 	command := &cobra.Command{
 		Use:     "status",
 		Short:   "Compatibility alias for `mail operations … list`",
 		Args:    cobra.NoArgs,
-		Example: "  icloud mail operations outbound list\n  icloud mail operations mutations list\n  icloud mail operations mutations list --limit 50 --json",
+		Example: "  icloud mail operations outbound list\n  icloud mail operations mutations list\n  icloud mail operations mutations list --limit 50 --json\n  icloud mail status --input-json request.json --json",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			request := operationListReadJSONRequest{Limit: DefaultPageSize}
+			if used, err := readJSONInput(cmd, state, input, &request, "outbound", "mutations", "limit", "cursor"); err != nil {
+				return err
+			} else if used {
+				switch mailOperationKind(strings.ToLower(strings.TrimSpace(request.Operation))) {
+				case mailOperationOutbound:
+					outbound, mutations = true, false
+				case mailOperationMutations:
+					outbound, mutations = false, true
+				default:
+					return NewAppError(ErrorUsage, "operation must be outbound or mutations", false)
+				}
+				limit = request.Limit
+				cursor = request.Cursor
+			}
 			if outbound == mutations {
 				return NewAppError(ErrorUsage, "mail status requires exactly one of --outbound or --mutations", false)
 			}
@@ -183,6 +212,7 @@ func newMailStatusCommand(state *executionState) *cobra.Command {
 	command.Flags().IntVar(&limit, "limit", DefaultPageSize, fmt.Sprintf("Maximum attempts to return (1-%d)", MaximumPageSize))
 	command.Flags().StringVar(&cursor, "cursor", "", "Continue from a next_cursor returned by the same status mode")
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
+	bindReadJSONInput(command, &input)
 	return command
 }
 

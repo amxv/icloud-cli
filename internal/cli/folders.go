@@ -129,12 +129,22 @@ func newFolderListCommand(state *executionState) *cobra.Command {
 	var jsonOutput, verbose, includeMissing bool
 	var limit int
 	var cursor string
+	var input jsonInputOptions
 	command := &cobra.Command{
 		Use:     "list",
 		Short:   "List locally discovered folders without contacting iCloud",
 		Args:    cobra.NoArgs,
-		Example: "  icloud mail folders list\n  icloud mail folders list --include-missing --verbose",
+		Example: "  icloud mail folders list\n  icloud mail folders list --include-missing --verbose\n  icloud mail folders list --input-json request.json --json",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			request := folderListReadJSONRequest{Limit: DefaultPageSize}
+			if used, err := readJSONInput(cmd, state, input, &request, "limit", "cursor", "include-missing", "verbose"); err != nil {
+				return err
+			} else if used {
+				limit = request.Limit
+				cursor = request.Cursor
+				includeMissing = request.IncludeMissing
+				verbose = request.Verbose
+			}
 			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput, Verbose: verbose}, OutputSupport{JSON: true, Verbose: true}); err != nil {
 				return err
 			}
@@ -176,21 +186,37 @@ func newFolderListCommand(state *executionState) *cobra.Command {
 	command.Flags().BoolVar(&verbose, "verbose", false, "Include wire names, attributes, UID metadata, and timestamps")
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
 	command.Flags().StringVar(&cursor, "cursor", "", "Continue from a next_cursor returned by an earlier folder page")
+	bindReadJSONInput(command, &input)
 	return command
 }
 
 func newFolderShowCommand(state *executionState) *cobra.Command {
 	var jsonOutput, verbose bool
+	var input jsonInputOptions
 	command := &cobra.Command{
 		Use:     "show <folder-id|name|wire-name|kind>",
 		Short:   "Show one locally discovered folder",
-		Args:    cobra.ExactArgs(1),
-		Example: "  icloud mail folders show INBOX\n  icloud mail folders show fld_… --verbose",
+		Args:    exactReadArgsOrJSONInput(&input, 1),
+		Example: "  icloud mail folders show INBOX\n  icloud mail folders show fld_… --verbose\n  icloud mail folders show --input-json request.json --json",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			selector := ""
+			if len(args) == 1 {
+				selector = args[0]
+			}
+			request := folderShowReadJSONRequest{Folder: selector}
+			if used, err := readJSONInput(cmd, state, input, &request, "verbose"); err != nil {
+				return err
+			} else if used {
+				selector = request.Folder
+				verbose = request.Verbose
+			}
+			if strings.TrimSpace(selector) == "" {
+				return NewAppError(ErrorUsage, "folder is required", false)
+			}
 			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput, Verbose: verbose}, OutputSupport{JSON: true, Verbose: true}); err != nil {
 				return err
 			}
-			accountValue, value, schemaVersion, err := state.folders.FolderShow(cmd.Context(), state.global.Home, state.global.Account, args[0])
+			accountValue, value, schemaVersion, err := state.folders.FolderShow(cmd.Context(), state.global.Home, state.global.Account, selector)
 			if err != nil {
 				return err
 			}
@@ -202,6 +228,7 @@ func newFolderShowCommand(state *executionState) *cobra.Command {
 	}
 	command.Flags().BoolVar(&verbose, "verbose", false, "Include wire names, attributes, UID metadata, and timestamps")
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
+	bindReadJSONInput(command, &input)
 	return command
 }
 
@@ -210,7 +237,7 @@ func newFolderRefreshCommand(state *executionState) *cobra.Command {
 		state,
 		"refresh",
 		"Refresh every remote folder and its provider counts without fetching messages",
-		"  icloud mail folders refresh\n  icloud --account Personal mail folders refresh --json",
+		"  icloud mail folders refresh\n  icloud --account Personal mail folders refresh --json\n  icloud mail folders refresh --input-json request.json --json",
 	)
 }
 
@@ -227,12 +254,21 @@ func newFolderRefreshLeafCommand(state *executionState, use, short, example stri
 	var jsonOutput, verbose bool
 	var limit int
 	var cursor string
+	var input jsonInputOptions
 	command := &cobra.Command{
 		Use:     use,
 		Short:   short,
 		Args:    cobra.NoArgs,
 		Example: example,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			request := folderRefreshReadJSONRequest{Limit: DefaultPageSize}
+			if used, err := readJSONInput(cmd, state, input, &request, "limit", "cursor", "verbose"); err != nil {
+				return err
+			} else if used {
+				limit = request.Limit
+				cursor = request.Cursor
+				verbose = request.Verbose
+			}
 			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput, Verbose: verbose}, OutputSupport{JSON: true, Verbose: true}); err != nil {
 				return err
 			}
@@ -311,6 +347,7 @@ func newFolderRefreshLeafCommand(state *executionState, use, short, example stri
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
 	command.Flags().IntVar(&limit, "limit", DefaultPageSize, fmt.Sprintf("Maximum folder records to print after refreshing all remote folders (1-%d)", MaximumPageSize))
 	command.Flags().StringVar(&cursor, "cursor", "", "Continue from a next_cursor returned by an earlier refreshed folder page")
+	bindReadJSONInput(command, &input)
 	return command
 }
 

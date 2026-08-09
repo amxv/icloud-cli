@@ -258,7 +258,7 @@ func TestBulkStateCompactOutputBudget(t *testing.T) {
 	}
 }
 
-func TestWriteCommandContractMatchesCommandTree(t *testing.T) {
+func TestStructuredInputCommandContractMatchesCommandTree(t *testing.T) {
 	state := &executionState{version: "test", schemaVersion: 18, stdin: strings.NewReader(""), stdout: &bytes.Buffer{}, stderr: &bytes.Buffer{}, accounts: unavailableAccountService{}, folders: unavailableFolderService{}, mail: unavailableMailService{}}
 	root := newRootCommand(state)
 	contracts := automationCommandContracts()
@@ -269,23 +269,29 @@ func TestWriteCommandContractMatchesCommandTree(t *testing.T) {
 		if command == nil {
 			t.Fatalf("contract command missing from tree: %s", contract.Command)
 		}
-		if command.Annotations == nil || command.Annotations[writeCommandAnnotation] != "true" {
-			t.Fatalf("write command is not annotated: %s", contract.Command)
+		annotation := writeCommandAnnotation
+		kind := "write"
+		if strings.Contains(contract.InputSchema, "-read-input.schema.json") {
+			annotation = readCommandAnnotation
+			kind = "read"
+		}
+		if command.Annotations == nil || command.Annotations[annotation] != "true" {
+			t.Fatalf("%s command is not annotated: %s", kind, contract.Command)
 		}
 		if command.Flags().Lookup("input-json") == nil {
-			t.Fatalf("write command has no --input-json: %s", contract.Command)
+			t.Fatalf("structured-input command has no --input-json: %s", contract.Command)
 		}
 		if contract.InputSchema == "" || contract.ResponseSchema == "" {
-			t.Fatalf("write command missing schema link: %+v", contract)
+			t.Fatalf("structured-input command missing schema link: %+v", contract)
 		}
 		seen[contract.Command] = true
 	}
 	var walk func(*cobra.Command)
 	walk = func(command *cobra.Command) {
-		if command.Annotations != nil && command.Annotations[writeCommandAnnotation] == "true" {
+		if command.Annotations != nil && (command.Annotations[writeCommandAnnotation] == "true" || command.Annotations[readCommandAnnotation] == "true") {
 			path := strings.TrimPrefix(command.CommandPath(), command.Root().Name()+" ")
 			if !seen[path] {
-				t.Fatalf("annotated write command missing capability contract: %s", path)
+				t.Fatalf("annotated structured-input command missing capability contract: %s", path)
 			}
 		}
 		for _, child := range command.Commands() {
@@ -312,8 +318,14 @@ func TestAutomationFlagVocabularyAndHelpStayConsistent(t *testing.T) {
 				t.Fatalf("%s --idempotency-key help=%q want=%q", command.CommandPath(), flag.Usage, idempotencyKeyHelp)
 			}
 		}
-		if flag := command.Flags().Lookup("input-json"); flag != nil && !strings.Contains(flag.Usage, "cannot be mixed with equivalent write flags") {
-			t.Fatalf("%s --input-json help lost precedence rule: %q", command.CommandPath(), flag.Usage)
+		if flag := command.Flags().Lookup("input-json"); flag != nil {
+			want := "cannot be mixed with equivalent write flags"
+			if command.Annotations != nil && command.Annotations[readCommandAnnotation] == "true" {
+				want = "cannot be mixed with equivalent read flags"
+			}
+			if !strings.Contains(flag.Usage, want) {
+				t.Fatalf("%s --input-json help lost precedence rule: %q", command.CommandPath(), flag.Usage)
+			}
 		}
 		for _, child := range command.Commands() {
 			walk(child)

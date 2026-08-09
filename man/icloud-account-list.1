@@ -22,6 +22,10 @@ List accounts from the local state database
 	help for list
 
 .PP
+\fB--input-json\fP=""
+	Read one strict JSON read request from a file, or - for stdin; cannot be mixed with equivalent read flags or positional read arguments
+
+.PP
 \fB--json\fP[=false]
 	Emit one stable JSON success envelope
 
@@ -55,6 +59,7 @@ List accounts from the local state database
 .EX
   icloud account list
   ICLOUD_HOME=./icloud-state icloud account list --json
+  icloud account list --input-json request.json --json
 .EE
 
 

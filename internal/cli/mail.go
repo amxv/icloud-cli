@@ -641,7 +641,7 @@ func newMailMessagesListCommand(state *executionState) *cobra.Command {
 		state,
 		"list",
 		"List and filter a bounded page from a synchronized mail folder",
-		"  icloud mail messages list\n  icloud mail messages list --unread --from billing@example.com\n  icloud mail messages list --query invoice --cursor cur_…\n  icloud mail messages list --folder sent --json",
+		"  icloud mail messages list\n  icloud mail messages list --unread --from billing@example.com\n  icloud mail messages list --query invoice --cursor cur_…\n  icloud mail messages list --folder sent --json\n  icloud mail messages list --input-json request.json --json",
 	)
 }
 
@@ -659,12 +659,23 @@ func newMailMessageListCommand(state *executionState, use, short, example string
 	var limit int
 	var folderSelector string
 	var filters mailSearchFlags
+	var input jsonInputOptions
 	command := &cobra.Command{
 		Use:     use,
 		Short:   short,
 		Args:    cobra.NoArgs,
 		Example: example,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			request := messageListReadJSONRequest{Folder: string(folder.KindInbox), Limit: DefaultPageSize}
+			if used, err := readJSONInput(cmd, state, input, &request,
+				"folder", "query", "from", "participant", "subject", "rfc-id", "attachment-name", "attachment-type",
+				"after", "before", "cursor", "unread", "read", "flagged", "unflagged", "limit"); err != nil {
+				return err
+			} else if used {
+				folderSelector = request.Folder
+				limit = request.Limit
+				filters = request.searchFlags()
+			}
 			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput}, OutputSupport{JSON: true}); err != nil {
 				return err
 			}
@@ -716,18 +727,26 @@ func newMailMessageListCommand(state *executionState, use, short, example string
 	command.Flags().IntVar(&limit, "limit", DefaultPageSize, fmt.Sprintf("Maximum local folder messages to return (1-%d)", MaximumPageSize))
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
 	addMailSearchFlags(command, &filters, false, true)
+	bindReadJSONInput(command, &input)
 	return command
 }
 
 func newMailSyncStatusCommand(state *executionState) *cobra.Command {
 	var jsonOutput bool
 	var folderSelector string
+	var input jsonInputOptions
 	command := &cobra.Command{
 		Use:     "status",
 		Short:   "Show one local folder synchronization frontier",
 		Args:    cobra.NoArgs,
-		Example: "  icloud mail sync status\n  icloud mail sync status --folder sent --json",
+		Example: "  icloud mail sync status\n  icloud mail sync status --folder sent --json\n  icloud mail sync status --input-json request.json --json",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			request := syncStatusReadJSONRequest{Folder: string(folder.KindInbox)}
+			if used, err := readJSONInput(cmd, state, input, &request, "folder"); err != nil {
+				return err
+			} else if used {
+				folderSelector = request.Folder
+			}
 			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput}, OutputSupport{JSON: true}); err != nil {
 				return err
 			}
@@ -743,6 +762,7 @@ func newMailSyncStatusCommand(state *executionState) *cobra.Command {
 	}
 	command.Flags().StringVar(&folderSelector, "folder", string(folder.KindInbox), "Folder kind, ID, name, or wire name")
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
+	bindReadJSONInput(command, &input)
 	return command
 }
 
@@ -750,12 +770,20 @@ func newMailSyncCheckpointsCommand(state *executionState) *cobra.Command {
 	var jsonOutput bool
 	var limit int
 	var cursor string
+	var input jsonInputOptions
 	command := &cobra.Command{
 		Use:     "checkpoints",
 		Short:   "List bounded local synchronization checkpoints",
 		Args:    cobra.NoArgs,
-		Example: "  icloud mail sync checkpoints\n  icloud mail sync checkpoints --json",
+		Example: "  icloud mail sync checkpoints\n  icloud mail sync checkpoints --json\n  icloud mail sync checkpoints --input-json request.json --json",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			request := checkpointListReadJSONRequest{Limit: DefaultPageSize}
+			if used, err := readJSONInput(cmd, state, input, &request, "limit", "cursor"); err != nil {
+				return err
+			} else if used {
+				limit = request.Limit
+				cursor = request.Cursor
+			}
 			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput}, OutputSupport{JSON: true}); err != nil {
 				return err
 			}
@@ -781,6 +809,7 @@ func newMailSyncCheckpointsCommand(state *executionState) *cobra.Command {
 	command.Flags().IntVar(&limit, "limit", DefaultPageSize, fmt.Sprintf("Maximum checkpoints to return (1-%d)", MaximumPageSize))
 	command.Flags().StringVar(&cursor, "cursor", "", "Continue from a next_cursor returned for the same account")
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
+	bindReadJSONInput(command, &input)
 	return command
 }
 

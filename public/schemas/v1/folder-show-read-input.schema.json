@@ -1,0 +1,19 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/folder-show-read-input.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "folder": {
+      "type": "string"
+    },
+    "verbose": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "folder"
+  ],
+  "title": "folder show JSON read request",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

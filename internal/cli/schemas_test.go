@@ -102,6 +102,28 @@ func TestCapabilitiesPublishesVersionedAutomationAndSchemaContracts(t *testing.T
 			t.Fatalf("bad command contract=%+v", command)
 		}
 	}
+	contracts := make(map[string]capabilityCommandContract, len(envelope.Data.Automation.Commands))
+	for _, contract := range envelope.Data.Automation.Commands {
+		contracts[contract.Command] = contract
+	}
+	for _, pair := range [][2]string{
+		{"mail messages list", "mail inbox"},
+		{"mail folders refresh", "mail folders status"},
+		{"mail threads list", "mail latest"},
+		{"mail threads show", "mail thread show"},
+	} {
+		canonical, canonicalOK := contracts[pair[0]]
+		alias, aliasOK := contracts[pair[1]]
+		if !canonicalOK || !aliasOK || canonical.InputSchema != alias.InputSchema {
+			t.Fatalf("canonical/alias schema mismatch %v: canonical=%+v alias=%+v", pair, canonical, alias)
+		}
+	}
+	if got := contracts["mail send"].InputSchema; got != SchemaBaseID+"send-input.schema.json" {
+		t.Fatalf("existing write contract changed: mail send input=%q", got)
+	}
+	if got := contracts["mail search"].InputSchema; got != SchemaBaseID+"mail-search-read-input.schema.json" {
+		t.Fatalf("mail search read contract=%q", got)
+	}
 	generated, err := GeneratedSchemas()
 	if err != nil {
 		t.Fatal(err)
@@ -116,6 +138,82 @@ func TestCapabilitiesPublishesVersionedAutomationAndSchemaContracts(t *testing.T
 	}
 	if err := validateSchemaValue(schema, value, "$", true); err != nil {
 		t.Fatalf("capabilities envelope does not validate against published schema: %v", err)
+	}
+}
+
+func TestPhase3ReadRequestSchemasAreStrictPublicAndPrivateFieldFree(t *testing.T) {
+	generated, err := GeneratedSchemas()
+	if err != nil {
+		t.Fatal(err)
+	}
+	values := map[string]any{
+		"account-list-read-input":    accountListReadJSONRequest{Limit: 20, Cursor: "acur_test"},
+		"folder-list-read-input":     folderListReadJSONRequest{Limit: 20, Cursor: "fcur_test", IncludeMissing: true, Verbose: true},
+		"folder-show-read-input":     folderShowReadJSONRequest{Folder: "Inbox", Verbose: true},
+		"folder-refresh-read-input":  folderRefreshReadJSONRequest{Limit: 20, Cursor: "fcur_test", Verbose: true},
+		"message-list-read-input":    messageListReadJSONRequest{Folder: "inbox", Query: "invoice", Limit: 20, Unread: true},
+		"mail-search-read-input":     mailSearchReadJSONRequest{Query: "invoice", Result: "messages", Limit: 20, Remote: true},
+		"thread-list-read-input":     threadListReadJSONRequest{Query: "launch", Limit: 20},
+		"thread-show-read-input":     threadShowReadJSONRequest{Target: "thr_test", Limit: 20, MetadataOnly: true},
+		"message-show-read-input":    messageShowReadJSONRequest{MessageID: "msg_test", MetadataOnly: true},
+		"attachment-list-read-input": attachmentListReadJSONRequest{Target: "msg_test", Limit: 20},
+		"operation-list-read-input":  operationListReadJSONRequest{Operation: "outbound", Limit: 20},
+		"sync-status-read-input":     syncStatusReadJSONRequest{Folder: "inbox"},
+		"checkpoint-list-read-input": checkpointListReadJSONRequest{Limit: 20, Cursor: "ccur_test"},
+	}
+	var combined bytes.Buffer
+	for name, typed := range values {
+		t.Run(name, func(t *testing.T) {
+			encodedSchema, ok := generated[name+".schema.json"]
+			if !ok {
+				t.Fatalf("missing generated read schema %s", name)
+			}
+			combined.Write(encodedSchema)
+			var schema map[string]any
+			if err := json.Unmarshal(encodedSchema, &schema); err != nil {
+				t.Fatal(err)
+			}
+			if additional, ok := schema["additionalProperties"].(bool); !ok || additional {
+				t.Fatalf("read schema %s must reject unknown fields: %#v", name, schema["additionalProperties"])
+			}
+			encoded, err := json.Marshal(typed)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var value any
+			if err := json.Unmarshal(encoded, &value); err != nil {
+				t.Fatal(err)
+			}
+			if err := validateSchemaValue(schema, value, "$", true); err != nil {
+				t.Fatalf("representative %s does not validate: %v\n%s", name, err, encoded)
+			}
+		})
+	}
+	all := combined.String()
+	for _, forbidden := range []string{
+		`"bcc"`, `"body"`, `"credential_ref"`, `"credential_reference"`, `"password"`,
+		`"raw_storage_key"`, `"raw_content_hash"`, `"storage_key"`, `"idempotency_key"`,
+	} {
+		if strings.Contains(all, forbidden) {
+			t.Fatalf("read request schemas expose private/internal field %s", forbidden)
+		}
+	}
+	for _, required := range []string{
+		"account list", "mail folders list", "mail folders show", "mail folders refresh",
+		"mail messages list", "mail search", "mail threads list", "mail threads show",
+		"mail message show", "mail attachments list", "mail operations outbound list",
+		"mail operations mutations list", "mail status", "mail sync status", "mail sync checkpoints",
+	} {
+		found := false
+		for _, contract := range automationCommandContracts() {
+			if contract.Command == required && strings.Contains(contract.InputSchema, "-read-input.schema.json") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("read capability contract missing: %s", required)
+		}
 	}
 }
 

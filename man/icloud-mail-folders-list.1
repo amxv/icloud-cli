@@ -26,6 +26,10 @@ List locally discovered folders without contacting iCloud
 	Include folders missing from the latest provider discovery
 
 .PP
+\fB--input-json\fP=""
+	Read one strict JSON read request from a file, or - for stdin; cannot be mixed with equivalent read flags or positional read arguments
+
+.PP
 \fB--json\fP[=false]
 	Emit one stable JSON success envelope
 
@@ -63,6 +67,7 @@ List locally discovered folders without contacting iCloud
 .EX
   icloud mail folders list
   icloud mail folders list --include-missing --verbose
+  icloud mail folders list --input-json request.json --json
 .EE
 
 

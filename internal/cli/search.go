@@ -70,16 +70,35 @@ func newMailSearchCommand(state *executionState) *cobra.Command {
 	var limit int
 	var remote bool
 	var allFolders bool
+	var input jsonInputOptions
 	command := &cobra.Command{
 		Use:   "search [query]",
 		Short: "Search synchronized mail locally or query bounded provider metadata explicitly",
-		Args:  cobra.MaximumNArgs(1),
+		Args:  maximumReadArgsOrJSONInput(&input, 1),
 		Example: "  icloud mail search invoice\n" +
 			"  icloud mail search --from billing@example.com --unread\n" +
 			"  icloud mail search launch --result threads --limit 20\n" +
 			"  icloud mail search invoice --remote --folder inbox\n" +
-			"  icloud mail search --attachment-type application/pdf --json",
+			"  icloud mail search --attachment-type application/pdf --json\n" +
+			"  icloud mail search --input-json request.json --json",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			query := ""
+			if len(args) == 1 {
+				query = args[0]
+			}
+			request := mailSearchReadJSONRequest{Query: query, Result: string(maildomain.SearchMessages), Limit: DefaultPageSize}
+			if used, err := readJSONInput(cmd, state, input, &request,
+				"folder", "from", "participant", "subject", "rfc-id", "attachment-name", "attachment-type",
+				"after", "before", "cursor", "unread", "read", "flagged", "unflagged", "result", "remote", "all-folders", "limit"); err != nil {
+				return err
+			} else if used {
+				query = request.Query
+				flags = request.searchFlags()
+				resultKind = request.Result
+				remote = request.Remote
+				allFolders = request.AllFolders
+				limit = request.Limit
+			}
 			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput}, OutputSupport{JSON: true}); err != nil {
 				return err
 			}
@@ -89,10 +108,6 @@ func newMailSearchCommand(state *executionState) *cobra.Command {
 			kind := maildomain.SearchResultKind(strings.ToLower(strings.TrimSpace(resultKind)))
 			if kind != maildomain.SearchMessages && kind != maildomain.SearchThreads {
 				return NewAppError(ErrorUsage, "--result must be messages or threads", false)
-			}
-			query := ""
-			if len(args) == 1 {
-				query = args[0]
 			}
 			options, err := flags.options(query, kind, limit)
 			if err != nil {
@@ -154,6 +169,7 @@ func newMailSearchCommand(state *executionState) *cobra.Command {
 	command.Flags().BoolVar(&allFolders, "all-folders", false, "Search every current selectable folder, up to the documented fan-out bound")
 	command.Flags().IntVar(&limit, "limit", DefaultPageSize, fmt.Sprintf("Maximum hits to return (1-%d)", MaximumPageSize))
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
+	bindReadJSONInput(command, &input)
 	command.AddCommand(newMailSearchRepairCommand(state))
 	return command
 }
@@ -265,6 +281,12 @@ func addMailSearchFlags(command *cobra.Command, flags *mailSearchFlags, includeF
 }
 
 func (flags mailSearchFlags) options(query string, kind maildomain.SearchResultKind, limit int) (maildomain.SearchOptions, error) {
+	if flags.Unread && flags.Read {
+		return maildomain.SearchOptions{}, NewAppError(ErrorUsage, "--unread and --read cannot be used together", false)
+	}
+	if flags.Flagged && flags.Unflagged {
+		return maildomain.SearchOptions{}, NewAppError(ErrorUsage, "--flagged and --unflagged cannot be used together", false)
+	}
 	after, err := parseSearchBoundary(flags.After)
 	if err != nil {
 		return maildomain.SearchOptions{}, NewAppError(ErrorUsage, "--after must be RFC3339 or YYYY-MM-DD", false)

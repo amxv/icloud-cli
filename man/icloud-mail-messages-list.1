@@ -50,6 +50,10 @@ List and filter a bounded page from a synchronized mail folder
 	help for list
 
 .PP
+\fB--input-json\fP=""
+	Read one strict JSON read request from a file, or - for stdin; cannot be mixed with equivalent read flags or positional read arguments
+
+.PP
 \fB--json\fP[=false]
 	Emit one stable JSON success envelope
 
@@ -113,6 +117,7 @@ List and filter a bounded page from a synchronized mail folder
   icloud mail messages list --unread --from billing@example.com
   icloud mail messages list --query invoice --cursor cur_…
   icloud mail messages list --folder sent --json
+  icloud mail messages list --input-json request.json --json
 .EE
 
 

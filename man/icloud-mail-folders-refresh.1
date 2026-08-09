@@ -22,6 +22,10 @@ Refresh every remote folder and its provider counts without fetching messages
 	help for refresh
 
 .PP
+\fB--input-json\fP=""
+	Read one strict JSON read request from a file, or - for stdin; cannot be mixed with equivalent read flags or positional read arguments
+
+.PP
 \fB--json\fP[=false]
 	Emit one stable JSON success envelope
 
@@ -59,6 +63,7 @@ Refresh every remote folder and its provider counts without fetching messages
 .EX
   icloud mail folders refresh
   icloud --account Personal mail folders refresh --json
+  icloud mail folders refresh --input-json request.json --json
 .EE
 
 

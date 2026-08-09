@@ -1,0 +1,67 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/mail-search-read-input.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "after": {
+      "type": "string"
+    },
+    "all_folders": {
+      "type": "boolean"
+    },
+    "attachment_name": {
+      "type": "string"
+    },
+    "attachment_type": {
+      "type": "string"
+    },
+    "before": {
+      "type": "string"
+    },
+    "cursor": {
+      "type": "string"
+    },
+    "flagged": {
+      "type": "boolean"
+    },
+    "folder": {
+      "type": "string"
+    },
+    "from": {
+      "type": "string"
+    },
+    "limit": {
+      "type": "integer"
+    },
+    "participant": {
+      "type": "string"
+    },
+    "query": {
+      "type": "string"
+    },
+    "read": {
+      "type": "boolean"
+    },
+    "remote": {
+      "type": "boolean"
+    },
+    "result": {
+      "type": "string"
+    },
+    "rfc_id": {
+      "type": "string"
+    },
+    "subject": {
+      "type": "string"
+    },
+    "unflagged": {
+      "type": "boolean"
+    },
+    "unread": {
+      "type": "boolean"
+    }
+  },
+  "title": "mail search JSON read request",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

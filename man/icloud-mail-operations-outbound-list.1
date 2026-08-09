@@ -22,6 +22,10 @@ List bounded local outbound send attempts
 	help for list
 
 .PP
+\fB--input-json\fP=""
+	Read one strict JSON read request from a file, or - for stdin; cannot be mixed with equivalent read flags or positional read arguments
+
+.PP
 \fB--json\fP[=false]
 	Emit one stable JSON success envelope
 
@@ -55,6 +59,7 @@ List bounded local outbound send attempts
 .EX
   icloud mail operations outbound list
   icloud mail operations outbound list --limit 50 --cursor ocur_… --json
+  icloud mail operations outbound list --input-json request.json --json
 .EE
 
 
