@@ -17,29 +17,31 @@ import (
 )
 
 type sendFlags struct {
-	From            string
-	To              []string
-	CC              []string
-	BCC             []string
-	ReplyTo         string
-	Subject         string
-	Body            string
-	BodyFile        string
-	HTMLBody        string
-	HTMLBodyFile    string
-	Headers         []string
-	Attachments     []string
-	AttachmentNames []string
-	AttachmentTypes []string
-	IdempotencyKey  string
-	RetryOf         string
-	RetryUnknown    bool
-	DryRun          bool
-	Yes             bool
-	JSON            bool
-	Verbose         bool
-	ShowHeaders     bool
-	Format          string
+	From                   string
+	To                     []string
+	CC                     []string
+	BCC                    []string
+	ReplyTo                string
+	Subject                string
+	Body                   string
+	BodyFile               string
+	HTMLBody               string
+	HTMLBodyFile           string
+	Headers                []string
+	Attachments            []string
+	AttachmentNames        []string
+	AttachmentTypes        []string
+	AttachmentDispositions []string
+	AttachmentContentIDs   []string
+	IdempotencyKey         string
+	RetryOf                string
+	RetryUnknown           bool
+	DryRun                 bool
+	Yes                    bool
+	JSON                   bool
+	Verbose                bool
+	ShowHeaders            bool
+	Format                 string
 }
 
 type mailSendData struct {
@@ -94,7 +96,7 @@ func newMailSendCommand(state *executionState) *cobra.Command {
 			var jsonRequest composeJSONRequest
 			if used, err := readJSONInput(cmd, state, input, &jsonRequest,
 				"from", "to", "cc", "bcc", "reply-to", "subject", "body", "body-file", "html-body", "html-body-file",
-				"header", "attach", "attach-name", "attach-type", "idempotency-key", "retry-of", "retry-unknown"); err != nil {
+				"header", "attach", "attach-name", "attach-type", "attach-disposition", "attach-cid", "idempotency-key", "retry-of", "retry-unknown"); err != nil {
 				return err
 			} else if used {
 				if jsonInputConsumesStdin(input) && composeConsumesStdin(jsonRequest) {
@@ -179,6 +181,8 @@ func newMailSendCommand(state *executionState) *cobra.Command {
 	command.Flags().StringArrayVar(&flags.Attachments, "attach", nil, "Regular file path to attach; repeat as needed")
 	command.Flags().StringArrayVar(&flags.AttachmentNames, "attach-name", nil, "Override one attachment filename as path=filename; repeat as needed")
 	command.Flags().StringArrayVar(&flags.AttachmentTypes, "attach-type", nil, "Override one attachment media type as path=type/subtype; repeat as needed")
+	command.Flags().StringArrayVar(&flags.AttachmentDispositions, "attach-disposition", nil, "Set one attachment disposition as path=attachment or path=inline; repeat as needed")
+	command.Flags().StringArrayVar(&flags.AttachmentContentIDs, "attach-cid", nil, "Set one attachment Content-ID as path=local@domain; repeat as needed")
 	command.Flags().StringVar(&flags.IdempotencyKey, "idempotency-key", "", idempotencyKeyHelp)
 	command.Flags().StringVar(&flags.RetryOf, "retry-of", "", "Link an explicit retry to one failed or unknown send_… attempt")
 	command.Flags().BoolVar(&flags.RetryUnknown, "retry-unknown", false, "Authorize one duplicate-risk retry of an unknown attempt; requires --retry-of and --yes")
@@ -232,7 +236,7 @@ func sendRequestFromFlags(state *executionState, flags sendFlags) (maildomain.Se
 		}
 		headers = append(headers, maildomain.CustomHeader{Key: key, Value: body})
 	}
-	attachments, err := sendAttachmentsFromFlags(flags.Attachments, flags.AttachmentNames, flags.AttachmentTypes)
+	attachments, err := sendAttachmentsFromFlags(flags.Attachments, flags.AttachmentNames, flags.AttachmentTypes, flags.AttachmentDispositions, flags.AttachmentContentIDs)
 	if err != nil {
 		return maildomain.SendRequest{}, false, err
 	}
@@ -245,7 +249,7 @@ func sendRequestFromFlags(state *executionState, flags sendFlags) (maildomain.Se
 	}, textStdin || htmlStdin, nil
 }
 
-func sendAttachmentsFromFlags(paths, nameValues, typeValues []string) ([]maildomain.OutboundAttachment, error) {
+func sendAttachmentsFromFlags(paths, nameValues, typeValues, dispositionValues, contentIDValues []string) ([]maildomain.OutboundAttachment, error) {
 	if len(paths) > maildomain.MaxSendAttachments {
 		return nil, NewAppError(ErrorSafety, fmt.Sprintf("attachment count exceeds %d", maildomain.MaxSendAttachments), false)
 	}
@@ -257,6 +261,14 @@ func sendAttachmentsFromFlags(paths, nameValues, typeValues []string) ([]maildom
 	if err != nil {
 		return nil, err
 	}
+	dispositions, err := attachmentOverrideMap(dispositionValues, "--attach-disposition")
+	if err != nil {
+		return nil, err
+	}
+	contentIDs, err := attachmentOverrideMap(contentIDValues, "--attach-cid")
+	if err != nil {
+		return nil, err
+	}
 	attached := make(map[string]struct{}, len(paths))
 	result := make([]maildomain.OutboundAttachment, 0, len(paths))
 	for _, value := range paths {
@@ -265,7 +277,10 @@ func sendAttachmentsFromFlags(paths, nameValues, typeValues []string) ([]maildom
 			return nil, NewAppError(ErrorUsage, "--attach requires a file path", false)
 		}
 		attached[path] = struct{}{}
-		result = append(result, maildomain.OutboundAttachment{SourcePath: path, Filename: names[path], MediaType: types[path]})
+		result = append(result, maildomain.OutboundAttachment{
+			SourcePath: path, Filename: names[path], MediaType: types[path],
+			Disposition: maildomain.AttachmentDisposition(dispositions[path]), ContentID: contentIDs[path],
+		})
 	}
 	for path := range names {
 		if _, ok := attached[path]; !ok {
@@ -275,6 +290,16 @@ func sendAttachmentsFromFlags(paths, nameValues, typeValues []string) ([]maildom
 	for path := range types {
 		if _, ok := attached[path]; !ok {
 			return nil, NewAppError(ErrorUsage, "--attach-type references a path that was not attached", false)
+		}
+	}
+	for path := range dispositions {
+		if _, ok := attached[path]; !ok {
+			return nil, NewAppError(ErrorUsage, "--attach-disposition references a path that was not attached", false)
+		}
+	}
+	for path := range contentIDs {
+		if _, ok := attached[path]; !ok {
+			return nil, NewAppError(ErrorUsage, "--attach-cid references a path that was not attached", false)
 		}
 	}
 	return result, nil
@@ -414,6 +439,8 @@ func renderCompactSendPreview(writer io.Writer, preview maildomain.SendPreview, 
 	for _, attachment := range preview.Attachments {
 		if err := renderer.Record("attachment", attachment.Filename,
 			Field("media_type", attachment.MediaType),
+			Field("disposition", attachment.Disposition),
+			Field("content_id", attachment.ContentID),
 			Field("bytes", attachment.ByteSize),
 			Field("sha256", attachment.ContentHash),
 		); err != nil {

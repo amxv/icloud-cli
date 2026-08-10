@@ -29,6 +29,7 @@ const (
 	MaxSendAttachmentBytes         = 64 << 20
 	MaxSendAttachmentTotalBytes    = 128 << 20
 	MaxSendAttachmentFilenameBytes = 255
+	MaxSendContentIDBytes          = 255
 )
 
 var (
@@ -78,11 +79,20 @@ type CustomHeader struct {
 	Value string `json:"value"`
 }
 
+type AttachmentDisposition string
+
+const (
+	AttachmentDispositionAttachment AttachmentDisposition = "attachment"
+	AttachmentDispositionInline     AttachmentDisposition = "inline"
+)
+
 type OutboundAttachment struct {
-	Filename    string `json:"filename"`
-	MediaType   string `json:"media_type"`
-	ContentHash string `json:"content_hash"`
-	ByteSize    int64  `json:"byte_size"`
+	Filename    string                `json:"filename"`
+	MediaType   string                `json:"media_type"`
+	Disposition AttachmentDisposition `json:"disposition"`
+	ContentID   string                `json:"content_id,omitempty"`
+	ContentHash string                `json:"content_hash"`
+	ByteSize    int64                 `json:"byte_size"`
 
 	SourcePath string                        `json:"-"`
 	Open       func() (io.ReadCloser, error) `json:"-"`
@@ -364,7 +374,8 @@ func normalizeOutboundAttachments(values []OutboundAttachment) ([]OutboundAttach
 	}
 	result := make([]OutboundAttachment, 0, len(values))
 	var total int64
-	for _, value := range values {
+	seenContentIDs := make(map[string]struct{}, len(values))
+	for index, value := range values {
 		filename := strings.TrimSpace(value.Filename)
 		if filename == "" || filename == "." || filename == ".." || filepath.Base(filename) != filename || strings.ContainsAny(filename, `/\`) ||
 			len(filename) > MaxSendAttachmentFilenameBytes || strings.ContainsAny(filename, "\x00\r\n") || strings.ContainsFunc(filename, unicode.IsControl) {
@@ -383,16 +394,55 @@ func normalizeOutboundAttachments(values []OutboundAttachment) ([]OutboundAttach
 		if value.ByteSize < 0 || value.ByteSize > MaxSendAttachmentBytes {
 			return nil, fmt.Errorf("%w: attachment exceeds %d bytes", ErrInvalidSendRequest, MaxSendAttachmentBytes)
 		}
+		disposition := AttachmentDisposition(strings.ToLower(strings.TrimSpace(string(value.Disposition))))
+		switch disposition {
+		case "", AttachmentDispositionAttachment:
+			disposition = AttachmentDispositionAttachment
+		case AttachmentDispositionInline:
+		default:
+			return nil, fmt.Errorf("%w: attachment disposition must be attachment or inline", ErrInvalidSendRequest)
+		}
+		contentID := strings.Trim(strings.TrimSpace(value.ContentID), "<>")
+		if disposition == AttachmentDispositionInline && contentID == "" {
+			contentID = fmt.Sprintf("inline-%02d-%s@icloud-cli.local", index+1, contentHash[:24])
+		}
+		if contentID != "" {
+			if err := validateOutboundContentID(contentID); err != nil {
+				return nil, err
+			}
+			key := strings.ToLower(contentID)
+			if _, duplicate := seenContentIDs[key]; duplicate {
+				return nil, fmt.Errorf("%w: duplicate attachment Content-ID", ErrInvalidSendRequest)
+			}
+			seenContentIDs[key] = struct{}{}
+		}
 		total += value.ByteSize
 		if total > MaxSendAttachmentTotalBytes {
 			return nil, fmt.Errorf("%w: attachment total exceeds %d bytes", ErrInvalidSendRequest, MaxSendAttachmentTotalBytes)
 		}
 		value.Filename = filename
 		value.MediaType = mediaType
+		value.Disposition = disposition
+		value.ContentID = contentID
 		value.ContentHash = contentHash
 		result = append(result, value)
 	}
 	return result, nil
+}
+
+func validateOutboundContentID(value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" || len(value) > MaxSendContentIDBytes || strings.ContainsAny(value, "<>\r\n") || strings.ContainsFunc(value, unicode.IsSpace) || strings.ContainsFunc(value, unicode.IsControl) {
+		return fmt.Errorf("%w: invalid attachment Content-ID", ErrInvalidSendRequest)
+	}
+	if strings.Count(value, "@") != 1 {
+		return fmt.Errorf("%w: attachment Content-ID must use local@domain form", ErrInvalidSendRequest)
+	}
+	left, right, _ := strings.Cut(value, "@")
+	if left == "" || right == "" || strings.HasPrefix(right, ".") || strings.HasSuffix(right, ".") {
+		return fmt.Errorf("%w: invalid attachment Content-ID", ErrInvalidSendRequest)
+	}
+	return nil
 }
 
 func normalizeOneAddress(value Address, required bool) (Address, error) {

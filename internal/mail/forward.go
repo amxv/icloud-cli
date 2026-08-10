@@ -37,10 +37,12 @@ type ForwardRequest struct {
 }
 
 type ForwardOriginalAttachment struct {
-	ID        string `json:"id"`
-	Filename  string `json:"filename"`
-	MediaType string `json:"media_type"`
-	ByteSize  int64  `json:"byte_size"`
+	ID          string                `json:"id"`
+	Filename    string                `json:"filename"`
+	MediaType   string                `json:"media_type"`
+	Disposition AttachmentDisposition `json:"disposition"`
+	ContentID   string                `json:"content_id,omitempty"`
+	ByteSize    int64                 `json:"byte_size"`
 }
 
 type ForwardPlan struct {

@@ -41,7 +41,7 @@ func newMailForwardCommand(state *executionState) *cobra.Command {
 			var jsonRequest forwardJSONRequest
 			if used, err := readJSONInput(cmd, state, input, &jsonRequest,
 				"from", "to", "cc", "bcc", "reply-to", "body", "body-file", "html-body", "html-body-file",
-				"header", "attach", "attach-name", "attach-type", "original", "include-attachment", "idempotency-key", "retry-of", "retry-unknown"); err != nil {
+				"header", "attach", "attach-name", "attach-type", "attach-disposition", "attach-cid", "original", "include-attachment", "idempotency-key", "retry-of", "retry-unknown"); err != nil {
 				return err
 			} else if used {
 				if jsonInputConsumesStdin(input) && forwardComposeConsumesStdin(jsonRequest.Compose) {
@@ -129,6 +129,8 @@ func bindForwardFlags(command *cobra.Command, flags *forwardFlags) {
 	command.Flags().StringArrayVar(&flags.Attachments, "attach", nil, "New regular file path to attach; repeat as needed")
 	command.Flags().StringArrayVar(&flags.AttachmentNames, "attach-name", nil, "Override one new attachment filename as path=filename; repeat as needed")
 	command.Flags().StringArrayVar(&flags.AttachmentTypes, "attach-type", nil, "Override one new attachment media type as path=type/subtype; repeat as needed")
+	command.Flags().StringArrayVar(&flags.AttachmentDispositions, "attach-disposition", nil, "Set one new attachment disposition as path=attachment or path=inline; repeat as needed")
+	command.Flags().StringArrayVar(&flags.AttachmentContentIDs, "attach-cid", nil, "Set one new attachment Content-ID as path=local@domain; repeat as needed")
 	command.Flags().StringVar(&flags.Original, "original", string(maildomain.ForwardOriginalQuoted), "Original representation: quoted, eml, or none")
 	command.Flags().StringArrayVar(&flags.OriginalAttachments, "include-attachment", nil, "Include one original att_… attachment by stable ID; repeat as needed")
 	command.Flags().StringVar(&flags.IdempotencyKey, "idempotency-key", "", idempotencyKeyHelp)
@@ -221,7 +223,8 @@ func renderCompactForwardPreview(writer io.Writer, preview maildomain.ForwardPre
 	}
 	for _, attachment := range preview.OriginalAttachments {
 		if err := renderer.Record("original-attachment", attachment.ID,
-			Field("filename", attachment.Filename), Field("media_type", attachment.MediaType), Field("bytes", attachment.ByteSize)); err != nil {
+			Field("filename", attachment.Filename), Field("media_type", attachment.MediaType), Field("disposition", attachment.Disposition),
+			Field("content_id", attachment.ContentID), Field("bytes", attachment.ByteSize)); err != nil {
 			return err
 		}
 	}
@@ -234,7 +237,8 @@ func renderCompactForwardPreview(writer io.Writer, preview maildomain.ForwardPre
 	}
 	for _, attachment := range preview.Send.Attachments {
 		if err := renderer.Record("attachment", attachment.Filename,
-			Field("media_type", attachment.MediaType), Field("bytes", attachment.ByteSize), Field("sha256", attachment.ContentHash)); err != nil {
+			Field("media_type", attachment.MediaType), Field("disposition", attachment.Disposition), Field("content_id", attachment.ContentID),
+			Field("bytes", attachment.ByteSize), Field("sha256", attachment.ContentHash)); err != nil {
 			return err
 		}
 	}

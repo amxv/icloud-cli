@@ -167,14 +167,16 @@ func (commands accountCommands) forwardOriginalAttachments(
 		}
 		attachments = append(attachments, maildomain.OutboundAttachment{
 			Filename: filename, MediaType: mediaType,
+			Disposition: outboundDispositionFromAttachment(attachment), ContentID: attachment.ContentID,
 			ContentHash: attachment.ContentHash, ByteSize: attachment.ByteSize,
 			Open: func() (io.ReadCloser, error) {
 				return blobStore.OpenVerifiedContext(ctx, attachment.StorageKey, attachment.ContentHash, attachment.ByteSize)
 			},
 		})
 		metadata = append(metadata, maildomain.ForwardOriginalAttachment{
-			ID: attachment.ID, Filename: filename,
-			MediaType: mediaType, ByteSize: attachment.ByteSize,
+			ID: attachment.ID, Filename: filename, MediaType: mediaType,
+			Disposition: outboundDispositionFromAttachment(attachment), ContentID: attachment.ContentID,
+			ByteSize: attachment.ByteSize,
 		})
 	}
 	return attachments, metadata, nil

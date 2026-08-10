@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	message "github.com/emersion/go-message"
 	gomail "github.com/emersion/go-message/mail"
 )
 
@@ -72,6 +73,9 @@ func composeMessage(writer io.Writer, request SendRequest, messageID string, sen
 	}
 	for _, field := range request.Headers {
 		header.Set(field.Key, field.Value)
+	}
+	if hasInlineOutboundAttachment(request.Attachments) {
+		return composeMessageWithInlineAttachments(writer, header, request)
 	}
 	if len(request.Attachments) > 0 {
 		mixed, err := gomail.CreateWriter(writer, header)
@@ -172,6 +176,153 @@ func composeMessage(writer io.Writer, request SendRequest, messageID string, sen
 		return err
 	}
 	return inline.Close()
+}
+
+func hasInlineOutboundAttachment(values []OutboundAttachment) bool {
+	for _, value := range values {
+		if value.Disposition == AttachmentDispositionInline {
+			return true
+		}
+	}
+	return false
+}
+
+func composeMessageWithInlineAttachments(writer io.Writer, header gomail.Header, request SendRequest) error {
+	ordinary := make([]OutboundAttachment, 0, len(request.Attachments))
+	inline := make([]OutboundAttachment, 0, len(request.Attachments))
+	for _, attachment := range request.Attachments {
+		if attachment.Disposition == AttachmentDispositionInline {
+			inline = append(inline, attachment)
+		} else {
+			ordinary = append(ordinary, attachment)
+		}
+	}
+
+	rootType := "multipart/related"
+	if len(ordinary) > 0 {
+		rootType = "multipart/mixed"
+	}
+	rootHeader := header.Header.Copy()
+	rootHeader.SetContentType(rootType, nil)
+	root, err := message.CreateWriter(writer, rootHeader)
+	if err != nil {
+		return err
+	}
+	closeRootWith := func(cause error) error {
+		closeErr := root.Close()
+		if cause != nil {
+			return cause
+		}
+		return closeErr
+	}
+
+	related := root
+	if len(ordinary) > 0 {
+		var relatedHeader message.Header
+		relatedHeader.SetContentType("multipart/related", nil)
+		related, err = root.CreatePart(relatedHeader)
+		if err != nil {
+			return closeRootWith(err)
+		}
+	}
+	if err := writeOutboundBodyEntity(related, request); err != nil {
+		if related != root {
+			_ = related.Close()
+		}
+		return closeRootWith(err)
+	}
+	for _, attachment := range inline {
+		if err := writeOutboundAttachmentEntity(related, attachment); err != nil {
+			if related != root {
+				_ = related.Close()
+			}
+			return closeRootWith(err)
+		}
+	}
+	if related != root {
+		if err := related.Close(); err != nil {
+			return closeRootWith(err)
+		}
+	}
+	for _, attachment := range ordinary {
+		if err := writeOutboundAttachmentEntity(root, attachment); err != nil {
+			return closeRootWith(err)
+		}
+	}
+	return root.Close()
+}
+
+func writeOutboundBodyEntity(parent *message.Writer, request SendRequest) error {
+	if request.HTMLBody == "" {
+		return writeOutboundTextPart(parent, "text/plain", request.TextBody)
+	}
+	var alternativeHeader message.Header
+	alternativeHeader.SetContentType("multipart/alternative", nil)
+	alternative, err := parent.CreatePart(alternativeHeader)
+	if err != nil {
+		return err
+	}
+	textBody := request.TextBody
+	if textBody == "" {
+		textBody = stripSendHTML(request.HTMLBody)
+	}
+	if err := writeOutboundTextPart(alternative, "text/plain", textBody); err != nil {
+		_ = alternative.Close()
+		return err
+	}
+	if err := writeOutboundTextPart(alternative, "text/html", request.HTMLBody); err != nil {
+		_ = alternative.Close()
+		return err
+	}
+	return alternative.Close()
+}
+
+func writeOutboundTextPart(parent *message.Writer, mediaType, body string) error {
+	var header message.Header
+	header.SetContentType(mediaType, map[string]string{"charset": "utf-8"})
+	header.SetContentDisposition("inline", nil)
+	header.Set("Content-Transfer-Encoding", "quoted-printable")
+	part, err := parent.CreatePart(header)
+	if err != nil {
+		return err
+	}
+	if _, err := io.WriteString(part, normalizeCRLFBody(body)); err != nil {
+		_ = part.Close()
+		return err
+	}
+	return part.Close()
+}
+
+func writeOutboundAttachmentEntity(parent *message.Writer, attachment OutboundAttachment) error {
+	if attachment.Open == nil {
+		return errors.New("outbound attachment source is unavailable")
+	}
+	var header message.Header
+	header.SetContentType(attachment.MediaType, map[string]string{"name": attachment.Filename})
+	header.SetContentDisposition(string(attachment.Disposition), map[string]string{"filename": attachment.Filename})
+	header.Set("Content-Transfer-Encoding", "base64")
+	if attachment.ContentID != "" {
+		header.Set("Content-ID", "<"+attachment.ContentID+">")
+	}
+	part, err := parent.CreatePart(header)
+	if err != nil {
+		return err
+	}
+	source, err := attachment.Open()
+	if err != nil {
+		_ = part.Close()
+		return err
+	}
+	_, copyErr := io.Copy(part, source)
+	closeSourceErr := source.Close()
+	closePartErr := part.Close()
+	if copyErr != nil {
+		return copyErr
+	}
+	if closeSourceErr != nil {
+		return closeSourceErr
+	}
+	return closePartErr
 }
 
 func writeMixedBody(writer *gomail.Writer, request SendRequest) error {

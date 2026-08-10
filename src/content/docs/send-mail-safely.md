@@ -83,7 +83,7 @@ The submitted subject, body, recipients, BCC list, and custom headers are not ec
 
 ## Keep an unfinished message as a recoverable draft
 
-Draft creation is local-only, so you can assemble recipients, text/HTML, safe custom headers, and ordinary attachments without opening IMAP or SMTP:
+Draft creation is local-only, so you can assemble recipients, text/HTML, safe custom headers, ordinary attachments, and inline CID resources without opening IMAP or SMTP:
 
 ```bash
 icloud mail draft create \
@@ -306,6 +306,28 @@ icloud mail send \
 ```
 
 The real send rechecks the reviewed bytes before composing the message. A missing file, directory, symbolic or other special file, changed file, unreadable file, unsupported filename, invalid media type, cache failure, or size violation stops before SMTP. The composed RFC message is capped at 20 MiB, including MIME/base64 overhead; the CLI does not invoke Mail Drop.
+
+### Embed an inline CID resource
+
+Use the same reviewed attachment path with `--attach-disposition ...=inline`. Supply a Content-ID with `--attach-cid` when the HTML already references a specific `cid:` value:
+
+```bash
+icloud mail send \
+  --to client@example.com \
+  --subject 'Inline preview' \
+  --body 'Open this message in an HTML-capable client.' \
+  --html-body '<p>Logo:</p><img src="cid:project-logo@example.test">' \
+  --attach ./logo.png \
+  --attach-disposition './logo.png=inline' \
+  --attach-cid './logo.png=project-logo@example.test' \
+  --dry-run
+```
+
+Inline resources use `Content-Disposition: inline` and a canonical `Content-ID`; HTML/text alternatives and their related resources are nested together before ordinary attachments. If an inline attachment omits `--attach-cid`, the CLI derives a deterministic Content-ID from its reviewed content hash and attachment position. That generated value is visible in the dry-run attachment review so HTML automation can use it deliberately on a subsequent request.
+
+Disposition and Content-ID are part of the normalized request identity. Reusing an idempotency key after changing either value is a conflict rather than a silent resend with different MIME semantics. Content-IDs must use a single `local@domain` token with no whitespace or header-control characters, and one request cannot reuse the same Content-ID for two resources.
+
+The same `--attach-disposition` and `--attach-cid` controls are available on `mail reply`, `mail reply-all`, `mail forward`, and `mail draft create/update`. Draft synchronization retains the metadata through the provider copy, and sending a synchronized draft reconstructs the same inline relationship. Explicitly included original forward attachments also retain their observed inline disposition and Content-ID rather than being flattened into ordinary attachments.
 
 Accepted attachment bytes are immediately available through the normal local message and attachment commands, even before a later Sent sync confirms the provider location:
 

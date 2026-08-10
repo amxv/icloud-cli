@@ -107,7 +107,7 @@ func newDraftSaveCommand(state *executionState, update bool) *cobra.Command {
 			}
 			var jsonRequest draftSaveJSONRequest
 			if used, inputErr := readJSONInput(cmd, state, input, &jsonRequest,
-				"from", "to", "cc", "bcc", "reply-to", "subject", "body", "body-file", "html-body", "html-body-file", "header", "attach", "attach-name", "attach-type"); inputErr != nil {
+				"from", "to", "cc", "bcc", "reply-to", "subject", "body", "body-file", "html-body", "html-body-file", "header", "attach", "attach-name", "attach-type", "attach-disposition", "attach-cid"); inputErr != nil {
 				return inputErr
 			} else if used {
 				if !update && strings.TrimSpace(jsonRequest.DraftID) != "" {
@@ -165,6 +165,8 @@ func bindDraftComposeFlags(command *cobra.Command, flags *sendFlags) {
 	command.Flags().StringArrayVar(&flags.Attachments, "attach", nil, "Regular file path to attach; repeat as needed")
 	command.Flags().StringArrayVar(&flags.AttachmentNames, "attach-name", nil, "Override one attachment filename as path=filename")
 	command.Flags().StringArrayVar(&flags.AttachmentTypes, "attach-type", nil, "Override one attachment media type as path=type/subtype")
+	command.Flags().StringArrayVar(&flags.AttachmentDispositions, "attach-disposition", nil, "Set one attachment disposition as path=attachment or path=inline")
+	command.Flags().StringArrayVar(&flags.AttachmentContentIDs, "attach-cid", nil, "Set one attachment Content-ID as path=local@domain")
 }
 
 func newDraftListCommand(state *executionState) *cobra.Command {

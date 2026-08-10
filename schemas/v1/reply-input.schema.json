@@ -13,6 +13,12 @@
           "items": {
             "additionalProperties": false,
             "properties": {
+              "content_id": {
+                "type": "string"
+              },
+              "disposition": {
+                "type": "string"
+              },
               "filename": {
                 "type": "string"
               },

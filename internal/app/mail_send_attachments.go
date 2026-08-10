@@ -21,6 +21,14 @@ type stagedOutboundFiles struct {
 	values []*blob.Staged
 }
 
+func outboundDispositionFromAttachment(value maildomain.Attachment) maildomain.AttachmentDisposition {
+	disposition := maildomain.AttachmentDisposition(strings.ToLower(strings.TrimSpace(value.Disposition)))
+	if value.Inline && disposition != maildomain.AttachmentDispositionAttachment {
+		return maildomain.AttachmentDispositionInline
+	}
+	return disposition
+}
+
 func (set *stagedOutboundFiles) Abort() {
 	if set == nil {
 		return
@@ -120,7 +128,8 @@ func prepareOutboundAttachmentsWithStager(ctx context.Context, stager attachment
 		}
 
 		prepared := maildomain.OutboundAttachment{
-			Filename: filename, MediaType: mediaType, ByteSize: info.Size(), SourcePath: path,
+			Filename: filename, MediaType: mediaType, Disposition: requested.Disposition, ContentID: requested.ContentID,
+			ByteSize: info.Size(), SourcePath: path,
 		}
 		if stager == nil {
 			hash, size, err := hashOutboundAttachment(ctx, file)

@@ -598,7 +598,9 @@ func draftSendRequest(ctx context.Context, paths config.AppPaths, value maildoma
 		}
 		copy := attachment
 		request.Attachments = append(request.Attachments, maildomain.OutboundAttachment{
-			Filename: copy.Filename, MediaType: copy.MediaType, ContentHash: copy.ContentHash, ByteSize: copy.ByteSize,
+			Filename: copy.Filename, MediaType: copy.MediaType,
+			Disposition: outboundDispositionFromAttachment(copy), ContentID: copy.ContentID,
+			ContentHash: copy.ContentHash, ByteSize: copy.ByteSize,
 			Open: func() (io.ReadCloser, error) {
 				return inboundStore.OpenVerifiedContext(ctx, copy.StorageKey, copy.ContentHash, copy.ByteSize)
 			},

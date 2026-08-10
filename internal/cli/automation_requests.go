@@ -141,9 +141,11 @@ type attachmentsSaveAllJSONRequest struct {
 }
 
 type attachmentJSONInput struct {
-	Path      string `json:"path"`
-	Filename  string `json:"filename,omitempty"`
-	MediaType string `json:"media_type,omitempty"`
+	Path        string `json:"path"`
+	Filename    string `json:"filename,omitempty"`
+	MediaType   string `json:"media_type,omitempty"`
+	Disposition string `json:"disposition,omitempty"`
+	ContentID   string `json:"content_id,omitempty"`
 }
 
 type composeJSONRequest struct {
@@ -344,6 +346,12 @@ func (request composeJSONRequest) sendFlags() sendFlags {
 		}
 		if strings.TrimSpace(attachment.MediaType) != "" {
 			flags.AttachmentTypes = append(flags.AttachmentTypes, path+"="+attachment.MediaType)
+		}
+		if strings.TrimSpace(attachment.Disposition) != "" {
+			flags.AttachmentDispositions = append(flags.AttachmentDispositions, path+"="+attachment.Disposition)
+		}
+		if strings.TrimSpace(attachment.ContentID) != "" {
+			flags.AttachmentContentIDs = append(flags.AttachmentContentIDs, path+"="+attachment.ContentID)
 		}
 	}
 	return flags

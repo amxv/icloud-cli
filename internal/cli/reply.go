@@ -46,7 +46,7 @@ func newMailReplyCommand(state *executionState, replyAll bool) *cobra.Command {
 			var jsonRequest replyJSONRequest
 			if used, err := readJSONInput(cmd, state, input, &jsonRequest,
 				"folder", "from", "to", "cc", "bcc", "replace-to", "replace-cc", "body", "body-file", "html-body", "html-body-file",
-				"header", "attach", "attach-name", "attach-type", "idempotency-key", "retry-of", "retry-unknown"); err != nil {
+				"header", "attach", "attach-name", "attach-type", "attach-disposition", "attach-cid", "idempotency-key", "retry-of", "retry-unknown"); err != nil {
 				return err
 			} else if used {
 				if jsonInputConsumesStdin(input) && replyComposeConsumesStdin(jsonRequest.Compose) {
@@ -134,6 +134,8 @@ func bindReplyFlags(command *cobra.Command, flags *replyFlags) {
 	command.Flags().StringArrayVar(&flags.Attachments, "attach", nil, "Regular file path to attach; repeat as needed")
 	command.Flags().StringArrayVar(&flags.AttachmentNames, "attach-name", nil, "Override one attachment filename as path=filename; repeat as needed")
 	command.Flags().StringArrayVar(&flags.AttachmentTypes, "attach-type", nil, "Override one attachment media type as path=type/subtype; repeat as needed")
+	command.Flags().StringArrayVar(&flags.AttachmentDispositions, "attach-disposition", nil, "Set one attachment disposition as path=attachment or path=inline; repeat as needed")
+	command.Flags().StringArrayVar(&flags.AttachmentContentIDs, "attach-cid", nil, "Set one attachment Content-ID as path=local@domain; repeat as needed")
 	command.Flags().StringVar(&flags.IdempotencyKey, "idempotency-key", "", idempotencyKeyHelp)
 	command.Flags().StringVar(&flags.RetryOf, "retry-of", "", "Link an explicit retry to one failed or unknown send_… attempt")
 	command.Flags().BoolVar(&flags.RetryUnknown, "retry-unknown", false, "Authorize one duplicate-risk retry of an unknown attempt; requires --retry-of and --yes")
@@ -232,7 +234,8 @@ func renderCompactReplyPreview(writer io.Writer, preview maildomain.ReplyPreview
 	}
 	for _, attachment := range preview.Send.Attachments {
 		if err := renderer.Record("attachment", attachment.Filename,
-			Field("media_type", attachment.MediaType), Field("bytes", attachment.ByteSize), Field("sha256", attachment.ContentHash)); err != nil {
+			Field("media_type", attachment.MediaType), Field("disposition", attachment.Disposition), Field("content_id", attachment.ContentID),
+			Field("bytes", attachment.ByteSize), Field("sha256", attachment.ContentHash)); err != nil {
 			return err
 		}
 	}

@@ -488,14 +488,45 @@ func verifyOutboundAttachmentContent(expected []maildomain.OutboundAttachment, a
 	if len(expected) != len(actual) {
 		return fmt.Errorf("attachment count changed: expected %d, got %d", len(expected), len(actual))
 	}
-	for index := range expected {
-		if expected[index].Filename != actual[index].Filename || expected[index].MediaType != actual[index].MediaType ||
-			!strings.EqualFold(expected[index].ContentHash, actual[index].ContentHash) || expected[index].ByteSize != actual[index].ByteSize ||
+	ordered := composerAttachmentOrder(expected)
+	for index := range ordered {
+		if ordered[index].Filename != actual[index].Filename || ordered[index].MediaType != actual[index].MediaType ||
+			string(ordered[index].Disposition) != actual[index].Disposition || ordered[index].ContentID != actual[index].ContentID ||
+			actual[index].Inline != (ordered[index].Disposition == maildomain.AttachmentDispositionInline) ||
+			!strings.EqualFold(ordered[index].ContentHash, actual[index].ContentHash) || ordered[index].ByteSize != actual[index].ByteSize ||
 			actual[index].Availability != maildomain.AttachmentAvailable {
 			return fmt.Errorf("attachment %d changed during MIME composition", index+1)
 		}
 	}
 	return nil
+}
+
+func composerAttachmentOrder(values []maildomain.OutboundAttachment) []maildomain.OutboundAttachment {
+	if len(values) == 0 {
+		return nil
+	}
+	hasInline := false
+	for _, value := range values {
+		if value.Disposition == maildomain.AttachmentDispositionInline {
+			hasInline = true
+			break
+		}
+	}
+	if !hasInline {
+		return values
+	}
+	result := make([]maildomain.OutboundAttachment, 0, len(values))
+	for _, value := range values {
+		if value.Disposition == maildomain.AttachmentDispositionInline {
+			result = append(result, value)
+		}
+	}
+	for _, value := range values {
+		if value.Disposition != maildomain.AttachmentDispositionInline {
+			result = append(result, value)
+		}
+	}
+	return result
 }
 
 func outboundAttemptAttachmentRecords(values []maildomain.Attachment) []maildomain.OutboundAttachmentRecord {

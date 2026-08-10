@@ -908,23 +908,25 @@ Examples:
   icloud mail draft update drf_… --to client@example.com --subject 'Ready soon' --body-file draft.txt
 
 Flags:
-      --attach stringArray        Regular file path to attach; repeat as needed
-      --attach-name stringArray   Override one attachment filename as path=filename
-      --attach-type stringArray   Override one attachment media type as path=type/subtype
-      --bcc stringArray           Bcc recipient preserved in the saved draft; hidden from default output
-      --body string               Inline text body; may be empty
-      --body-file string          Text body file path, or - for stdin
-      --cc stringArray            Cc recipient address; repeat as needed
-      --from string               Sender identity by stable mid_… ID or configured address (defaults to the account's local default identity)
-      --header stringArray        Safe custom header as Name: Value; repeat as needed
-  -h, --help                      help for create
-      --html-body string          Inline HTML body
-      --html-body-file string     HTML body file path, or - for stdin
-      --input-json string         Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
-      --json                      Emit one stable JSON success envelope
-      --reply-to string           Optional Reply-To address
-      --subject string            Draft subject; may be empty
-      --to stringArray            Recipient address; repeat or provide a comma-separated address list
+      --attach stringArray               Regular file path to attach; repeat as needed
+      --attach-cid stringArray           Set one attachment Content-ID as path=local@domain
+      --attach-disposition stringArray   Set one attachment disposition as path=attachment or path=inline
+      --attach-name stringArray          Override one attachment filename as path=filename
+      --attach-type stringArray          Override one attachment media type as path=type/subtype
+      --bcc stringArray                  Bcc recipient preserved in the saved draft; hidden from default output
+      --body string                      Inline text body; may be empty
+      --body-file string                 Text body file path, or - for stdin
+      --cc stringArray                   Cc recipient address; repeat as needed
+      --from string                      Sender identity by stable mid_… ID or configured address (defaults to the account's local default identity)
+      --header stringArray               Safe custom header as Name: Value; repeat as needed
+  -h, --help                             help for create
+      --html-body string                 Inline HTML body
+      --html-body-file string            HTML body file path, or - for stdin
+      --input-json string                Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                             Emit one stable JSON success envelope
+      --reply-to string                  Optional Reply-To address
+      --subject string                   Draft subject; may be empty
+      --to stringArray                   Recipient address; repeat or provide a comma-separated address list
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID
@@ -1091,23 +1093,25 @@ Examples:
   icloud mail draft update drf_… --to client@example.com --subject 'Ready soon' --body-file draft.txt
 
 Flags:
-      --attach stringArray        Regular file path to attach; repeat as needed
-      --attach-name stringArray   Override one attachment filename as path=filename
-      --attach-type stringArray   Override one attachment media type as path=type/subtype
-      --bcc stringArray           Bcc recipient preserved in the saved draft; hidden from default output
-      --body string               Inline text body; may be empty
-      --body-file string          Text body file path, or - for stdin
-      --cc stringArray            Cc recipient address; repeat as needed
-      --from string               Sender identity by stable mid_… ID or configured address (defaults to the account's local default identity)
-      --header stringArray        Safe custom header as Name: Value; repeat as needed
-  -h, --help                      help for update
-      --html-body string          Inline HTML body
-      --html-body-file string     HTML body file path, or - for stdin
-      --input-json string         Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
-      --json                      Emit one stable JSON success envelope
-      --reply-to string           Optional Reply-To address
-      --subject string            Draft subject; may be empty
-      --to stringArray            Recipient address; repeat or provide a comma-separated address list
+      --attach stringArray               Regular file path to attach; repeat as needed
+      --attach-cid stringArray           Set one attachment Content-ID as path=local@domain
+      --attach-disposition stringArray   Set one attachment disposition as path=attachment or path=inline
+      --attach-name stringArray          Override one attachment filename as path=filename
+      --attach-type stringArray          Override one attachment media type as path=type/subtype
+      --bcc stringArray                  Bcc recipient preserved in the saved draft; hidden from default output
+      --body string                      Inline text body; may be empty
+      --body-file string                 Text body file path, or - for stdin
+      --cc stringArray                   Cc recipient address; repeat as needed
+      --from string                      Sender identity by stable mid_… ID or configured address (defaults to the account's local default identity)
+      --header stringArray               Safe custom header as Name: Value; repeat as needed
+  -h, --help                             help for update
+      --html-body string                 Inline HTML body
+      --html-body-file string            HTML body file path, or - for stdin
+      --input-json string                Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                             Emit one stable JSON success envelope
+      --reply-to string                  Optional Reply-To address
+      --subject string                   Draft subject; may be empty
+      --to stringArray                   Recipient address; repeat or provide a comma-separated address list
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID
@@ -1729,6 +1733,8 @@ Examples:
 
 Flags:
       --attach stringArray               New regular file path to attach; repeat as needed
+      --attach-cid stringArray           Set one new attachment Content-ID as path=local@domain; repeat as needed
+      --attach-disposition stringArray   Set one new attachment disposition as path=attachment or path=inline; repeat as needed
       --attach-name stringArray          Override one new attachment filename as path=filename; repeat as needed
       --attach-type stringArray          Override one new attachment media type as path=type/subtype; repeat as needed
       --bcc stringArray                  Bcc envelope recipient; omitted from message headers
@@ -2700,32 +2706,34 @@ Examples:
   icloud mail reply msg_… --from mid_… --body 'Thanks' --idempotency-key reply-01 --yes
 
 Flags:
-      --attach stringArray        Regular file path to attach; repeat as needed
-      --attach-name stringArray   Override one attachment filename as path=filename; repeat as needed
-      --attach-type stringArray   Override one attachment media type as path=type/subtype; repeat as needed
-      --bcc stringArray           Add a new Bcc envelope recipient; prior Bcc recipients are never inferred
-      --body string               Inline text body
-      --body-file string          Text body file path, or - for stdin
-      --cc stringArray            Add a Cc recipient; repeat as needed
-      --dry-run                   Preview the resolved reply without creating an attempt or contacting SMTP
-      --folder string             Select the exact current provider parent location when the message has multiple locations
-      --format string             With --dry-run, output text, html, or raw preview content
-      --from string               Sender identity by stable mid_… ID or configured address (defaults to the account's local default identity)
-      --header stringArray        Safe custom header as Name: Value; repeat as needed
-      --headers                   With --dry-run, print normalized headers including RFC threading fields
-  -h, --help                      help for reply
-      --html-body string          Inline HTML body
-      --html-body-file string     HTML body file path, or - for stdin
-      --idempotency-key string    Reuse the original operation when the same normalized request and idempotency key are repeated
-      --input-json string         Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
-      --json                      Emit one stable JSON success envelope
-      --replace-cc                Replace derived Cc recipients with the addresses supplied by --cc
-      --replace-to                Replace derived To recipients with the addresses supplied by --to
-      --retry-of string           Link an explicit retry to one failed or unknown send_… attempt
-      --retry-unknown             Authorize one duplicate-risk retry of an unknown attempt; requires --retry-of and --yes
-      --to stringArray            Add a To recipient; repeat or provide a comma-separated address list
-      --verbose                   With --dry-run, include custom-header detail and HTML byte count
-      --yes                       Confirm an intentional non-interactive reply
+      --attach stringArray               Regular file path to attach; repeat as needed
+      --attach-cid stringArray           Set one attachment Content-ID as path=local@domain; repeat as needed
+      --attach-disposition stringArray   Set one attachment disposition as path=attachment or path=inline; repeat as needed
+      --attach-name stringArray          Override one attachment filename as path=filename; repeat as needed
+      --attach-type stringArray          Override one attachment media type as path=type/subtype; repeat as needed
+      --bcc stringArray                  Add a new Bcc envelope recipient; prior Bcc recipients are never inferred
+      --body string                      Inline text body
+      --body-file string                 Text body file path, or - for stdin
+      --cc stringArray                   Add a Cc recipient; repeat as needed
+      --dry-run                          Preview the resolved reply without creating an attempt or contacting SMTP
+      --folder string                    Select the exact current provider parent location when the message has multiple locations
+      --format string                    With --dry-run, output text, html, or raw preview content
+      --from string                      Sender identity by stable mid_… ID or configured address (defaults to the account's local default identity)
+      --header stringArray               Safe custom header as Name: Value; repeat as needed
+      --headers                          With --dry-run, print normalized headers including RFC threading fields
+  -h, --help                             help for reply
+      --html-body string                 Inline HTML body
+      --html-body-file string            HTML body file path, or - for stdin
+      --idempotency-key string           Reuse the original operation when the same normalized request and idempotency key are repeated
+      --input-json string                Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                             Emit one stable JSON success envelope
+      --replace-cc                       Replace derived Cc recipients with the addresses supplied by --cc
+      --replace-to                       Replace derived To recipients with the addresses supplied by --to
+      --retry-of string                  Link an explicit retry to one failed or unknown send_… attempt
+      --retry-unknown                    Authorize one duplicate-risk retry of an unknown attempt; requires --retry-of and --yes
+      --to stringArray                   Add a To recipient; repeat or provide a comma-separated address list
+      --verbose                          With --dry-run, include custom-header detail and HTML byte count
+      --yes                              Confirm an intentional non-interactive reply
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID
@@ -2748,32 +2756,34 @@ Examples:
   icloud mail reply-all msg_… --from mid_… --body 'Thanks' --idempotency-key reply-01 --yes
 
 Flags:
-      --attach stringArray        Regular file path to attach; repeat as needed
-      --attach-name stringArray   Override one attachment filename as path=filename; repeat as needed
-      --attach-type stringArray   Override one attachment media type as path=type/subtype; repeat as needed
-      --bcc stringArray           Add a new Bcc envelope recipient; prior Bcc recipients are never inferred
-      --body string               Inline text body
-      --body-file string          Text body file path, or - for stdin
-      --cc stringArray            Add a Cc recipient; repeat as needed
-      --dry-run                   Preview the resolved reply without creating an attempt or contacting SMTP
-      --folder string             Select the exact current provider parent location when the message has multiple locations
-      --format string             With --dry-run, output text, html, or raw preview content
-      --from string               Sender identity by stable mid_… ID or configured address (defaults to the account's local default identity)
-      --header stringArray        Safe custom header as Name: Value; repeat as needed
-      --headers                   With --dry-run, print normalized headers including RFC threading fields
-  -h, --help                      help for reply-all
-      --html-body string          Inline HTML body
-      --html-body-file string     HTML body file path, or - for stdin
-      --idempotency-key string    Reuse the original operation when the same normalized request and idempotency key are repeated
-      --input-json string         Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
-      --json                      Emit one stable JSON success envelope
-      --replace-cc                Replace derived Cc recipients with the addresses supplied by --cc
-      --replace-to                Replace derived To recipients with the addresses supplied by --to
-      --retry-of string           Link an explicit retry to one failed or unknown send_… attempt
-      --retry-unknown             Authorize one duplicate-risk retry of an unknown attempt; requires --retry-of and --yes
-      --to stringArray            Add a To recipient; repeat or provide a comma-separated address list
-      --verbose                   With --dry-run, include custom-header detail and HTML byte count
-      --yes                       Confirm an intentional non-interactive reply
+      --attach stringArray               Regular file path to attach; repeat as needed
+      --attach-cid stringArray           Set one attachment Content-ID as path=local@domain; repeat as needed
+      --attach-disposition stringArray   Set one attachment disposition as path=attachment or path=inline; repeat as needed
+      --attach-name stringArray          Override one attachment filename as path=filename; repeat as needed
+      --attach-type stringArray          Override one attachment media type as path=type/subtype; repeat as needed
+      --bcc stringArray                  Add a new Bcc envelope recipient; prior Bcc recipients are never inferred
+      --body string                      Inline text body
+      --body-file string                 Text body file path, or - for stdin
+      --cc stringArray                   Add a Cc recipient; repeat as needed
+      --dry-run                          Preview the resolved reply without creating an attempt or contacting SMTP
+      --folder string                    Select the exact current provider parent location when the message has multiple locations
+      --format string                    With --dry-run, output text, html, or raw preview content
+      --from string                      Sender identity by stable mid_… ID or configured address (defaults to the account's local default identity)
+      --header stringArray               Safe custom header as Name: Value; repeat as needed
+      --headers                          With --dry-run, print normalized headers including RFC threading fields
+  -h, --help                             help for reply-all
+      --html-body string                 Inline HTML body
+      --html-body-file string            HTML body file path, or - for stdin
+      --idempotency-key string           Reuse the original operation when the same normalized request and idempotency key are repeated
+      --input-json string                Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                             Emit one stable JSON success envelope
+      --replace-cc                       Replace derived Cc recipients with the addresses supplied by --cc
+      --replace-to                       Replace derived To recipients with the addresses supplied by --to
+      --retry-of string                  Link an explicit retry to one failed or unknown send_… attempt
+      --retry-unknown                    Authorize one duplicate-risk retry of an unknown attempt; requires --retry-of and --yes
+      --to stringArray                   Add a To recipient; repeat or provide a comma-separated address list
+      --verbose                          With --dry-run, include custom-header detail and HTML byte count
+      --yes                              Confirm an intentional non-interactive reply
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID
@@ -3074,31 +3084,33 @@ Examples:
   icloud mail send --to client@example.com --subject 'Update' --body-file - --yes --json
 
 Flags:
-      --attach stringArray        Regular file path to attach; repeat as needed
-      --attach-name stringArray   Override one attachment filename as path=filename; repeat as needed
-      --attach-type stringArray   Override one attachment media type as path=type/subtype; repeat as needed
-      --bcc stringArray           Bcc envelope recipient; omitted from message headers
-      --body string               Inline text body
-      --body-file string          Text body file path, or - for stdin
-      --cc stringArray            Cc recipient address; repeat as needed
-      --dry-run                   Preview the normalized message without creating an attempt or contacting SMTP
-      --format string             With --dry-run, output text, html, or raw preview content
-      --from string               Sender identity by stable mid_… ID or configured address (defaults to the account's local default identity)
-      --header stringArray        Safe custom header as Name: Value; repeat as needed
-      --headers                   With --dry-run, print normalized safe header fields (Bcc remains omitted)
-  -h, --help                      help for send
-      --html-body string          Inline HTML body
-      --html-body-file string     HTML body file path, or - for stdin
-      --idempotency-key string    Reuse the original operation when the same normalized request and idempotency key are repeated
-      --input-json string         Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
-      --json                      Emit one stable JSON success envelope
-      --reply-to string           Optional Reply-To address
-      --retry-of string           Link an explicit retry to one failed or unknown send_… attempt
-      --retry-unknown             Authorize one duplicate-risk retry of an unknown attempt; requires --retry-of and --yes
-      --subject string            Message subject
-      --to stringArray            Recipient address; repeat or provide a comma-separated address list
-      --verbose                   With --dry-run, include normalized custom-header detail and HTML byte count
-      --yes                       Confirm an intentional non-interactive send
+      --attach stringArray               Regular file path to attach; repeat as needed
+      --attach-cid stringArray           Set one attachment Content-ID as path=local@domain; repeat as needed
+      --attach-disposition stringArray   Set one attachment disposition as path=attachment or path=inline; repeat as needed
+      --attach-name stringArray          Override one attachment filename as path=filename; repeat as needed
+      --attach-type stringArray          Override one attachment media type as path=type/subtype; repeat as needed
+      --bcc stringArray                  Bcc envelope recipient; omitted from message headers
+      --body string                      Inline text body
+      --body-file string                 Text body file path, or - for stdin
+      --cc stringArray                   Cc recipient address; repeat as needed
+      --dry-run                          Preview the normalized message without creating an attempt or contacting SMTP
+      --format string                    With --dry-run, output text, html, or raw preview content
+      --from string                      Sender identity by stable mid_… ID or configured address (defaults to the account's local default identity)
+      --header stringArray               Safe custom header as Name: Value; repeat as needed
+      --headers                          With --dry-run, print normalized safe header fields (Bcc remains omitted)
+  -h, --help                             help for send
+      --html-body string                 Inline HTML body
+      --html-body-file string            HTML body file path, or - for stdin
+      --idempotency-key string           Reuse the original operation when the same normalized request and idempotency key are repeated
+      --input-json string                Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                             Emit one stable JSON success envelope
+      --reply-to string                  Optional Reply-To address
+      --retry-of string                  Link an explicit retry to one failed or unknown send_… attempt
+      --retry-unknown                    Authorize one duplicate-risk retry of an unknown attempt; requires --retry-of and --yes
+      --subject string                   Message subject
+      --to stringArray                   Recipient address; repeat or provide a comma-separated address list
+      --verbose                          With --dry-run, include normalized custom-header detail and HTML byte count
+      --yes                              Confirm an intentional non-interactive send
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID
