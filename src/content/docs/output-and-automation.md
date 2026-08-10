@@ -183,6 +183,8 @@ icloud mail watch --all-accounts --jsonl
 
 Every output line is one complete JSON object with `event`, `sequence`, `account_id`, and `timestamp`. Payloads identify only the lifecycle data needed for startup, mode changes, IDLE, provider changes, bounded sync results, reconnects, degraded operation, stopping, and completion. Sequences are strictly increasing within each account even when several account workers share one foreground process.
 
+`--all-accounts` pages the local configured-account inventory and starts up to 100 account workers; it never treats the first account page as the complete set. If more than 100 accounts are configured, the command fails before starting workers and asks the caller to narrow with `--account` or split the work across bounded foreground processes.
+
 Compact watch output suppresses repeated idle and unchanged-sync chatter; JSONL deliberately includes those typed events so a consumer can maintain exact lifecycle state. Initial or terminal command failures requested with `--jsonl` stay JSONL on stderr rather than mixing a compact error into the structured stream.
 
 ## Supply credentials without prompting

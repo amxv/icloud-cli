@@ -5,12 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/amxv/icloud-cli/internal/account"
 	"github.com/amxv/icloud-cli/internal/blob"
 	"github.com/amxv/icloud-cli/internal/cli"
+	"github.com/amxv/icloud-cli/internal/folder"
 	maildomain "github.com/amxv/icloud-cli/internal/mail"
 	"github.com/amxv/icloud-cli/internal/transport"
 )
@@ -97,6 +100,83 @@ type scriptedMailboxWatchClient struct {
 	opens      int
 	usernames  []string
 	onOpen     func(int)
+}
+
+type scalableMailboxWatchClient struct {
+	mu       sync.Mutex
+	opens    int
+	sessions []*fakeMailboxWatchSession
+}
+
+func (client *scalableMailboxWatchClient) OpenMailboxWatch(_ context.Context, _ transport.AuthRequest, mailbox string) (transport.IMAPMailboxWatchSession, error) {
+	session := &fakeMailboxWatchSession{
+		info:  transport.MailboxWatchInfo{Mailbox: mailbox, Mode: transport.MailboxWatchIdle, Capabilities: []string{"IDLE", "IMAP4REV1"}},
+		block: true,
+	}
+	client.mu.Lock()
+	client.opens++
+	client.sessions = append(client.sessions, session)
+	client.mu.Unlock()
+	return session, nil
+}
+
+func (client *scalableMailboxWatchClient) snapshot() (int, []*fakeMailboxWatchSession) {
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	return client.opens, append([]*fakeMailboxWatchSession(nil), client.sessions...)
+}
+
+func seedWatchScaleAccounts(t *testing.T, home string, count int, withInbox bool) []account.Account {
+	t.Helper()
+	state, err := openState(context.Background(), home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	now := time.Date(2026, 8, 10, 14, 0, 0, 0, time.UTC)
+	values := make([]account.Account, 0, count)
+	for index := 0; index < count; index++ {
+		accountID := fmt.Sprintf("acct_watch_scale_%03d", index)
+		value, err := state.Accounts().Create(context.Background(), account.CreateRecord{
+			AccountID: accountID, CredentialID: fmt.Sprintf("cred_watch_scale_%03d", index),
+			Name: fmt.Sprintf("Watch Scale %03d", index), Email: fmt.Sprintf("watch-scale-%03d@example.test", index),
+			IMAPUsername:     fmt.Sprintf("watch-scale-%03d", index),
+			CredentialScheme: account.CredentialEnv, CredentialRef: "ICLOUD_WATCH_SCALE_PASSWORD", Now: now.Add(time.Duration(index) * time.Millisecond),
+		})
+		if err != nil {
+			t.Fatalf("create scale account %d: %v", index, err)
+		}
+		values = append(values, value)
+		if !withInbox {
+			continue
+		}
+		folderID := fmt.Sprintf("fld_watch_scale_%03d", index)
+		if err := state.Folders().ReconcileOnly(context.Background(), accountID, []folder.RemoteObservation{{
+			Name: "INBOX", WireName: "INBOX", Kind: folder.KindInbox, KindSource: "inbox", Selectable: true,
+			Subscription: folder.SubscriptionSubscribed, UIDNext: 1, UIDValidity: 100, StatusKnown: true,
+		}}, now, func() (string, error) { return folderID, nil }); err != nil {
+			t.Fatalf("create scale inbox %d: %v", index, err)
+		}
+	}
+	return values
+}
+
+func waitForWatchGateQueue(t *testing.T, gate *watchSyncGate, count int) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		gate.mu.Lock()
+		queued := len(gate.waiters)
+		gate.mu.Unlock()
+		if queued == count {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	gate.mu.Lock()
+	queued := len(gate.waiters)
+	gate.mu.Unlock()
+	t.Fatalf("watch sync gate queue=%d want %d", queued, count)
 }
 
 func (client *scriptedMailboxWatchClient) OpenMailboxWatch(_ context.Context, auth transport.AuthRequest, _ string) (transport.IMAPMailboxWatchSession, error) {
@@ -430,6 +510,155 @@ func TestMailWatchAllAccountsRunsOneOrderedWorkerPerAccount(t *testing.T) {
 	if client.openCount() != 2 {
 		t.Fatalf("watch opens=%d", client.openCount())
 	}
+}
+
+func TestAgentParityPhase18WatchPagesAndStartsSupportedAccountMaximum(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("ICLOUD_WATCH_SCALE_PASSWORD", "synthetic-watch-scale-secret")
+	commands, _ := newTestAccountCommands()
+	accounts := seedWatchScaleAccounts(t, home, maildomain.MaxWatchAccounts, true)
+	inbox := &watchInboxClient{}
+	commands.mail = inbox
+	watchClient := &scalableMailboxWatchClient{}
+	commands.watch = watchClient
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var mu sync.Mutex
+	sequences := make(map[string][]uint64, len(accounts))
+	idleAccounts := make(map[string]struct{}, len(accounts))
+	err := commands.MailWatch(ctx, home, "", maildomain.WatchOptions{
+		AllAccounts: true, Limit: 1, OperationTimeout: 5 * time.Second,
+		PollInterval: time.Second, ReconcileInterval: time.Minute,
+	}, func(event maildomain.WatchEvent) error {
+		mu.Lock()
+		sequences[event.AccountID] = append(sequences[event.AccountID], event.Sequence)
+		if event.Type == maildomain.WatchEventIdle {
+			idleAccounts[event.AccountID] = struct{}{}
+			if len(idleAccounts) == maildomain.MaxWatchAccounts {
+				cancel()
+			}
+		}
+		mu.Unlock()
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	if len(sequences) != maildomain.MaxWatchAccounts || len(idleAccounts) != maildomain.MaxWatchAccounts {
+		mu.Unlock()
+		t.Fatalf("watch scale sequences=%d idle=%d", len(sequences), len(idleAccounts))
+	}
+	for accountID, values := range sequences {
+		for index, sequence := range values {
+			if sequence != uint64(index+1) {
+				mu.Unlock()
+				t.Fatalf("account %s sequences=%v", accountID, values)
+			}
+		}
+	}
+	mu.Unlock()
+	calls, requests := inbox.snapshot()
+	if calls < maildomain.MaxWatchAccounts || len(requests) < maildomain.MaxWatchAccounts {
+		t.Fatalf("initial sync opportunities calls=%d requests=%d", calls, len(requests))
+	}
+	opens, sessions := watchClient.snapshot()
+	if opens != maildomain.MaxWatchAccounts || len(sessions) != maildomain.MaxWatchAccounts {
+		t.Fatalf("watch opens=%d sessions=%d", opens, len(sessions))
+	}
+	for index, session := range sessions {
+		if !session.isClosed() {
+			t.Fatalf("watch session %d survived cancellation", index)
+		}
+	}
+}
+
+func TestAgentParityPhase18WatchRejectsAccountBeyondProcessMaximumWithoutStartingWorkers(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("ICLOUD_WATCH_SCALE_PASSWORD", "synthetic-watch-scale-secret")
+	commands, _ := newTestAccountCommands()
+	seedWatchScaleAccounts(t, home, maildomain.MaxWatchAccounts+1, false)
+	inbox := &watchInboxClient{}
+	commands.mail = inbox
+	watchClient := &scalableMailboxWatchClient{}
+	commands.watch = watchClient
+
+	err := commands.MailWatch(context.Background(), home, "", maildomain.WatchOptions{AllAccounts: true, OperationTimeout: time.Second}, func(maildomain.WatchEvent) error { return nil })
+	appErr := cli.NormalizeError(err)
+	if appErr.Code != cli.ErrorConflict || !strings.Contains(appErr.Message, "--account") || !strings.Contains(appErr.Message, fmt.Sprintf("%d", maildomain.MaxWatchAccounts)) {
+		t.Fatalf("too-many watch error=%+v", appErr)
+	}
+	if calls, _ := inbox.snapshot(); calls != 0 {
+		t.Fatalf("too-many account watch performed %d sync calls", calls)
+	}
+	if opens, _ := watchClient.snapshot(); opens != 0 {
+		t.Fatalf("too-many account watch opened %d sessions", opens)
+	}
+}
+
+func TestAgentParityPhase18WatchSyncGateIsFIFOAndCancellationAware(t *testing.T) {
+	gate := &watchSyncGate{}
+	releaseNoisy, err := gate.acquire(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	type grant struct {
+		name    string
+		release func()
+		err     error
+	}
+	grants := make(chan grant, 3)
+	go func() {
+		release, err := gate.acquire(context.Background())
+		grants <- grant{name: "quiet", release: release, err: err}
+	}()
+	waitForWatchGateQueue(t, gate, 1)
+	go func() {
+		release, err := gate.acquire(context.Background())
+		grants <- grant{name: "noisy-retry", release: release, err: err}
+	}()
+	waitForWatchGateQueue(t, gate, 2)
+	releaseNoisy()
+	first := <-grants
+	if first.err != nil || first.name != "quiet" {
+		t.Fatalf("first queued grant=%+v", first)
+	}
+	select {
+	case early := <-grants:
+		t.Fatalf("later noisy retry bypassed current holder: %+v", early)
+	case <-time.After(10 * time.Millisecond):
+	}
+	first.release()
+	second := <-grants
+	if second.err != nil || second.name != "noisy-retry" {
+		t.Fatalf("second queued grant=%+v", second)
+	}
+	second.release()
+
+	hold, err := gate.acquire(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitCtx, cancel := context.WithCancel(context.Background())
+	canceled := make(chan error, 1)
+	go func() {
+		_, err := gate.acquire(waitCtx)
+		canceled <- err
+	}()
+	waitForWatchGateQueue(t, gate, 1)
+	cancel()
+	if err := <-canceled; !errors.Is(err, context.Canceled) {
+		t.Fatalf("queued cancellation error=%v", err)
+	}
+	hold()
+	probeCtx, probeCancel := context.WithTimeout(context.Background(), time.Second)
+	defer probeCancel()
+	probeRelease, err := gate.acquire(probeCtx)
+	if err != nil {
+		t.Fatalf("gate remained stuck after queued cancellation: %v", err)
+	}
+	probeRelease()
 }
 
 func TestWatchReconnectDelayIsBoundedAndJittered(t *testing.T) {

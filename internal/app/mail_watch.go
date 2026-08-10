@@ -28,6 +28,7 @@ const (
 	defaultWatchOperationTimeout  = 30 * time.Second
 	defaultWatchReconnectMin      = time.Second
 	defaultWatchReconnectMax      = 30 * time.Second
+	watchAccountSchedulePageSize  = 25
 )
 
 var errTooManyWatchAccounts = errors.New("too many accounts selected for mail watch")
@@ -35,6 +36,79 @@ var errTooManyWatchAccounts = errors.New("too many accounts selected for mail wa
 type watchSession struct {
 	folder  folder.Folder
 	session transport.IMAPMailboxWatchSession
+}
+
+type watchSyncWaiter struct {
+	ready    chan struct{}
+	granted  bool
+	released bool
+}
+
+// watchSyncGate serializes durable sync work while guaranteeing FIFO handoff
+// to already-waiting account workers. A channel semaphore permits a releasing
+// noisy worker to race a queued worker for the next token; this explicit queue
+// keeps the larger all-account worker set fair and cancellation-aware.
+type watchSyncGate struct {
+	mu      sync.Mutex
+	held    bool
+	waiters []*watchSyncWaiter
+}
+
+func (gate *watchSyncGate) acquire(ctx context.Context) (func(), error) {
+	waiter := &watchSyncWaiter{ready: make(chan struct{})}
+	gate.mu.Lock()
+	if !gate.held && len(gate.waiters) == 0 {
+		gate.held = true
+		waiter.granted = true
+		gate.mu.Unlock()
+		return func() { gate.release(waiter) }, nil
+	}
+	gate.waiters = append(gate.waiters, waiter)
+	gate.mu.Unlock()
+
+	select {
+	case <-waiter.ready:
+		if err := ctx.Err(); err != nil {
+			gate.release(waiter)
+			return nil, err
+		}
+		return func() { gate.release(waiter) }, nil
+	case <-ctx.Done():
+		gate.mu.Lock()
+		if waiter.granted {
+			gate.mu.Unlock()
+			gate.release(waiter)
+			return nil, ctx.Err()
+		}
+		for index, queued := range gate.waiters {
+			if queued == waiter {
+				gate.waiters = append(gate.waiters[:index], gate.waiters[index+1:]...)
+				break
+			}
+		}
+		gate.mu.Unlock()
+		return nil, ctx.Err()
+	}
+}
+
+func (gate *watchSyncGate) release(waiter *watchSyncWaiter) {
+	if waiter == nil {
+		return
+	}
+	gate.mu.Lock()
+	defer gate.mu.Unlock()
+	if !waiter.granted || waiter.released {
+		return
+	}
+	waiter.released = true
+	if len(gate.waiters) == 0 {
+		gate.held = false
+		return
+	}
+	next := gate.waiters[0]
+	gate.waiters = gate.waiters[1:]
+	next.granted = true
+	close(next.ready)
 }
 
 type accountWatchEmitter struct {
@@ -74,7 +148,7 @@ func (commands accountCommands) MailWatch(ctx context.Context, home, selector st
 	state.Close()
 	setupCancel()
 	if errors.Is(err, errTooManyWatchAccounts) {
-		return cli.NewAppError(cli.ErrorConflict, fmt.Sprintf("mail watch supports at most %d accounts per process; select one account", maildomain.MaxWatchAccounts), false)
+		return cli.NewAppError(cli.ErrorConflict, fmt.Sprintf("mail watch supports at most %d accounts per process; select one account with --account or run separate bounded watchers", maildomain.MaxWatchAccounts), false)
 	}
 	if err != nil {
 		return mapAccountError(err)
@@ -83,7 +157,7 @@ func (commands accountCommands) MailWatch(ctx context.Context, home, selector st
 		return cli.NewAppError(cli.ErrorNotFound, "no accounts are available to watch", false)
 	}
 	if len(accounts) > maildomain.MaxWatchAccounts {
-		return cli.NewAppError(cli.ErrorConflict, fmt.Sprintf("mail watch supports at most %d accounts per process; select one account", maildomain.MaxWatchAccounts), false)
+		return cli.NewAppError(cli.ErrorConflict, fmt.Sprintf("mail watch supports at most %d accounts per process; select one account with --account or run separate bounded watchers", maildomain.MaxWatchAccounts), false)
 	}
 	paths, err := config.ResolveAppPaths(home)
 	if err != nil {
@@ -100,7 +174,7 @@ func (commands accountCommands) MailWatch(ctx context.Context, home, selector st
 
 	watchCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	syncGate := make(chan struct{}, 1)
+	syncGate := &watchSyncGate{}
 	workerErrors := make(chan error, len(accounts))
 	var workers sync.WaitGroup
 	for _, value := range accounts {
@@ -166,12 +240,24 @@ func watchAccounts(ctx context.Context, state *store.Store, selector string, all
 		}
 		return []account.Account{value}, nil
 	}
-	values, more, err := state.Accounts().List(ctx, maildomain.MaxWatchAccounts)
-	if err != nil {
-		return nil, err
-	}
-	if more {
-		return nil, errTooManyWatchAccounts
+	values := make([]account.Account, 0, maildomain.MaxWatchAccounts)
+	cursor := ""
+	for {
+		page, more, next, err := state.Accounts().ListPage(ctx, watchAccountSchedulePageSize, cursor)
+		if err != nil {
+			return nil, err
+		}
+		if len(values)+len(page) > maildomain.MaxWatchAccounts || (len(values)+len(page) == maildomain.MaxWatchAccounts && more) {
+			return nil, errTooManyWatchAccounts
+		}
+		values = append(values, page...)
+		if !more {
+			break
+		}
+		if next == "" || next == cursor {
+			return nil, errors.New("mail watch account pagination did not advance")
+		}
+		cursor = next
 	}
 	if len(values) < 2 {
 		return values, nil
@@ -238,7 +324,7 @@ func acquireWatchLocks(paths config.AppPaths, accounts []account.Account) (func(
 	}, nil
 }
 
-func (commands accountCommands) watchAccount(ctx context.Context, home string, value account.Account, options maildomain.WatchOptions, syncGate chan struct{}, emitter *accountWatchEmitter) error {
+func (commands accountCommands) watchAccount(ctx context.Context, home string, value account.Account, options maildomain.WatchOptions, syncGate *watchSyncGate, emitter *accountWatchEmitter) error {
 	if err := emitter.send(maildomain.WatchEvent{Type: maildomain.WatchEventStartup, PollInterval: options.PollInterval, ReconcileInterval: options.ReconcileInterval}); err != nil {
 		return err
 	}
@@ -327,7 +413,7 @@ func (commands accountCommands) watchAccount(ctx context.Context, home string, v
 	}
 }
 
-func (commands accountCommands) runPollingWatch(ctx context.Context, home, accountID string, options maildomain.WatchOptions, syncGate chan struct{}, emitter *accountWatchEmitter) error {
+func (commands accountCommands) runPollingWatch(ctx context.Context, home, accountID string, options maildomain.WatchOptions, syncGate *watchSyncGate, emitter *accountWatchEmitter) error {
 	poll := time.NewTimer(options.PollInterval)
 	reconcile := time.NewTimer(options.ReconcileInterval)
 	defer poll.Stop()
@@ -354,13 +440,12 @@ func (commands accountCommands) runPollingWatch(ctx context.Context, home, accou
 	}
 }
 
-func (commands accountCommands) runWatchSync(ctx context.Context, home, accountID, folderSelector string, refreshFolders, initial bool, options maildomain.WatchOptions, syncGate chan struct{}, emitter *accountWatchEmitter) error {
-	select {
-	case syncGate <- struct{}{}:
-		defer func() { <-syncGate }()
-	case <-ctx.Done():
-		return ctx.Err()
+func (commands accountCommands) runWatchSync(ctx context.Context, home, accountID, folderSelector string, refreshFolders, initial bool, options maildomain.WatchOptions, syncGate *watchSyncGate, emitter *accountWatchEmitter) error {
+	release, err := syncGate.acquire(ctx)
+	if err != nil {
+		return err
 	}
+	defer release()
 	operationCtx, cancel := context.WithTimeout(ctx, options.OperationTimeout)
 	defer cancel()
 	if refreshFolders {

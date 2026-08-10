@@ -4077,7 +4077,7 @@ Examples:
   icloud mail watch --jsonl
 
 Flags:
-      --all-accounts                  Watch all configured accounts (maximum 10 workers)
+      --all-accounts                  Watch all configured accounts (maximum 100 workers)
   -h, --help                          help for watch
       --jsonl                         Emit one typed JSON object per lifecycle event
       --limit int                     Maximum messages committed per folder sync (1-100) (default 20)

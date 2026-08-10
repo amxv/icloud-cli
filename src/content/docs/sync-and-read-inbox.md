@@ -130,13 +130,15 @@ icloud mail watch --poll-interval 2m --reconcile-interval 15m --limit 50
 
 Periodic reconciliation refreshes folder state and all enabled folders, so a long-running watch does not rely only on notifications. `--timeout` is different for this foreground command: it bounds each provider/sync attempt rather than ending the watch process after that duration.
 
-Watch every configured account with one foreground process when there are at most 10:
+Watch every configured account with one foreground process when there are at most 100:
 
 ```bash
 icloud mail watch --all-accounts
 ```
 
-Each account keeps its own ordered event sequence and watch ownership. A second watch for the same account fails with a retryable conflict instead of creating duplicate workers. Ordinary synchronization remains the only path that commits messages and checkpoints.
+The account inventory is paged locally, so accounts beyond the first page are not silently omitted. More than 100 configured accounts returns a bounded-operation error with guidance to select one account or split the work across foreground processes.
+
+Each account keeps its own ordered event sequence, credential reread/reconnect lifecycle, provider session, and watch ownership. A second watch for the same account fails with a retryable conflict instead of creating duplicate workers. Ordinary synchronization remains the only path that commits messages and checkpoints. When several account workers request a durable sync together, queued workers take turns on the local write path; one repeatedly changing account cannot continually jump ahead of accounts already waiting, and Ctrl-C also cancels workers that are waiting for their turn.
 
 If the stream reports `degraded`, use the error code and stage rather than restarting it in a tight loop. Authentication failures use bounded reconnect backoff so you can replace the credential; a UIDVALIDITY change still requires the existing explicit repair/rebaseline decision rather than an automatic reset.
 

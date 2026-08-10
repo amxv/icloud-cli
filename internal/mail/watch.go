@@ -2,7 +2,10 @@ package mail
 
 import "time"
 
-const MaxWatchAccounts = 10
+// MaxWatchAccounts is the explicit foreground-process worker ceiling. Account
+// inventory is paged independently; this bounds concurrent provider sessions
+// and goroutines rather than truncating the configured account list.
+const MaxWatchAccounts = 100
 
 type WatchMode string
 

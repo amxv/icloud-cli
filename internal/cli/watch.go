@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"os"
 	"os/signal"
 	"sync"
@@ -68,7 +69,7 @@ func newMailWatchCommand(state *executionState) *cobra.Command {
 			}, writer.Write)
 		},
 	}
-	command.Flags().BoolVar(&allAccounts, "all-accounts", false, "Watch all configured accounts (maximum 10 workers)")
+	command.Flags().BoolVar(&allAccounts, "all-accounts", false, fmt.Sprintf("Watch all configured accounts (maximum %d workers)", maildomain.MaxWatchAccounts))
 	command.Flags().IntVar(&limit, "limit", DefaultPageSize, "Maximum messages committed per folder sync (1-100)")
 	command.Flags().DurationVar(&pollInterval, "poll-interval", time.Minute, "Polling interval when IDLE is unavailable")
 	command.Flags().DurationVar(&reconcileInterval, "reconcile-interval", 15*time.Minute, "Interval for full enabled-folder and folder-state reconciliation")
