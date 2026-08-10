@@ -89,14 +89,20 @@ type mailSyncJSONRequest struct {
 	Hydrate           []string `json:"hydrate,omitempty"`
 	ReconcileOutbound bool     `json:"reconcile_outbound,omitempty"`
 	ContinueOnError   bool     `json:"continue_on_error,omitempty"`
+	UntilCurrent      bool     `json:"until_current,omitempty"`
+	MaxPages          *int     `json:"max_pages,omitempty"`
+	MaxMessages       *int     `json:"max_messages,omitempty"`
 	Limit             *int     `json:"limit,omitempty"`
 }
 
 type mailBackfillJSONRequest struct {
-	Folder string `json:"folder,omitempty"`
-	After  string `json:"after,omitempty"`
-	Before string `json:"before,omitempty"`
-	Limit  *int   `json:"limit,omitempty"`
+	Folder        string `json:"folder,omitempty"`
+	After         string `json:"after,omitempty"`
+	Before        string `json:"before,omitempty"`
+	UntilComplete bool   `json:"until_complete,omitempty"`
+	MaxPages      *int   `json:"max_pages,omitempty"`
+	MaxMessages   *int   `json:"max_messages,omitempty"`
+	Limit         *int   `json:"limit,omitempty"`
 }
 
 type mailRebaselineJSONRequest struct {

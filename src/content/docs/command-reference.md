@@ -3173,7 +3173,10 @@ Flags:
       --json                 Emit one stable JSON success envelope
       --jsonl                Emit typed per-folder or per-hydration-item JSONL events plus a completed event
       --limit int            Maximum messages to fetch and commit per folder (1-100) (default 20)
+      --max-messages int     Maximum fetched messages for --until-current (1-10000) (default 1000)
+      --max-pages int        Maximum committed sync pages for --until-current (1-1000) (default 20)
       --reconcile-outbound   Sync Sent and reconcile recent sent/unknown attempts by exact Message-ID evidence
+      --until-current        Repeat bounded sync pages until current or a global drain ceiling is reached
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID
@@ -3205,7 +3208,11 @@ Flags:
   -h, --help                help for backfill
       --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
       --json                Emit one stable JSON success envelope
+      --jsonl               Emit one event per committed historical page plus a completed event
       --limit int           Maximum historical messages to fetch and commit in this page (1-100) (default 20)
+      --max-messages int    Maximum fetched historical messages for --until-complete (1-10000) (default 1000)
+      --max-pages int       Maximum committed backfill pages for --until-complete (1-1000) (default 20)
+      --until-complete      Repeat bounded historical pages until complete or a global drain ceiling is reached
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID

@@ -60,6 +60,14 @@ type BackfillSummary struct {
 	Frontier        BackfillFrontier `json:"frontier"`
 }
 
+type BackfillDrainSummary struct {
+	Pages      []BackfillSummary `json:"pages"`
+	PageCount  int               `json:"page_count"`
+	Fetched    int               `json:"fetched"`
+	Complete   bool              `json:"complete"`
+	StopReason DrainStopReason   `json:"stop_reason"`
+}
+
 type RebaselineSummary struct {
 	AccountID          string          `json:"account_id"`
 	FolderID           string          `json:"folder_id"`

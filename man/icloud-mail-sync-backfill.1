@@ -38,8 +38,24 @@ Resume one bounded historical page without moving the new-mail frontier
 	Emit one stable JSON success envelope
 
 .PP
+\fB--jsonl\fP[=false]
+	Emit one event per committed historical page plus a completed event
+
+.PP
 \fB--limit\fP=20
 	Maximum historical messages to fetch and commit in this page (1-100)
+
+.PP
+\fB--max-messages\fP=1000
+	Maximum fetched historical messages for --until-complete (1-10000)
+
+.PP
+\fB--max-pages\fP=20
+	Maximum committed backfill pages for --until-complete (1-1000)
+
+.PP
+\fB--until-complete\fP[=false]
+	Repeat bounded historical pages until complete or a global drain ceiling is reached
 
 
 .SH OPTIONS INHERITED FROM PARENT COMMANDS

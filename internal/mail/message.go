@@ -390,6 +390,24 @@ type SyncSummary struct {
 	OutboundReconcile *OutboundReconcileSummary `json:"outbound_reconcile,omitempty"`
 }
 
+type DrainStopReason string
+
+const (
+	DrainStopComplete    DrainStopReason = "complete"
+	DrainStopMaxPages    DrainStopReason = "max_pages"
+	DrainStopMaxMessages DrainStopReason = "max_messages"
+	DrainStopDeadline    DrainStopReason = "deadline"
+	DrainStopError       DrainStopReason = "error"
+)
+
+type SyncDrainSummary struct {
+	Pages         []SyncSummary   `json:"pages"`
+	PageCount     int             `json:"page_count"`
+	Fetched       int             `json:"fetched"`
+	MoreAvailable bool            `json:"more_available"`
+	StopReason    DrainStopReason `json:"stop_reason"`
+}
+
 func ParsePreview(reader io.Reader) (ParsedMessage, error) {
 	normalized, err := ParseNormalized(reader)
 	return normalized.Preview, err

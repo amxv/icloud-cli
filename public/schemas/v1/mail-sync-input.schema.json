@@ -21,7 +21,16 @@
     "limit": {
       "type": "integer"
     },
+    "max_messages": {
+      "type": "integer"
+    },
+    "max_pages": {
+      "type": "integer"
+    },
     "reconcile_outbound": {
+      "type": "boolean"
+    },
+    "until_current": {
       "type": "boolean"
     }
   },

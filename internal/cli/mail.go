@@ -27,7 +27,9 @@ type MailService interface {
 	MailSyncMode(context.Context, string, string, string, int, bool) (account.Account, []folder.Folder, []maildomain.SyncSummary, int64, error)
 	MailSyncAll(context.Context, string, string, int) (account.Account, []folder.Folder, []maildomain.SyncSummary, int64, error)
 	MailSyncAllMode(context.Context, string, string, int, bool) (account.Account, []folder.Folder, []maildomain.SyncSummary, int64, error)
+	MailSyncUntilCurrent(context.Context, string, string, string, int, bool, int, int) (account.Account, []folder.Folder, maildomain.SyncDrainSummary, int64, error)
 	MailBackfill(context.Context, string, string, string, *time.Time, *time.Time, int) (account.Account, folder.Folder, maildomain.BackfillSummary, int64, error)
+	MailBackfillUntilComplete(context.Context, string, string, string, *time.Time, *time.Time, int, int, int) (account.Account, folder.Folder, maildomain.BackfillDrainSummary, int64, error)
 	MailRebaseline(context.Context, string, string, string, bool) (account.Account, folder.Folder, maildomain.RebaselineSummary, int64, error)
 	MailRepair(context.Context, string, string, maildomain.RepairOptions) (account.Account, maildomain.RepairSummary, int64, error)
 	MailInbox(context.Context, string, string, string, int) (account.Account, folder.Folder, []maildomain.Message, bool, int64, error)
@@ -94,6 +96,12 @@ type mailSyncData struct {
 	SchemaVersion int64                    `json:"schema_version"`
 }
 
+type mailSyncDrainData struct {
+	AccountID     string                      `json:"account_id"`
+	Summary       maildomain.SyncDrainSummary `json:"summary"`
+	SchemaVersion int64                       `json:"schema_version"`
+}
+
 type mailHydrateData struct {
 	AccountID     string                      `json:"account_id"`
 	Outcomes      []maildomain.HydrateOutcome `json:"outcomes"`
@@ -133,6 +141,13 @@ type mailBackfillData struct {
 	Folder        folder.Folder              `json:"folder"`
 	Summary       maildomain.BackfillSummary `json:"summary"`
 	SchemaVersion int64                      `json:"schema_version"`
+}
+
+type mailBackfillDrainData struct {
+	AccountID     string                          `json:"account_id"`
+	Folder        folder.Folder                   `json:"folder"`
+	Summary       maildomain.BackfillDrainSummary `json:"summary"`
+	SchemaVersion int64                           `json:"schema_version"`
 }
 
 type mailRebaselineData struct {
@@ -194,8 +209,8 @@ type publicLocation struct {
 }
 
 func newMailSyncCommand(state *executionState) *cobra.Command {
-	var jsonOutput, jsonlOutput, continueOnError bool
-	var limit int
+	var jsonOutput, jsonlOutput, continueOnError, untilCurrent bool
+	var limit, maxPages, maxMessages int
 	var folderSelector string
 	var allFolders bool
 	var hydrate []string
@@ -211,22 +226,62 @@ func newMailSyncCommand(state *executionState) *cobra.Command {
 				return err
 			}
 			var jsonRequest mailSyncJSONRequest
-			if used, err := readJSONInput(cmd, state, input, &jsonRequest, "folder", "all-folders", "hydrate", "reconcile-outbound", "continue-on-error", "limit"); err != nil {
+			if used, err := readJSONInput(cmd, state, input, &jsonRequest, "folder", "all-folders", "hydrate", "reconcile-outbound", "continue-on-error", "until-current", "max-pages", "max-messages", "limit"); err != nil {
 				return err
 			} else if used {
-				folderSelector, allFolders, hydrate, reconcileOutbound, continueOnError = jsonRequest.Folder, jsonRequest.AllFolders, append([]string(nil), jsonRequest.Hydrate...), jsonRequest.ReconcileOutbound, jsonRequest.ContinueOnError
+				folderSelector, allFolders, hydrate, reconcileOutbound, continueOnError, untilCurrent = jsonRequest.Folder, jsonRequest.AllFolders, append([]string(nil), jsonRequest.Hydrate...), jsonRequest.ReconcileOutbound, jsonRequest.ContinueOnError, jsonRequest.UntilCurrent
 				if jsonRequest.Limit != nil {
 					limit = *jsonRequest.Limit
+				}
+				if jsonRequest.MaxPages != nil {
+					maxPages = *jsonRequest.MaxPages
+				}
+				if jsonRequest.MaxMessages != nil {
+					maxMessages = *jsonRequest.MaxMessages
 				}
 			}
 			if limit < 1 || limit > MaximumPageSize {
 				return NewAppError(ErrorUsage, fmt.Sprintf("--limit must be between 1 and %d", MaximumPageSize), false)
+			}
+			if !untilCurrent && (cmd.Flags().Changed("max-pages") || cmd.Flags().Changed("max-messages") || jsonRequest.MaxPages != nil || jsonRequest.MaxMessages != nil) {
+				return NewAppError(ErrorUsage, "--max-pages and --max-messages require --until-current", false)
 			}
 			if reconcileOutbound {
 				if len(hydrate) > 0 || strings.TrimSpace(folderSelector) != "" || allFolders {
 					return NewAppError(ErrorUsage, "--reconcile-outbound cannot be combined with --folder, --all-folders, or --hydrate", false)
 				}
 				folderSelector = string(folder.KindSent)
+			}
+			if untilCurrent {
+				if len(hydrate) > 0 || reconcileOutbound || continueOnError {
+					return NewAppError(ErrorUsage, "--until-current cannot be combined with --hydrate, --reconcile-outbound, or --continue-on-error", false)
+				}
+				if maxPages < 1 || maxPages > 1000 {
+					return NewAppError(ErrorUsage, "--max-pages must be between 1 and 1000", false)
+				}
+				if maxMessages < 1 || maxMessages > 10000 {
+					return NewAppError(ErrorUsage, "--max-messages must be between 1 and 10000", false)
+				}
+				accountValue, _, drain, schemaVersion, operationErr := state.mail.MailSyncUntilCurrent(cmd.Context(), state.global.Home, state.global.Account, folderSelector, limit, allFolders, maxPages, maxMessages)
+				if jsonOutput {
+					if operationErr != nil {
+						return operationErr
+					}
+					return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: mailSyncDrainData{AccountID: accountValue.ID, Summary: drain, SchemaVersion: schemaVersion}, Meta: EnvelopeMeta{RequestID: state.requestID}})
+				}
+				if jsonlOutput {
+					return renderSyncDrainJSONL(state, accountValue.ID, drain, operationErr)
+				}
+				renderer := NewCompactTextRenderer(state.stdout)
+				for _, summary := range drain.Pages {
+					if err := renderSyncSummaryCompact(renderer, summary); err != nil {
+						return err
+					}
+				}
+				if err := renderer.Summary("sync-drain", Field("account", accountValue.ID), Field("pages", drain.PageCount), Field("fetched", drain.Fetched), Field("more", fmt.Sprintf("%t", drain.MoreAvailable)), Field("stop_reason", drain.StopReason)); err != nil {
+					return err
+				}
+				return operationErr
 			}
 			if len(hydrate) > 0 {
 				if strings.TrimSpace(folderSelector) != "" || allFolders {
@@ -373,6 +428,9 @@ func newMailSyncCommand(state *executionState) *cobra.Command {
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
 	command.Flags().BoolVar(&jsonlOutput, "jsonl", false, "Emit typed per-folder or per-hydration-item JSONL events plus a completed event")
 	command.Flags().BoolVar(&continueOnError, "continue-on-error", false, "Continue independent hydration items or folders after an error; committed earlier work is never rolled back")
+	command.Flags().BoolVar(&untilCurrent, "until-current", false, "Repeat bounded sync pages until current or a global drain ceiling is reached")
+	command.Flags().IntVar(&maxPages, "max-pages", 20, "Maximum committed sync pages for --until-current (1-1000)")
+	command.Flags().IntVar(&maxMessages, "max-messages", 1000, "Maximum fetched messages for --until-current (1-10000)")
 	bindJSONInput(command, &input)
 	command.AddCommand(newMailSyncStatusCommand(state))
 	command.AddCommand(newMailSyncCheckpointsCommand(state))
@@ -514,6 +572,67 @@ func renderSyncJSONL(state *executionState, accountID string, summaries []maildo
 		return err
 	}
 	return markJSONLHandled(operationErr)
+}
+
+func renderSyncDrainJSONL(state *executionState, accountID string, drain maildomain.SyncDrainSummary, operationErr error) error {
+	sequence := uint64(0)
+	for _, summary := range drain.Pages {
+		sequence++
+		if err := WriteJSONLEvent(state.stdout, JSONLEvent{Event: "item", Sequence: sequence, AccountID: accountID, Timestamp: time.Now().UTC(), Payload: map[string]any{"status": "committed", "committed_state": "committed", "result": summary}}); err != nil {
+			return err
+		}
+	}
+	sequence++
+	var terminalError *AppError
+	if operationErr != nil {
+		terminalError = NormalizeError(operationErr)
+	}
+	if err := WriteJSONLEvent(state.stdout, JSONLEvent{Event: "completed", Sequence: sequence, AccountID: accountID, Timestamp: time.Now().UTC(), Payload: map[string]any{"pages": drain.PageCount, "fetched": drain.Fetched, "more": drain.MoreAvailable, "stop_reason": drain.StopReason}, Error: terminalError}); err != nil {
+		return err
+	}
+	return markJSONLHandled(operationErr)
+}
+
+func renderSyncSummaryCompact(renderer *CompactTextRenderer, summary maildomain.SyncSummary) error {
+	return renderer.Record("mail-sync", summary.FolderID,
+		Field("account", summary.AccountID), Field("folder", summary.FolderName),
+		Field("fetched", summary.Fetched), Field("created", summary.Created), Field("updated", summary.Updated),
+		Field("reconciled", summary.Reconciled), Field("state_changes", summary.StateChanges),
+		Field("identity_merges", summary.IdentityMerges), Field("dedupe_conflicts", summary.DedupeConflicts),
+		Field("last_uid", summary.LastUID), Field("more", summary.MoreAvailable), Field("bootstrap", summary.Bootstrap),
+		Field("outbound_confirmed", outboundReconcileValue(summary.OutboundReconcile, "confirmed")),
+		Field("outbound_resolved_unknown", outboundReconcileValue(summary.OutboundReconcile, "resolved_unknown")),
+		Field("outbound_ambiguous", outboundReconcileValue(summary.OutboundReconcile, "ambiguous")),
+		Field("outbound_unmatched", outboundReconcileValue(summary.OutboundReconcile, "unmatched")),
+	)
+}
+
+func renderBackfillDrainJSONL(state *executionState, accountID string, drain maildomain.BackfillDrainSummary, operationErr error) error {
+	sequence := uint64(0)
+	for _, page := range drain.Pages {
+		sequence++
+		if err := WriteJSONLEvent(state.stdout, JSONLEvent{Event: "item", Sequence: sequence, AccountID: accountID, Timestamp: time.Now().UTC(), Payload: map[string]any{"status": "committed", "committed_state": "committed", "result": page}}); err != nil {
+			return err
+		}
+	}
+	sequence++
+	var terminalError *AppError
+	if operationErr != nil {
+		terminalError = NormalizeError(operationErr)
+	}
+	if err := WriteJSONLEvent(state.stdout, JSONLEvent{Event: "completed", Sequence: sequence, AccountID: accountID, Timestamp: time.Now().UTC(), Payload: map[string]any{"pages": drain.PageCount, "fetched": drain.Fetched, "complete": drain.Complete, "stop_reason": drain.StopReason}, Error: terminalError}); err != nil {
+		return err
+	}
+	return markJSONLHandled(operationErr)
+}
+
+func renderBackfillSummaryCompact(renderer *CompactTextRenderer, accountID string, folderValue folder.Folder, summary maildomain.BackfillSummary, after, before *time.Time) error {
+	return renderer.Record("mail-backfill", summary.Frontier.ID,
+		Field("account", accountID), Field("folder", folderValue.Name), Field("folder_id", folderValue.ID),
+		Field("fetched", summary.Fetched), Field("created", summary.Created), Field("updated", summary.Updated),
+		Field("before_uid", summary.StartBeforeUID), Field("next_before_uid", summary.NextBeforeUID),
+		Field("complete", yesNo(summary.Complete)), Field("after", after), Field("before", before),
+	)
 }
 
 func syncBulkItemRecords(summaries []maildomain.SyncSummary, operationErr error) []bulkItemRecord {
@@ -826,11 +945,11 @@ func newMailSyncCheckpointsCommand(state *executionState) *cobra.Command {
 }
 
 func newMailSyncBackfillCommand(state *executionState) *cobra.Command {
-	var jsonOutput bool
+	var jsonOutput, jsonlOutput, untilComplete bool
 	var folderSelector string
 	var afterValue string
 	var beforeValue string
-	var limit int
+	var limit, maxPages, maxMessages int
 	var input jsonInputOptions
 	command := &cobra.Command{
 		Use:     "backfill",
@@ -838,16 +957,22 @@ func newMailSyncBackfillCommand(state *executionState) *cobra.Command {
 		Args:    cobra.NoArgs,
 		Example: "  icloud mail sync backfill --folder inbox\n  icloud mail sync backfill --folder Receipts --after 2025-01-01 --before 2026-01-01 --limit 50\n  icloud mail sync backfill --folder fld_… --json",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput}, OutputSupport{JSON: true}); err != nil {
+			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput, JSONL: jsonlOutput}, OutputSupport{JSON: true, JSONL: true}); err != nil {
 				return err
 			}
 			var jsonRequest mailBackfillJSONRequest
-			if used, err := readJSONInput(cmd, state, input, &jsonRequest, "folder", "after", "before", "limit"); err != nil {
+			if used, err := readJSONInput(cmd, state, input, &jsonRequest, "folder", "after", "before", "until-complete", "max-pages", "max-messages", "limit"); err != nil {
 				return err
 			} else if used {
-				folderSelector, afterValue, beforeValue = jsonRequest.Folder, jsonRequest.After, jsonRequest.Before
+				folderSelector, afterValue, beforeValue, untilComplete = jsonRequest.Folder, jsonRequest.After, jsonRequest.Before, jsonRequest.UntilComplete
 				if jsonRequest.Limit != nil {
 					limit = *jsonRequest.Limit
+				}
+				if jsonRequest.MaxPages != nil {
+					maxPages = *jsonRequest.MaxPages
+				}
+				if jsonRequest.MaxMessages != nil {
+					maxMessages = *jsonRequest.MaxMessages
 				}
 			}
 			if limit < 1 || limit > MaximumPageSize {
@@ -864,6 +989,37 @@ func newMailSyncBackfillCommand(state *executionState) *cobra.Command {
 			if after != nil && before != nil && !after.Before(*before) {
 				return NewAppError(ErrorUsage, "--after must precede --before", false)
 			}
+			if !untilComplete && (cmd.Flags().Changed("max-pages") || cmd.Flags().Changed("max-messages") || jsonRequest.MaxPages != nil || jsonRequest.MaxMessages != nil) {
+				return NewAppError(ErrorUsage, "--max-pages and --max-messages require --until-complete", false)
+			}
+			if untilComplete {
+				if maxPages < 1 || maxPages > 1000 {
+					return NewAppError(ErrorUsage, "--max-pages must be between 1 and 1000", false)
+				}
+				if maxMessages < 1 || maxMessages > 10000 {
+					return NewAppError(ErrorUsage, "--max-messages must be between 1 and 10000", false)
+				}
+				accountValue, folderValue, drain, schemaVersion, operationErr := state.mail.MailBackfillUntilComplete(cmd.Context(), state.global.Home, state.global.Account, folderSelector, after, before, limit, maxPages, maxMessages)
+				if jsonOutput {
+					if operationErr != nil {
+						return operationErr
+					}
+					return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: mailBackfillDrainData{AccountID: accountValue.ID, Folder: folderValue, Summary: drain, SchemaVersion: schemaVersion}, Meta: EnvelopeMeta{RequestID: state.requestID}})
+				}
+				if jsonlOutput {
+					return renderBackfillDrainJSONL(state, accountValue.ID, drain, operationErr)
+				}
+				renderer := NewCompactTextRenderer(state.stdout)
+				for _, page := range drain.Pages {
+					if err := renderBackfillSummaryCompact(renderer, accountValue.ID, folderValue, page, after, before); err != nil {
+						return err
+					}
+				}
+				if err := renderer.Summary("backfill-drain", Field("account", accountValue.ID), Field("folder", folderValue.Name), Field("pages", drain.PageCount), Field("fetched", drain.Fetched), Field("complete", fmt.Sprintf("%t", drain.Complete)), Field("stop_reason", drain.StopReason)); err != nil {
+					return err
+				}
+				return operationErr
+			}
 			accountValue, folderValue, summary, schemaVersion, err := state.mail.MailBackfill(cmd.Context(), state.global.Home, state.global.Account, folderSelector, after, before, limit)
 			if err != nil {
 				return err
@@ -871,12 +1027,10 @@ func newMailSyncBackfillCommand(state *executionState) *cobra.Command {
 			if jsonOutput {
 				return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: mailBackfillData{AccountID: accountValue.ID, Folder: folderValue, Summary: summary, SchemaVersion: schemaVersion}, Meta: EnvelopeMeta{RequestID: state.requestID}})
 			}
-			return NewCompactTextRenderer(state.stdout).Record("mail-backfill", summary.Frontier.ID,
-				Field("account", accountValue.ID), Field("folder", folderValue.Name), Field("folder_id", folderValue.ID),
-				Field("fetched", summary.Fetched), Field("created", summary.Created), Field("updated", summary.Updated),
-				Field("before_uid", summary.StartBeforeUID), Field("next_before_uid", summary.NextBeforeUID),
-				Field("complete", yesNo(summary.Complete)), Field("after", after), Field("before", before),
-			)
+			if jsonlOutput {
+				return renderBackfillDrainJSONL(state, accountValue.ID, maildomain.BackfillDrainSummary{Pages: []maildomain.BackfillSummary{summary}, PageCount: 1, Fetched: summary.Fetched, Complete: summary.Complete, StopReason: maildomain.DrainStopComplete}, nil)
+			}
+			return renderBackfillSummaryCompact(NewCompactTextRenderer(state.stdout), accountValue.ID, folderValue, summary, after, before)
 		},
 	}
 	command.Flags().StringVar(&folderSelector, "folder", string(folder.KindInbox), "Folder kind, ID, name, or wire name")
@@ -884,6 +1038,10 @@ func newMailSyncBackfillCommand(state *executionState) *cobra.Command {
 	command.Flags().StringVar(&beforeValue, "before", "", "Include messages before this UTC date (YYYY-MM-DD)")
 	command.Flags().IntVar(&limit, "limit", DefaultPageSize, fmt.Sprintf("Maximum historical messages to fetch and commit in this page (1-%d)", MaximumPageSize))
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
+	command.Flags().BoolVar(&jsonlOutput, "jsonl", false, "Emit one event per committed historical page plus a completed event")
+	command.Flags().BoolVar(&untilComplete, "until-complete", false, "Repeat bounded historical pages until complete or a global drain ceiling is reached")
+	command.Flags().IntVar(&maxPages, "max-pages", 20, "Maximum committed backfill pages for --until-complete (1-1000)")
+	command.Flags().IntVar(&maxMessages, "max-messages", 1000, "Maximum fetched historical messages for --until-complete (1-10000)")
 	bindJSONInput(command, &input)
 	return command
 }
@@ -1176,8 +1334,14 @@ func (unavailableMailService) MailSyncAll(context.Context, string, string, int) 
 func (unavailableMailService) MailSyncAllMode(context.Context, string, string, int, bool) (account.Account, []folder.Folder, []maildomain.SyncSummary, int64, error) {
 	return account.Account{}, nil, nil, 0, NewAppError(ErrorConfiguration, "mail synchronization is unavailable", false)
 }
+func (unavailableMailService) MailSyncUntilCurrent(context.Context, string, string, string, int, bool, int, int) (account.Account, []folder.Folder, maildomain.SyncDrainSummary, int64, error) {
+	return account.Account{}, nil, maildomain.SyncDrainSummary{}, 0, NewAppError(ErrorConfiguration, "mail synchronization is unavailable", false)
+}
 func (unavailableMailService) MailBackfill(context.Context, string, string, string, *time.Time, *time.Time, int) (account.Account, folder.Folder, maildomain.BackfillSummary, int64, error) {
 	return account.Account{}, folder.Folder{}, maildomain.BackfillSummary{}, 0, NewAppError(ErrorConfiguration, "historical mail backfill is unavailable", false)
+}
+func (unavailableMailService) MailBackfillUntilComplete(context.Context, string, string, string, *time.Time, *time.Time, int, int, int) (account.Account, folder.Folder, maildomain.BackfillDrainSummary, int64, error) {
+	return account.Account{}, folder.Folder{}, maildomain.BackfillDrainSummary{}, 0, NewAppError(ErrorConfiguration, "historical mail backfill is unavailable", false)
 }
 func (unavailableMailService) MailRebaseline(context.Context, string, string, string, bool) (account.Account, folder.Folder, maildomain.RebaselineSummary, int64, error) {
 	return account.Account{}, folder.Folder{}, maildomain.RebaselineSummary{}, 0, NewAppError(ErrorConfiguration, "mail synchronization rebaseline is unavailable", false)

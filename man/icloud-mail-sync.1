@@ -50,8 +50,20 @@ Fetch and atomically commit bounded pages from enabled mail folders
 	Maximum messages to fetch and commit per folder (1-100)
 
 .PP
+\fB--max-messages\fP=1000
+	Maximum fetched messages for --until-current (1-10000)
+
+.PP
+\fB--max-pages\fP=20
+	Maximum committed sync pages for --until-current (1-1000)
+
+.PP
 \fB--reconcile-outbound\fP[=false]
 	Sync Sent and reconcile recent sent/unknown attempts by exact Message-ID evidence
+
+.PP
+\fB--until-current\fP[=false]
+	Repeat bounded sync pages until current or a global drain ceiling is reached
 
 
 .SH OPTIONS INHERITED FROM PARENT COMMANDS

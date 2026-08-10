@@ -14,6 +14,15 @@
     },
     "limit": {
       "type": "integer"
+    },
+    "max_messages": {
+      "type": "integer"
+    },
+    "max_pages": {
+      "type": "integer"
+    },
+    "until_complete": {
+      "type": "boolean"
     }
   },
   "title": "mail backfill JSON input",

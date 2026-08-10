@@ -128,6 +128,8 @@ Each JSONL input line contains one `message_id` and an optional exact `folder`. 
 
 The same truthful partial-work rule applies to repeated targeted hydration and multi-folder sync. By default, `mail sync --hydrate ...` and multi-folder `mail sync` stop after the first failing item/folder, but any earlier committed message or folder remains committed and is reported in the structured error details. Add `--continue-on-error` when independent remaining hydration references or folders should still be attempted. With `--jsonl`, every attempted item keeps its original index and input identity, reports its result/error plus `committed_state`, and the stream ends with one `completed` event whose requested/attempted/completed/failed/committed/partial counts are derived from those records. A handled item failure returns a non-zero exit without appending an unrelated second stderr error event; JSONL never pretends earlier durable work was rolled back.
 
+The explicit drain helpers keep the same rule while repeating several bounded page transactions. `mail sync --until-current` and `mail sync backfill --until-complete` use `--max-pages`, `--max-messages`, and the global `--timeout` as invocation-wide ceilings while `--limit` still bounds each provider page. JSONL emits every committed page before its final drain event with the stop reason, so automation resumes from the normal persisted checkpoint/backfill frontier rather than maintaining a second client-side cursor.
+
 ## Schemas and capabilities are public contracts
 
 ```bash

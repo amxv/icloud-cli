@@ -66,6 +66,14 @@ icloud mail sync --limit 50
 
 `more=true` means that folder has another bounded page available. Repeat the same selection until it reports `more=false`. A failed folder page leaves its previous frontier unchanged and is safe to retry.
 
+When you deliberately want the CLI to repeat those same bounded page transactions for you, use the drain helper with explicit global ceilings:
+
+```bash
+icloud mail sync --folder inbox --until-current --max-pages 20 --max-messages 1000
+```
+
+`--until-current` never replaces the folder checkpoint: every page is committed independently through the ordinary sync path, and the persisted checkpoint remains the only resume authority. `--max-pages` and `--max-messages` bound the whole invocation, while `--limit` still bounds each provider page. The global `--timeout` is the overall command deadline. Compact and JSONL output report every committed page plus a final `stop_reason` of `complete`, `max_pages`, or `max_messages`; when a deadline or provider failure interrupts the drain, rerunning the command resumes from the last committed checkpoint.
+
 When several folders are selected, earlier folders can already be durably committed before a later folder fails. The CLI reports those completed folder summaries instead of hiding them behind the error. Use `--continue-on-error` to attempt the remaining independent folders, and add `--jsonl` for one typed success/error event per folder plus a final partial-completion event:
 
 ```bash
@@ -154,6 +162,14 @@ complete=no
 ```
 
 The historical cursor is independent from normal new-mail synchronization. A successful backfill page can add older messages without moving the forward checkpoint, and ordinary `mail sync` can keep ingesting new mail while history is still incomplete. A canceled or failed page leaves the previous historical cursor unchanged; repeat the same command until `complete=yes`.
+
+For an explicit bounded drain of several historical pages, use:
+
+```bash
+icloud mail sync backfill --folder inbox --until-complete --max-pages 20 --max-messages 1000
+```
+
+This is only a convenience loop over ordinary backfill pages. Each page advances the same durable historical frontier, `--limit` still bounds one provider page, and the global ceilings plus `--timeout` bound the invocation. Compact and JSONL modes keep each committed historical page visible before the final drain summary, so a ceiling or interruption never hides how far the durable frontier advanced.
 
 Limit the historical window with UTC calendar dates when useful:
 
