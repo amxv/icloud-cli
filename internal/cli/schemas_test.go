@@ -66,7 +66,7 @@ func TestGeneratedSchemasMatchCommittedArtifacts(t *testing.T) {
 			t.Fatalf("public schema mirror drift for %s; run make schemas", name)
 		}
 	}
-	for _, required := range []string{"account", "mail-identity", "folder", "message", "thread", "attachment", "checkpoint", "attempt", "draft", "event", "error"} {
+	for _, required := range []string{"account", "mail-identity", "folder", "message", "thread", "selection", "attachment", "checkpoint", "attempt", "draft", "event", "error"} {
 		name := required + ".schema.json"
 		if _, ok := generated[name]; !ok {
 			t.Fatalf("required public resource schema missing: %s", name)
@@ -89,7 +89,7 @@ func TestCapabilitiesPublishesVersionedAutomationAndSchemaContracts(t *testing.T
 	if envelope.Data.Automation.ContractVersion != AutomationContractVersion || !envelope.Data.Automation.InputJSON || !envelope.Data.Automation.InputJSONL || envelope.Data.Automation.BulkMaximum != MaximumBulkItems {
 		t.Fatalf("automation=%+v", envelope.Data.Automation)
 	}
-	for _, target := range []string{"account", "mail-identity", "folder", "message", "thread", "attachment", "checkpoint", "attempt", "draft", "event", "error"} {
+	for _, target := range []string{"account", "mail-identity", "folder", "message", "thread", "selection", "attachment", "checkpoint", "attempt", "draft", "event", "error"} {
 		if got := envelope.Data.Schemas[target]; got != SchemaBaseID+target+".schema.json" {
 			t.Fatalf("schema %s=%q", target, got)
 		}
@@ -138,6 +138,19 @@ func TestCapabilitiesPublishesVersionedAutomationAndSchemaContracts(t *testing.T
 	}
 	if !envelope.Data.MailJunk {
 		t.Fatal("capabilities did not advertise provider-native Junk/Not Junk location workflows")
+	}
+	if !envelope.Data.MailSelections {
+		t.Fatal("capabilities did not advertise immutable reviewed MailSelection snapshots")
+	}
+	for command, schema := range map[string]string{
+		"mail selection create": "selection-create-input",
+		"mail selection show":   "selection-target-read-input",
+		"mail selection delete": "selection-target-input",
+		"mail selection apply":  "selection-apply-input",
+	} {
+		if got := contracts[command].InputSchema; got != SchemaBaseID+schema+".schema.json" {
+			t.Fatalf("MailSelection contract %s=%q", command, got)
+		}
 	}
 	for command, schema := range map[string]string{
 		"mail identities list":       "mail-identity-list-read-input",

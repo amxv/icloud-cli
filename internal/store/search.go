@@ -176,6 +176,14 @@ func (repository *SearchRepository) Search(ctx context.Context, accountID string
 	return page, nil
 }
 
+// Signature returns the normalized, account-bound local search identity used by
+// cursors. It deliberately excludes page position and limit; callers that need
+// a page identity should bind those separately.
+func (repository *SearchRepository) Signature(accountID string, options maildomain.SearchOptions) (string, error) {
+	options = normalizeSearchOptions(options)
+	return searchSignature(strings.TrimSpace(accountID), options)
+}
+
 func normalizeSearchOptions(options maildomain.SearchOptions) maildomain.SearchOptions {
 	options.Query = strings.TrimSpace(options.Query)
 	options.FolderID = strings.TrimSpace(options.FolderID)

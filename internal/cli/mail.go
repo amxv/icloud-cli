@@ -38,10 +38,16 @@ type MailService interface {
 	MailLatest(context.Context, string, string, int) (account.Account, []maildomain.Thread, bool, int64, error)
 	MailThread(context.Context, string, string, string, maildomain.ThreadReadOptions) (account.Account, maildomain.ThreadPage, []maildomain.ContentSource, int64, error)
 	MailThreadMutationTargets(context.Context, string, string, string, string, int, string, bool) (account.Account, maildomain.ThreadMutationTargetPage, int64, error)
+	MailSelectionCreate(context.Context, string, string, maildomain.SelectionCreateRequest) (account.Account, maildomain.MailSelection, int64, error)
+	MailSelection(context.Context, string, string, string) (account.Account, maildomain.MailSelection, int64, error)
+	MailSelectionForApply(context.Context, string, string, string, bool) (account.Account, maildomain.MailSelection, []maildomain.Message, int64, error)
+	MailSelectionDelete(context.Context, string, string, string) (account.Account, maildomain.MailSelection, int64, error)
+	MailSelectionApplyHash(context.Context, maildomain.MailSelection, string, string, string, []string) (string, error)
 	MailAttachments(context.Context, string, string, string, int) (account.Account, maildomain.AttachmentTarget, []maildomain.Attachment, bool, int64, error)
 	MailAttachmentsPage(context.Context, string, string, string, string, int) (account.Account, maildomain.AttachmentTarget, []maildomain.Attachment, bool, string, int64, error)
 	MailAttachment(context.Context, string, string, string) (account.Account, maildomain.Attachment, maildomain.AttachmentSource, int64, error)
 	MailUpdateFlag(context.Context, string, string, string, string, maildomain.FlagMutation) (account.Account, folder.Folder, maildomain.Message, maildomain.Location, int64, error)
+	MailUpdateFlagSnapshot(context.Context, string, string, string, string, maildomain.MailSelectionItem, maildomain.FlagMutation) (account.Account, folder.Folder, maildomain.Message, maildomain.Location, int64, error)
 	MailSearch(context.Context, string, string, string, maildomain.SearchOptions) (account.Account, folder.Folder, maildomain.SearchPage, int64, error)
 	MailSearchRepair(context.Context, string, string, int) (account.Account, maildomain.SearchRepairSummary, int64, error)
 	MailRemoteSearch(context.Context, string, string, string, bool, maildomain.SearchOptions) (account.Account, maildomain.RemoteSearchPage, int64, error)
@@ -1203,6 +1209,21 @@ func (unavailableMailService) MailThread(context.Context, string, string, string
 func (unavailableMailService) MailThreadMutationTargets(context.Context, string, string, string, string, int, string, bool) (account.Account, maildomain.ThreadMutationTargetPage, int64, error) {
 	return account.Account{}, maildomain.ThreadMutationTargetPage{}, 0, NewAppError(ErrorConfiguration, "thread mutation targets are unavailable", false)
 }
+func (unavailableMailService) MailSelectionCreate(context.Context, string, string, maildomain.SelectionCreateRequest) (account.Account, maildomain.MailSelection, int64, error) {
+	return account.Account{}, maildomain.MailSelection{}, 0, NewAppError(ErrorConfiguration, "MailSelection is unavailable", false)
+}
+func (unavailableMailService) MailSelection(context.Context, string, string, string) (account.Account, maildomain.MailSelection, int64, error) {
+	return account.Account{}, maildomain.MailSelection{}, 0, NewAppError(ErrorConfiguration, "MailSelection is unavailable", false)
+}
+func (unavailableMailService) MailSelectionForApply(context.Context, string, string, string, bool) (account.Account, maildomain.MailSelection, []maildomain.Message, int64, error) {
+	return account.Account{}, maildomain.MailSelection{}, nil, 0, NewAppError(ErrorConfiguration, "MailSelection is unavailable", false)
+}
+func (unavailableMailService) MailSelectionDelete(context.Context, string, string, string) (account.Account, maildomain.MailSelection, int64, error) {
+	return account.Account{}, maildomain.MailSelection{}, 0, NewAppError(ErrorConfiguration, "MailSelection is unavailable", false)
+}
+func (unavailableMailService) MailSelectionApplyHash(context.Context, maildomain.MailSelection, string, string, string, []string) (string, error) {
+	return "", NewAppError(ErrorConfiguration, "MailSelection is unavailable", false)
+}
 func (unavailableMailService) MailAttachments(context.Context, string, string, string, int) (account.Account, maildomain.AttachmentTarget, []maildomain.Attachment, bool, int64, error) {
 	return account.Account{}, maildomain.AttachmentTarget{}, nil, false, 0, NewAppError(ErrorConfiguration, "local attachments are unavailable", false)
 }
@@ -1213,6 +1234,9 @@ func (unavailableMailService) MailAttachment(context.Context, string, string, st
 	return account.Account{}, maildomain.Attachment{}, nil, 0, NewAppError(ErrorConfiguration, "local attachment content is unavailable", false)
 }
 func (unavailableMailService) MailUpdateFlag(context.Context, string, string, string, string, maildomain.FlagMutation) (account.Account, folder.Folder, maildomain.Message, maildomain.Location, int64, error) {
+	return account.Account{}, folder.Folder{}, maildomain.Message{}, maildomain.Location{}, 0, NewAppError(ErrorConfiguration, "message-state mutation is unavailable", false)
+}
+func (unavailableMailService) MailUpdateFlagSnapshot(context.Context, string, string, string, string, maildomain.MailSelectionItem, maildomain.FlagMutation) (account.Account, folder.Folder, maildomain.Message, maildomain.Location, int64, error) {
 	return account.Account{}, folder.Folder{}, maildomain.Message{}, maildomain.Location{}, 0, NewAppError(ErrorConfiguration, "message-state mutation is unavailable", false)
 }
 func (unavailableMailService) MailSearch(context.Context, string, string, string, maildomain.SearchOptions) (account.Account, folder.Folder, maildomain.SearchPage, int64, error) {

@@ -1,0 +1,16 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/selection-target-read-input.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "selection_id": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "selection_id"
+  ],
+  "title": "MailSelection target read JSON input",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

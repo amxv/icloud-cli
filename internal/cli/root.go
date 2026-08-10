@@ -144,6 +144,7 @@ type capabilitiesData struct {
 	MailFlags              bool                 `json:"mail_flags"`
 	MailThreads            bool                 `json:"mail_threads"`
 	MailThreadMutations    bool                 `json:"mail_thread_mutations"`
+	MailSelections         bool                 `json:"mail_selections"`
 	MailSearch             bool                 `json:"mail_search"`
 	MailRemoteSearch       bool                 `json:"mail_remote_search"`
 	MailHydration          bool                 `json:"mail_hydration"`
@@ -402,6 +403,7 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				MailFlags:              true,
 				MailThreads:            true,
 				MailThreadMutations:    true,
+				MailSelections:         true,
 				MailSearch:             true,
 				MailRemoteSearch:       true,
 				MailHydration:          true,

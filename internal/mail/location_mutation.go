@@ -60,11 +60,15 @@ const (
 )
 
 type LocationMutationRequest struct {
-	Action         LocationMutationAction `json:"action"`
-	MessageID      string                 `json:"message_id"`
-	FromFolder     string                 `json:"from_folder,omitempty"`
-	ToFolder       string                 `json:"to_folder,omitempty"`
-	IdempotencyKey string                 `json:"idempotency_key,omitempty"`
+	Action              LocationMutationAction `json:"action"`
+	MessageID           string                 `json:"message_id"`
+	FromFolder          string                 `json:"from_folder,omitempty"`
+	ToFolder            string                 `json:"to_folder,omitempty"`
+	IdempotencyKey      string                 `json:"idempotency_key,omitempty"`
+	ExpectedLocationID  string                 `json:"-"`
+	ExpectedUIDValidity uint32                 `json:"-"`
+	ExpectedUID         uint32                 `json:"-"`
+	ExpectedModSequence uint64                 `json:"-"`
 }
 
 type LocationMutationPlan struct {

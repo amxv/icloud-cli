@@ -19,6 +19,24 @@ func (commands accountCommands) MailUpdateFlag(
 	home, accountSelector, messageID, folderSelector string,
 	mutation maildomain.FlagMutation,
 ) (account.Account, folder.Folder, maildomain.Message, maildomain.Location, int64, error) {
+	return commands.mailUpdateFlag(ctx, home, accountSelector, messageID, folderSelector, nil, mutation)
+}
+
+func (commands accountCommands) MailUpdateFlagSnapshot(
+	ctx context.Context,
+	home, accountSelector, messageID, folderSelector string,
+	snapshot maildomain.MailSelectionItem,
+	mutation maildomain.FlagMutation,
+) (account.Account, folder.Folder, maildomain.Message, maildomain.Location, int64, error) {
+	return commands.mailUpdateFlag(ctx, home, accountSelector, messageID, folderSelector, &snapshot, mutation)
+}
+
+func (commands accountCommands) mailUpdateFlag(
+	ctx context.Context,
+	home, accountSelector, messageID, folderSelector string,
+	snapshot *maildomain.MailSelectionItem,
+	mutation maildomain.FlagMutation,
+) (account.Account, folder.Folder, maildomain.Message, maildomain.Location, int64, error) {
 	_, _, valid := mutation.ProviderFlag()
 	if !valid {
 		return account.Account{}, folder.Folder{}, maildomain.Message{}, maildomain.Location{}, 0, cli.NewAppError(cli.ErrorUsage, "unsupported message-state mutation", false)
@@ -43,6 +61,11 @@ func (commands accountCommands) MailUpdateFlag(
 	folderValue, location, err := resolveMutationLocation(ctx, state.Folders(), accountValue.ID, message, folderSelector)
 	if err != nil {
 		return account.Account{}, folder.Folder{}, maildomain.Message{}, maildomain.Location{}, state.SchemaVersion(), err
+	}
+	if snapshot != nil && (location.ID != snapshot.LocationID || location.FolderID != snapshot.FolderID || location.UIDValidity != snapshot.UIDValidity || location.UID != snapshot.UID || location.ModSequence != snapshot.ModSequence) {
+		appErr := cli.NewAppError(cli.ErrorConflict, "selected provider location no longer matches the reviewed snapshot", false)
+		appErr.Details = map[string]any{"message_id": message.ID, "expected_location_id": snapshot.LocationID, "current_location_id": location.ID, "next": "create and review a new MailSelection before retrying"}
+		return account.Account{}, folder.Folder{}, maildomain.Message{}, maildomain.Location{}, state.SchemaVersion(), appErr
 	}
 	return commands.updateExactLocationFlag(ctx, state, accountValue, folderValue, location, message.ID, mutation)
 }

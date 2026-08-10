@@ -1,0 +1,138 @@
+.nh
+.TH "ICLOUD" "1" "Jan 1970" "icloud 0.1.0" "iCloud Mail CLI Manual"
+
+.SH NAME
+icloud-mail-selection-create - Freeze explicit stable targets or one bounded current local search page
+
+
+.SH SYNOPSIS
+\fBicloud mail selection create [message-id|thread-id...] [flags]\fP
+
+
+.SH DESCRIPTION
+Freeze explicit stable targets or one bounded current local search page
+
+
+.SH OPTIONS
+\fB--after\fP=""
+	Include messages at or after an RFC3339 timestamp or YYYY-MM-DD UTC date
+
+.PP
+\fB--attachment-name\fP=""
+	Restrict attachment filename text
+
+.PP
+\fB--attachment-type\fP=""
+	Restrict attachment media type
+
+.PP
+\fB--before\fP=""
+	Include messages before an RFC3339 timestamp or YYYY-MM-DD UTC date
+
+.PP
+\fB--cursor\fP=""
+	Continue from a next_cursor returned by the same query
+
+.PP
+\fB--flagged\fP[=false]
+	Include only messages with a flagged eligible location
+
+.PP
+\fB--folder\fP=""
+	Restrict matches to one folder kind, ID, name, or wire name
+
+.PP
+\fB--from\fP=""
+	Restrict sender or Reply-To text
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for create
+
+.PP
+\fB--input-json\fP=""
+	Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+
+.PP
+\fB--json\fP[=false]
+	Emit the immutable selection and stable target evidence as JSON
+
+.PP
+\fB--limit\fP=20
+	Maximum local search hits before thread expansion (1-100)
+
+.PP
+\fB--participant\fP=""
+	Restrict sender, Reply-To, To, or Cc participant text
+
+.PP
+\fB--query\fP=""
+	Match indexed subject, sender, participants, decoded text, attachments, or RFC Message-ID
+
+.PP
+\fB--read\fP[=false]
+	Include only messages without an unread eligible location
+
+.PP
+\fB--result\fP="messages"
+	Search source result kind: messages or threads
+
+.PP
+\fB--rfc-id\fP=""
+	Match one RFC Message-ID
+
+.PP
+\fB--scope-folder\fP=""
+	Freeze exact eligible current provider copies in one folder for later writes
+
+.PP
+\fB--search\fP[=false]
+	Create from one bounded current local search page instead of explicit IDs
+
+.PP
+\fB--subject\fP=""
+	Restrict subject text
+
+.PP
+\fB--ttl\fP=15m0s
+	Selection lifetime from creation (1m-24h)
+
+.PP
+\fB--unflagged\fP[=false]
+	Include only messages without a flagged eligible location
+
+.PP
+\fB--unread\fP[=false]
+	Include only messages with an unread eligible location
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--account\fP=""
+	Select an account by name, email, or stable ID
+
+.PP
+\fB--home\fP=""
+	Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+
+.PP
+\fB--no-input\fP[=false]
+	Never prompt for interactive input
+
+.PP
+\fB--request-id\fP=""
+	Attach a stable request ID to structured output
+
+.PP
+\fB--timeout\fP=30s
+	Maximum normal command duration; watch applies it per provider/sync attempt
+
+
+.SH EXAMPLE
+.EX
+  icloud mail selection create msg_… thr_… --ttl 15m
+  icloud mail selection create --search --query invoice --unread --folder inbox --scope-folder inbox --limit 50 --json
+.EE
+
+
+.SH SEE ALSO
+\fBicloud-mail-selection(1)\fP

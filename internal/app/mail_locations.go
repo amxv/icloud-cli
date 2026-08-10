@@ -342,6 +342,9 @@ func resolveLocationMutationPlan(
 	if err != nil {
 		return account.Account{}, maildomain.LocationMutationPlan{}, err
 	}
+	if err := validateExpectedLocationEvidence(request, sourceLocation); err != nil {
+		return account.Account{}, maildomain.LocationMutationPlan{}, err
+	}
 	var destinationFolder folder.Folder
 	if action != maildomain.LocationActionDelete {
 		destinationSelector := strings.TrimSpace(request.ToFolder)
@@ -402,6 +405,19 @@ func resolveLocationMutationPlan(
 		return account.Account{}, maildomain.LocationMutationPlan{}, cli.WrapAppError(cli.ErrorInternal, "cannot hash the location mutation", false, err)
 	}
 	return accountValue, plan, nil
+}
+
+func validateExpectedLocationEvidence(request maildomain.LocationMutationRequest, actual maildomain.Location) error {
+	expectedID := strings.TrimSpace(request.ExpectedLocationID)
+	if expectedID == "" && request.ExpectedUIDValidity == 0 && request.ExpectedUID == 0 && request.ExpectedModSequence == 0 {
+		return nil
+	}
+	if expectedID == "" || actual.ID != expectedID || actual.UIDValidity != request.ExpectedUIDValidity || actual.UID != request.ExpectedUID || actual.ModSequence != request.ExpectedModSequence {
+		err := cli.NewAppError(cli.ErrorConflict, "selected provider location no longer matches the reviewed snapshot", false)
+		err.Details = map[string]any{"message_id": request.MessageID, "expected_location_id": expectedID, "current_location_id": actual.ID, "next": "create and review a new MailSelection before retrying"}
+		return err
+	}
+	return nil
 }
 
 func resolveLocationMutationSource(

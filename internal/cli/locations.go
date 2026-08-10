@@ -56,6 +56,9 @@ type mailLocationBulkData struct {
 	ThreadMessageCount int                        `json:"thread_message_count,omitempty"`
 	More               bool                       `json:"more,omitempty"`
 	NextCursor         string                     `json:"next_cursor,omitempty"`
+	SelectionID        string                     `json:"selection_id,omitempty"`
+	SelectionHash      string                     `json:"selection_hash,omitempty"`
+	ApplyRequestHash   string                     `json:"apply_request_hash,omitempty"`
 }
 
 type mailLocationBulkPreviewData struct {
@@ -69,6 +72,9 @@ type mailLocationBulkPreviewData struct {
 	ThreadMessageCount int                               `json:"thread_message_count,omitempty"`
 	More               bool                              `json:"more,omitempty"`
 	NextCursor         string                            `json:"next_cursor,omitempty"`
+	SelectionID        string                            `json:"selection_id,omitempty"`
+	SelectionHash      string                            `json:"selection_hash,omitempty"`
+	ApplyRequestHash   string                            `json:"apply_request_hash,omitempty"`
 }
 
 type locationMutationItem struct {
@@ -76,6 +82,7 @@ type locationMutationItem struct {
 	From           string
 	To             string
 	IdempotencyKey string
+	Snapshot       *maildomain.MailSelectionItem
 }
 
 func newMailLocationMutationCommand(state *executionState, action maildomain.LocationMutationAction) *cobra.Command {
@@ -297,6 +304,9 @@ func applyThreadMutationLocationData(data *mailLocationBulkData, meta *threadMut
 	data.ThreadMessageCount = meta.MessageCount
 	data.More = meta.More
 	data.NextCursor = meta.NextCursor
+	data.SelectionID = meta.SelectionID
+	data.SelectionHash = meta.SelectionHash
+	data.ApplyRequestHash = meta.ApplyRequestHash
 }
 
 func applyThreadMutationLocationPreviewData(data *mailLocationBulkPreviewData, meta *threadMutationMeta) {
@@ -308,6 +318,9 @@ func applyThreadMutationLocationPreviewData(data *mailLocationBulkPreviewData, m
 	data.ThreadMessageCount = meta.MessageCount
 	data.More = meta.More
 	data.NextCursor = meta.NextCursor
+	data.SelectionID = meta.SelectionID
+	data.SelectionHash = meta.SelectionHash
+	data.ApplyRequestHash = meta.ApplyRequestHash
 }
 
 func locationMutationItemsFromJSON(request locationJSONRequest) ([]locationMutationItem, error) {
@@ -406,10 +419,17 @@ func validateLocationMutationItems(action maildomain.LocationMutationAction, ite
 }
 
 func locationMutationRequest(action maildomain.LocationMutationAction, item locationMutationItem) maildomain.LocationMutationRequest {
-	return maildomain.LocationMutationRequest{
+	request := maildomain.LocationMutationRequest{
 		Action: action, MessageID: item.MessageID,
 		FromFolder: item.From, ToFolder: item.To, IdempotencyKey: item.IdempotencyKey,
 	}
+	if item.Snapshot != nil {
+		request.ExpectedLocationID = item.Snapshot.LocationID
+		request.ExpectedUIDValidity = item.Snapshot.UIDValidity
+		request.ExpectedUID = item.Snapshot.UID
+		request.ExpectedModSequence = item.Snapshot.ModSequence
+	}
+	return request
 }
 
 func validateLocationMutationPlans(cmd *cobra.Command, state *executionState, action maildomain.LocationMutationAction, items []locationMutationItem) (string, []maildomain.LocationMutationPlan, int64, error) {

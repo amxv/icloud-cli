@@ -277,6 +277,25 @@ type threadLocationMutationJSONRequest struct {
 	Mode           string `json:"mode,omitempty"`
 }
 
+type selectionCreateJSONRequest struct {
+	Targets     []string                   `json:"targets,omitempty"`
+	Search      *mailSearchReadJSONRequest `json:"search,omitempty"`
+	ScopeFolder string                     `json:"scope_folder,omitempty"`
+	TTL         string                     `json:"ttl,omitempty"`
+}
+
+type selectionTargetJSONRequest struct {
+	SelectionID string `json:"selection_id"`
+}
+
+type selectionApplyJSONRequest struct {
+	SelectionID string `json:"selection_id"`
+	Action      string `json:"action"`
+	To          string `json:"to,omitempty"`
+	Mode        string `json:"mode,omitempty"`
+	RequestHash string `json:"request_hash,omitempty"`
+}
+
 type flagBulkJSONRequest struct {
 	MessageIDs []string `json:"message_ids"`
 	Folder     string   `json:"folder,omitempty"`

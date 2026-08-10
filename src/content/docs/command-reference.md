@@ -619,6 +619,7 @@ Available Commands:
   reply-all   Reply to all visible participants of one explicitly selected local message
   restore     Move current Trash locations to deliberate destinations
   search      Search synchronized mail locally or query bounded provider metadata explicitly
+  selection   Create and apply short-lived immutable reviewed mail target sets
   send        Preview or send text, HTML, and attachments safely and idempotently
   status      Compatibility alias for `mail operations … list`
   sync        Fetch and atomically commit bounded pages from enabled mail folders
@@ -2756,6 +2757,169 @@ Flags:
       --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
       --json                Emit one stable JSON success envelope
       --limit int           Maximum incomplete messages to repair (1-100) (default 20)
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail selection`
+
+```text
+Create and apply short-lived immutable reviewed mail target sets
+
+Usage:
+  icloud mail selection [flags]
+  icloud mail selection [command]
+
+Examples:
+  icloud mail selection create msg_… msg_… --scope-folder inbox
+  icloud mail selection create --search --unread --folder inbox --scope-folder inbox
+  icloud mail selection show sel_…
+  icloud mail selection apply sel_… --action archive --dry-run
+
+Available Commands:
+  apply       Read or mutate exactly the frozen MailSelection target set
+  create      Freeze explicit stable targets or one bounded current local search page
+  delete      Delete one local MailSelection without contacting iCloud
+  show        Show immutable reviewed MailSelection membership without message content
+
+Flags:
+  -h, --help   help for selection
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+
+Use "icloud mail selection [command] --help" for more information about a command.
+```
+
+## `icloud mail selection apply`
+
+```text
+Read or mutate exactly the frozen MailSelection target set
+
+Usage:
+  icloud mail selection apply <selection-id> [flags]
+
+Examples:
+  icloud mail selection apply sel_… --action read --json
+  icloud mail selection apply sel_… --action mark-read --dry-run
+  icloud mail selection apply sel_… --action archive --dry-run
+  icloud mail selection apply sel_… --action archive --request-hash <hash> --yes --jsonl
+
+Flags:
+      --action string         Reviewed action to apply to the frozen target set
+      --dry-run               Review exact frozen targets/action and emit the required request hash without provider contact
+  -h, --help                  help for apply
+      --input-json string     Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                  Emit one stable JSON success envelope
+      --jsonl                 Emit ordered per-item and completed JSONL events for writes
+      --mode string           Failure mode: validate then fail fast, or continue-on-error (default "atomic")
+      --request-hash string   Exact hash emitted by the matching --dry-run review
+      --to string             Destination folder for move, copy, or restore; semantic actions resolve their normal destination
+      --yes                   Confirm an intentional non-interactive location-changing selection apply
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail selection create`
+
+```text
+Freeze explicit stable targets or one bounded current local search page
+
+Usage:
+  icloud mail selection create [message-id|thread-id...] [flags]
+
+Examples:
+  icloud mail selection create msg_… thr_… --ttl 15m
+  icloud mail selection create --search --query invoice --unread --folder inbox --scope-folder inbox --limit 50 --json
+
+Flags:
+      --after string             Include messages at or after an RFC3339 timestamp or YYYY-MM-DD UTC date
+      --attachment-name string   Restrict attachment filename text
+      --attachment-type string   Restrict attachment media type
+      --before string            Include messages before an RFC3339 timestamp or YYYY-MM-DD UTC date
+      --cursor string            Continue from a next_cursor returned by the same query
+      --flagged                  Include only messages with a flagged eligible location
+      --folder string            Restrict matches to one folder kind, ID, name, or wire name
+      --from string              Restrict sender or Reply-To text
+  -h, --help                     help for create
+      --input-json string        Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                     Emit the immutable selection and stable target evidence as JSON
+      --limit int                Maximum local search hits before thread expansion (1-100) (default 20)
+      --participant string       Restrict sender, Reply-To, To, or Cc participant text
+      --query string             Match indexed subject, sender, participants, decoded text, attachments, or RFC Message-ID
+      --read                     Include only messages without an unread eligible location
+      --result string            Search source result kind: messages or threads (default "messages")
+      --rfc-id string            Match one RFC Message-ID
+      --scope-folder string      Freeze exact eligible current provider copies in one folder for later writes
+      --search                   Create from one bounded current local search page instead of explicit IDs
+      --subject string           Restrict subject text
+      --ttl duration             Selection lifetime from creation (1m-24h) (default 15m0s)
+      --unflagged                Include only messages without a flagged eligible location
+      --unread                   Include only messages with an unread eligible location
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail selection delete`
+
+```text
+Delete one local MailSelection without contacting iCloud
+
+Usage:
+  icloud mail selection delete <selection-id> [flags]
+
+Examples:
+  icloud mail selection delete sel_…
+  icloud mail selection delete --input-json selection.json --json
+
+Flags:
+  -h, --help                help for delete
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail selection show`
+
+```text
+Show immutable reviewed MailSelection membership without message content
+
+Usage:
+  icloud mail selection show <selection-id> [flags]
+
+Examples:
+  icloud mail selection show sel_…
+  icloud mail selection show sel_… --json
+
+Flags:
+  -h, --help                help for show
+      --input-json string   Read one strict JSON read request from a file, or - for stdin; cannot be mixed with equivalent read flags or positional read arguments
+      --json                Emit selection metadata and stable target evidence as JSON
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID

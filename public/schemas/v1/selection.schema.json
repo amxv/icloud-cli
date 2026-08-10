@@ -1,0 +1,87 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/selection.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "account_id": {
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "expires_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "id": {
+      "type": "string"
+    },
+    "item_count": {
+      "type": "integer"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "folder_id": {
+            "type": "string"
+          },
+          "location_id": {
+            "type": "string"
+          },
+          "message_id": {
+            "type": "string"
+          },
+          "mod_sequence": {
+            "type": "integer"
+          },
+          "ordinal": {
+            "type": "integer"
+          },
+          "uid": {
+            "type": "integer"
+          },
+          "uid_validity": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "message_id",
+          "ordinal"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "request_hash": {
+      "type": "string"
+    },
+    "scope_folder_id": {
+      "type": "string"
+    },
+    "source_description": {
+      "type": "string"
+    },
+    "source_kind": {
+      "type": "string"
+    },
+    "source_query_hash": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "account_id",
+    "created_at",
+    "expires_at",
+    "id",
+    "item_count",
+    "request_hash",
+    "source_description",
+    "source_kind",
+    "source_query_hash"
+  ],
+  "title": "immutable reviewed MailSelection",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

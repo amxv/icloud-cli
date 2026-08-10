@@ -5,6 +5,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/amxv/icloud-cli/internal/account"
+	"github.com/amxv/icloud-cli/internal/folder"
 	maildomain "github.com/amxv/icloud-cli/internal/mail"
 	"github.com/spf13/cobra"
 )
@@ -41,11 +43,15 @@ type mailFlagBulkData struct {
 	ThreadMessageCount int                    `json:"thread_message_count,omitempty"`
 	More               bool                   `json:"more,omitempty"`
 	NextCursor         string                 `json:"next_cursor,omitempty"`
+	SelectionID        string                 `json:"selection_id,omitempty"`
+	SelectionHash      string                 `json:"selection_hash,omitempty"`
+	ApplyRequestHash   string                 `json:"apply_request_hash,omitempty"`
 }
 
 type flagMutationItem struct {
 	MessageID string
 	Folder    string
+	Snapshot  *maildomain.MailSelectionItem
 }
 
 func newMailFlagMutationCommand(state *executionState, name, short string, mutation maildomain.FlagMutation) *cobra.Command {
@@ -134,9 +140,23 @@ func executeFlagMutationItems(cmd *cobra.Command, state *executionState, mutatio
 	sequence := uint64(0)
 	renderer := NewCompactTextRenderer(state.stdout)
 	for index, item := range items {
-		accountValue, folderValue, message, location, version, err := state.mail.MailUpdateFlag(
-			cmd.Context(), state.global.Home, state.global.Account, item.MessageID, item.Folder, mutation,
+		var (
+			accountValue account.Account
+			folderValue  folder.Folder
+			message      maildomain.Message
+			location     maildomain.Location
+			version      int64
+			err          error
 		)
+		if item.Snapshot != nil {
+			accountValue, folderValue, message, location, version, err = state.mail.MailUpdateFlagSnapshot(
+				cmd.Context(), state.global.Home, state.global.Account, item.MessageID, item.Folder, *item.Snapshot, mutation,
+			)
+		} else {
+			accountValue, folderValue, message, location, version, err = state.mail.MailUpdateFlag(
+				cmd.Context(), state.global.Home, state.global.Account, item.MessageID, item.Folder, mutation,
+			)
+		}
 		sequence++
 		if err != nil {
 			failed++
@@ -224,6 +244,14 @@ func addThreadMutationPayload(payload map[string]any, meta *threadMutationMeta) 
 	if meta == nil {
 		return
 	}
+	if meta.SelectionID != "" {
+		payload["selection_id"] = meta.SelectionID
+		payload["selection_hash"] = meta.SelectionHash
+		payload["apply_request_hash"] = meta.ApplyRequestHash
+	}
+	if meta.ThreadID == "" {
+		return
+	}
 	payload["thread_id"] = meta.ThreadID
 	payload["thread_message_count"] = meta.MessageCount
 	payload["more"] = meta.More
@@ -244,10 +272,23 @@ func applyThreadMutationFlagData(data *mailFlagBulkData, meta *threadMutationMet
 	data.ThreadMessageCount = meta.MessageCount
 	data.More = meta.More
 	data.NextCursor = meta.NextCursor
+	data.SelectionID = meta.SelectionID
+	data.SelectionHash = meta.SelectionHash
+	data.ApplyRequestHash = meta.ApplyRequestHash
 }
 
 func appendThreadMutationCompactFields(fields []CompactField, meta *threadMutationMeta) []CompactField {
 	if meta == nil {
+		return fields
+	}
+	if meta.SelectionID != "" {
+		fields = append(fields,
+			Field("selection", meta.SelectionID),
+			Field("selection_hash", meta.SelectionHash),
+			Field("apply_request_hash", meta.ApplyRequestHash),
+		)
+	}
+	if meta.ThreadID == "" {
 		return fields
 	}
 	return append(fields,
@@ -265,6 +306,14 @@ func addThreadMutationErrorDetails(err *AppError, meta *threadMutationMeta) {
 	}
 	if err.Details == nil {
 		err.Details = map[string]any{}
+	}
+	if meta.SelectionID != "" {
+		err.Details["selection_id"] = meta.SelectionID
+		err.Details["selection_hash"] = meta.SelectionHash
+		err.Details["apply_request_hash"] = meta.ApplyRequestHash
+	}
+	if meta.ThreadID == "" {
+		return
 	}
 	err.Details["thread_id"] = meta.ThreadID
 	err.Details["thread_message_count"] = meta.MessageCount

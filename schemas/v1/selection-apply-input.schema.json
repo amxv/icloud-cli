@@ -1,0 +1,29 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/selection-apply-input.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "type": "string"
+    },
+    "mode": {
+      "type": "string"
+    },
+    "request_hash": {
+      "type": "string"
+    },
+    "selection_id": {
+      "type": "string"
+    },
+    "to": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "action",
+    "selection_id"
+  ],
+  "title": "MailSelection apply JSON input",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}
