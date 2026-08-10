@@ -8,7 +8,7 @@ summary: Dry-run review, recoverable drafts, exact-message replies and forwards,
 
 ## Preview the exact request first
 
-Start with `--dry-run`. It normalizes the account identity, addresses, subject, bodies, Reply-To, and custom headers without opening SMTP or creating an outbound attempt:
+Start with `--dry-run`. It resolves the account's selected sender identity, normalizes addresses, subject, bodies, Reply-To, and custom headers, and does not open SMTP or create an outbound attempt:
 
 ```bash
 icloud mail send \
@@ -19,6 +19,19 @@ icloud mail send \
 ```
 
 The compact preview shows the configured account name and address used for `From`, each recipient list, the subject, body-part and attachment counts, the text body once, and an explicit safety summary. A dry run never sends mail.
+
+Choose a configured sender explicitly when needed:
+
+```bash
+icloud mail send \
+  --from alias@icloud.com \
+  --to client@example.com \
+  --subject 'Project update' \
+  --body-file message.txt \
+  --dry-run
+```
+
+`--from` accepts either a stable `mid_…` identity ID or a configured identity address. If omitted, the account's enabled local default identity is used. The selected identity controls the RFC `From`, SMTP envelope sender, and Message-ID domain; SMTP authentication still uses the selected account's existing login and credential. A disabled identity is rejected before SMTP is contacted.
 
 Use the account selector when more than one profile is configured:
 
@@ -52,13 +65,14 @@ icloud mail send \
   --yes
 ```
 
-Use a stable idempotency key for automation. Repeating the same normalized request with the same key returns the original attempt without contacting SMTP again. Reusing that key after changing a recipient, subject, body, Reply-To, header, or account identity returns a conflict instead of guessing.
+Use a stable idempotency key for automation. Repeating the same normalized request with the same key returns the original attempt without contacting SMTP again. Reusing that key after changing the sender identity, recipient, subject, body, Reply-To, header, or account returns a conflict instead of guessing.
 
 Successful compact output contains only the attempt outcome and stable local IDs:
 
 ```text
 mail-send
-send_… status=sent
+send_… sender_identity=mid_…
+status=sent
 message_id=msg_…
 thread_id=thr_…
 reconciliation=pending
@@ -73,6 +87,7 @@ Draft creation is local-only, so you can assemble recipients, text/HTML, safe cu
 
 ```bash
 icloud mail draft create \
+  --from alias@icloud.com \
   --to client@example.com \
   --subject 'Project update' \
   --body-file message.txt \
@@ -83,6 +98,7 @@ The returned `drf_…` remains the stable draft ID across revisions. `draft upda
 
 ```bash
 icloud mail draft update drf_… \
+  --from mid_… \
   --to client@example.com \
   --subject 'Project update — revised' \
   --body-file revised.txt \
@@ -109,10 +125,10 @@ When the draft is ready, preview the exact stored revision, then send it through
 
 ```bash
 icloud mail draft send drf_… --dry-run
-icloud mail draft send drf_… --yes
+icloud mail draft send drf_… --from alias@icloud.com --yes
 ```
 
-Draft sends derive a stable idempotency key from the draft ID and revision. A proven send removes known `\Draft` provider copies before removing the local draft. If SMTP acceptance is unknown, the draft and provider copy stay in place. If the message is proven sent but cleanup is incomplete, do not resend; run `icloud mail draft sync drf_…` (adding the explicit `--folder` selector when needed) so cleanup can resume from the saved attempt state.
+Draft create/update persist the stable `mid_…` identity used to compose that revision. Draft send also accepts `--from`; if omitted, it resolves the account's current enabled default sender before the outbound request is hashed. A proven send removes known `\Draft` provider copies before removing the local draft. If SMTP acceptance is unknown, the draft and provider copy stay in place. If the message is proven sent but cleanup is incomplete, do not resend; run `icloud mail draft sync drf_…` (adding the explicit `--folder` selector when needed) so cleanup can resume from the saved attempt state.
 
 Likewise, a draft in `reconcile`, `cleanup_pending`, or `send_unknown` recovery state cannot be directly discarded by an ordinary send/delete path when doing so would lose the only provider-recovery evidence. Run `draft sync` first. A retry of a draft whose outbound attempt is already proven `sent` remains idempotent: it reuses that attempt and may resume cleanup without another SMTP transmission.
 
@@ -306,6 +322,8 @@ icloud mail send \
 Custom headers cannot replace routing, identity, MIME, delivery, or reply-threading headers. Header names and values containing control characters, duplicate names, `Bcc`, `In-Reply-To`, `References`, `Received`, `Resent-*`, or other reserved fields are rejected before any network connection.
 
 ## Interpret the outcome before retrying
+
+Alternate sender acceptance is recorded from SMTP protocol evidence, not inferred from the identity kind. A successful send—or a later recipient/DATA-stage failure after `MAIL FROM` already succeeded—sets that local identity to `verification=verified`. A permanent `MAIL FROM` rejection marks a non-primary identity `verification=rejected`, disables it, and returns a configuration error without falling back to the primary address. Re-enable it only after fixing provider-side configuration; doing so resets its local verification state to `unverified` for another deliberate test.
 
 Every real send persists a pending attempt before SMTP submission. The final result is one of:
 

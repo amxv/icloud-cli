@@ -44,18 +44,23 @@ func (commands accountCommands) MailSendPreview(
 	if err != nil {
 		return account.Account{}, maildomain.SendPreview{}, state.SchemaVersion(), mapAccountError(err)
 	}
+	sender, err := resolveSelectedMailIdentity(ctx, state, accountValue.ID, request.SenderIdentityID)
+	if err != nil {
+		return account.Account{}, maildomain.SendPreview{}, state.SchemaVersion(), err
+	}
 	request.Attachments, err = inspectOutboundAttachments(ctx, request.Attachments)
 	if err != nil {
 		return account.Account{}, maildomain.SendPreview{}, state.SchemaVersion(), mapOutboundAttachmentError(err)
 	}
-	normalized, hash, err := normalizeAccountSendRequest(accountValue, request)
+	normalized, hash, err := normalizeAccountSendRequest(sender, request)
 	if err != nil {
 		return account.Account{}, maildomain.SendPreview{}, state.SchemaVersion(), mapSendRequestError(err)
 	}
 	preview := maildomain.SendPreview{
 		Kind: normalized.Kind, ParentMessageID: normalized.ParentMessageID,
-		SourceMessageID: normalized.SourceMessageID,
-		AccountID:       accountValue.ID, From: normalized.From,
+		SourceMessageID:  normalized.SourceMessageID,
+		SenderIdentityID: normalized.SenderIdentityID,
+		AccountID:        accountValue.ID, From: normalized.From,
 		To: normalized.To, CC: normalized.CC, BCC: normalized.BCC,
 		ReplyTo: normalized.ReplyTo, Subject: normalized.Subject,
 		TextBody: normalized.TextBody, HTMLBody: normalized.HTMLBody,
@@ -82,13 +87,17 @@ func (commands accountCommands) MailSend(
 	if err != nil {
 		return account.Account{}, maildomain.OutboundAttempt{}, false, state.SchemaVersion(), mapAccountError(err)
 	}
+	sender, err := resolveSelectedMailIdentity(ctx, state, accountValue.ID, request.SenderIdentityID)
+	if err != nil {
+		return account.Account{}, maildomain.OutboundAttempt{}, false, state.SchemaVersion(), err
+	}
 	var stagedFiles *stagedOutboundFiles
 	request.Attachments, stagedFiles, err = stageOutboundAttachments(ctx, commands.attachmentBlobStore(paths), request.Attachments)
 	if err != nil {
 		return account.Account{}, maildomain.OutboundAttempt{}, false, state.SchemaVersion(), mapOutboundAttachmentError(err)
 	}
 	defer stagedFiles.Abort()
-	normalized, requestHash, err := normalizeAccountSendRequest(accountValue, request)
+	normalized, requestHash, err := normalizeAccountSendRequest(sender, request)
 	if err != nil {
 		return account.Account{}, maildomain.OutboundAttempt{}, false, state.SchemaVersion(), mapSendRequestError(err)
 	}
@@ -108,7 +117,7 @@ func (commands accountCommands) MailSend(
 	if err != nil {
 		return account.Account{}, maildomain.OutboundAttempt{}, false, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot allocate an outbound message ID", false, err)
 	}
-	rfcMessageID, err := maildomain.GenerateOutboundMessageID(accountValue.Email)
+	rfcMessageID, err := maildomain.GenerateOutboundMessageID(sender.Address)
 	if err != nil {
 		return account.Account{}, maildomain.OutboundAttempt{}, false, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot allocate an RFC Message-ID", false, err)
 	}
@@ -145,7 +154,7 @@ func (commands accountCommands) MailSend(
 		return account.Account{}, maildomain.OutboundAttempt{}, false, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot commit outbound attachment content", true, err)
 	}
 	attempt, existing, err := state.Outbound().Begin(ctx, maildomain.BeginOutboundAttempt{
-		AttemptID: attemptID, AccountID: accountValue.ID, ProposedMessageID: messageID,
+		AttemptID: attemptID, AccountID: accountValue.ID, SenderIdentityID: sender.ID, ProposedMessageID: messageID,
 		RequestHash: requestHash, IdempotencyKey: normalized.IdempotencyKey,
 		RFCMessageID: rfcMessageID, RawContentHash: staged.ContentHash,
 		RawStorageKey: staged.StorageKey, RawByteSize: staged.ByteSize,
@@ -194,10 +203,11 @@ func (commands accountCommands) MailSend(
 	sendResult, sendErr := commands.smtpSender().SendSMTP(ctx, transport.AuthRequest{
 		Username: accountValue.Email, Password: password,
 	}, transport.SMTPSendRequest{
-		Envelope: transport.SMTPEnvelope{From: accountValue.Email, Recipients: normalized.EnvelopeRecipients()},
+		Envelope: transport.SMTPEnvelope{From: normalized.From.Email, Recipients: normalized.EnvelopeRecipients()},
 		Message:  rawReader,
 	})
 	_ = rawReader.Close()
+	identityEvidenceErr := recordSenderProviderEvidence(ctx, state, sender, sendResult, sendErr, commands.timeNow())
 	if sendErr == nil && !sendResult.Accepted {
 		sendErr = &transport.SMTPSendError{
 			Outcome: transport.SMTPSendUnknown,
@@ -221,6 +231,12 @@ func (commands accountCommands) MailSend(
 			}
 		}
 		mapped := mapSendTransportError(sendErr)
+		if isPermanentSenderRejection(sendErr) {
+			mapped = cli.WrapAppError(cli.ErrorConfiguration, "selected mail identity was rejected by the provider; no fallback sender was used", false, sendErr)
+		}
+		if identityEvidenceErr != nil {
+			mapped = errors.Join(mapped, cli.WrapAppError(cli.ErrorInternal, "mail identity provider-validation state could not be persisted", false, identityEvidenceErr))
+		}
 		attempt, err = persistOutboundOutcome(ctx, state.Outbound(), attempt, status, code, commands.timeNow(), mapped)
 		if err != nil {
 			return accountValue, attempt, false, state.SchemaVersion(), err
@@ -250,6 +266,9 @@ func (commands accountCommands) MailSend(
 		return accountValue, acceptedAttempt, false, state.SchemaVersion(), withAttemptDetails(mapped, acceptedAttempt)
 	}
 	attempt = completedAttempt
+	if identityEvidenceErr != nil {
+		return accountValue, attempt, false, state.SchemaVersion(), withAttemptDetails(cli.WrapAppError(cli.ErrorInternal, "SMTP accepted the message but mail identity provider-validation state could not be persisted; do not resend", false, identityEvidenceErr), attempt)
+	}
 	if ctx.Err() != nil {
 		return markAcceptedSentCopyIssue(ctx, state.Outbound(), accountValue, attempt, "sent_copy_deferred", commands.timeNow(), ctx.Err(), state.SchemaVersion())
 	}
@@ -277,14 +296,71 @@ func (commands accountCommands) MailSend(
 	return accountValue, attempt, false, state.SchemaVersion(), nil
 }
 
-func normalizeAccountSendRequest(accountValue account.Account, request maildomain.SendRequest) (maildomain.SendRequest, string, error) {
-	request.From = maildomain.Address{DisplayName: accountValue.Name, Email: accountValue.Email}
+func normalizeAccountSendRequest(sender account.MailIdentity, request maildomain.SendRequest) (maildomain.SendRequest, string, error) {
+	request.SenderIdentityID = sender.ID
+	request.From = maildomain.Address{DisplayName: sender.DisplayName, Email: sender.Address}
 	normalized, err := maildomain.NormalizeSendRequest(request)
 	if err != nil {
 		return maildomain.SendRequest{}, "", err
 	}
 	hash, err := maildomain.SendRequestHash(normalized)
 	return normalized, hash, err
+}
+
+func resolveSelectedMailIdentity(ctx context.Context, state *store.Store, accountID, selector string) (account.MailIdentity, error) {
+	var (
+		value account.MailIdentity
+		err   error
+	)
+	if strings.TrimSpace(selector) == "" {
+		value, err = state.Identities().Default(ctx, accountID)
+	} else {
+		value, err = state.Identities().Resolve(ctx, accountID, selector)
+	}
+	if err != nil {
+		return account.MailIdentity{}, mapMailIdentityError(err)
+	}
+	if !value.Enabled {
+		return account.MailIdentity{}, mapMailIdentityError(account.ErrIdentityDisabled)
+	}
+	return value, nil
+}
+
+func recordSenderProviderEvidence(ctx context.Context, state *store.Store, sender account.MailIdentity, result transport.SMTPSendResult, sendErr error, now time.Time) error {
+	verification := account.MailIdentityVerification("")
+	if sendErr == nil && result.Accepted {
+		verification = account.MailIdentityVerified
+	} else {
+		var typed *transport.SMTPSendError
+		if !errors.As(sendErr, &typed) || typed.Failure == nil {
+			return nil
+		}
+		switch typed.Failure.Stage {
+		case transport.StageSMTPRecipient, transport.StageSMTPData, transport.StageSMTPWrite, transport.StageSMTPAccept:
+			verification = account.MailIdentityVerified
+		case transport.StageSMTPMail:
+			if !typed.Failure.Retryable && sender.Kind != account.MailIdentityPrimary {
+				outcomeCtx, cancel := durableOutcomeContext(ctx)
+				defer cancel()
+				if _, err := state.Identities().SetEnabled(outcomeCtx, sender.AccountID, sender.ID, false, now); err != nil {
+					return err
+				}
+				verification = account.MailIdentityRejected
+			}
+		}
+	}
+	if verification == "" {
+		return nil
+	}
+	outcomeCtx, cancel := durableOutcomeContext(ctx)
+	defer cancel()
+	_, err := state.Identities().SetVerification(outcomeCtx, sender.AccountID, sender.ID, verification, now)
+	return err
+}
+
+func isPermanentSenderRejection(err error) bool {
+	var typed *transport.SMTPSendError
+	return errors.As(err, &typed) && typed.Failure != nil && typed.Failure.Stage == transport.StageSMTPMail && !typed.Failure.Retryable
 }
 
 func stageOutboundMessage(ctx context.Context, stager blob.Stager, request maildomain.SendRequest, messageID string, sentAt time.Time) (*blob.Staged, error) {

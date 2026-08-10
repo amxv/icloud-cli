@@ -20,6 +20,7 @@ func TestOutboundAttemptIdempotencyAndUnknownOutcome(t *testing.T) {
 	input := maildomain.BeginOutboundAttempt{
 		AttemptID:         "send_0198d704-6c00-7000-8000-000000000001",
 		AccountID:         accountID,
+		SenderIdentityID:  primaryMailIdentityID(accountID),
 		ProposedMessageID: "msg_0198d704-6c00-7000-8000-000000000601",
 		RequestHash:       strings.Repeat("a", 64), IdempotencyKey: "send-fixture-01",
 		RFCMessageID:   "outbound@example.test",
@@ -70,7 +71,8 @@ func TestOutboundAcceptedPersistsLocationlessSearchableMessageAtomically(t *test
 	attempt, _, err := state.Outbound().Begin(context.Background(), maildomain.BeginOutboundAttempt{
 		AttemptID: "send_0198d704-6c00-7000-8000-000000000010",
 		AccountID: accountID, ProposedMessageID: "msg_0198d704-6c00-7000-8000-000000000610",
-		RequestHash: strings.Repeat("f", 64), IdempotencyKey: "accepted-send-01",
+		SenderIdentityID: primaryMailIdentityID(accountID),
+		RequestHash:      strings.Repeat("f", 64), IdempotencyKey: "accepted-send-01",
 		RFCMessageID:   content.Preview.RFCMessageID,
 		RawContentHash: hash, RawStorageKey: key, RawByteSize: int64(len(raw)),
 		ToCount: len(request.To), CCCount: len(request.CC), BCCCount: len(request.BCC),
@@ -137,14 +139,15 @@ func TestOutboundReplyPersistsExactParentAndJoinsExistingThread(t *testing.T) {
 	}
 
 	request, err := maildomain.NormalizeSendRequest(maildomain.SendRequest{
-		Kind:            maildomain.OutboundKindReply,
-		ParentMessageID: parent.MessageID,
-		From:            maildomain.Address{DisplayName: "Mail Test", Email: "mail-test@icloud.com"},
-		To:              []maildomain.Address{{Email: "reply-target@example.test"}},
-		Subject:         "Re: Reply persistence",
-		TextBody:        "persisted reply body",
-		InReplyTo:       parent.Parsed.RFCMessageID,
-		References:      []string{parent.Parsed.RFCMessageID},
+		Kind:             maildomain.OutboundKindReply,
+		ParentMessageID:  parent.MessageID,
+		SenderIdentityID: primaryMailIdentityID(accountID),
+		From:             maildomain.Address{DisplayName: "Mail Test", Email: "mail-test@icloud.com"},
+		To:               []maildomain.Address{{Email: "reply-target@example.test"}},
+		Subject:          "Re: Reply persistence",
+		TextBody:         "persisted reply body",
+		InReplyTo:        parent.Parsed.RFCMessageID,
+		References:       []string{parent.Parsed.RFCMessageID},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -165,7 +168,8 @@ func TestOutboundReplyPersistsExactParentAndJoinsExistingThread(t *testing.T) {
 	attempt, existing, err := state.Outbound().Begin(ctx, maildomain.BeginOutboundAttempt{
 		AttemptID: "send_0198d704-6c00-7000-8000-000000000011",
 		AccountID: accountID, ProposedMessageID: "msg_0198d704-6c00-7000-8000-000000000611",
-		RequestHash: strings.Repeat("8", 64), IdempotencyKey: "reply-persistence-01",
+		SenderIdentityID: primaryMailIdentityID(accountID),
+		RequestHash:      strings.Repeat("8", 64), IdempotencyKey: "reply-persistence-01",
 		RFCMessageID:   content.Preview.RFCMessageID,
 		RawContentHash: rawHash, RawStorageKey: "raw/sha256/99/" + rawHash + ".eml", RawByteSize: int64(raw.Len()),
 		ToCount: len(request.To), BodyPartCount: request.BodyPartCount(),
@@ -217,9 +221,10 @@ func TestOutboundForwardPersistsSourceAndCreatesIndependentThread(t *testing.T) 
 
 	request, err := maildomain.NormalizeSendRequest(maildomain.SendRequest{
 		Kind: maildomain.OutboundKindForward, SourceMessageID: source.MessageID,
-		From:    maildomain.Address{DisplayName: "Mail Test", Email: "mail-test@icloud.com"},
-		To:      []maildomain.Address{{Email: "target@example.test"}},
-		Subject: "Fwd: Forward source", TextBody: "quoted forward body",
+		SenderIdentityID: primaryMailIdentityID(accountID),
+		From:             maildomain.Address{DisplayName: "Mail Test", Email: "mail-test@icloud.com"},
+		To:               []maildomain.Address{{Email: "target@example.test"}},
+		Subject:          "Fwd: Forward source", TextBody: "quoted forward body",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -240,7 +245,8 @@ func TestOutboundForwardPersistsSourceAndCreatesIndependentThread(t *testing.T) 
 	attempt, existing, err := state.Outbound().Begin(ctx, maildomain.BeginOutboundAttempt{
 		AttemptID: "send_0198d704-6c00-7000-8000-000000000012",
 		AccountID: accountID, ProposedMessageID: "msg_0198d704-6c00-7000-8000-000000000612",
-		RequestHash: strings.Repeat("c", 64), IdempotencyKey: "forward-persistence-01",
+		SenderIdentityID: primaryMailIdentityID(accountID),
+		RequestHash:      strings.Repeat("c", 64), IdempotencyKey: "forward-persistence-01",
 		RFCMessageID:   content.Preview.RFCMessageID,
 		RawContentHash: rawHash, RawStorageKey: "raw/sha256/dd/" + rawHash + ".eml", RawByteSize: int64(raw.Len()),
 		ToCount: len(request.To), BodyPartCount: request.BodyPartCount(),
@@ -288,7 +294,8 @@ func TestOutboundAcceptedTransactionRollbackLeavesPendingAttemptAndNoMessage(t *
 	attempt, _, err := state.Outbound().Begin(context.Background(), maildomain.BeginOutboundAttempt{
 		AttemptID: "send_0198d704-6c00-7000-8000-000000000020",
 		AccountID: accountID, ProposedMessageID: "msg_0198d704-6c00-7000-8000-000000000620",
-		RequestHash: strings.Repeat("2", 64), RFCMessageID: content.Preview.RFCMessageID,
+		SenderIdentityID: primaryMailIdentityID(accountID),
+		RequestHash:      strings.Repeat("2", 64), RFCMessageID: content.Preview.RFCMessageID,
 		RawContentHash: hash, RawStorageKey: "raw/sha256/11/" + hash + ".eml", RawByteSize: int64(len(raw)),
 		ToCount: 1, BodyPartCount: 2, Now: now,
 	})
@@ -342,7 +349,8 @@ func TestOutboundReconcileConfirmsSentLocationAndResolvesUnknownOnlyByExactMessa
 	accepted, _, err := state.Outbound().Begin(ctx, maildomain.BeginOutboundAttempt{
 		AttemptID: "send_0198d704-6c00-7000-8000-000000000030",
 		AccountID: accountID, ProposedMessageID: "msg_0198d704-6c00-7000-8000-000000000630",
-		RequestHash: strings.Repeat("3", 64), IdempotencyKey: "reconcile-sent-01",
+		SenderIdentityID: primaryMailIdentityID(accountID),
+		RequestHash:      strings.Repeat("3", 64), IdempotencyKey: "reconcile-sent-01",
 		RFCMessageID:   content.Preview.RFCMessageID,
 		RawContentHash: strings.Repeat("4", 64), RawStorageKey: "raw/sha256/44/" + strings.Repeat("4", 64) + ".eml", RawByteSize: int64(len(raw)),
 		ToCount: 1, BodyPartCount: 2, Now: base,
@@ -380,6 +388,7 @@ func TestOutboundReconcileConfirmsSentLocationAndResolvesUnknownOnlyByExactMessa
 	unknownRFC := "unknown-reconcile@example.test"
 	unknown, _, err := state.Outbound().Begin(ctx, maildomain.BeginOutboundAttempt{
 		AttemptID: unknownID, AccountID: accountID,
+		SenderIdentityID:  primaryMailIdentityID(accountID),
 		ProposedMessageID: "msg_0198d704-6c00-7000-8000-000000000631",
 		RequestHash:       strings.Repeat("5", 64), IdempotencyKey: "reconcile-unknown-01",
 		RFCMessageID: unknownRFC, RawContentHash: strings.Repeat("6", 64),
@@ -425,6 +434,7 @@ func TestOutboundReconcileKeepsAmbiguousAndSubjectOnlyEvidenceUnknown(t *testing
 	ambiguousRFC := "ambiguous-reconcile@example.test"
 	ambiguous, _, err := state.Outbound().Begin(ctx, maildomain.BeginOutboundAttempt{
 		AttemptID: "send_0198d704-6c00-7000-8000-000000000040", AccountID: accountID,
+		SenderIdentityID:  primaryMailIdentityID(accountID),
 		ProposedMessageID: "msg_0198d704-6c00-7000-8000-000000000640",
 		RequestHash:       strings.Repeat("7", 64), IdempotencyKey: "ambiguous-unknown-01",
 		RFCMessageID: ambiguousRFC, RawContentHash: strings.Repeat("8", 64),
@@ -463,6 +473,7 @@ func TestOutboundReconcileKeepsAmbiguousAndSubjectOnlyEvidenceUnknown(t *testing
 	unmatchedRFC := "unmatched-reconcile@example.test"
 	unmatched, _, err := state.Outbound().Begin(ctx, maildomain.BeginOutboundAttempt{
 		AttemptID: "send_0198d704-6c00-7000-8000-000000000041", AccountID: accountID,
+		SenderIdentityID:  primaryMailIdentityID(accountID),
 		ProposedMessageID: "msg_0198d704-6c00-7000-8000-000000000641",
 		RequestHash:       strings.Repeat("9", 64), IdempotencyKey: "unmatched-unknown-01",
 		RFCMessageID: unmatchedRFC, RawContentHash: strings.Repeat("a", 64),
@@ -513,12 +524,13 @@ func commitSentRecord(t *testing.T, state *Store, record maildomain.IngestRecord
 func outboundStoreFixture(t *testing.T, accountID string, now time.Time) (maildomain.SendRequest, maildomain.NormalizedContent, []byte) {
 	t.Helper()
 	request, err := maildomain.NormalizeSendRequest(maildomain.SendRequest{
-		From:    maildomain.Address{DisplayName: "Ashray Sender", Email: "owner@icloud.com"},
-		To:      []maildomain.Address{{DisplayName: "Primary", Email: "primary@example.com"}},
-		CC:      []maildomain.Address{{DisplayName: "Visible", Email: "visible@example.com"}},
-		BCC:     []maildomain.Address{{DisplayName: "Hidden", Email: "hidden@example.com"}},
-		ReplyTo: &maildomain.Address{DisplayName: "Replies", Email: "reply@example.com"},
-		Subject: "Phase 14 accepted", TextBody: "outbound-search-token plain body",
+		SenderIdentityID: primaryMailIdentityID(accountID),
+		From:             maildomain.Address{DisplayName: "Ashray Sender", Email: "owner@icloud.com"},
+		To:               []maildomain.Address{{DisplayName: "Primary", Email: "primary@example.com"}},
+		CC:               []maildomain.Address{{DisplayName: "Visible", Email: "visible@example.com"}},
+		BCC:              []maildomain.Address{{DisplayName: "Hidden", Email: "hidden@example.com"}},
+		ReplyTo:          &maildomain.Address{DisplayName: "Replies", Email: "reply@example.com"},
+		Subject:          "Phase 14 accepted", TextBody: "outbound-search-token plain body",
 		HTMLBody: "<p>outbound-search-token HTML body</p>",
 	})
 	if err != nil {

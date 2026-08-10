@@ -19,8 +19,8 @@ type MailService interface {
 	MailDraftListPage(context.Context, string, string, string, int) (account.Account, []maildomain.Draft, bool, string, int64, error)
 	MailDraftShow(context.Context, string, string, string) (account.Account, maildomain.Draft, maildomain.ContentSource, int64, error)
 	MailDraftSync(context.Context, string, string, string, string, int) (account.Account, maildomain.DraftSyncSummary, []maildomain.Draft, int64, error)
-	MailDraftSendPreview(context.Context, string, string, string) (account.Account, maildomain.Draft, maildomain.SendPreview, int64, error)
-	MailDraftSend(context.Context, string, string, string) (account.Account, maildomain.Draft, maildomain.OutboundAttempt, bool, int64, error)
+	MailDraftSendPreview(context.Context, string, string, string, string) (account.Account, maildomain.Draft, maildomain.SendPreview, int64, error)
+	MailDraftSend(context.Context, string, string, string, string) (account.Account, maildomain.Draft, maildomain.OutboundAttempt, bool, int64, error)
 	MailDraftDelete(context.Context, string, string, string) (account.Account, maildomain.Draft, int, int64, error)
 	MailWatch(context.Context, string, string, maildomain.WatchOptions, func(maildomain.WatchEvent) error) error
 	MailSync(context.Context, string, string, string, int) (account.Account, []folder.Folder, []maildomain.SyncSummary, int64, error)
@@ -1132,10 +1132,10 @@ func (unavailableMailService) MailDraftShow(context.Context, string, string, str
 func (unavailableMailService) MailDraftSync(context.Context, string, string, string, string, int) (account.Account, maildomain.DraftSyncSummary, []maildomain.Draft, int64, error) {
 	return account.Account{}, maildomain.DraftSyncSummary{}, nil, 0, NewAppError(ErrorConfiguration, "mail drafts are unavailable", false)
 }
-func (unavailableMailService) MailDraftSendPreview(context.Context, string, string, string) (account.Account, maildomain.Draft, maildomain.SendPreview, int64, error) {
+func (unavailableMailService) MailDraftSendPreview(context.Context, string, string, string, string) (account.Account, maildomain.Draft, maildomain.SendPreview, int64, error) {
 	return account.Account{}, maildomain.Draft{}, maildomain.SendPreview{}, 0, NewAppError(ErrorConfiguration, "mail drafts are unavailable", false)
 }
-func (unavailableMailService) MailDraftSend(context.Context, string, string, string) (account.Account, maildomain.Draft, maildomain.OutboundAttempt, bool, int64, error) {
+func (unavailableMailService) MailDraftSend(context.Context, string, string, string, string) (account.Account, maildomain.Draft, maildomain.OutboundAttempt, bool, int64, error) {
 	return account.Account{}, maildomain.Draft{}, maildomain.OutboundAttempt{}, false, 0, NewAppError(ErrorConfiguration, "mail drafts are unavailable", false)
 }
 func (unavailableMailService) MailDraftDelete(context.Context, string, string, string) (account.Account, maildomain.Draft, int, int64, error) {

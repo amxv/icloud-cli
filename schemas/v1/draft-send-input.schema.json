@@ -1,0 +1,19 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/draft-send-input.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "draft_id": {
+      "type": "string"
+    },
+    "from": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "draft_id"
+  ],
+  "title": "draft send JSON input",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

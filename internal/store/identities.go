@@ -207,7 +207,11 @@ func (r *MailIdentityRepository) SetEnabled(ctx context.Context, accountID, sele
 			return account.MailIdentity{}, fmt.Errorf("replace default mail identity: %w", err)
 		}
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE mail_identities SET enabled = ?, updated_at = ? WHERE account_id = ? AND identity_id = ?`, boolInt(enabled), now.UTC().Format(time.RFC3339Nano), accountID, value.ID); err != nil {
+	verification := value.Verification
+	if enabled && verification == account.MailIdentityRejected {
+		verification = account.MailIdentityUnverified
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE mail_identities SET enabled = ?, verification = ?, updated_at = ? WHERE account_id = ? AND identity_id = ?`, boolInt(enabled), verification, now.UTC().Format(time.RFC3339Nano), accountID, value.ID); err != nil {
 		return account.MailIdentity{}, fmt.Errorf("update mail identity enabled state: %w", err)
 	}
 	if err := ensureMailIdentityInvariant(ctx, tx, accountID); err != nil {
@@ -221,6 +225,25 @@ func (r *MailIdentityRepository) SetEnabled(ctx context.Context, accountID, sele
 		return account.MailIdentity{}, fmt.Errorf("commit mail identity enabled update: %w", err)
 	}
 	return value, nil
+}
+
+func (r *MailIdentityRepository) SetVerification(ctx context.Context, accountID, selector string, verification account.MailIdentityVerification, now time.Time) (account.MailIdentity, error) {
+	switch verification {
+	case account.MailIdentityUnverified, account.MailIdentityVerified, account.MailIdentityRejected:
+	default:
+		return account.MailIdentity{}, account.ErrInvalidInput
+	}
+	value, err := r.Resolve(ctx, accountID, selector)
+	if err != nil {
+		return account.MailIdentity{}, err
+	}
+	if value.Verification == verification {
+		return value, nil
+	}
+	if _, err := r.db.ExecContext(ctx, `UPDATE mail_identities SET verification = ?, updated_at = ? WHERE account_id = ? AND identity_id = ?`, verification, now.UTC().Format(time.RFC3339Nano), accountID, value.ID); err != nil {
+		return account.MailIdentity{}, fmt.Errorf("update mail identity verification: %w", err)
+	}
+	return r.Resolve(ctx, accountID, value.ID)
 }
 
 func (r *MailIdentityRepository) SetDefault(ctx context.Context, accountID, selector string, now time.Time) (account.MailIdentity, error) {

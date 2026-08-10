@@ -902,6 +902,7 @@ Flags:
       --body string               Inline text body; may be empty
       --body-file string          Text body file path, or - for stdin
       --cc stringArray            Cc recipient address; repeat as needed
+      --from string               Sender identity by stable mid_… ID or configured address (defaults to the account's local default identity)
       --header stringArray        Safe custom header as Name: Value; repeat as needed
   -h, --help                      help for create
       --html-body string          Inline HTML body
@@ -990,6 +991,7 @@ Examples:
 Flags:
       --dry-run             Preview the normalized send without contacting SMTP or deleting the draft
       --format string       With --dry-run, output text, html, or raw preview content
+      --from string         Sender identity by stable mid_… ID or configured address (defaults to the account's local default identity)
       --headers             With --dry-run, print normalized safe headers
   -h, --help                help for send
       --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
@@ -1083,6 +1085,7 @@ Flags:
       --body string               Inline text body; may be empty
       --body-file string          Text body file path, or - for stdin
       --cc stringArray            Cc recipient address; repeat as needed
+      --from string               Sender identity by stable mid_… ID or configured address (defaults to the account's local default identity)
       --header stringArray        Safe custom header as Name: Value; repeat as needed
   -h, --help                      help for update
       --html-body string          Inline HTML body
@@ -2540,6 +2543,7 @@ Flags:
       --cc stringArray            Cc recipient address; repeat as needed
       --dry-run                   Preview the normalized message without creating an attempt or contacting SMTP
       --format string             With --dry-run, output text, html, or raw preview content
+      --from string               Sender identity by stable mid_… ID or configured address (defaults to the account's local default identity)
       --header stringArray        Safe custom header as Name: Value; repeat as needed
       --headers                   With --dry-run, print normalized safe header fields (Bcc remains omitted)
   -h, --help                      help for send

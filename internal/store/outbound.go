@@ -16,7 +16,7 @@ type OutboundRepository struct {
 }
 
 const outboundAttemptColumns = `
-SELECT attempt_id, account_id, proposed_message_id, request_hash,
+SELECT attempt_id, account_id, sender_identity_id, proposed_message_id, request_hash,
        idempotency_key, status, rfc_message_id,
        raw_content_hash, raw_storage_key, raw_byte_size,
        to_count, cc_count, bcc_count, body_part_count,
@@ -50,6 +50,7 @@ WHERE account_id = ? AND idempotency_key = ?`, strings.TrimSpace(accountID), key
 
 func (repository *OutboundRepository) Begin(ctx context.Context, input maildomain.BeginOutboundAttempt) (maildomain.OutboundAttempt, bool, error) {
 	if strings.TrimSpace(input.AttemptID) == "" || strings.TrimSpace(input.AccountID) == "" ||
+		!strings.HasPrefix(strings.TrimSpace(input.SenderIdentityID), "mid_") ||
 		strings.TrimSpace(input.ProposedMessageID) == "" || len(strings.TrimSpace(input.RequestHash)) != 64 ||
 		strings.TrimSpace(input.RFCMessageID) == "" || len(strings.TrimSpace(input.RawContentHash)) != 64 ||
 		strings.TrimSpace(input.RawStorageKey) == "" || input.RawByteSize < 0 {
@@ -124,14 +125,14 @@ ON CONFLICT(content_hash) DO NOTHING`, input.RawContentHash, input.RawStorageKey
 	}
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO outbound_attempts (
-    attempt_id, account_id, proposed_message_id, request_hash, idempotency_key,
+    attempt_id, account_id, sender_identity_id, proposed_message_id, request_hash, idempotency_key,
     status, rfc_message_id, raw_content_hash, raw_storage_key, raw_byte_size,
     to_count, cc_count, bcc_count, body_part_count,
     attachment_count, attachment_byte_size, outbound_kind, parent_message_id, source_message_id,
     retry_of_attempt_id,
     reconciliation, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'none', ?, ?)`,
-		input.AttemptID, input.AccountID, input.ProposedMessageID, input.RequestHash,
+) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'none', ?, ?)`,
+		input.AttemptID, input.AccountID, input.SenderIdentityID, input.ProposedMessageID, input.RequestHash,
 		strings.TrimSpace(input.IdempotencyKey), input.RFCMessageID,
 		input.RawContentHash, input.RawStorageKey, input.RawByteSize,
 		input.ToCount, input.CCCount, input.BCCCount, input.BodyPartCount,
@@ -265,6 +266,7 @@ func (repository *OutboundRepository) CompleteSent(ctx context.Context, input ma
 		return maildomain.OutboundAttempt{}, err
 	}
 	if attempt.Kind != input.Request.Operation() ||
+		attempt.SenderIdentityID != strings.TrimSpace(input.Request.SenderIdentityID) ||
 		attempt.ParentMessageID != strings.TrimSpace(input.Request.ParentMessageID) ||
 		attempt.SourceMessageID != strings.TrimSpace(input.Request.SourceMessageID) {
 		return maildomain.OutboundAttempt{}, errors.New("accepted outbound operation does not match the pending attempt")
@@ -572,7 +574,7 @@ func scanOutboundAttempt(row rowScanner) (maildomain.OutboundAttempt, error) {
 	var value maildomain.OutboundAttempt
 	var status, reconciliation, acceptedAt, createdAt, updatedAt sql.NullString
 	if err := row.Scan(
-		&value.ID, &value.AccountID, &value.ProposedMessageID, &value.RequestHash,
+		&value.ID, &value.AccountID, &value.SenderIdentityID, &value.ProposedMessageID, &value.RequestHash,
 		&value.IdempotencyKey, &status, &value.RFCMessageID,
 		&value.RawContentHash, &value.RawStorageKey, &value.RawByteSize,
 		&value.ToCount, &value.CCCount, &value.BCCCount, &value.BodyPartCount,

@@ -16,7 +16,7 @@ import (
 type DraftRepository struct{ db *sql.DB }
 
 const draftColumns = `
-SELECT draft_id, account_id, message_id, revision, sync_state,
+SELECT draft_id, account_id, sender_identity_id, message_id, revision, sync_state,
        remote_location_id, previous_location_id, outbound_attempt_id,
        custom_headers_json, last_error_code, created_at, updated_at
 FROM mail_drafts`
@@ -101,11 +101,12 @@ ON CONFLICT(message_id) DO UPDATE SET
 	}
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO mail_drafts (
-    draft_id, account_id, message_id, revision, sync_state,
+    draft_id, account_id, sender_identity_id, message_id, revision, sync_state,
     remote_location_id, previous_location_id, outbound_attempt_id,
     custom_headers_json, last_error_code, created_at, updated_at
-) VALUES (?, ?, ?, ?, 'local', '', '', '', ?, '', ?, ?)
+) VALUES (?, ?, ?, ?, ?, 'local', '', '', '', ?, '', ?, ?)
 ON CONFLICT(draft_id) DO UPDATE SET
+    sender_identity_id = excluded.sender_identity_id,
     revision = excluded.revision,
     sync_state = 'local',
     previous_location_id = CASE
@@ -117,7 +118,7 @@ ON CONFLICT(draft_id) DO UPDATE SET
     custom_headers_json = excluded.custom_headers_json,
     last_error_code = '',
     updated_at = excluded.updated_at`,
-		input.DraftID, input.AccountID, input.MessageID, input.Revision, string(headersJSON), timestamp, timestamp); err != nil {
+		input.DraftID, input.AccountID, strings.TrimSpace(request.SenderIdentityID), input.MessageID, input.Revision, string(headersJSON), timestamp, timestamp); err != nil {
 		return maildomain.Draft{}, fmt.Errorf("persist draft lifecycle: %w", err)
 	}
 	value, err := scanDraft(tx.QueryRowContext(ctx, draftColumns+` WHERE draft_id = ?`, input.DraftID))
@@ -425,7 +426,7 @@ func scanDraft(row rowScanner) (maildomain.Draft, error) {
 	var value maildomain.Draft
 	var state string
 	var headersJSON, createdAt, updatedAt string
-	if err := row.Scan(&value.ID, &value.AccountID, &value.MessageID, &value.Revision, &state,
+	if err := row.Scan(&value.ID, &value.AccountID, &value.SenderIdentityID, &value.MessageID, &value.Revision, &state,
 		&value.RemoteLocationID, &value.PreviousLocationID, &value.OutboundAttemptID,
 		&headersJSON, &value.LastErrorCode, &createdAt, &updatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -601,10 +602,10 @@ LIMIT ?`, strings.TrimSpace(accountID), strings.TrimSpace(accountID), strings.Tr
 			}
 			if _, err := tx.ExecContext(ctx, `
 INSERT INTO mail_drafts (
-    draft_id, account_id, message_id, revision, sync_state, remote_location_id,
+    draft_id, account_id, sender_identity_id, message_id, revision, sync_state, remote_location_id,
     previous_location_id, outbound_attempt_id, custom_headers_json, last_error_code,
     created_at, updated_at
-) VALUES (?, ?, ?, 1, 'synced', ?, '', '', ?, '', ?, ?)`, draftID, accountID, candidate.messageID, locationID, headersJSON, timestamp, timestamp); err != nil {
+) VALUES (?, ?, ?, ?, 1, 'synced', ?, '', '', ?, '', ?, ?)`, draftID, accountID, providerDraftSenderIdentityID(ctx, tx, accountID, candidate.messageID), candidate.messageID, locationID, headersJSON, timestamp, timestamp); err != nil {
 				return 0, "", false, fmt.Errorf("adopt provider draft: %w", err)
 			}
 			continue
@@ -655,6 +656,20 @@ func providerDraftCustomHeadersJSON(ctx context.Context, tx *sql.Tx, messageID s
 		return "", fmt.Errorf("encode provider draft custom headers: %w", err)
 	}
 	return string(custom), nil
+}
+
+func providerDraftSenderIdentityID(ctx context.Context, tx *sql.Tx, accountID, messageID string) string {
+	var identityID string
+	_ = tx.QueryRowContext(ctx, `
+SELECT i.identity_id
+FROM messages AS m
+JOIN mail_identities AS i
+  ON i.account_id = m.account_id
+ AND lower(i.email_address) = lower(m.from_email)
+WHERE m.account_id = ? AND m.message_id = ?
+ORDER BY CASE WHEN i.kind = 'primary' THEN 0 ELSE 1 END, i.identity_id
+LIMIT 1`, strings.TrimSpace(accountID), strings.TrimSpace(messageID)).Scan(&identityID)
+	return identityID
 }
 
 func preferredDraftLocation(ctx context.Context, tx *sql.Tx, accountID, messageID, folderID, rfcMessageID string) (string, error) {

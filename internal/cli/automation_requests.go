@@ -128,6 +128,7 @@ type attachmentJSONInput struct {
 }
 
 type composeJSONRequest struct {
+	From           string                `json:"from,omitempty"`
 	To             []string              `json:"to,omitempty"`
 	CC             []string              `json:"cc,omitempty"`
 	BCC            []string              `json:"bcc,omitempty"`
@@ -190,6 +191,7 @@ type forwardJSONRequest struct {
 }
 
 type draftComposeJSONRequest struct {
+	From         string                `json:"from,omitempty"`
 	To           []string              `json:"to,omitempty"`
 	CC           []string              `json:"cc,omitempty"`
 	BCC          []string              `json:"bcc,omitempty"`
@@ -218,6 +220,11 @@ type draftTargetJSONRequest struct {
 	DraftID string `json:"draft_id"`
 }
 
+type draftSendJSONRequest struct {
+	DraftID string `json:"draft_id"`
+	From    string `json:"from,omitempty"`
+}
+
 type locationJSONRequest struct {
 	MessageID      string `json:"message_id"`
 	From           string `json:"from,omitempty"`
@@ -237,7 +244,8 @@ type flagBulkJSONLItem struct {
 
 func (request composeJSONRequest) sendFlags() sendFlags {
 	flags := sendFlags{
-		To: request.To, CC: request.CC, BCC: request.BCC, ReplyTo: request.ReplyTo,
+		From: request.From,
+		To:   request.To, CC: request.CC, BCC: request.BCC, ReplyTo: request.ReplyTo,
 		Subject: request.Subject, Body: request.Body, BodyFile: request.BodyFile,
 		HTMLBody: request.HTMLBody, HTMLBodyFile: request.HTMLBodyFile,
 		Headers: request.Headers, IdempotencyKey: request.IdempotencyKey,
@@ -276,7 +284,8 @@ func (request forwardComposeJSONRequest) sendFlags() sendFlags {
 
 func (request draftComposeJSONRequest) sendFlags() sendFlags {
 	return composeJSONRequest{
-		To: request.To, CC: request.CC, BCC: request.BCC, ReplyTo: request.ReplyTo, Subject: request.Subject,
+		From: request.From,
+		To:   request.To, CC: request.CC, BCC: request.BCC, ReplyTo: request.ReplyTo, Subject: request.Subject,
 		Body: request.Body, BodyFile: request.BodyFile, HTMLBody: request.HTMLBody, HTMLBodyFile: request.HTMLBodyFile,
 		Headers: request.Headers, Attachments: request.Attachments,
 	}.sendFlags()

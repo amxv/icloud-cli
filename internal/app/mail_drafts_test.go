@@ -320,7 +320,7 @@ func TestMailDraftInterruptedReplacementWithoutAPPENDUIDKeepsOldVersionRecoverab
 	if after.SyncState != maildomain.DraftReconcile || after.PreviousLocationID != oldLocation || after.RemoteLocationID != "" || len(after.Message.Locations) == 0 {
 		t.Fatalf("recoverable draft=%+v", after)
 	}
-	if _, _, _, _, _, sendErr := commands.MailDraftSend(context.Background(), home, "", created.ID); sendErr == nil || cli.NormalizeError(sendErr).Code != cli.ErrorConflict {
+	if _, _, _, _, _, sendErr := commands.MailDraftSend(context.Background(), home, "", created.ID, ""); sendErr == nil || cli.NormalizeError(sendErr).Code != cli.ErrorConflict {
 		t.Fatalf("unresolved draft send err=%v", sendErr)
 	}
 	if _, _, _, _, deleteErr := commands.MailDraftDelete(context.Background(), home, "", created.ID); deleteErr == nil || cli.NormalizeError(deleteErr).Code != cli.ErrorConflict {
@@ -356,7 +356,7 @@ func TestMailDraftSyncAdoptsProviderNativeDraftAsOutboundAndNotUnread(t *testing
 	if len(value.CustomHeaders) != 1 || value.CustomHeaders[0].Key != "X-Synthetic-Draft-Meta" || value.CustomHeaders[0].Value != "retained" {
 		t.Fatalf("native custom headers=%+v", value.CustomHeaders)
 	}
-	_, _, preview, _, err := commands.MailDraftSendPreview(context.Background(), home, "", value.ID)
+	_, _, preview, _, err := commands.MailDraftSendPreview(context.Background(), home, "", value.ID, "")
 	if err != nil || len(preview.Headers) != 1 || preview.Headers[0] != value.CustomHeaders[0] {
 		t.Fatalf("native draft preview headers=%+v err=%v", preview.Headers, err)
 	}
@@ -408,7 +408,7 @@ func TestMailDraftSendIsIdempotentAndCleansProviderOnlyAfterProvenSent(t *testin
 	if _, _, _, _, err := commands.MailDraftSync(context.Background(), home, "", "Drafts", created.ID, 20); err != nil {
 		t.Fatal(err)
 	}
-	_, _, firstAttempt, firstReused, _, firstErr := commands.MailDraftSend(context.Background(), home, "", created.ID)
+	_, _, firstAttempt, firstReused, _, firstErr := commands.MailDraftSend(context.Background(), home, "", created.ID, "")
 	if firstErr == nil || firstAttempt.Status != maildomain.OutboundSent || firstReused || sender.calls != 1 || sent.calls != 1 || locations.calls != 1 {
 		t.Fatalf("first send attempt=%+v reused=%v smtp=%d sent=%d cleanup=%d err=%v", firstAttempt, firstReused, sender.calls, sent.calls, locations.calls, firstErr)
 	}
@@ -416,7 +416,7 @@ func TestMailDraftSendIsIdempotentAndCleansProviderOnlyAfterProvenSent(t *testin
 	if err != nil || pending.SyncState != maildomain.DraftCleanupPending || pending.OutboundAttemptID != firstAttempt.ID {
 		t.Fatalf("pending=%+v err=%v", pending, err)
 	}
-	_, _, secondAttempt, secondReused, _, secondErr := commands.MailDraftSend(context.Background(), home, "", created.ID)
+	_, _, secondAttempt, secondReused, _, secondErr := commands.MailDraftSend(context.Background(), home, "", created.ID, "")
 	if secondErr != nil || secondAttempt.ID != firstAttempt.ID || !secondReused || sender.calls != 1 || sent.calls != 1 || locations.calls != 2 {
 		t.Fatalf("second send attempt=%+v reused=%v smtp=%d sent=%d cleanup=%d err=%v", secondAttempt, secondReused, sender.calls, sent.calls, locations.calls, secondErr)
 	}
@@ -446,7 +446,7 @@ func TestMailDraftUnknownSendPreservesDraftAndProviderCopy(t *testing.T) {
 	if _, _, _, _, err := commands.MailDraftSync(context.Background(), home, "", "", created.ID, 20); err != nil {
 		t.Fatal(err)
 	}
-	_, _, attempt, _, _, sendErr := commands.MailDraftSend(context.Background(), home, "", created.ID)
+	_, _, attempt, _, _, sendErr := commands.MailDraftSend(context.Background(), home, "", created.ID, "")
 	if sendErr == nil || attempt.Status != maildomain.OutboundUnknown || locations.calls != 0 {
 		t.Fatalf("attempt=%+v cleanup=%d err=%v", attempt, locations.calls, sendErr)
 	}
@@ -478,7 +478,7 @@ func TestMailDraftDeadlineFailurePersistsAttemptAndPreservesProviderCopy(t *test
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	sender.cancel = cancel
-	_, _, attempt, _, _, sendErr := commands.MailDraftSend(ctx, home, "", created.ID)
+	_, _, attempt, _, _, sendErr := commands.MailDraftSend(ctx, home, "", created.ID, "")
 	if sendErr == nil || attempt.Status != maildomain.OutboundFailed || sender.calls != 1 || locations.calls != 0 {
 		t.Fatalf("attempt=%+v smtp=%d cleanup=%d err=%v", attempt, sender.calls, locations.calls, sendErr)
 	}
@@ -617,7 +617,7 @@ func TestMailDraftOperationLockRejectsConcurrentUpdateSendAndDelete(t *testing.T
 	if _, _, _, err := commands.MailDraftUpdate(context.Background(), home, "", created.ID, maildomain.SendRequest{Subject: "Blocked", TextBody: "blocked-update"}); err == nil || cli.NormalizeError(err).Code != cli.ErrorConflict {
 		t.Fatalf("concurrent update err=%v", err)
 	}
-	if _, _, _, _, _, err := commands.MailDraftSend(context.Background(), home, "", created.ID); err == nil || cli.NormalizeError(err).Code != cli.ErrorConflict {
+	if _, _, _, _, _, err := commands.MailDraftSend(context.Background(), home, "", created.ID, ""); err == nil || cli.NormalizeError(err).Code != cli.ErrorConflict {
 		t.Fatalf("concurrent send err=%v", err)
 	}
 	if _, _, _, _, err := commands.MailDraftDelete(context.Background(), home, "", created.ID); err == nil || cli.NormalizeError(err).Code != cli.ErrorConflict {

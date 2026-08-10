@@ -83,6 +83,7 @@ type SendRequest struct {
 	Kind                  OutboundKind         `json:"kind,omitempty"`
 	ParentMessageID       string               `json:"parent_message_id,omitempty"`
 	SourceMessageID       string               `json:"source_message_id,omitempty"`
+	SenderIdentityID      string               `json:"sender_identity_id,omitempty"`
 	From                  Address              `json:"from"`
 	To                    []Address            `json:"to"`
 	CC                    []Address            `json:"cc,omitempty"`
@@ -101,31 +102,33 @@ type SendRequest struct {
 }
 
 type SendPreview struct {
-	Kind            OutboundKind         `json:"kind,omitempty"`
-	ParentMessageID string               `json:"parent_message_id,omitempty"`
-	SourceMessageID string               `json:"source_message_id,omitempty"`
-	AccountID       string               `json:"account_id"`
-	From            Address              `json:"from"`
-	To              []Address            `json:"to"`
-	CC              []Address            `json:"cc,omitempty"`
-	BCC             []Address            `json:"bcc,omitempty"`
-	ReplyTo         *Address             `json:"reply_to,omitempty"`
-	Subject         string               `json:"subject"`
-	TextBody        string               `json:"text_body,omitempty"`
-	HTMLBody        string               `json:"html_body,omitempty"`
-	Headers         []CustomHeader       `json:"headers,omitempty"`
-	InReplyTo       string               `json:"in_reply_to,omitempty"`
-	References      []string             `json:"references,omitempty"`
-	Attachments     []OutboundAttachment `json:"attachments,omitempty"`
-	BodyParts       int                  `json:"body_parts"`
-	AttachmentCount int                  `json:"attachment_count"`
-	AttachmentBytes int64                `json:"attachment_bytes"`
-	RequestHash     string               `json:"request_hash"`
+	Kind             OutboundKind         `json:"kind,omitempty"`
+	ParentMessageID  string               `json:"parent_message_id,omitempty"`
+	SourceMessageID  string               `json:"source_message_id,omitempty"`
+	SenderIdentityID string               `json:"sender_identity_id"`
+	AccountID        string               `json:"account_id"`
+	From             Address              `json:"from"`
+	To               []Address            `json:"to"`
+	CC               []Address            `json:"cc,omitempty"`
+	BCC              []Address            `json:"bcc,omitempty"`
+	ReplyTo          *Address             `json:"reply_to,omitempty"`
+	Subject          string               `json:"subject"`
+	TextBody         string               `json:"text_body,omitempty"`
+	HTMLBody         string               `json:"html_body,omitempty"`
+	Headers          []CustomHeader       `json:"headers,omitempty"`
+	InReplyTo        string               `json:"in_reply_to,omitempty"`
+	References       []string             `json:"references,omitempty"`
+	Attachments      []OutboundAttachment `json:"attachments,omitempty"`
+	BodyParts        int                  `json:"body_parts"`
+	AttachmentCount  int                  `json:"attachment_count"`
+	AttachmentBytes  int64                `json:"attachment_bytes"`
+	RequestHash      string               `json:"request_hash"`
 }
 
 type OutboundAttempt struct {
 	ID                      string              `json:"id"`
 	AccountID               string              `json:"account_id"`
+	SenderIdentityID        string              `json:"sender_identity_id"`
 	ProposedMessageID       string              `json:"proposed_message_id"`
 	RequestHash             string              `json:"request_hash"`
 	Status                  OutboundStatus      `json:"status"`
@@ -159,6 +162,7 @@ type OutboundAttempt struct {
 type BeginOutboundAttempt struct {
 	AttemptID         string
 	AccountID         string
+	SenderIdentityID  string
 	ProposedMessageID string
 	RequestHash       string
 	IdempotencyKey    string
@@ -220,6 +224,7 @@ func normalizeMessageRequest(value SendRequest, requireTo, requireSubject, requi
 	value.Kind = normalizeOutboundKind(value.Kind)
 	value.ParentMessageID = strings.TrimSpace(value.ParentMessageID)
 	value.SourceMessageID = strings.TrimSpace(value.SourceMessageID)
+	value.SenderIdentityID = strings.TrimSpace(value.SenderIdentityID)
 	if err := validateOutboundThreading(&value); err != nil {
 		return SendRequest{}, err
 	}

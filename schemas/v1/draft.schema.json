@@ -364,6 +364,9 @@
     "revision": {
       "type": "integer"
     },
+    "sender_identity_id": {
+      "type": "string"
+    },
     "sync_state": {
       "type": "string"
     },

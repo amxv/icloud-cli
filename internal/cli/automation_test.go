@@ -103,12 +103,12 @@ func TestBulkStateWriteAcceptsStrictJSONFromStdin(t *testing.T) {
 
 func TestSendDryRunAcceptsJSONStdinThroughNormalValidationPath(t *testing.T) {
 	service := &sendJSONMailService{}
-	input := `{"to":["Client <client@example.test>"],"bcc":["hidden@example.test"],"subject":"JSON request","body":"hello","headers":["X-Test: automation"],"idempotency_key":"send-json-01"}`
+	input := `{"from":"mid_sender","to":["Client <client@example.test>"],"bcc":["hidden@example.test"],"subject":"JSON request","body":"hello","headers":["X-Test: automation"],"idempotency_key":"send-json-01"}`
 	result, stdout, stderr := executeWithMail(t, service, input, "mail", "send", "--input-json", "-", "--dry-run", "--json")
 	if result.ExitCode != 0 || stderr != "" {
 		t.Fatalf("result=%+v stdout=%q stderr=%q", result, stdout, stderr)
 	}
-	if len(service.request.To) != 1 || service.request.To[0].Email != "client@example.test" || len(service.request.BCC) != 1 || service.request.Subject != "JSON request" || service.request.TextBody != "hello" || service.request.IdempotencyKey != "send-json-01" {
+	if service.request.SenderIdentityID != "mid_sender" || len(service.request.To) != 1 || service.request.To[0].Email != "client@example.test" || len(service.request.BCC) != 1 || service.request.Subject != "JSON request" || service.request.TextBody != "hello" || service.request.IdempotencyKey != "send-json-01" {
 		t.Fatalf("request=%+v", service.request)
 	}
 	if !strings.Contains(stdout, "client@example.test") || !strings.Contains(stdout, "hidden@example.test") || !strings.Contains(stdout, "JSON request") {

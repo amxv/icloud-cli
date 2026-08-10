@@ -40,6 +40,8 @@ Supported kinds are `icloud_alias`, `custom_domain`, `hide_my_email`, and `other
 
 User-entered aliases and provider-specific address types are recorded with `provenance=user_configured` and `verification=unverified`. That is deliberate: storing an address locally does not prove that iCloud SMTP accepts it, that Hide My Email can send from it, or that Apple has synchronized the setting. Account authentication remains owned by the existing account credential and IMAP username.
 
+`mail send` and draft create/update/send accept `--from <mid_…|address>`. When SMTP accepts that envelope sender, the CLI records `verification=verified`. If iCloud permanently rejects an alternate at `MAIL FROM`, the CLI records `verification=rejected`, disables that identity, and does not retry with the primary address. Re-enabling it resets verification to `unverified` for another deliberate test after provider-side configuration changes.
+
 Addresses are normalized and unique case-insensitively within one account. The same address may exist under another configured account because each mailbox profile owns its own identity set.
 
 ## Choose the local default identity
@@ -122,4 +124,4 @@ icloud mail identities add --input-json identity.json --json
 
 Unknown JSON fields and mixed equivalent flags are rejected. Credential references, passwords, BCC data, message bodies, and private blob coordinates are not part of identity request schemas.
 
-At this stage, identity configuration is deliberately local account metadata. Provider acceptance is established only when a sending workflow explicitly validates and uses an identity; the CLI never treats the `kind` label alone as proof of an Apple capability.
+Identity configuration remains local account metadata, while provider acceptance is learned only from SMTP evidence produced by a deliberate send. The CLI never treats the `kind` label alone as proof of an Apple capability. `verified` therefore means this CLI observed the provider accept that envelope sender; it does not mean Apple synchronized the identity to every client or exposed an identity-management API.

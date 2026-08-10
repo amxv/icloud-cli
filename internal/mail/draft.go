@@ -24,6 +24,7 @@ const (
 type Draft struct {
 	ID                 string         `json:"id"`
 	AccountID          string         `json:"account_id"`
+	SenderIdentityID   string         `json:"sender_identity_id,omitempty"`
 	MessageID          string         `json:"message_id"`
 	Revision           int            `json:"revision"`
 	SyncState          DraftSyncState `json:"sync_state"`

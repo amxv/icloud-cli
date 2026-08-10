@@ -70,17 +70,21 @@ func (commands accountCommands) MailDraftUpdate(ctx context.Context, home, accou
 }
 
 func (commands accountCommands) saveDraftInState(ctx context.Context, state *store.Store, paths config.AppPaths, accountValue account.Account, draftID, messageID string, revision int, request maildomain.SendRequest) (account.Account, maildomain.Draft, int64, error) {
+	sender, err := resolveSelectedMailIdentity(ctx, state, accountValue.ID, request.SenderIdentityID)
+	if err != nil {
+		return account.Account{}, maildomain.Draft{}, state.SchemaVersion(), err
+	}
 	preparedAttachments, stagedFiles, err := stageOutboundAttachments(ctx, commands.attachmentBlobStore(paths), request.Attachments)
 	request.Attachments = preparedAttachments
 	if err != nil {
 		return account.Account{}, maildomain.Draft{}, state.SchemaVersion(), mapOutboundAttachmentError(err)
 	}
 	defer stagedFiles.Abort()
-	normalized, err := normalizeAccountDraftRequest(accountValue, request)
+	normalized, err := normalizeAccountDraftRequest(sender, request)
 	if err != nil {
 		return account.Account{}, maildomain.Draft{}, state.SchemaVersion(), mapDraftRequestError(err)
 	}
-	rfcMessageID, err := maildomain.GenerateOutboundMessageID(accountValue.Email)
+	rfcMessageID, err := maildomain.GenerateOutboundMessageID(sender.Address)
 	if err != nil {
 		return account.Account{}, maildomain.Draft{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot allocate a draft RFC Message-ID", false, err)
 	}
@@ -132,10 +136,11 @@ func (commands accountCommands) saveDraftInState(ctx context.Context, state *sto
 	return accountValue, value, state.SchemaVersion(), nil
 }
 
-func normalizeAccountDraftRequest(accountValue account.Account, request maildomain.SendRequest) (maildomain.SendRequest, error) {
+func normalizeAccountDraftRequest(sender account.MailIdentity, request maildomain.SendRequest) (maildomain.SendRequest, error) {
 	request.Kind = maildomain.OutboundKindSend
 	request.ParentMessageID, request.SourceMessageID, request.IdempotencyKey, request.RetryOfAttemptID = "", "", "", ""
-	request.From = maildomain.Address{DisplayName: accountValue.Name, Email: accountValue.Email}
+	request.SenderIdentityID = sender.ID
+	request.From = maildomain.Address{DisplayName: sender.DisplayName, Email: sender.Address}
 	return maildomain.NormalizeDraftRequest(request)
 }
 
@@ -551,11 +556,12 @@ func (unavailableMailboxAppender) AppendMailbox(context.Context, transport.AuthR
 	return transport.MailboxAppendResult{}, transport.NewFailure(transport.StageIMAPAppend, transport.FailureConfiguration, false, errors.New("mailbox append transport unavailable"))
 }
 
-func draftSendRequest(ctx context.Context, paths config.AppPaths, accountValue account.Account, value maildomain.Draft) (maildomain.SendRequest, error) {
+func draftSendRequest(ctx context.Context, paths config.AppPaths, value maildomain.Draft, senderSelector string) (maildomain.SendRequest, error) {
 	message := value.Message
 	request := maildomain.SendRequest{
-		From: maildomain.Address{DisplayName: accountValue.Name, Email: accountValue.Email},
-		To:   append([]maildomain.Address(nil), message.To...), CC: append([]maildomain.Address(nil), message.CC...), BCC: append([]maildomain.Address(nil), message.BCC...),
+		SenderIdentityID: strings.TrimSpace(senderSelector),
+		From:             message.From,
+		To:               append([]maildomain.Address(nil), message.To...), CC: append([]maildomain.Address(nil), message.CC...), BCC: append([]maildomain.Address(nil), message.BCC...),
 		Subject: message.Subject, InReplyTo: message.InReplyTo, References: append([]string(nil), message.References...), Headers: append([]maildomain.CustomHeader(nil), value.CustomHeaders...),
 	}
 	if message.ReplyTo.Email != "" {
@@ -634,8 +640,8 @@ func mapDraftError(err error) error {
 	return cli.WrapAppError(cli.ErrorInternal, "cannot read mail draft", false, err)
 }
 
-func (commands accountCommands) MailDraftSendPreview(ctx context.Context, home, accountSelector, draftID string) (account.Account, maildomain.Draft, maildomain.SendPreview, int64, error) {
-	accountValue, value, request, schemaVersion, err := commands.loadDraftSendRequest(ctx, home, accountSelector, draftID)
+func (commands accountCommands) MailDraftSendPreview(ctx context.Context, home, accountSelector, draftID, senderSelector string) (account.Account, maildomain.Draft, maildomain.SendPreview, int64, error) {
+	accountValue, value, request, schemaVersion, err := commands.loadDraftSendRequest(ctx, home, accountSelector, draftID, senderSelector)
 	if err != nil {
 		return account.Account{}, maildomain.Draft{}, maildomain.SendPreview{}, schemaVersion, err
 	}
@@ -646,13 +652,13 @@ func (commands accountCommands) MailDraftSendPreview(ctx context.Context, home, 
 	return accountValue, value, preview, schemaVersion, nil
 }
 
-func (commands accountCommands) MailDraftSend(ctx context.Context, home, accountSelector, draftID string) (account.Account, maildomain.Draft, maildomain.OutboundAttempt, bool, int64, error) {
+func (commands accountCommands) MailDraftSend(ctx context.Context, home, accountSelector, draftID, senderSelector string) (account.Account, maildomain.Draft, maildomain.OutboundAttempt, bool, int64, error) {
 	unlockDraft, err := acquireDraftOperationLock(home, draftID)
 	if err != nil {
 		return account.Account{}, maildomain.Draft{}, maildomain.OutboundAttempt{}, false, 0, err
 	}
 	defer unlockDraft()
-	accountValue, value, request, schemaVersion, err := commands.loadDraftSendRequest(ctx, home, accountSelector, draftID)
+	accountValue, value, request, schemaVersion, err := commands.loadDraftSendRequest(ctx, home, accountSelector, draftID, senderSelector)
 	if err != nil {
 		return account.Account{}, maildomain.Draft{}, maildomain.OutboundAttempt{}, false, schemaVersion, err
 	}
@@ -740,7 +746,7 @@ func (commands accountCommands) markSentDraftCleanupPending(ctx context.Context,
 	return withAttemptDetails(cli.WrapAppError(cli.ErrorUnavailable, "message was sent but draft cleanup is pending; do not resend", true, primary), attempt)
 }
 
-func (commands accountCommands) loadDraftSendRequest(ctx context.Context, home, accountSelector, draftID string) (account.Account, maildomain.Draft, maildomain.SendRequest, int64, error) {
+func (commands accountCommands) loadDraftSendRequest(ctx context.Context, home, accountSelector, draftID, senderSelector string) (account.Account, maildomain.Draft, maildomain.SendRequest, int64, error) {
 	state, err := openState(ctx, home)
 	if err != nil {
 		return account.Account{}, maildomain.Draft{}, maildomain.SendRequest{}, 0, err
@@ -765,7 +771,7 @@ func (commands accountCommands) loadDraftSendRequest(ctx context.Context, home, 
 			false,
 		)
 	}
-	request, err := draftSendRequest(ctx, paths, accountValue, value)
+	request, err := draftSendRequest(ctx, paths, value, senderSelector)
 	if err != nil {
 		return accountValue, value, maildomain.SendRequest{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorUnavailable, "draft content cannot be prepared for sending", false, err)
 	}

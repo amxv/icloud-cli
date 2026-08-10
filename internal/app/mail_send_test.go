@@ -24,6 +24,7 @@ import (
 
 type fakeSMTPSender struct {
 	calls    int
+	auth     []transport.AuthRequest
 	requests []transport.SMTPSendRequest
 	messages [][]byte
 	err      error
@@ -75,8 +76,9 @@ func (appender *fakeSentAppender) AppendSent(_ context.Context, auth transport.A
 	return transport.SentAppendResult{Mailbox: request.Mailbox, UIDValidity: 500, UID: uint32(appender.calls)}, nil
 }
 
-func (sender *fakeSMTPSender) SendSMTP(_ context.Context, _ transport.AuthRequest, request transport.SMTPSendRequest) (transport.SMTPSendResult, error) {
+func (sender *fakeSMTPSender) SendSMTP(_ context.Context, auth transport.AuthRequest, request transport.SMTPSendRequest) (transport.SMTPSendResult, error) {
 	sender.calls++
+	sender.auth = append(sender.auth, transport.AuthRequest{Username: auth.Username})
 	content, err := io.ReadAll(request.Message)
 	if err != nil {
 		return transport.SMTPSendResult{}, err
@@ -192,7 +194,7 @@ func TestMailSendCompactPreviewAndOutcomeBudgets(t *testing.T) {
 	if code != 0 || stderr != "" || sender.calls != 1 {
 		t.Fatalf("send code=%d stdout=%q stderr=%q calls=%d", code, stdout, stderr, sender.calls)
 	}
-	if lines, size := strings.Count(stdout, "\n"), len(stdout); lines != 6 || size > 320 {
+	if lines, size := strings.Count(stdout, "\n"), len(stdout); lines != 7 || size > 360 {
 		t.Fatalf("send outcome compact budget lines=%d bytes=%d output=%q", lines, size, stdout)
 	}
 	for _, forbidden := range []string{"compact-body-token", "primary@example.com", "Compact budget", "compact-budget-key", "synthetic-send-secret"} {

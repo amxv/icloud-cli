@@ -155,6 +155,51 @@ INSERT INTO credential_refs (
 				database.Close()
 				t.Fatal(err)
 			}
+			if version >= 20 {
+				if _, err := database.Exec(`
+INSERT INTO mail_identities (
+    identity_id, account_id, email_address, display_name, kind, provenance,
+    verification, enabled, is_default_send, created_at, updated_at
+) VALUES (?, ?, ?, ?, 'primary', 'migrated_primary', 'unverified', 1, 1, ?, ?)`,
+					primaryMailIdentityID(accountID), accountID, fmt.Sprintf("legacy-%d@example.test", version), fmt.Sprintf("Legacy %d", version), stamp, stamp); err != nil {
+					database.Close()
+					t.Fatal(err)
+				}
+				if version == 20 {
+					rawHash := strings.Repeat("a", 64)
+					if _, err := database.Exec(`INSERT INTO raw_blobs (content_hash, storage_key, byte_size, created_at) VALUES (?, ?, 1, ?)`, rawHash, "raw/phase5-migration.eml", stamp); err != nil {
+						database.Close()
+						t.Fatal(err)
+					}
+					messageID := "msg_019fda7b-3ba1-7000-8000-000000000020"
+					if _, err := database.Exec(`
+INSERT INTO messages (
+    message_id, account_id, rfc_message_id, direction, from_name, from_email,
+    subject, snippet, sort_at, date_source, created_at, updated_at
+) VALUES (?, ?, 'phase5-migrated-draft@example.test', 'outbound', ?, ?, 'Migrated draft', 'draft', ?, 'header', ?, ?)`,
+						messageID, accountID, fmt.Sprintf("Legacy %d", version), fmt.Sprintf("legacy-%d@example.test", version), stamp, stamp, stamp); err != nil {
+						database.Close()
+						t.Fatal(err)
+					}
+					if _, err := database.Exec(`
+INSERT INTO mail_drafts (draft_id, account_id, message_id, revision, sync_state, created_at, updated_at)
+VALUES ('drf_019fda7b-3ba1-7000-8000-000000000020', ?, ?, 1, 'local', ?, ?)`, accountID, messageID, stamp, stamp); err != nil {
+						database.Close()
+						t.Fatal(err)
+					}
+					if _, err := database.Exec(`
+INSERT INTO outbound_attempts (
+    attempt_id, account_id, proposed_message_id, request_hash, status, rfc_message_id,
+    raw_content_hash, raw_storage_key, raw_byte_size, to_count, body_part_count,
+    outbound_kind, reconciliation, created_at, updated_at
+) VALUES ('send_019fda7b-3ba1-7000-8000-000000000020', ?, 'msg_019fda7b-3ba1-7000-8000-000000000021', ?, 'failed',
+          'phase5-migrated-send@example.test', ?, 'raw/phase5-migration.eml', 1, 1, 1, 'send', 'none', ?, ?)`,
+						accountID, strings.Repeat("b", 64), rawHash, stamp, stamp); err != nil {
+						database.Close()
+						t.Fatal(err)
+					}
+				}
+			}
 			if err := database.Close(); err != nil {
 				t.Fatal(err)
 			}
@@ -184,6 +229,16 @@ INSERT INTO credential_refs (
 				identity.Provenance != account.MailIdentityMigratedPrimary || identity.Verification != account.MailIdentityUnverified ||
 				!identity.Enabled || !identity.Default {
 				t.Fatalf("migrated primary identity=%+v", identity)
+			}
+			if version == 20 {
+				attempt, err := state.Outbound().Attempt(context.Background(), "send_019fda7b-3ba1-7000-8000-000000000020")
+				if err != nil || attempt.SenderIdentityID != identity.ID {
+					t.Fatalf("schema-20 outbound sender provenance=%+v err=%v", attempt, err)
+				}
+				draft, err := state.Drafts().Draft(context.Background(), accountID, "drf_019fda7b-3ba1-7000-8000-000000000020")
+				if err != nil || draft.SenderIdentityID != identity.ID {
+					t.Fatalf("schema-20 draft sender provenance=%+v err=%v", draft, err)
+				}
 			}
 			var integrity string
 			if err := state.db.QueryRowContext(context.Background(), "PRAGMA integrity_check").Scan(&integrity); err != nil {

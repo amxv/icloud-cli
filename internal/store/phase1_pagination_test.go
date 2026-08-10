@@ -93,7 +93,8 @@ func TestPhase1OutboundAndMutationHistoryPagingPreservesTiesAndScope(t *testing.
 	for i := 0; i < 123; i++ {
 		_, reused, err := state.Outbound().Begin(ctx, maildomain.BeginOutboundAttempt{
 			AttemptID: fmt.Sprintf("send_page_%03d", i), AccountID: accountID, ProposedMessageID: fmt.Sprintf("msg_page_send_%03d", i),
-			RequestHash: requestHash, RFCMessageID: fmt.Sprintf("phase1-send-%03d@example.test", i), RawContentHash: rawHash,
+			SenderIdentityID: primaryMailIdentityID(accountID),
+			RequestHash:      requestHash, RFCMessageID: fmt.Sprintf("phase1-send-%03d@example.test", i), RawContentHash: rawHash,
 			RawStorageKey: "raw/phase1-pagination.eml", RawByteSize: 1, Now: base,
 		})
 		if err != nil || reused {

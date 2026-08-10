@@ -15,6 +15,7 @@ import (
 type publicDraft struct {
 	ID                 string                    `json:"id"`
 	AccountID          string                    `json:"account_id"`
+	SenderIdentityID   string                    `json:"sender_identity_id,omitempty"`
 	MessageID          string                    `json:"message_id"`
 	Revision           int                       `json:"revision"`
 	SyncState          maildomain.DraftSyncState `json:"sync_state"`
@@ -106,7 +107,7 @@ func newDraftSaveCommand(state *executionState, update bool) *cobra.Command {
 			}
 			var jsonRequest draftSaveJSONRequest
 			if used, inputErr := readJSONInput(cmd, state, input, &jsonRequest,
-				"to", "cc", "bcc", "reply-to", "subject", "body", "body-file", "html-body", "html-body-file", "header", "attach", "attach-name", "attach-type"); inputErr != nil {
+				"from", "to", "cc", "bcc", "reply-to", "subject", "body", "body-file", "html-body", "html-body-file", "header", "attach", "attach-name", "attach-type"); inputErr != nil {
 				return inputErr
 			} else if used {
 				if !update && strings.TrimSpace(jsonRequest.DraftID) != "" {
@@ -150,6 +151,7 @@ func newDraftSaveCommand(state *executionState, update bool) *cobra.Command {
 }
 
 func bindDraftComposeFlags(command *cobra.Command, flags *sendFlags) {
+	command.Flags().StringVar(&flags.From, "from", "", "Sender identity by stable mid_… ID or configured address (defaults to the account's local default identity)")
 	command.Flags().StringArrayVar(&flags.To, "to", nil, "Recipient address; repeat or provide a comma-separated address list")
 	command.Flags().StringArrayVar(&flags.CC, "cc", nil, "Cc recipient address; repeat as needed")
 	command.Flags().StringArrayVar(&flags.BCC, "bcc", nil, "Bcc recipient preserved in the saved draft; hidden from default output")
@@ -334,6 +336,7 @@ func newDraftSyncCommand(state *executionState) *cobra.Command {
 func newDraftSendCommand(state *executionState) *cobra.Command {
 	var dryRun, yes, jsonOutput, verbose, showHeaders bool
 	var format string
+	var from string
 	var input jsonInputOptions
 	command := &cobra.Command{Use: "send <draft-id>", Short: "Preview or send one draft through the normal idempotent outbound path", Args: exactArgsOrJSONInput(&input, 1),
 		Example: "  icloud mail draft send drf_… --dry-run\n  icloud mail draft send drf_… --yes",
@@ -342,11 +345,12 @@ func newDraftSendCommand(state *executionState) *cobra.Command {
 			if len(args) == 1 {
 				draftID = strings.TrimSpace(args[0])
 			}
-			var jsonRequest draftTargetJSONRequest
-			if used, err := readJSONInput(cmd, state, input, &jsonRequest); err != nil {
+			var jsonRequest draftSendJSONRequest
+			if used, err := readJSONInput(cmd, state, input, &jsonRequest, "from"); err != nil {
 				return err
 			} else if used {
 				draftID = strings.TrimSpace(jsonRequest.DraftID)
+				from = strings.TrimSpace(jsonRequest.From)
 			}
 			if dryRun && yes {
 				return NewAppError(ErrorUsage, "--dry-run and --yes cannot be combined", false)
@@ -355,7 +359,7 @@ func newDraftSendCommand(state *executionState) *cobra.Command {
 				return NewAppError(ErrorUsage, "--verbose, --headers, and --format are dry-run preview expansions", false)
 			}
 			if dryRun {
-				accountValue, value, preview, schemaVersion, err := state.mail.MailDraftSendPreview(cmd.Context(), state.global.Home, state.global.Account, draftID)
+				accountValue, value, preview, schemaVersion, err := state.mail.MailDraftSendPreview(cmd.Context(), state.global.Home, state.global.Account, draftID, from)
 				if err != nil {
 					return err
 				}
@@ -369,7 +373,7 @@ func newDraftSendCommand(state *executionState) *cobra.Command {
 				return NewAppError(ErrorSafety, "non-interactive draft send requires --yes", false)
 			}
 			if !yes {
-				_, _, preview, _, err := state.mail.MailDraftSendPreview(cmd.Context(), state.global.Home, state.global.Account, draftID)
+				_, _, preview, _, err := state.mail.MailDraftSendPreview(cmd.Context(), state.global.Home, state.global.Account, draftID, from)
 				if err != nil {
 					return err
 				}
@@ -384,7 +388,7 @@ func newDraftSendCommand(state *executionState) *cobra.Command {
 					return NewAppError(ErrorSafety, "draft send canceled before contacting SMTP", false)
 				}
 			}
-			accountValue, value, attempt, reused, schemaVersion, err := state.mail.MailDraftSend(cmd.Context(), state.global.Home, state.global.Account, draftID)
+			accountValue, value, attempt, reused, schemaVersion, err := state.mail.MailDraftSend(cmd.Context(), state.global.Home, state.global.Account, draftID, from)
 			if err != nil {
 				return err
 			}
@@ -400,6 +404,7 @@ func newDraftSendCommand(state *executionState) *cobra.Command {
 	command.Flags().BoolVar(&verbose, "verbose", false, "With --dry-run, include normalized header detail")
 	command.Flags().BoolVar(&showHeaders, "headers", false, "With --dry-run, print normalized safe headers")
 	command.Flags().StringVar(&format, "format", "", "With --dry-run, output text, html, or raw preview content")
+	command.Flags().StringVar(&from, "from", "", "Sender identity by stable mid_… ID or configured address (defaults to the account's local default identity)")
 	bindJSONInput(command, &input)
 	return command
 }
@@ -465,13 +470,13 @@ func newDraftDeleteCommand(state *executionState) *cobra.Command {
 }
 
 func sanitizeDraft(value maildomain.Draft) publicDraft {
-	return publicDraft{ID: value.ID, AccountID: value.AccountID, MessageID: value.MessageID, Revision: value.Revision, SyncState: value.SyncState,
+	return publicDraft{ID: value.ID, AccountID: value.AccountID, SenderIdentityID: value.SenderIdentityID, MessageID: value.MessageID, Revision: value.Revision, SyncState: value.SyncState,
 		RemoteLocationID: value.RemoteLocationID, PreviousLocationID: value.PreviousLocationID, OutboundAttemptID: value.OutboundAttemptID,
 		LastErrorCode: value.LastErrorCode, BCCCount: len(value.Message.BCC), CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt, Message: sanitizeMessage(value.Message)}
 }
 
 func renderDraft(renderer *CompactTextRenderer, value maildomain.Draft, verbose bool) error {
-	fields := []CompactField{Field("message", value.MessageID), Field("revision", value.Revision), Field("state", value.SyncState), Field("to", formatAddresses(value.Message.To)), Field("cc", formatAddresses(value.Message.CC)), Field("bcc", len(value.Message.BCC)), Field("subject", value.Message.Subject), Field("attachments", value.Message.AttachmentCount), Field("excerpt", Excerpt(value.Message.Snippet, DefaultExcerptRunes))}
+	fields := []CompactField{Field("sender_identity", value.SenderIdentityID), Field("message", value.MessageID), Field("revision", value.Revision), Field("state", value.SyncState), Field("to", formatAddresses(value.Message.To)), Field("cc", formatAddresses(value.Message.CC)), Field("bcc", len(value.Message.BCC)), Field("subject", value.Message.Subject), Field("attachments", value.Message.AttachmentCount), Field("excerpt", Excerpt(value.Message.Snippet, DefaultExcerptRunes))}
 	if verbose {
 		fields = append(fields, Field("remote_location", value.RemoteLocationID), Field("previous_location", value.PreviousLocationID), Field("outbound_attempt", value.OutboundAttemptID), Field("last_error", value.LastErrorCode), Field("updated", value.UpdatedAt))
 	}

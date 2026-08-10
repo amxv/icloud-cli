@@ -17,6 +17,7 @@ import (
 )
 
 type sendFlags struct {
+	From            string
 	To              []string
 	CC              []string
 	BCC             []string
@@ -50,6 +51,7 @@ type mailSendData struct {
 
 type publicOutboundAttempt struct {
 	ID                      string                         `json:"id"`
+	SenderIdentityID        string                         `json:"sender_identity_id"`
 	Status                  maildomain.OutboundStatus      `json:"status"`
 	MessageID               string                         `json:"message_id,omitempty"`
 	ThreadID                string                         `json:"thread_id,omitempty"`
@@ -88,7 +90,7 @@ func newMailSendCommand(state *executionState) *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			var jsonRequest composeJSONRequest
 			if used, err := readJSONInput(cmd, state, input, &jsonRequest,
-				"to", "cc", "bcc", "reply-to", "subject", "body", "body-file", "html-body", "html-body-file",
+				"from", "to", "cc", "bcc", "reply-to", "subject", "body", "body-file", "html-body", "html-body-file",
 				"header", "attach", "attach-name", "attach-type", "idempotency-key", "retry-of", "retry-unknown"); err != nil {
 				return err
 			} else if used {
@@ -161,6 +163,7 @@ func newMailSendCommand(state *executionState) *cobra.Command {
 		},
 	}
 	command.Flags().StringArrayVar(&flags.To, "to", nil, "Recipient address; repeat or provide a comma-separated address list")
+	command.Flags().StringVar(&flags.From, "from", "", "Sender identity by stable mid_… ID or configured address (defaults to the account's local default identity)")
 	command.Flags().StringArrayVar(&flags.CC, "cc", nil, "Cc recipient address; repeat as needed")
 	command.Flags().StringArrayVar(&flags.BCC, "bcc", nil, "Bcc envelope recipient; omitted from message headers")
 	command.Flags().StringVar(&flags.ReplyTo, "reply-to", "", "Optional Reply-To address")
@@ -231,7 +234,8 @@ func sendRequestFromFlags(state *executionState, flags sendFlags) (maildomain.Se
 		return maildomain.SendRequest{}, false, err
 	}
 	return maildomain.SendRequest{
-		To: to, CC: cc, BCC: bcc, ReplyTo: replyTo,
+		SenderIdentityID: flags.From,
+		To:               to, CC: cc, BCC: bcc, ReplyTo: replyTo,
 		Subject: flags.Subject, TextBody: text, HTMLBody: html,
 		Headers: headers, Attachments: attachments, IdempotencyKey: flags.IdempotencyKey,
 		RetryOfAttemptID: flags.RetryOf, AuthorizeUnknownRetry: flags.RetryUnknown,
@@ -382,6 +386,7 @@ func renderSendPreview(ctx context.Context, state *executionState, preview maild
 func renderCompactSendPreview(writer io.Writer, preview maildomain.SendPreview, showHeaders, verbose bool) error {
 	renderer := NewCompactTextRenderer(writer)
 	if err := renderer.Record("send-preview", preview.AccountID,
+		Field("sender_identity", preview.SenderIdentityID),
 		Field("from", formatAddress(preview.From)),
 		Field("to", formatAddresses(preview.To)),
 		Field("cc", formatAddresses(preview.CC)),
@@ -456,6 +461,7 @@ func sendPreviewHeaders(preview maildomain.SendPreview) []maildomain.CustomHeade
 
 func renderSendOutcome(renderer *CompactTextRenderer, attempt maildomain.OutboundAttempt, reused bool) error {
 	return renderer.Record("mail-send", attempt.ID,
+		Field("sender_identity", attempt.SenderIdentityID),
 		Field("status", attempt.Status),
 		Field("message_id", attempt.MessageID),
 		Field("thread_id", attempt.ThreadID),
@@ -467,7 +473,7 @@ func renderSendOutcome(renderer *CompactTextRenderer, attempt maildomain.Outboun
 
 func sanitizeOutboundAttempt(value maildomain.OutboundAttempt) publicOutboundAttempt {
 	return publicOutboundAttempt{
-		ID: value.ID, Status: value.Status, MessageID: value.MessageID,
+		ID: value.ID, SenderIdentityID: value.SenderIdentityID, Status: value.Status, MessageID: value.MessageID,
 		ThreadID: value.ThreadID, Reconciliation: value.Reconciliation,
 		AttachmentCount: value.AttachmentCount, AttachmentBytes: value.AttachmentBytes,
 		Kind: value.Kind, ParentMessageID: value.ParentMessageID, SourceMessageID: value.SourceMessageID,
@@ -493,7 +499,8 @@ func confirmMailSend(reader io.Reader, stderr io.Writer) (bool, error) {
 func previewToRequest(preview maildomain.SendPreview) maildomain.SendRequest {
 	return maildomain.SendRequest{
 		Kind: preview.Kind, ParentMessageID: preview.ParentMessageID, SourceMessageID: preview.SourceMessageID,
-		From: preview.From, To: preview.To, CC: preview.CC, BCC: preview.BCC,
+		SenderIdentityID: preview.SenderIdentityID,
+		From:             preview.From, To: preview.To, CC: preview.CC, BCC: preview.BCC,
 		ReplyTo: preview.ReplyTo, Subject: preview.Subject,
 		TextBody: preview.TextBody, HTMLBody: preview.HTMLBody, Headers: preview.Headers,
 		InReplyTo: preview.InReplyTo, References: preview.References,

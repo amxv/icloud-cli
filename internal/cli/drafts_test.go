@@ -14,10 +14,33 @@ import (
 
 type draftTestMailService struct {
 	unavailableMailService
-	values      []maildomain.Draft
-	show        maildomain.Draft
-	sendCalls   int
-	deleteCalls int
+	values        []maildomain.Draft
+	show          maildomain.Draft
+	createRequest maildomain.SendRequest
+	updateRequest maildomain.SendRequest
+	sendFrom      string
+	sendCalls     int
+	deleteCalls   int
+}
+
+func (service *draftTestMailService) MailDraftCreate(_ context.Context, _, _ string, request maildomain.SendRequest) (account.Account, maildomain.Draft, int64, error) {
+	service.createRequest = request
+	value := service.show
+	if value.ID == "" {
+		value = privateDraftFixture()
+	}
+	value.SenderIdentityID = request.SenderIdentityID
+	return account.Account{ID: "acct_test"}, value, 21, nil
+}
+
+func (service *draftTestMailService) MailDraftUpdate(_ context.Context, _, _, _ string, request maildomain.SendRequest) (account.Account, maildomain.Draft, int64, error) {
+	service.updateRequest = request
+	value := service.show
+	if value.ID == "" {
+		value = privateDraftFixture()
+	}
+	value.SenderIdentityID = request.SenderIdentityID
+	return account.Account{ID: "acct_test"}, value, 21, nil
 }
 
 func (service *draftTestMailService) MailDraftList(context.Context, string, string, int) (account.Account, []maildomain.Draft, bool, int64, error) {
@@ -32,9 +55,10 @@ func (service *draftTestMailService) MailDraftShow(context.Context, string, stri
 	return account.Account{ID: "acct_test"}, service.show, nil, 18, nil
 }
 
-func (service *draftTestMailService) MailDraftSend(context.Context, string, string, string) (account.Account, maildomain.Draft, maildomain.OutboundAttempt, bool, int64, error) {
+func (service *draftTestMailService) MailDraftSend(_ context.Context, _, _, _ string, from string) (account.Account, maildomain.Draft, maildomain.OutboundAttempt, bool, int64, error) {
 	service.sendCalls++
-	return account.Account{ID: "acct_test"}, service.show, maildomain.OutboundAttempt{ID: "out_test", Status: maildomain.OutboundSent}, false, 18, nil
+	service.sendFrom = from
+	return account.Account{ID: "acct_test"}, service.show, maildomain.OutboundAttempt{ID: "out_test", SenderIdentityID: from, Status: maildomain.OutboundSent}, false, 21, nil
 }
 
 func (service *draftTestMailService) MailDraftDelete(context.Context, string, string, string) (account.Account, maildomain.Draft, int, int64, error) {
@@ -127,10 +151,10 @@ func TestDraftCommandHelpExposesLifecycleAndSafetyControls(t *testing.T) {
 		want []string
 	}{
 		{[]string{"mail", "draft", "--help"}, []string{"create", "update", "list", "show", "sync", "send", "delete"}},
-		{[]string{"mail", "draft", "create", "--help"}, []string{"--to", "--bcc", "--attach", "may be empty"}},
+		{[]string{"mail", "draft", "create", "--help"}, []string{"--from", "--to", "--bcc", "--attach", "may be empty"}},
 		{[]string{"mail", "draft", "show", "--help"}, []string{"--format", "raw", "--body-only", "--headers"}},
 		{[]string{"mail", "draft", "sync", "--help"}, []string{"--folder", "--limit", "provider Drafts"}},
-		{[]string{"mail", "draft", "send", "--help"}, []string{"--dry-run", "--yes", "idempotent"}},
+		{[]string{"mail", "draft", "send", "--help"}, []string{"--from", "--dry-run", "--yes", "idempotent"}},
 		{[]string{"mail", "draft", "delete", "--help"}, []string{"--dry-run", "--yes", "provider"}},
 	} {
 		result, stdout, stderr := executeDraftCLITest(t, service, "", test.args...)
@@ -142,5 +166,24 @@ func TestDraftCommandHelpExposesLifecycleAndSafetyControls(t *testing.T) {
 				t.Fatalf("help %v missing %q: %q", test.args, want, stdout)
 			}
 		}
+	}
+}
+
+func TestPhase5DraftSenderFlagsAndJSONReachTheNormalServicePath(t *testing.T) {
+	service := &draftTestMailService{show: privateDraftFixture()}
+	result, stdout, stderr := executeDraftCLITest(t, service, "", "mail", "draft", "create",
+		"--from", "mid_alias", "--to", "recipient@example.test", "--subject", "Flag sender", "--body", "hello")
+	if result.ExitCode != 0 || stderr != "" || service.createRequest.SenderIdentityID != "mid_alias" {
+		t.Fatalf("create result=%+v request=%+v stdout=%q stderr=%q", result, service.createRequest, stdout, stderr)
+	}
+	input := `{"draft_id":"drf_test","message":{"from":"alias@example.test","to":["recipient@example.test"],"subject":"JSON sender","body":"hello"}}`
+	result, stdout, stderr = executeDraftCLITest(t, service, input, "mail", "draft", "update", "--input-json", "-")
+	if result.ExitCode != 0 || stderr != "" || service.updateRequest.SenderIdentityID != "alias@example.test" {
+		t.Fatalf("update result=%+v request=%+v stdout=%q stderr=%q", result, service.updateRequest, stdout, stderr)
+	}
+	result, stdout, stderr = executeDraftCLITest(t, service, `{"draft_id":"drf_test","from":"mid_send"}`,
+		"mail", "draft", "send", "--input-json", "-", "--yes")
+	if result.ExitCode != 0 || stderr != "" || service.sendCalls != 1 || service.sendFrom != "mid_send" {
+		t.Fatalf("send result=%+v calls=%d from=%q stdout=%q stderr=%q", result, service.sendCalls, service.sendFrom, stdout, stderr)
 	}
 }

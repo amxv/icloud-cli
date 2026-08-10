@@ -242,6 +242,7 @@ VALUES (?,?, 'content_fingerprint', ?, ?, ?, 'scale ambiguity', 'open', ?)`,
 	rawHash := strings.Repeat("e", 64)
 	if _, _, err := state.Outbound().Begin(ctx, maildomain.BeginOutboundAttempt{
 		AttemptID: "send_0198d704-6c00-7000-8000-000000002501", AccountID: accountID,
+		SenderIdentityID:  primaryMailIdentityID(accountID),
 		ProposedMessageID: "msg_0198d704-6c00-7000-8000-000000002502", RequestHash: strings.Repeat("f", 64),
 		RFCMessageID: "scale-outbound@example.test", RawContentHash: rawHash,
 		RawStorageKey: "raw/sha256/ee/" + rawHash + ".eml", RawByteSize: 123, Now: now.Add(time.Hour),
