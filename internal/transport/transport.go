@@ -370,6 +370,8 @@ type RemoteSearchRequest struct {
 	Criteria            RemoteSearchCriteria
 	Limit               int
 	MaxCandidateUIDs    int
+	StartUID            uint32
+	PendingUIDs         []uint32
 }
 
 type RemoteMessageSummary struct {
@@ -388,6 +390,8 @@ type RemoteSearchPage struct {
 	MoreAvailable bool
 	Partial       bool
 	CandidateUIDs int
+	NextUID       uint32
+	PendingUIDs   []uint32
 }
 
 type RemoteFetchRequest struct {

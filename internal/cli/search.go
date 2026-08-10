@@ -53,6 +53,7 @@ type mailRemoteSearchData struct {
 	Count         int                          `json:"count"`
 	More          bool                         `json:"more"`
 	Partial       bool                         `json:"partial"`
+	NextCursor    string                       `json:"next_cursor,omitempty"`
 	Folders       int                          `json:"folders"`
 	CandidateUIDs int                          `json:"candidate_uids"`
 	SchemaVersion int64                        `json:"schema_version"`
@@ -79,6 +80,7 @@ func newMailSearchCommand(state *executionState) *cobra.Command {
 			"  icloud mail search --from billing@example.com --unread\n" +
 			"  icloud mail search launch --result threads --limit 20\n" +
 			"  icloud mail search invoice --remote --folder inbox\n" +
+			"  icloud mail search invoice --remote --folder inbox --cursor rcur_…\n" +
 			"  icloud mail search --attachment-type application/pdf --json\n" +
 			"  icloud mail search --input-json request.json --json",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -126,7 +128,7 @@ func newMailSearchCommand(state *executionState) *cobra.Command {
 				if jsonOutput {
 					return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: mailRemoteSearchData{
 						AccountID: accountValue.ID, Hits: page.Hits, Count: page.Count,
-						More: page.More, Partial: page.Partial, Folders: page.Folders,
+						More: page.More, Partial: page.Partial, NextCursor: page.NextCursor, Folders: page.Folders,
 						CandidateUIDs: page.CandidateUIDs, SchemaVersion: schemaVersion,
 					}, Meta: EnvelopeMeta{RequestID: state.requestID}})
 				}
@@ -203,6 +205,7 @@ func renderRemoteSearchSummary(renderer *CompactTextRenderer, accountID string, 
 		Field("count", fmt.Sprintf("%d", page.Count)),
 		Field("more", fmt.Sprintf("%t", page.More)),
 		Field("partial", fmt.Sprintf("%t", page.Partial)),
+		Field("next_cursor", page.NextCursor),
 		Field("folders", fmt.Sprintf("%d", page.Folders)),
 		Field("candidate_uids", fmt.Sprintf("%d", page.CandidateUIDs)),
 	)

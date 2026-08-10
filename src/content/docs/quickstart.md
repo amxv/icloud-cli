@@ -347,7 +347,13 @@ When `more=true`, continue with the returned `next_cursor` and the same search. 
 When you need a fresh iCloud check without moving the normal sync frontier, search explicitly:
 
 ```bash
-icloud mail search invoice --remote
+icloud mail search invoice --remote --folder inbox
+```
+
+If the one-folder provider search reports `more=true` or `partial=true`, continue from its `next_cursor` without repeating newer UID windows:
+
+```bash
+icloud mail search invoice --remote --folder inbox --cursor rcur_…
 ```
 
 The result uses a stale-safe `rem_…` reference until you choose to cache it:
@@ -357,7 +363,7 @@ icloud mail message show rem_… --remote
 icloud mail message show rem_… --remote --cache --full
 ```
 
-Targeted caching returns stable local IDs and leaves the ordinary folder checkpoint unchanged. See [Search synchronized mail](/docs/search-synchronized-mail) for provider filter limits, `partial`, all-folder fan-out, and batch hydration.
+Targeted caching returns stable local IDs and leaves the ordinary folder checkpoint unchanged. See [Search synchronized mail](/docs/search-synchronized-mail) for provider filter limits, one-folder remote cursors, `partial`, all-folder fan-out, and batch hydration.
 
 ## Browse reconstructed conversations
 

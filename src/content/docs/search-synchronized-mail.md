@@ -67,17 +67,26 @@ excerpt="Your invoice is ready…"
 remote-results
 account=acct_…
 count=1
-more=false
+more=true
 partial=false
+next_cursor=rcur_…
 folders=1
 candidate_uids=184
 ```
 
-The provider path supports text, sender, participant, subject, RFC Message-ID, read/flag state, and date filters. It does not provide local FTS ranking, reconstructed-thread results, attachment filename/type filters, or local cursors. Those choices return a usage error rather than silently changing meaning.
+The provider path supports text, sender, participant, subject, RFC Message-ID, read/flag state, and date filters. It does not provide local FTS ranking, reconstructed-thread results, or attachment filename/type filters. Those choices return a usage error rather than silently changing meaning.
 
-Precise RFC3339 `--after` and `--before` filters are enforced after iCloud's day-granularity IMAP match, but same-day candidates rejected by the exact timestamp do not consume the requested result quota. The CLI continues through bounded UID windows until it has enough exact matches or reaches its candidate-position bound; `partial=true` means older matching state may still exist beyond that bound.
+For one folder, `more=true` or `partial=true` is accompanied by an opaque `rcur_…` `next_cursor`. Resume with the same query, filters, account, folder, and result limit:
 
-Use `--all-folders` only when you deliberately want every current selectable folder. The fan-out is capped at 10 folders. Each folder examines a bounded recent provider range; `partial=true` means older provider positions were not examined, so narrow the folder, dates, sender, subject, or Message-ID. `more=true` means additional matches were truncated by the result limit.
+```bash
+icloud mail search invoice --remote --folder inbox --limit 20 --cursor rcur_…
+```
+
+The remote cursor is not a local `cur_…` search cursor and is not a `rem_…` message reference. It is bound to the stable account/folder identity, UIDVALIDITY, complete normalized provider query/filter signature, result limit, and the next older UID frontier. Changing any bound scope rejects the cursor before a provider search. A UIDVALIDITY rollover also rejects it and tells you to restart from current folder state.
+
+Precise RFC3339 `--after` and `--before` filters are enforced after iCloud's day-granularity IMAP match, but same-day candidates rejected by the exact timestamp do not consume the requested result quota. The CLI continues through bounded UID windows until it has enough exact matches or reaches its candidate-position bound; `partial=true` means older provider positions remain and the cursor resumes from the next unconsumed UID boundary rather than repeating from the last returned hit.
+
+Use `--all-folders` only when you deliberately want every current selectable folder. The fan-out is capped at 10 folders. Remote continuation is currently one-folder only: `--all-folders` does not accept an `rcur_…` cursor. Each folder still examines a bounded recent provider range; when all-folder results are partial, narrow the folder, dates, sender, subject, or Message-ID.
 
 Remote text previews are bounded and decoded from the provider response when possible. They are useful for selection, not a substitute for the verified local MIME parser.
 
@@ -173,13 +182,13 @@ The default limit is 20 and the maximum is 100:
 icloud mail search invoice --limit 50
 ```
 
-When the summary reports `more=true`, pass its `next_cursor` back with the exact same query, filters, result kind, and account:
+When the local summary reports `more=true`, pass its `next_cursor` back with the exact same query, filters, result kind, and account:
 
 ```bash
 icloud mail search invoice --limit 50 --cursor cur_…
 ```
 
-A cursor belongs to one complete local search. Changing a filter, account, or result kind returns a usage error rather than skipping or repeating records silently. Remote search does not accept `--cursor`; use a narrower remote query when `partial=true` or `more=true`.
+A local `cur_…` cursor belongs to one complete local search. Changing a filter, account, or result kind returns a usage error rather than skipping or repeating records silently. One-folder remote search uses a distinct `rcur_…` cursor contract described above; the two cursor types are deliberately not interchangeable.
 
 Use `--json` when automation needs the cursor, numeric rank, matched field, bounded excerpt, query summary, and sanitized message or thread object:
 

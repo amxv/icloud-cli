@@ -51,10 +51,10 @@ func (client *Client) SearchRemote(ctx context.Context, auth transport.AuthReque
 	defer session.close()
 
 	base := buildRemoteSearchCriteria(request.Criteria)
-	summaries, more, partial, candidates, err := searchRemoteSummaries(
+	summaries, more, partial, candidates, nextUID, pendingUIDs, err := searchRemoteSummaries(
 		ctx, session.conn, session.client, session.selected, base,
 		request.Criteria.After, request.Criteria.Before,
-		request.Limit, request.MaxCandidateUIDs, client.config.StageTimeout,
+		request.Limit, request.MaxCandidateUIDs, request.StartUID, request.PendingUIDs, client.config.StageTimeout,
 	)
 	if err != nil {
 		return transport.RemoteSearchPage{}, err
@@ -67,6 +67,7 @@ func (client *Client) SearchRemote(ctx context.Context, auth transport.AuthReque
 	return transport.RemoteSearchPage{
 		Mailbox: strings.TrimSpace(request.Mailbox), UIDValidity: session.selected.UIDValidity,
 		Messages: summaries, MoreAvailable: more, Partial: partial, CandidateUIDs: candidates,
+		NextUID: nextUID, PendingUIDs: pendingUIDs,
 	}, nil
 }
 
@@ -273,17 +274,52 @@ func searchRemoteSummaries(
 	base imap.SearchCriteria,
 	after, before *time.Time,
 	limit, maxCandidates int,
+	startUID uint32,
+	pendingUIDs []uint32,
 	timeout time.Duration,
-) ([]transport.RemoteMessageSummary, bool, bool, int, error) {
+) ([]transport.RemoteMessageSummary, bool, bool, int, uint32, []uint32, error) {
 	tail := uidTail(selected.UIDNext)
-	if tail == 0 {
-		return nil, false, false, 0, nil
-	}
-	needed := limit + 1
-	found := make([]transport.RemoteMessageSummary, 0, needed)
-	end := tail
+	found := make([]transport.RemoteMessageSummary, 0, limit)
 	candidates := 0
-	for end > 0 && candidates < maxCandidates && len(found) < needed {
+
+	remainingPending := append([]uint32(nil), pendingUIDs...)
+	if len(remainingPending) > 0 {
+		imapUIDs := make([]imap.UID, 0, len(remainingPending))
+		for _, uid := range remainingPending {
+			if uid == 0 || uid > tail {
+				return nil, false, false, 0, startUID, nil, transport.NewFailure(transport.StageIMAPFetch, transport.FailureUnavailable, false, errors.New("remote continuation contains a UID outside the current mailbox frontier"))
+			}
+			imapUIDs = append(imapUIDs, imap.UID(uid))
+		}
+		summaries, fetchErr := fetchRemoteSummaries(ctx, conn, client, imapUIDs, timeout)
+		if fetchErr != nil {
+			return nil, false, false, 0, startUID, nil, fetchErr
+		}
+		remainingPending = remainingPending[:0]
+		for _, summary := range summaries {
+			if !remoteSummaryDateMatches(summary.InternalDate, after, before) {
+				continue
+			}
+			if len(found) < limit {
+				found = append(found, summary)
+				continue
+			}
+			remainingPending = append(remainingPending, summary.UID)
+		}
+		if len(found) == limit {
+			more := len(remainingPending) > 0 || startUID > 0
+			return found, more, false, 0, startUID, remainingPending, nil
+		}
+	}
+
+	if tail == 0 || startUID == 0 && len(pendingUIDs) > 0 {
+		return found, false, false, candidates, 0, nil, nil
+	}
+	end := tail
+	if startUID != 0 && startUID < end {
+		end = startUID
+	}
+	for end > 0 && candidates < maxCandidates && len(found) < limit {
 		remaining := maxCandidates - candidates
 		window := int(remoteSearchUIDWindow)
 		if remaining < window {
@@ -293,52 +329,54 @@ func searchRemoteSummaries(
 		if end >= uint32(window) {
 			start = end - uint32(window) + 1
 		}
+		windowEnd := end
 		uidSet := imap.UIDSet{}
-		uidSet.AddRange(imap.UID(start), imap.UID(end))
+		uidSet.AddRange(imap.UID(start), imap.UID(windowEnd))
 		criteria := base
 		criteria.UID = append(append([]imap.UIDSet(nil), base.UID...), uidSet)
 		result, err := runValueWithDeadline(ctx, conn, timeout, func() (*imap.SearchData, error) {
 			return client.UIDSearch(&criteria, nil).Wait()
 		})
 		if err != nil {
-			return nil, false, false, candidates, classifyFailure(transport.StageIMAPSearch, err)
+			return nil, false, false, candidates, end, nil, classifyFailure(transport.StageIMAPSearch, err)
 		}
 		uids := result.AllUIDs()
 		for _, uid := range uids {
 			numeric := uint32(uid)
-			if numeric < start || numeric > end {
-				return nil, false, false, candidates, transport.NewFailure(transport.StageIMAPSearch, transport.FailureUnavailable, false, errors.New("provider returned a UID outside the bounded search window"))
+			if numeric < start || numeric > windowEnd {
+				return nil, false, false, candidates, end, nil, transport.NewFailure(transport.StageIMAPSearch, transport.FailureUnavailable, false, errors.New("provider returned a UID outside the bounded search window"))
 			}
 		}
 		sort.Slice(uids, func(i, j int) bool { return uids[i] > uids[j] })
 		if len(uids) > 0 {
 			summaries, fetchErr := fetchRemoteSummaries(ctx, conn, client, uids, timeout)
 			if fetchErr != nil {
-				return nil, false, false, candidates, fetchErr
+				return nil, false, false, candidates, end, nil, fetchErr
 			}
 			for _, summary := range summaries {
 				if !remoteSummaryDateMatches(summary.InternalDate, after, before) {
 					continue
 				}
-				found = append(found, summary)
-				if len(found) == needed {
-					break
+				if len(found) < limit {
+					found = append(found, summary)
+					continue
 				}
+				remainingPending = append(remainingPending, summary.UID)
 			}
 		}
-		candidates += int(end-start) + 1
+		candidates += int(windowEnd-start) + 1
 		if start == 1 {
 			end = 0
 		} else {
 			end = start - 1
 		}
+		if len(found) == limit {
+			break
+		}
 	}
-	more := len(found) > limit
-	if more {
-		found = found[:limit]
-	}
-	partial := !more && end > 0
-	return found, more, partial, candidates, nil
+	more := len(found) == limit && (len(remainingPending) > 0 || end > 0)
+	partial := len(found) < limit && end > 0
+	return found, more, partial, candidates, end, remainingPending, nil
 }
 
 func remoteSummaryDateMatches(value time.Time, after, before *time.Time) bool {

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -58,7 +59,7 @@ func TestRemoteSearchSummaryAndHydrationFetchAgainstMemoryIMAPServer(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if page.UIDValidity != 1 || len(page.Messages) != 1 || page.Messages[0].UID != 3 || !page.MoreAvailable || page.Partial {
+	if page.UIDValidity != 1 || len(page.Messages) != 1 || page.Messages[0].UID != 3 || !page.MoreAvailable || page.Partial || page.NextUID != 0 || !reflect.DeepEqual(page.PendingUIDs, []uint32{2, 1}) {
 		t.Fatalf("remote page = %+v", page)
 	}
 	if page.CandidateUIDs != 3 || page.Messages[0].Envelope.Subject != "Needle newest" || !strings.Contains(page.Messages[0].Snippet, "needle gamma body") {
@@ -66,6 +67,27 @@ func TestRemoteSearchSummaryAndHydrationFetchAgainstMemoryIMAPServer(t *testing.
 	}
 	if len(page.Messages[0].Snippet) > 1500 {
 		t.Fatalf("remote snippet is not bounded: %d bytes", len(page.Messages[0].Snippet))
+	}
+
+	secondPage, err := client.SearchRemote(context.Background(), auth, transport.RemoteSearchRequest{
+		Mailbox: "INBOX", ExpectedUIDValidity: 1, Limit: 1, StartUID: page.NextUID, PendingUIDs: page.PendingUIDs,
+		Criteria: transport.RemoteSearchCriteria{Text: []string{"needle"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(secondPage.Messages) != 1 || secondPage.Messages[0].UID != 2 || !secondPage.MoreAvailable || secondPage.Partial || secondPage.NextUID != 0 || !reflect.DeepEqual(secondPage.PendingUIDs, []uint32{1}) {
+		t.Fatalf("remote second page = %+v", secondPage)
+	}
+	thirdPage, err := client.SearchRemote(context.Background(), auth, transport.RemoteSearchRequest{
+		Mailbox: "INBOX", ExpectedUIDValidity: 1, Limit: 1, StartUID: secondPage.NextUID, PendingUIDs: secondPage.PendingUIDs,
+		Criteria: transport.RemoteSearchCriteria{Text: []string{"needle"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(thirdPage.Messages) != 1 || thirdPage.Messages[0].UID != 1 || thirdPage.MoreAvailable || thirdPage.Partial || thirdPage.NextUID != 0 {
+		t.Fatalf("remote third page = %+v", thirdPage)
 	}
 
 	unreadFlagged, err := client.SearchRemote(context.Background(), auth, transport.RemoteSearchRequest{
@@ -148,8 +170,84 @@ func TestRemoteSearchCandidateScanIsBoundedAndVisible(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(page.Messages) != 0 || page.MoreAvailable || !page.Partial || page.CandidateUIDs != 256 {
+	if len(page.Messages) != 0 || page.MoreAvailable || !page.Partial || page.CandidateUIDs != 256 || page.NextUID != 44 {
 		t.Fatalf("bounded remote page = %+v", page)
+	}
+
+	resumed, err := client.SearchRemote(context.Background(), transport.AuthRequest{
+		Username: username, Password: []byte(password),
+	}, transport.RemoteSearchRequest{
+		Mailbox: "INBOX", ExpectedUIDValidity: page.UIDValidity, Limit: 20, MaxCandidateUIDs: 256,
+		StartUID: page.NextUID, Criteria: transport.RemoteSearchCriteria{Text: []string{"absent-token"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resumed.Messages) != 0 || resumed.MoreAvailable || resumed.Partial || resumed.CandidateUIDs != 44 || resumed.NextUID != 0 {
+		t.Fatalf("resumed bounded remote page = %+v", resumed)
+	}
+}
+
+func TestRemoteSearchContinuationCrossesSparseCandidateWindowsWithoutDuplicates(t *testing.T) {
+	const (
+		username = "sparse-continuation-user"
+		password = "sparse-continuation-password"
+	)
+	memServer := imapmemserver.New()
+	user := imapmemserver.NewUser(username, password)
+	if err := user.Create("INBOX", nil); err != nil {
+		t.Fatal(err)
+	}
+	for index := 1; index <= 600; index++ {
+		subject := "Ordinary"
+		if index == 100 || index == 50 {
+			subject = "Needle sparse"
+		}
+		raw := remoteMailFixture("sparse-continuation@example.test", subject, "bounded sparse continuation body")
+		if _, err := user.Append("INBOX", &literalReader{Reader: strings.NewReader(raw), size: int64(len(raw))}, &imap.AppendOptions{
+			Time: time.Date(2026, 8, 6, 0, index%60, 0, 0, time.UTC),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	memServer.AddUser(user)
+	client, closeServer := newRemoteMemoryClient(t, memServer)
+	defer closeServer()
+	auth := transport.AuthRequest{Username: username, Password: []byte(password)}
+	startUID := uint32(0)
+	seen := map[uint32]int{}
+	pages := 0
+	for {
+		page, err := client.SearchRemote(context.Background(), auth, transport.RemoteSearchRequest{
+			Mailbox: "INBOX", ExpectedUIDValidity: 1, Limit: 10, MaxCandidateUIDs: 128,
+			StartUID: startUID, Criteria: transport.RemoteSearchCriteria{Subject: "Needle sparse"},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		pages++
+		if page.CandidateUIDs < 1 || page.CandidateUIDs > 128 {
+			t.Fatalf("page %d candidate bound=%d page=%+v", pages, page.CandidateUIDs, page)
+		}
+		for _, message := range page.Messages {
+			seen[message.UID]++
+		}
+		if !page.MoreAvailable && !page.Partial {
+			if page.NextUID != 0 {
+				t.Fatalf("completed page retained frontier: %+v", page)
+			}
+			break
+		}
+		if page.NextUID == 0 || (startUID != 0 && page.NextUID >= startUID) {
+			t.Fatalf("page %d did not advance frontier start=%d page=%+v", pages, startUID, page)
+		}
+		startUID = page.NextUID
+		if pages > 8 {
+			t.Fatalf("continuation failed to converge seen=%v start=%d", seen, startUID)
+		}
+	}
+	if pages < 5 || len(seen) != 2 || seen[100] != 1 || seen[50] != 1 {
+		t.Fatalf("sparse continuation pages=%d seen=%v", pages, seen)
 	}
 }
 
@@ -163,14 +261,34 @@ func TestRemoteSearchPreciseAfterRejectsDoNotConsumeResultQuota(t *testing.T) {
 	defer closeServer()
 	after := time.Date(2026, 8, 5, 12, 0, 0, 0, time.UTC)
 	page, err := client.SearchRemote(context.Background(), auth, transport.RemoteSearchRequest{
-		Mailbox: "INBOX", Limit: 1, MaxCandidateUIDs: 300,
+		Mailbox: "INBOX", Limit: 1, MaxCandidateUIDs: 128,
 		Criteria: transport.RemoteSearchCriteria{After: &after},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(page.Messages) != 1 || page.Messages[0].UID != 1 || page.MoreAvailable || page.Partial || page.CandidateUIDs != 300 {
-		t.Fatalf("precise --after page = %+v", page)
+	if len(page.Messages) != 0 || page.MoreAvailable || !page.Partial || page.CandidateUIDs != 128 || page.NextUID != 172 {
+		t.Fatalf("precise --after first page = %+v", page)
+	}
+	page, err = client.SearchRemote(context.Background(), auth, transport.RemoteSearchRequest{
+		Mailbox: "INBOX", ExpectedUIDValidity: page.UIDValidity, Limit: 1, MaxCandidateUIDs: 128,
+		StartUID: page.NextUID, Criteria: transport.RemoteSearchCriteria{After: &after},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Messages) != 0 || page.MoreAvailable || !page.Partial || page.CandidateUIDs != 128 || page.NextUID != 44 {
+		t.Fatalf("precise --after second page = %+v", page)
+	}
+	page, err = client.SearchRemote(context.Background(), auth, transport.RemoteSearchRequest{
+		Mailbox: "INBOX", ExpectedUIDValidity: page.UIDValidity, Limit: 1, MaxCandidateUIDs: 128,
+		StartUID: page.NextUID, Criteria: transport.RemoteSearchCriteria{After: &after},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Messages) != 1 || page.Messages[0].UID != 1 || page.MoreAvailable || page.Partial || page.CandidateUIDs != 44 || page.NextUID != 0 {
+		t.Fatalf("precise --after final page = %+v", page)
 	}
 }
 

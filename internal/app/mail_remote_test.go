@@ -16,6 +16,7 @@ import (
 
 type fakeRemoteClient struct {
 	searchMessages  []transport.RemoteMessageSummary
+	searchPages     []transport.RemoteSearchPage
 	searchMore      bool
 	searchPartial   bool
 	searchRequests  []transport.RemoteSearchRequest
@@ -33,6 +34,17 @@ func (client *fakeRemoteClient) SearchRemote(_ context.Context, _ transport.Auth
 	}
 	if request.ExpectedUIDValidity != 0 && request.ExpectedUIDValidity != uidValidity {
 		return transport.RemoteSearchPage{}, &transport.UIDValidityError{Expected: request.ExpectedUIDValidity, Observed: uidValidity}
+	}
+	if len(client.searchPages) > 0 {
+		page := client.searchPages[0]
+		client.searchPages = client.searchPages[1:]
+		if page.Mailbox == "" {
+			page.Mailbox = request.Mailbox
+		}
+		if page.UIDValidity == 0 {
+			page.UIDValidity = uidValidity
+		}
+		return page, nil
 	}
 	limit := request.Limit
 	values := append([]transport.RemoteMessageSummary(nil), client.searchMessages...)

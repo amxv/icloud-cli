@@ -2830,6 +2830,7 @@ Examples:
   icloud mail search --from billing@example.com --unread
   icloud mail search launch --result threads --limit 20
   icloud mail search invoice --remote --folder inbox
+  icloud mail search invoice --remote --folder inbox --cursor rcur_…
   icloud mail search --attachment-type application/pdf --json
   icloud mail search --input-json request.json --json
 

@@ -2,6 +2,9 @@ package app
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -43,6 +46,42 @@ func (commands accountCommands) MailRemoteSearch(
 	if err != nil {
 		return account.Account{}, maildomain.RemoteSearchPage{}, state.SchemaVersion(), err
 	}
+	if allFolders && strings.TrimSpace(options.Cursor) != "" {
+		return account.Account{}, maildomain.RemoteSearchPage{}, state.SchemaVersion(), cli.NewAppError(cli.ErrorUsage, "one-folder remote search cursors cannot be combined with --all-folders", false)
+	}
+	criteria := remoteCriteria(options)
+	queryHash, err := remoteSearchQueryHash(options)
+	if err != nil {
+		return account.Account{}, maildomain.RemoteSearchPage{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot hash the remote search query", false, err)
+	}
+	startUID := uint32(0)
+	resumeUIDValidity := uint32(0)
+	var pendingUIDs []uint32
+	if encodedCursor := strings.TrimSpace(options.Cursor); encodedCursor != "" {
+		cursor, decodeErr := maildomain.DecodeRemoteSearchCursor(encodedCursor)
+		if decodeErr != nil {
+			return account.Account{}, maildomain.RemoteSearchPage{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorUsage, "remote search cursor is invalid; use next_cursor from the same one-folder remote query", false, decodeErr)
+		}
+		folderValue := folders[0]
+		if cursor.AccountID != accountValue.ID {
+			return account.Account{}, maildomain.RemoteSearchPage{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorConflict, "remote search cursor belongs to another account", false, maildomain.ErrStaleRemoteSearchCursor)
+		}
+		if cursor.FolderID != folderValue.ID {
+			return account.Account{}, maildomain.RemoteSearchPage{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorConflict, "remote search cursor belongs to another folder", false, maildomain.ErrStaleRemoteSearchCursor)
+		}
+		if cursor.QueryHash != queryHash {
+			return account.Account{}, maildomain.RemoteSearchPage{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorConflict, "remote search cursor belongs to a different query or filter set", false, maildomain.ErrStaleRemoteSearchCursor)
+		}
+		if cursor.Limit != options.Limit {
+			return account.Account{}, maildomain.RemoteSearchPage{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorConflict, "remote search cursor belongs to a different result limit", false, maildomain.ErrStaleRemoteSearchCursor)
+		}
+		if folderValue.UIDValidity != 0 && cursor.UIDValidity != folderValue.UIDValidity {
+			return account.Account{}, maildomain.RemoteSearchPage{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorConflict, "remote search cursor is stale because the folder identity changed", false, maildomain.ErrStaleRemoteSearchCursor)
+		}
+		startUID = cursor.NextUID
+		resumeUIDValidity = cursor.UIDValidity
+		pendingUIDs = append([]uint32(nil), cursor.PendingUIDs...)
+	}
 	_, credential, err := state.Accounts().Credential(ctx, accountValue.ID)
 	if err != nil {
 		return account.Account{}, maildomain.RemoteSearchPage{}, state.SchemaVersion(), mapAccountError(err)
@@ -53,11 +92,24 @@ func (commands accountCommands) MailRemoteSearch(
 	}
 	defer zeroBytes(password)
 
-	criteria := remoteCriteria(options)
 	hits := make([]maildomain.RemoteSearchHit, 0, options.Limit+1)
 	more, partial, candidateUIDs := false, false, 0
-	for _, folderValue := range folders {
-		page, callErr := commands.searchRemoteFolder(ctx, accountValue, password, folderValue, criteria, options.Limit)
+	nextCursor := ""
+	for folderIndex, folderValue := range folders {
+		folderStartUID := uint32(0)
+		var folderPendingUIDs []uint32
+		if !allFolders && folderIndex == 0 {
+			folderStartUID = startUID
+			folderPendingUIDs = pendingUIDs
+			if resumeUIDValidity != 0 {
+				// A resumed provider traversal is bound to the cursor's mailbox
+				// incarnation even when the cached folder metadata does not have a
+				// UIDVALIDITY value. The live SELECT must therefore validate the
+				// cursor value rather than weakening the check to the local cache.
+				folderValue.UIDValidity = resumeUIDValidity
+			}
+		}
+		page, callErr := commands.searchRemoteFolder(ctx, accountValue, password, folderValue, criteria, options.Limit, folderStartUID, folderPendingUIDs)
 		if callErr != nil {
 			return account.Account{}, maildomain.RemoteSearchPage{}, state.SchemaVersion(), callErr
 		}
@@ -83,6 +135,19 @@ func (commands accountCommands) MailRemoteSearch(
 			}
 			hits = append(hits, hit)
 		}
+		if !allFolders && (page.MoreAvailable || page.Partial) {
+			if page.NextUID == 0 && len(page.PendingUIDs) == 0 {
+				return account.Account{}, maildomain.RemoteSearchPage{}, state.SchemaVersion(), cli.NewAppError(cli.ErrorInternal, "remote search reported older provider space without a continuation frontier", false)
+			}
+			nextCursor, err = maildomain.EncodeRemoteSearchCursor(maildomain.RemoteSearchCursor{
+				AccountID: accountValue.ID, FolderID: folderValue.ID, UIDValidity: page.UIDValidity,
+				QueryHash: queryHash, Limit: options.Limit, NextUID: page.NextUID,
+				PendingUIDs: append([]uint32(nil), page.PendingUIDs...),
+			})
+			if err != nil {
+				return account.Account{}, maildomain.RemoteSearchPage{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot encode the remote search continuation", false, err)
+			}
+		}
 	}
 	sort.Slice(hits, func(left, right int) bool {
 		if !hits[left].InternalDate.Equal(hits[right].InternalDate) {
@@ -99,7 +164,7 @@ func (commands accountCommands) MailRemoteSearch(
 	}
 	return accountValue, maildomain.RemoteSearchPage{
 		Hits: hits, Count: len(hits), More: more, Partial: partial,
-		Folders: len(folders), CandidateUIDs: candidateUIDs,
+		Folders: len(folders), CandidateUIDs: candidateUIDs, NextCursor: nextCursor,
 	}, state.SchemaVersion(), nil
 }
 
@@ -307,9 +372,6 @@ func validateRemoteSearchOptions(options maildomain.SearchOptions) error {
 	if options.ResultKind != "" && options.ResultKind != maildomain.SearchMessages {
 		return cli.WrapAppError(cli.ErrorUsage, "remote search returns messages only; cache results before local thread reconstruction", false, maildomain.ErrUnsupportedRemoteFilter)
 	}
-	if strings.TrimSpace(options.Cursor) != "" {
-		return cli.WrapAppError(cli.ErrorUsage, "remote search does not accept local search cursors", false, maildomain.ErrUnsupportedRemoteFilter)
-	}
 	if strings.TrimSpace(options.AttachmentFilename) != "" || strings.TrimSpace(options.AttachmentType) != "" {
 		return cli.WrapAppError(cli.ErrorUsage, "remote search cannot filter attachment metadata; hydrate or synchronize before using attachment filters", false, maildomain.ErrUnsupportedRemoteFilter)
 	}
@@ -368,12 +430,12 @@ func resolveRemoteReference(ctx context.Context, state *store.Store, accountID, 
 	return reference, folderValue, nil
 }
 
-func (commands accountCommands) searchRemoteFolder(ctx context.Context, accountValue account.Account, password []byte, folderValue folder.Folder, criteria transport.RemoteSearchCriteria, limit int) (transport.RemoteSearchPage, error) {
+func (commands accountCommands) searchRemoteFolder(ctx context.Context, accountValue account.Account, password []byte, folderValue folder.Folder, criteria transport.RemoteSearchCriteria, limit int, startUID uint32, pendingUIDs []uint32) (transport.RemoteSearchPage, error) {
 	var lastErr error
 	for _, username := range imapUsernameCandidates(accountValue) {
 		page, err := commands.remoteClient().SearchRemote(ctx, transport.AuthRequest{Username: username, Password: password}, transport.RemoteSearchRequest{
 			Mailbox: folderValue.Name, ExpectedUIDValidity: folderValue.UIDValidity,
-			Criteria: criteria, Limit: limit,
+			Criteria: criteria, Limit: limit, StartUID: startUID, PendingUIDs: append([]uint32(nil), pendingUIDs...),
 		})
 		if err == nil {
 			return page, nil
@@ -384,6 +446,39 @@ func (commands accountCommands) searchRemoteFolder(ctx context.Context, accountV
 		}
 	}
 	return transport.RemoteSearchPage{}, mapRemoteTransportError(lastErr, "remote search", folderValue.Name)
+}
+
+func remoteSearchQueryHash(options maildomain.SearchOptions) (string, error) {
+	type signature struct {
+		Version      int      `json:"v"`
+		Text         []string `json:"text,omitempty"`
+		Sender       string   `json:"sender,omitempty"`
+		Participant  string   `json:"participant,omitempty"`
+		Subject      string   `json:"subject,omitempty"`
+		RFCMessageID string   `json:"rfc_id,omitempty"`
+		Unread       *bool    `json:"unread,omitempty"`
+		Flagged      *bool    `json:"flagged,omitempty"`
+		After        string   `json:"after,omitempty"`
+		Before       string   `json:"before,omitempty"`
+	}
+	value := signature{
+		Version: 1, Text: strings.Fields(options.Query), Sender: strings.TrimSpace(options.Sender),
+		Participant: strings.TrimSpace(options.Participant), Subject: strings.TrimSpace(options.Subject),
+		RFCMessageID: strings.Trim(strings.TrimSpace(options.RFCMessageID), "<>"),
+		Unread:       options.Unread, Flagged: options.Flagged,
+	}
+	if options.After != nil {
+		value.After = options.After.UTC().Format(time.RFC3339Nano)
+	}
+	if options.Before != nil {
+		value.Before = options.Before.UTC().Format(time.RFC3339Nano)
+	}
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:]), nil
 }
 
 func (commands accountCommands) fetchRemoteSummary(ctx context.Context, accountValue account.Account, password []byte, folderValue folder.Folder, reference maildomain.RemoteReference) (transport.RemoteSummaryResult, error) {

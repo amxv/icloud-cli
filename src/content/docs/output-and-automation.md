@@ -59,6 +59,8 @@ Credential metadata JSON omits internal IDs, keyring references, environment nam
 
 Complex bounded reads accept `--input-json <path|->` when a request would otherwise require several selectors or filters. This includes account and folder inventories, folder refresh/show, message and thread lists, local or remote search, thread/message show, attachment metadata, operation history, and synchronization status/checkpoints. The JSON request selects the same service path as the equivalent flags; it does not create a second read API.
 
+Search continuation uses two deliberately distinct opaque cursor contracts. Local synchronized search emits `cur_…`; one-folder provider search emits `rcur_…` whenever `more=true` or `partial=true`. The remote cursor binds account, stable folder ID, UIDVALIDITY, normalized provider query/filter signature, result limit, and the next older UID frontier. Supplying it with changed scope is rejected before provider search, and `--all-folders` does not accept one-folder remote cursors. `rem_…` remains a separate targeted-message reference used for remote summary/hydration, never a paging cursor.
+
 For example, a search request can move shell-sensitive filters into one strict object while keeping output selection explicit:
 
 ```json
