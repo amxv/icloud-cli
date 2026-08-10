@@ -107,6 +107,9 @@ type Message struct {
 	AttachmentCount   int                `json:"attachment_count,omitempty"`
 	Unread            bool               `json:"unread"`
 	Flagged           bool               `json:"flagged"`
+	Answered          bool               `json:"answered"`
+	Replied           bool               `json:"replied"`
+	ReplyState        string             `json:"reply_state"`
 	CreatedAt         time.Time          `json:"created_at"`
 	UpdatedAt         time.Time          `json:"updated_at"`
 	Locations         []Location         `json:"locations,omitempty"`
@@ -175,6 +178,7 @@ const (
 	FlagMutationMarkUnread FlagMutation = "mark_unread"
 	FlagMutationFlag       FlagMutation = "flag"
 	FlagMutationUnflag     FlagMutation = "unflag"
+	FlagMutationAnswer     FlagMutation = "answer"
 )
 
 func (mutation FlagMutation) ProviderFlag() (string, bool, bool) {
@@ -187,6 +191,8 @@ func (mutation FlagMutation) ProviderFlag() (string, bool, bool) {
 		return `\Flagged`, true, true
 	case FlagMutationUnflag:
 		return `\Flagged`, false, true
+	case FlagMutationAnswer:
+		return `\Answered`, true, true
 	default:
 		return "", false, false
 	}
@@ -202,6 +208,8 @@ func (mutation FlagMutation) Achieved(flags LocationFlags) bool {
 		return flags.Flagged
 	case FlagMutationUnflag:
 		return !flags.Flagged
+	case FlagMutationAnswer:
+		return flags.Answered
 	default:
 		return false
 	}

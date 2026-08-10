@@ -7,6 +7,12 @@
       "format": "date-time",
       "type": "string"
     },
+    "answer_error_code": {
+      "type": "string"
+    },
+    "answer_reconciliation": {
+      "type": "string"
+    },
     "attachment_bytes": {
       "type": "integer"
     },
@@ -27,6 +33,9 @@
       "type": "string"
     },
     "message_id": {
+      "type": "string"
+    },
+    "parent_location_id": {
       "type": "string"
     },
     "parent_message_id": {
@@ -62,6 +71,7 @@
     }
   },
   "required": [
+    "answer_reconciliation",
     "attachment_bytes",
     "attachment_count",
     "created_at",

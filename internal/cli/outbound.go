@@ -68,7 +68,43 @@ func newMailOutboundOperationsCommand(state *executionState) *cobra.Command {
 	}
 	command.AddCommand(newMailOperationListCommand(state, mailOperationOutbound))
 	command.AddCommand(newMailOutboundOperationShowCommand(state))
+	command.AddCommand(newMailReplyAnswerReconcileCommand(state))
 	return command
+}
+
+func newMailReplyAnswerReconcileCommand(state *executionState) *cobra.Command {
+	var jsonOutput bool
+	command := &cobra.Command{
+		Use:     "reconcile-answer <attempt-id>",
+		Short:   "Retry only the provider Answered-state write for one proven sent reply",
+		Args:    cobra.ExactArgs(1),
+		Example: "  icloud mail operations outbound reconcile-answer send_…\n  icloud mail operations outbound reconcile-answer send_… --json",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			accountValue, attempt, schemaVersion, err := state.mail.MailReconcileReplyAnswer(cmd.Context(), state.global.Home, state.global.Account, args[0])
+			if err != nil {
+				return err
+			}
+			if jsonOutput {
+				return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: mailOutboundAttemptData{
+					AccountID: accountValue.ID, Attempt: sanitizeOutboundAttempt(attempt), SchemaVersion: schemaVersion,
+				}, Meta: EnvelopeMeta{RequestID: state.requestID}})
+			}
+			return renderReplyAnswerReconciliation(NewCompactTextRenderer(state.stdout), attempt)
+		},
+	}
+	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
+	return command
+}
+
+func renderReplyAnswerReconciliation(renderer *CompactTextRenderer, attempt maildomain.OutboundAttempt) error {
+	return renderer.Record("reply-answer", attempt.ID,
+		Field("status", attempt.Status),
+		Field("parent_message_id", attempt.ParentMessageID),
+		Field("parent_location_id", attempt.ParentLocationID),
+		Field("answer_reconciliation", attempt.AnswerReconciliation),
+		Field("answer_error", attempt.AnswerErrorCode),
+		Field("smtp_retried", "false"),
+	)
 }
 
 func newMailMutationOperationsCommand(state *executionState) *cobra.Command {
@@ -269,6 +305,7 @@ func renderOutboundAttempt(renderer *CompactTextRenderer, attempt maildomain.Out
 	return renderer.Record("outbound", attempt.ID,
 		Field("kind", attempt.Kind),
 		Field("parent_message_id", attempt.ParentMessageID),
+		Field("parent_location_id", attempt.ParentLocationID),
 		Field("source_message_id", attempt.SourceMessageID),
 		Field("status", attempt.Status),
 		Field("message_id", attempt.MessageID),
@@ -277,6 +314,8 @@ func renderOutboundAttempt(renderer *CompactTextRenderer, attempt maildomain.Out
 		Field("attachment_bytes", attempt.AttachmentBytes),
 		Field("reconciliation", attempt.Reconciliation),
 		Field("reconciliation_error", attempt.ReconciliationErrorCode),
+		Field("answer_reconciliation", attempt.AnswerReconciliation),
+		Field("answer_error", attempt.AnswerErrorCode),
 		Field("retry_of", attempt.RetryOfAttemptID),
 		Field("error_code", attempt.ErrorCode),
 		Field("updated_at", attempt.UpdatedAt),

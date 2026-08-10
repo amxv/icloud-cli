@@ -215,6 +215,26 @@ func TestReconcileAndUpdateFlagsAgainstMemoryIMAPServer(t *testing.T) {
 	if !result.Present || slices.Contains(result.Flags, `\Seen`) || !slices.Contains(result.Flags, `\Flagged`) || !slices.Contains(result.Flags, `$Forwarded`) {
 		t.Fatalf("STORE result = %+v", result)
 	}
+	removedAnswer, err := client.UpdateFlags(context.Background(), auth, transport.FlagMutationRequest{
+		Mailbox: "INBOX", ExpectedUIDValidity: page.UIDValidity, UID: 1,
+		Flag: `\Answered`, Add: false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slices.Contains(removedAnswer.Flags, `\Answered`) || !slices.Contains(removedAnswer.Flags, `$Forwarded`) {
+		t.Fatalf("remove Answered result = %+v", removedAnswer)
+	}
+	answered, err := client.UpdateFlags(context.Background(), auth, transport.FlagMutationRequest{
+		Mailbox: "INBOX", ExpectedUIDValidity: page.UIDValidity, UID: 1,
+		Flag: `\Answered`, Add: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !answered.Present || !slices.Contains(answered.Flags, `\Answered`) || !slices.Contains(answered.Flags, `\Flagged`) || !slices.Contains(answered.Flags, `$Forwarded`) {
+		t.Fatalf("add Answered result = %+v", answered)
+	}
 	reconciled, err := client.FetchInboxPage(context.Background(), auth, transport.InboxFetchRequest{
 		Mailbox: "INBOX", ExpectedUIDValidity: page.UIDValidity,
 		LastCommittedUID: 1, LastScannedUID: 1, Limit: 20,
@@ -241,7 +261,7 @@ func TestUpdateFlagsTimesOutAtStoreAndDoesNotSearch(t *testing.T) {
 		Username: "owner", Password: []byte("synthetic"),
 	}, transport.FlagMutationRequest{
 		Mailbox: "INBOX", ExpectedUIDValidity: 77, UID: 1,
-		Flag: `\Seen`, Add: true,
+		Flag: `\Answered`, Add: true,
 	})
 	assertFailure(t, err, transport.StageTimeout, transport.FailureUnavailable)
 	commands := strings.Join(server.Commands(), ",")
@@ -263,12 +283,12 @@ func TestUpdateFlagsReturnsCurrentStateAfterConditionalStoreConflict(t *testing.
 		Username: "owner", Password: []byte("synthetic"),
 	}, transport.FlagMutationRequest{
 		Mailbox: "INBOX", ExpectedUIDValidity: 77, UID: 1,
-		ExpectedModSequence: 10, Flag: `\Seen`, Add: true,
+		ExpectedModSequence: 10, Flag: `\Answered`, Add: true,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.Present || result.ModSequence != 12 || slices.Contains(result.Flags, `\Seen`) ||
+	if !result.Present || result.ModSequence != 12 || slices.Contains(result.Flags, `\Answered`) ||
 		!slices.Contains(result.Flags, `\Flagged`) || !slices.Contains(result.Flags, `$Remote`) {
 		t.Fatalf("conditional conflict state = %+v", result)
 	}

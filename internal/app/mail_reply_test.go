@@ -12,6 +12,7 @@ import (
 	"github.com/amxv/icloud-cli/internal/cli"
 	"github.com/amxv/icloud-cli/internal/folder"
 	maildomain "github.com/amxv/icloud-cli/internal/mail"
+	"github.com/amxv/icloud-cli/internal/transport"
 )
 
 func TestMailReplyUsesExactParentDerivesRecipientsAndKeepsExistingThread(t *testing.T) {
@@ -20,6 +21,9 @@ func TestMailReplyUsesExactParentDerivesRecipientsAndKeepsExistingThread(t *test
 	commands, _ := newTestAccountCommands()
 	sender := &fakeSMTPSender{}
 	commands.sender = sender
+	commands.flags = &fakeFlagClient{results: []transport.FlagMutationResult{{
+		Mailbox: "INBOX", UIDValidity: 700, UID: 1, Flags: []string{`\Seen`, `\Answered`, "$Custom"}, ModSequence: 1, Present: true,
+	}}}
 	addSendAccount(t, commands, home)
 
 	rootThread := seedReplyMessage(t, home, maildomain.IngestRecord{
@@ -105,11 +109,11 @@ func TestMailReplyUsesExactParentDerivesRecipientsAndKeepsExistingThread(t *test
 	}
 	if !compactContainsAll(stdout,
 		"mail-reply\nsend_", "kind=reply_all", "parent_message_id=msg_reply_root",
-		"status=sent", "thread_id="+rootThread, "reconciliation=pending", "reused=false",
+		"status=sent", "thread_id="+rootThread, "reconciliation=pending", "answer_reconciliation=confirmed", "reused=false",
 	) {
 		t.Fatalf("reply outcome = %q", stdout)
 	}
-	if lines, size := strings.Count(stdout, "\n"), len(stdout); lines > 9 || size > 470 {
+	if lines, size := strings.Count(stdout, "\n"), len(stdout); lines > 13 || size > 620 {
 		t.Fatalf("reply outcome budget lines=%d bytes=%d output=%q", lines, size, stdout)
 	}
 	if len(sender.messages) != 1 {

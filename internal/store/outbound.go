@@ -22,10 +22,10 @@ SELECT attempt_id, account_id, sender_identity_id, proposed_message_id, request_
        to_count, cc_count, bcc_count, body_part_count,
        attachment_count, attachment_byte_size,
        CASE WHEN source_message_id <> '' THEN 'forward' ELSE outbound_kind END,
-       parent_message_id, source_message_id,
+       parent_message_id, parent_location_id, source_message_id,
        message_id, thread_id,
        retry_of_attempt_id, reconciliation, reconciled_location_id,
-       reconciliation_error_code, error_code,
+       reconciliation_error_code, answer_reconciliation, answer_error_code, error_code,
        accepted_at, created_at, updated_at
 FROM outbound_attempts`
 
@@ -61,19 +61,20 @@ func (repository *OutboundRepository) Begin(ctx context.Context, input maildomai
 		kind = maildomain.OutboundKindSend
 	}
 	parentMessageID := strings.TrimSpace(input.ParentMessageID)
+	parentLocationID := strings.TrimSpace(input.ParentLocationID)
 	sourceMessageID := strings.TrimSpace(input.SourceMessageID)
 	storedKind := kind
 	switch kind {
 	case maildomain.OutboundKindSend:
-		if parentMessageID != "" || sourceMessageID != "" {
+		if parentMessageID != "" || parentLocationID != "" || sourceMessageID != "" {
 			return maildomain.OutboundAttempt{}, false, errors.New("begin outbound attempt: send cannot name a related message")
 		}
 	case maildomain.OutboundKindReply, maildomain.OutboundKindReplyAll:
-		if !strings.HasPrefix(parentMessageID, "msg_") || sourceMessageID != "" {
-			return maildomain.OutboundAttempt{}, false, errors.New("begin outbound attempt: reply parent message is required")
+		if !strings.HasPrefix(parentMessageID, "msg_") || !strings.HasPrefix(parentLocationID, "loc_") || sourceMessageID != "" {
+			return maildomain.OutboundAttempt{}, false, errors.New("begin outbound attempt: reply parent message and location are required")
 		}
 	case maildomain.OutboundKindForward:
-		if parentMessageID != "" || !strings.HasPrefix(sourceMessageID, "msg_") {
+		if parentMessageID != "" || parentLocationID != "" || !strings.HasPrefix(sourceMessageID, "msg_") {
 			return maildomain.OutboundAttempt{}, false, errors.New("begin outbound attempt: forward source message is required")
 		}
 		// Schema 13 constrained outbound_kind before forward existed. Keep the
@@ -128,15 +129,15 @@ INSERT INTO outbound_attempts (
     attempt_id, account_id, sender_identity_id, proposed_message_id, request_hash, idempotency_key,
     status, rfc_message_id, raw_content_hash, raw_storage_key, raw_byte_size,
     to_count, cc_count, bcc_count, body_part_count,
-    attachment_count, attachment_byte_size, outbound_kind, parent_message_id, source_message_id,
+    attachment_count, attachment_byte_size, outbound_kind, parent_message_id, parent_location_id, source_message_id,
     retry_of_attempt_id,
-    reconciliation, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'none', ?, ?)`,
+    reconciliation, answer_reconciliation, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'none', 'none', ?, ?)`,
 		input.AttemptID, input.AccountID, input.SenderIdentityID, input.ProposedMessageID, input.RequestHash,
 		strings.TrimSpace(input.IdempotencyKey), input.RFCMessageID,
 		input.RawContentHash, input.RawStorageKey, input.RawByteSize,
 		input.ToCount, input.CCCount, input.BCCCount, input.BodyPartCount,
-		len(input.Attachments), attachmentBytes, storedKind, parentMessageID, sourceMessageID,
+		len(input.Attachments), attachmentBytes, storedKind, parentMessageID, parentLocationID, sourceMessageID,
 		strings.TrimSpace(input.RetryOfAttemptID),
 		timestamp, timestamp,
 	); err != nil {
@@ -207,6 +208,10 @@ func (repository *OutboundRepository) MarkAcceptedIncomplete(ctx context.Context
 	result, err := repository.db.ExecContext(ctx, `
 UPDATE outbound_attempts
 SET status = 'sent', reconciliation = 'pending', error_code = ?,
+    answer_reconciliation = CASE
+        WHEN outbound_kind IN ('reply', 'reply_all') AND parent_location_id <> '' THEN 'pending'
+        ELSE answer_reconciliation
+    END,
     accepted_at = ?, updated_at = ?
 WHERE attempt_id = ? AND status = 'pending'`,
 		strings.TrimSpace(errorCode), acceptedAt.UTC().Format(time.RFC3339Nano),
@@ -268,6 +273,7 @@ func (repository *OutboundRepository) CompleteSent(ctx context.Context, input ma
 	if attempt.Kind != input.Request.Operation() ||
 		attempt.SenderIdentityID != strings.TrimSpace(input.Request.SenderIdentityID) ||
 		attempt.ParentMessageID != strings.TrimSpace(input.Request.ParentMessageID) ||
+		attempt.ParentLocationID != strings.TrimSpace(input.Request.ParentLocationID) ||
 		attempt.SourceMessageID != strings.TrimSpace(input.Request.SourceMessageID) {
 		return maildomain.OutboundAttempt{}, errors.New("accepted outbound operation does not match the pending attempt")
 	}
@@ -329,12 +335,17 @@ ON CONFLICT(message_id) DO UPDATE SET
 	if err := tx.QueryRowContext(ctx, `SELECT thread_id FROM thread_messages WHERE message_id = ?`, attempt.ProposedMessageID).Scan(&threadID); err != nil {
 		return maildomain.OutboundAttempt{}, fmt.Errorf("resolve outbound thread: %w", err)
 	}
+	answerState := maildomain.AnswerReconciliationNone
+	if attempt.Kind == maildomain.OutboundKindReply || attempt.Kind == maildomain.OutboundKindReplyAll {
+		answerState = maildomain.AnswerReconciliationPending
+	}
 	if _, err := tx.ExecContext(ctx, `
 UPDATE outbound_attempts
 SET status = 'sent', message_id = ?, thread_id = ?, reconciliation = 'pending',
+    answer_reconciliation = ?, answer_error_code = '',
     error_code = '', accepted_at = ?, updated_at = ?
 WHERE attempt_id = ? AND status = 'pending'`,
-		attempt.ProposedMessageID, threadID, timestamp, timestamp, attempt.ID,
+		attempt.ProposedMessageID, threadID, answerState, timestamp, timestamp, attempt.ID,
 	); err != nil {
 		return maildomain.OutboundAttempt{}, fmt.Errorf("complete accepted outbound attempt: %w", err)
 	}
@@ -570,18 +581,48 @@ func (repository *OutboundRepository) Attempt(ctx context.Context, attemptID str
 	return scanOutboundAttempt(repository.db.QueryRowContext(ctx, outboundAttemptColumns+` WHERE attempt_id = ?`, strings.TrimSpace(attemptID)))
 }
 
+func (repository *OutboundRepository) MarkAnswerPending(ctx context.Context, attemptID, errorCode string, now time.Time) (maildomain.OutboundAttempt, error) {
+	result, err := repository.db.ExecContext(ctx, `
+UPDATE outbound_attempts
+SET answer_reconciliation = 'pending', answer_error_code = ?, updated_at = ?
+WHERE attempt_id = ? AND status = 'sent' AND outbound_kind IN ('reply', 'reply_all')`,
+		strings.TrimSpace(errorCode), now.UTC().Format(time.RFC3339Nano), strings.TrimSpace(attemptID))
+	if err != nil {
+		return maildomain.OutboundAttempt{}, fmt.Errorf("mark reply answer reconciliation pending: %w", err)
+	}
+	if changed, _ := result.RowsAffected(); changed != 1 {
+		return maildomain.OutboundAttempt{}, errors.New("mark reply answer reconciliation pending: sent reply attempt not found")
+	}
+	return repository.Attempt(ctx, attemptID)
+}
+
+func (repository *OutboundRepository) MarkAnswerConfirmed(ctx context.Context, attemptID string, now time.Time) (maildomain.OutboundAttempt, error) {
+	result, err := repository.db.ExecContext(ctx, `
+UPDATE outbound_attempts
+SET answer_reconciliation = 'confirmed', answer_error_code = '', updated_at = ?
+WHERE attempt_id = ? AND status = 'sent' AND outbound_kind IN ('reply', 'reply_all')`,
+		now.UTC().Format(time.RFC3339Nano), strings.TrimSpace(attemptID))
+	if err != nil {
+		return maildomain.OutboundAttempt{}, fmt.Errorf("confirm reply answer reconciliation: %w", err)
+	}
+	if changed, _ := result.RowsAffected(); changed != 1 {
+		return maildomain.OutboundAttempt{}, errors.New("confirm reply answer reconciliation: sent reply attempt not found")
+	}
+	return repository.Attempt(ctx, attemptID)
+}
+
 func scanOutboundAttempt(row rowScanner) (maildomain.OutboundAttempt, error) {
 	var value maildomain.OutboundAttempt
-	var status, reconciliation, acceptedAt, createdAt, updatedAt sql.NullString
+	var status, reconciliation, answerReconciliation, acceptedAt, createdAt, updatedAt sql.NullString
 	if err := row.Scan(
 		&value.ID, &value.AccountID, &value.SenderIdentityID, &value.ProposedMessageID, &value.RequestHash,
 		&value.IdempotencyKey, &status, &value.RFCMessageID,
 		&value.RawContentHash, &value.RawStorageKey, &value.RawByteSize,
 		&value.ToCount, &value.CCCount, &value.BCCCount, &value.BodyPartCount,
-		&value.AttachmentCount, &value.AttachmentBytes, &value.Kind, &value.ParentMessageID, &value.SourceMessageID,
+		&value.AttachmentCount, &value.AttachmentBytes, &value.Kind, &value.ParentMessageID, &value.ParentLocationID, &value.SourceMessageID,
 		&value.MessageID, &value.ThreadID,
 		&value.RetryOfAttemptID, &reconciliation, &value.ReconciledLocationID,
-		&value.ReconciliationErrorCode, &value.ErrorCode,
+		&value.ReconciliationErrorCode, &answerReconciliation, &value.AnswerErrorCode, &value.ErrorCode,
 		&acceptedAt, &createdAt, &updatedAt,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -591,6 +632,7 @@ func scanOutboundAttempt(row rowScanner) (maildomain.OutboundAttempt, error) {
 	}
 	value.Status = maildomain.OutboundStatus(status.String)
 	value.Reconciliation = maildomain.ReconciliationState(reconciliation.String)
+	value.AnswerReconciliation = maildomain.AnswerReconciliationState(answerReconciliation.String)
 	var err error
 	value.AcceptedAt, err = parseNullableTime(acceptedAt)
 	if err != nil {

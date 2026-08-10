@@ -298,6 +298,9 @@ func (repository *SearchRepository) searchThreads(
 	if err := applyThreadProjectionState(ctx, repository.db, accountID, projected); err != nil {
 		return maildomain.SearchPage{}, err
 	}
+	if err := applyThreadReplyState(ctx, repository.db, accountID, projected); err != nil {
+		return maildomain.SearchPage{}, err
+	}
 	projectedIndex := 0
 	for index := range hits {
 		if hits[index].Thread == nil {

@@ -55,6 +55,15 @@ const (
 	ReconciliationUnknown   ReconciliationState = "unknown"
 )
 
+type AnswerReconciliationState string
+
+const (
+	AnswerReconciliationNone        AnswerReconciliationState = "none"
+	AnswerReconciliationPending     AnswerReconciliationState = "pending"
+	AnswerReconciliationConfirmed   AnswerReconciliationState = "confirmed"
+	AnswerReconciliationUnsupported AnswerReconciliationState = "unsupported"
+)
+
 type OutboundKind string
 
 const (
@@ -82,6 +91,7 @@ type OutboundAttachment struct {
 type SendRequest struct {
 	Kind                  OutboundKind         `json:"kind,omitempty"`
 	ParentMessageID       string               `json:"parent_message_id,omitempty"`
+	ParentLocationID      string               `json:"parent_location_id,omitempty"`
 	SourceMessageID       string               `json:"source_message_id,omitempty"`
 	SenderIdentityID      string               `json:"sender_identity_id,omitempty"`
 	From                  Address              `json:"from"`
@@ -104,6 +114,7 @@ type SendRequest struct {
 type SendPreview struct {
 	Kind             OutboundKind         `json:"kind,omitempty"`
 	ParentMessageID  string               `json:"parent_message_id,omitempty"`
+	ParentLocationID string               `json:"parent_location_id,omitempty"`
 	SourceMessageID  string               `json:"source_message_id,omitempty"`
 	SenderIdentityID string               `json:"sender_identity_id"`
 	AccountID        string               `json:"account_id"`
@@ -126,32 +137,35 @@ type SendPreview struct {
 }
 
 type OutboundAttempt struct {
-	ID                      string              `json:"id"`
-	AccountID               string              `json:"account_id"`
-	SenderIdentityID        string              `json:"sender_identity_id"`
-	ProposedMessageID       string              `json:"proposed_message_id"`
-	RequestHash             string              `json:"request_hash"`
-	Status                  OutboundStatus      `json:"status"`
-	RFCMessageID            string              `json:"rfc_message_id"`
-	ToCount                 int                 `json:"to_count"`
-	CCCount                 int                 `json:"cc_count"`
-	BCCCount                int                 `json:"bcc_count"`
-	BodyPartCount           int                 `json:"body_part_count"`
-	AttachmentCount         int                 `json:"attachment_count"`
-	AttachmentBytes         int64               `json:"attachment_bytes"`
-	Kind                    OutboundKind        `json:"kind"`
-	ParentMessageID         string              `json:"parent_message_id,omitempty"`
-	SourceMessageID         string              `json:"source_message_id,omitempty"`
-	MessageID               string              `json:"message_id,omitempty"`
-	ThreadID                string              `json:"thread_id,omitempty"`
-	RetryOfAttemptID        string              `json:"retry_of_attempt_id,omitempty"`
-	Reconciliation          ReconciliationState `json:"reconciliation"`
-	ReconciledLocationID    string              `json:"reconciled_location_id,omitempty"`
-	ReconciliationErrorCode string              `json:"reconciliation_error_code,omitempty"`
-	ErrorCode               string              `json:"error_code,omitempty"`
-	AcceptedAt              *time.Time          `json:"accepted_at,omitempty"`
-	CreatedAt               time.Time           `json:"created_at"`
-	UpdatedAt               time.Time           `json:"updated_at"`
+	ID                      string                    `json:"id"`
+	AccountID               string                    `json:"account_id"`
+	SenderIdentityID        string                    `json:"sender_identity_id"`
+	ProposedMessageID       string                    `json:"proposed_message_id"`
+	RequestHash             string                    `json:"request_hash"`
+	Status                  OutboundStatus            `json:"status"`
+	RFCMessageID            string                    `json:"rfc_message_id"`
+	ToCount                 int                       `json:"to_count"`
+	CCCount                 int                       `json:"cc_count"`
+	BCCCount                int                       `json:"bcc_count"`
+	BodyPartCount           int                       `json:"body_part_count"`
+	AttachmentCount         int                       `json:"attachment_count"`
+	AttachmentBytes         int64                     `json:"attachment_bytes"`
+	Kind                    OutboundKind              `json:"kind"`
+	ParentMessageID         string                    `json:"parent_message_id,omitempty"`
+	ParentLocationID        string                    `json:"parent_location_id,omitempty"`
+	SourceMessageID         string                    `json:"source_message_id,omitempty"`
+	MessageID               string                    `json:"message_id,omitempty"`
+	ThreadID                string                    `json:"thread_id,omitempty"`
+	RetryOfAttemptID        string                    `json:"retry_of_attempt_id,omitempty"`
+	Reconciliation          ReconciliationState       `json:"reconciliation"`
+	ReconciledLocationID    string                    `json:"reconciled_location_id,omitempty"`
+	ReconciliationErrorCode string                    `json:"reconciliation_error_code,omitempty"`
+	AnswerReconciliation    AnswerReconciliationState `json:"answer_reconciliation"`
+	AnswerErrorCode         string                    `json:"answer_error_code,omitempty"`
+	ErrorCode               string                    `json:"error_code,omitempty"`
+	AcceptedAt              *time.Time                `json:"accepted_at,omitempty"`
+	CreatedAt               time.Time                 `json:"created_at"`
+	UpdatedAt               time.Time                 `json:"updated_at"`
 
 	IdempotencyKey string `json:"-"`
 	RawContentHash string `json:"-"`
@@ -177,6 +191,7 @@ type BeginOutboundAttempt struct {
 	Attachments       []OutboundAttachmentRecord
 	Kind              OutboundKind
 	ParentMessageID   string
+	ParentLocationID  string
 	SourceMessageID   string
 	RetryOfAttemptID  string
 	Now               time.Time
@@ -223,6 +238,7 @@ func NormalizeDraftRequest(value SendRequest) (SendRequest, error) {
 func normalizeMessageRequest(value SendRequest, requireTo, requireSubject, requireBody bool) (SendRequest, error) {
 	value.Kind = normalizeOutboundKind(value.Kind)
 	value.ParentMessageID = strings.TrimSpace(value.ParentMessageID)
+	value.ParentLocationID = strings.TrimSpace(value.ParentLocationID)
 	value.SourceMessageID = strings.TrimSpace(value.SourceMessageID)
 	value.SenderIdentityID = strings.TrimSpace(value.SenderIdentityID)
 	if err := validateOutboundThreading(&value); err != nil {
@@ -511,12 +527,15 @@ func validateOutboundThreading(value *SendRequest) error {
 	}
 	switch value.Kind {
 	case "":
-		if value.ParentMessageID != "" || value.SourceMessageID != "" || strings.TrimSpace(value.InReplyTo) != "" || len(value.References) > 0 {
+		if value.ParentMessageID != "" || value.ParentLocationID != "" || value.SourceMessageID != "" || strings.TrimSpace(value.InReplyTo) != "" || len(value.References) > 0 {
 			return fmt.Errorf("%w: relationship metadata requires the matching outbound operation", ErrInvalidSendRequest)
 		}
 	case OutboundKindReply, OutboundKindReplyAll:
 		if !strings.HasPrefix(value.ParentMessageID, "msg_") {
 			return fmt.Errorf("%w: reply parent message is required", ErrInvalidSendRequest)
+		}
+		if value.ParentLocationID != "" && !strings.HasPrefix(value.ParentLocationID, "loc_") {
+			return fmt.Errorf("%w: invalid reply parent provider location", ErrInvalidSendRequest)
 		}
 		if value.SourceMessageID != "" {
 			return fmt.Errorf("%w: reply cannot name a forward source", ErrInvalidSendRequest)
@@ -525,7 +544,7 @@ func validateOutboundThreading(value *SendRequest) error {
 		if !strings.HasPrefix(value.SourceMessageID, "msg_") {
 			return fmt.Errorf("%w: forward source message is required", ErrInvalidSendRequest)
 		}
-		if value.ParentMessageID != "" || strings.TrimSpace(value.InReplyTo) != "" || len(value.References) > 0 {
+		if value.ParentMessageID != "" || value.ParentLocationID != "" || strings.TrimSpace(value.InReplyTo) != "" || len(value.References) > 0 {
 			return fmt.Errorf("%w: forward cannot contain reply relationship metadata", ErrInvalidSendRequest)
 		}
 		return nil

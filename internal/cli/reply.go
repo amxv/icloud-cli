@@ -15,6 +15,7 @@ type replyFlags struct {
 	sendFlags
 	ReplaceTo bool
 	ReplaceCC bool
+	Folder    string
 }
 
 type mailReplyPreviewData struct {
@@ -44,7 +45,7 @@ func newMailReplyCommand(state *executionState, replyAll bool) *cobra.Command {
 			}
 			var jsonRequest replyJSONRequest
 			if used, err := readJSONInput(cmd, state, input, &jsonRequest,
-				"from", "to", "cc", "bcc", "replace-to", "replace-cc", "body", "body-file", "html-body", "html-body-file",
+				"folder", "from", "to", "cc", "bcc", "replace-to", "replace-cc", "body", "body-file", "html-body", "html-body-file",
 				"header", "attach", "attach-name", "attach-type", "idempotency-key", "retry-of", "retry-unknown"); err != nil {
 				return err
 			} else if used {
@@ -52,7 +53,7 @@ func newMailReplyCommand(state *executionState, replyAll bool) *cobra.Command {
 					return NewAppError(ErrorUsage, "body_file cannot read stdin when --input-json also reads stdin", false)
 				}
 				process := flags.sendFlags
-				flags = replyFlags{sendFlags: jsonRequest.Compose.sendFlags(), ReplaceTo: jsonRequest.ReplaceTo, ReplaceCC: jsonRequest.ReplaceCC}
+				flags = replyFlags{sendFlags: jsonRequest.Compose.sendFlags(), ReplaceTo: jsonRequest.ReplaceTo, ReplaceCC: jsonRequest.ReplaceCC, Folder: jsonRequest.Folder}
 				flags.DryRun, flags.Yes, flags.JSON, flags.Verbose, flags.ShowHeaders, flags.Format = process.DryRun, process.Yes, process.JSON, process.Verbose, process.ShowHeaders, process.Format
 				parentID = strings.TrimSpace(jsonRequest.MessageID)
 			}
@@ -118,6 +119,7 @@ func newMailReplyCommand(state *executionState, replyAll bool) *cobra.Command {
 }
 
 func bindReplyFlags(command *cobra.Command, flags *replyFlags) {
+	command.Flags().StringVar(&flags.Folder, "folder", "", "Select the exact current provider parent location when the message has multiple locations")
 	command.Flags().StringVar(&flags.From, "from", "", "Sender identity by stable mid_… ID or configured address (defaults to the account's local default identity)")
 	command.Flags().StringArrayVar(&flags.To, "to", nil, "Add a To recipient; repeat or provide a comma-separated address list")
 	command.Flags().StringArrayVar(&flags.CC, "cc", nil, "Add a Cc recipient; repeat as needed")
@@ -152,7 +154,7 @@ func replyRequestFromFlags(state *executionState, parentID string, replyAll bool
 		return maildomain.ReplyRequest{}, false, NewAppError(ErrorUsage, "--replace-to requires at least one --to address", false)
 	}
 	return maildomain.ReplyRequest{
-		ParentMessageID: parentID, SenderIdentityID: parsed.SenderIdentityID, ReplyAll: replyAll,
+		ParentMessageID: parentID, ParentFolder: flags.Folder, SenderIdentityID: parsed.SenderIdentityID, ReplyAll: replyAll,
 		To: parsed.To, CC: parsed.CC, BCC: parsed.BCC,
 		ReplaceTo: flags.ReplaceTo, ReplaceCC: flags.ReplaceCC,
 		TextBody: parsed.TextBody, HTMLBody: parsed.HTMLBody,
@@ -197,6 +199,8 @@ func renderCompactReplyPreview(writer io.Writer, preview maildomain.ReplyPreview
 	if err := renderer.Record("reply-preview", preview.ParentMessageID,
 		Field("kind", preview.Kind),
 		Field("thread_id", preview.ThreadID),
+		Field("parent_location_id", preview.ParentLocationID),
+		Field("parent_folder_id", preview.ParentFolderID),
 		Field("parent_rfc_message_id", preview.ParentRFCID),
 		Field("threading", fmt.Sprintf("%t", preview.Threading)),
 		Field("sender_identity", preview.Send.SenderIdentityID),
@@ -248,10 +252,13 @@ func renderReplyOutcome(renderer *CompactTextRenderer, attempt maildomain.Outbou
 		Field("kind", attempt.Kind),
 		Field("sender_identity", attempt.SenderIdentityID),
 		Field("parent_message_id", attempt.ParentMessageID),
+		Field("parent_location_id", attempt.ParentLocationID),
 		Field("status", attempt.Status),
 		Field("message_id", attempt.MessageID),
 		Field("thread_id", attempt.ThreadID),
 		Field("reconciliation", attempt.Reconciliation),
+		Field("answer_reconciliation", attempt.AnswerReconciliation),
+		Field("answer_error", attempt.AnswerErrorCode),
 		Field("error_code", attempt.ErrorCode),
 		Field("reused", fmt.Sprintf("%t", reused)),
 	)

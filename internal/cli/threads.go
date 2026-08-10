@@ -31,6 +31,7 @@ type publicThread struct {
 	FolderIDs             []string              `json:"folder_ids,omitempty"`
 	MessageCount          int                   `json:"message_count"`
 	UnreadCount           int                   `json:"unread_count"`
+	Replied               bool                  `json:"replied"`
 	AttachmentCount       int                   `json:"attachment_count"`
 	FirstMessageAt        *time.Time            `json:"first_message_at,omitempty"`
 	LastMessageAt         *time.Time            `json:"last_message_at,omitempty"`
@@ -361,6 +362,7 @@ func renderThreadSummary(renderer *CompactTextRenderer, thread maildomain.Thread
 		Field("subject", thread.CanonicalSubject),
 		Field("messages", thread.MessageCount),
 		Field("unread", thread.UnreadCount),
+		Field("replied", thread.Replied),
 		Field("participants", thread.Participants),
 		Field("folders", thread.FolderIDs),
 		Field("attachments", thread.AttachmentCount),
@@ -380,6 +382,8 @@ func renderThreadMessage(renderer *CompactTextRenderer, message maildomain.Messa
 		Field("direction", message.Direction),
 		Field("state", messageReadState(message)),
 		Field("flagged", message.Flagged),
+		Field("replied", message.Replied),
+		Field("reply_state", message.ReplyState),
 		Field("attachments", message.AttachmentCount),
 	}
 	if !metadataOnly {
@@ -427,7 +431,7 @@ func buildPublicThread(ctx context.Context, thread maildomain.Thread, sources []
 		ID: thread.ID, AccountID: thread.AccountID, RootRFCMessageID: thread.RootRFCMessageID,
 		Subject: thread.CanonicalSubject, Snippet: snippet,
 		Participants: append([]string(nil), thread.Participants...), FolderIDs: append([]string(nil), thread.FolderIDs...),
-		MessageCount: thread.MessageCount, UnreadCount: thread.UnreadCount, AttachmentCount: thread.AttachmentCount,
+		MessageCount: thread.MessageCount, UnreadCount: thread.UnreadCount, Replied: thread.Replied, AttachmentCount: thread.AttachmentCount,
 		FirstMessageAt: first, LastMessageAt: last, Status: thread.Status, Reconstruction: thread.Reconstruction,
 		RedirectedFrom:  thread.RedirectedFrom,
 		ProjectionState: thread.ProjectionState, ProjectionReason: thread.ProjectionReason,

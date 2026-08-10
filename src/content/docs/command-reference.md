@@ -2279,8 +2279,9 @@ Examples:
   icloud mail operations outbound show send_…
 
 Available Commands:
-  list        List bounded local outbound send attempts
-  show        Show one outbound send attempt by stable ID
+  list             List bounded local outbound send attempts
+  reconcile-answer Retry only the provider Answered-state write for one proven sent reply
+  show             Show one outbound send attempt by stable ID
 
 Flags:
   -h, --help   help for outbound
@@ -2314,6 +2315,30 @@ Flags:
       --input-json string   Read one strict JSON read request from a file, or - for stdin; cannot be mixed with equivalent read flags or positional read arguments
       --json                Emit one stable JSON success envelope
       --limit int           Maximum attempts to return (1-100) (default 20)
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail operations outbound reconcile-answer`
+
+```text
+Retry only the provider Answered-state write for one proven sent reply
+
+Usage:
+  icloud mail operations outbound reconcile-answer <attempt-id> [flags]
+
+Examples:
+  icloud mail operations outbound reconcile-answer send_…
+  icloud mail operations outbound reconcile-answer send_… --json
+
+Flags:
+  -h, --help   help for reconcile-answer
+      --json   Emit one stable JSON success envelope
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID
@@ -2368,6 +2393,7 @@ Flags:
       --body-file string          Text body file path, or - for stdin
       --cc stringArray            Add a Cc recipient; repeat as needed
       --dry-run                   Preview the resolved reply without creating an attempt or contacting SMTP
+      --folder string             Select the exact current provider parent location when the message has multiple locations
       --format string             With --dry-run, output text, html, or raw preview content
       --from string               Sender identity by stable mid_… ID or configured address (defaults to the account's local default identity)
       --header stringArray        Safe custom header as Name: Value; repeat as needed
@@ -2415,6 +2441,7 @@ Flags:
       --body-file string          Text body file path, or - for stdin
       --cc stringArray            Add a Cc recipient; repeat as needed
       --dry-run                   Preview the resolved reply without creating an attempt or contacting SMTP
+      --folder string             Select the exact current provider parent location when the message has multiple locations
       --format string             With --dry-run, output text, html, or raw preview content
       --from string               Sender identity by stable mid_… ID or configured address (defaults to the account's local default identity)
       --header stringArray        Safe custom header as Name: Value; repeat as needed

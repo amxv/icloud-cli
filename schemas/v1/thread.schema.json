@@ -229,6 +229,9 @@
               "account_id": {
                 "type": "string"
               },
+              "answered": {
+                "type": "boolean"
+              },
               "attachment_count": {
                 "type": "integer"
               },
@@ -486,6 +489,12 @@
                 },
                 "type": "array"
               },
+              "replied": {
+                "type": "boolean"
+              },
+              "reply_state": {
+                "type": "string"
+              },
               "reply_to": {
                 "additionalProperties": false,
                 "properties": {
@@ -542,12 +551,15 @@
             },
             "required": [
               "account_id",
+              "answered",
               "created_at",
               "date_source",
               "direction",
               "flagged",
               "from",
               "id",
+              "replied",
+              "reply_state",
               "unread",
               "updated_at"
             ],
@@ -587,6 +599,9 @@
     "redirected_from": {
       "type": "string"
     },
+    "replied": {
+      "type": "boolean"
+    },
     "root_rfc_message_id": {
       "type": "string"
     },
@@ -611,6 +626,7 @@
     "messages",
     "projection_state",
     "reconstruction",
+    "replied",
     "status",
     "unread_count"
   ],

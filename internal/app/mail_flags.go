@@ -10,6 +10,7 @@ import (
 	"github.com/amxv/icloud-cli/internal/folder"
 	maildomain "github.com/amxv/icloud-cli/internal/mail"
 	"github.com/amxv/icloud-cli/internal/secret"
+	"github.com/amxv/icloud-cli/internal/store"
 	"github.com/amxv/icloud-cli/internal/transport"
 )
 
@@ -18,7 +19,7 @@ func (commands accountCommands) MailUpdateFlag(
 	home, accountSelector, messageID, folderSelector string,
 	mutation maildomain.FlagMutation,
 ) (account.Account, folder.Folder, maildomain.Message, maildomain.Location, int64, error) {
-	providerFlag, add, valid := mutation.ProviderFlag()
+	_, _, valid := mutation.ProviderFlag()
 	if !valid {
 		return account.Account{}, folder.Folder{}, maildomain.Message{}, maildomain.Location{}, 0, cli.NewAppError(cli.ErrorUsage, "unsupported message-state mutation", false)
 	}
@@ -43,6 +44,22 @@ func (commands accountCommands) MailUpdateFlag(
 	if err != nil {
 		return account.Account{}, folder.Folder{}, maildomain.Message{}, maildomain.Location{}, state.SchemaVersion(), err
 	}
+	return commands.updateExactLocationFlag(ctx, state, accountValue, folderValue, location, message.ID, mutation)
+}
+
+func (commands accountCommands) updateExactLocationFlag(
+	ctx context.Context,
+	state *store.Store,
+	accountValue account.Account,
+	folderValue folder.Folder,
+	location maildomain.Location,
+	messageID string,
+	mutation maildomain.FlagMutation,
+) (account.Account, folder.Folder, maildomain.Message, maildomain.Location, int64, error) {
+	providerFlag, add, valid := mutation.ProviderFlag()
+	if !valid {
+		return account.Account{}, folder.Folder{}, maildomain.Message{}, maildomain.Location{}, state.SchemaVersion(), cli.NewAppError(cli.ErrorUsage, "unsupported message-state mutation", false)
+	}
 	_, credential, err := state.Accounts().Credential(ctx, accountValue.ID)
 	if err != nil {
 		return account.Account{}, folder.Folder{}, maildomain.Message{}, maildomain.Location{}, state.SchemaVersion(), mapAccountError(err)
@@ -59,9 +76,7 @@ func (commands accountCommands) MailUpdateFlag(
 	)
 	for _, username := range imapUsernameCandidates(accountValue) {
 		remote, lastErr = commands.flagClient().UpdateFlags(ctx, transport.AuthRequest{Username: username, Password: password}, transport.FlagMutationRequest{
-			Mailbox: folderValue.Name, ExpectedUIDValidity: location.UIDValidity,
-			UID: location.UID, ExpectedModSequence: location.ModSequence,
-			Flag: providerFlag, Add: add,
+			Mailbox: folderValue.Name, ExpectedUIDValidity: location.UIDValidity, UID: location.UID, ExpectedModSequence: location.ModSequence, Flag: providerFlag, Add: add,
 		})
 		if lastErr == nil {
 			usedUsername = username
@@ -86,17 +101,14 @@ func (commands accountCommands) MailUpdateFlag(
 		}
 	}
 	updatedFlags := maildomain.ParseLocationFlags(remote.Flags)
-	updatedLocation, err := state.Mail().UpdateLocationState(
-		ctx, accountValue.ID, location.ID, location.ModSequence,
-		updatedFlags, remote.ModSequence, remote.Present, commands.timeNow(),
-	)
+	updatedLocation, err := state.Mail().UpdateLocationState(ctx, accountValue.ID, location.ID, location.ModSequence, updatedFlags, remote.ModSequence, remote.Present, commands.timeNow())
 	if err != nil {
 		if errors.Is(err, maildomain.ErrLocationConflict) {
 			return account.Account{}, folder.Folder{}, maildomain.Message{}, maildomain.Location{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorConflict, "local message state changed concurrently; retry from fresh state", true, err)
 		}
 		return account.Account{}, folder.Folder{}, maildomain.Message{}, maildomain.Location{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot persist reconciled message state", true, err)
 	}
-	message, err = state.Mail().Message(ctx, accountValue.ID, message.ID)
+	message, err := state.Mail().Message(ctx, accountValue.ID, strings.TrimSpace(messageID))
 	if err != nil {
 		return account.Account{}, folder.Folder{}, maildomain.Message{}, maildomain.Location{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot reload the mutated message", true, err)
 	}
@@ -105,11 +117,7 @@ func (commands accountCommands) MailUpdateFlag(
 	}
 	if !mutation.Achieved(updatedFlags) {
 		appErr := cli.WrapAppError(cli.ErrorConflict, "iCloud state changed concurrently; the requested flag state was not applied", true, maildomain.ErrLocationConflict)
-		appErr.Details = map[string]any{
-			"message_id": message.ID, "location_id": updatedLocation.ID,
-			"folder_id": folderValue.ID, "flags": updatedFlags,
-			"mod_sequence": updatedLocation.ModSequence,
-		}
+		appErr.Details = map[string]any{"message_id": message.ID, "location_id": updatedLocation.ID, "folder_id": folderValue.ID, "flags": updatedFlags, "mod_sequence": updatedLocation.ModSequence}
 		return account.Account{}, folder.Folder{}, maildomain.Message{}, maildomain.Location{}, state.SchemaVersion(), appErr
 	}
 	return accountValue, folderValue, message, updatedLocation, state.SchemaVersion(), nil

@@ -25,6 +25,7 @@ thread
 thr_… subject="Project update"
 messages=3
 unread=1
+replied=true
 participants=owner@example.com,sender@example.com
 folders=fld_…
 attachments=2
@@ -92,6 +93,7 @@ thread
 thr_… subject="Project update"
 messages=2
 unread=1
+replied=true
 reconstruction=local_rfc_graph
 
 message
@@ -99,6 +101,8 @@ msg_… at=2026-08-06T09:20:00Z
 from=sender@example.com
 direction=inbound
 state=unread
+replied=true
+reply_state=answered
 excerpt="Initial update…"
 
 message
@@ -115,6 +119,8 @@ more=false
 ```
 
 The default is bounded and preview-only. It never prints BCC, private blob paths, complete bodies, HTML, raw MIME, or decoded attachments.
+
+`replied=true` is aggregate proven reply history. On a message, `reply_state=answered` means a current eligible provider location carries standard `\Answered`; `provider_pending` means SMTP acceptance is proven but the exact provider-state write still needs reconciliation; and `replied` means durable local reply provenance exists even when no current provider Answered location is available. A thread's `replied=true` means at least one member has provider Answered state or a proven sent reply. It does not expose the reply's private recipients.
 
 `direction` is canonical cached message state, not a folder-name guess. Any newly ingested message whose `From` matches an enabled `MailIdentity` is classified `outbound`, even when that copy is outside Sent. When a new self address is configured later, `mail identities reclassify` can promote older cached inbound rows in bounded resumable passes. Promotion does not change stable `msg_…`/`thr_…` IDs, and disabling an identity does not demote previously proven outbound history.
 

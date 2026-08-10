@@ -52,7 +52,15 @@ func (commands accountCommands) MailReply(
 	if err != nil {
 		return account.Account{}, maildomain.OutboundAttempt{}, false, schemaVersion, err
 	}
-	return commands.MailSend(ctx, home, accountValue.ID, plan.Send)
+	accountValue, attempt, reused, schemaVersion, err := commands.MailSend(ctx, home, accountValue.ID, plan.Send)
+	if err != nil || attempt.Status != maildomain.OutboundSent {
+		return accountValue, attempt, reused, schemaVersion, err
+	}
+	attempt, reconcileErr := commands.reconcileReplyAnswer(ctx, home, accountValue.ID, attempt.ID)
+	if reconcileErr != nil {
+		return accountValue, attempt, reused, schemaVersion, nil
+	}
+	return accountValue, attempt, reused, schemaVersion, nil
 }
 
 func resolveReplyPlan(
@@ -76,6 +84,10 @@ func resolveReplyPlan(
 		}
 		return account.Account{}, maildomain.ReplyPlan{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot read the reply parent message", false, err)
 	}
+	parentFolder, parentLocation, err := resolveMutationLocation(ctx, state.Folders(), accountValue.ID, parent, request.ParentFolder)
+	if err != nil {
+		return account.Account{}, maildomain.ReplyPlan{}, state.SchemaVersion(), err
+	}
 	threadPage, err := state.Threads().Show(ctx, accountValue.ID, parent.ID, "", 1)
 	if err != nil {
 		if errors.Is(err, maildomain.ErrThreadNotFound) {
@@ -94,12 +106,16 @@ func resolveReplyPlan(
 		}
 		return account.Account{}, maildomain.ReplyPlan{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot construct the reply", false, err)
 	}
+	plan.ParentLocationID = parentLocation.ID
+	plan.ParentFolderID = parentFolder.ID
+	plan.Send.ParentLocationID = parentLocation.ID
 	return accountValue, plan, state.SchemaVersion(), nil
 }
 
 func replyPreview(plan maildomain.ReplyPlan, preview maildomain.SendPreview) maildomain.ReplyPreview {
 	return maildomain.ReplyPreview{
 		ParentMessageID: plan.ParentMessageID, ParentRFCID: plan.ParentRFCID,
+		ParentLocationID: plan.ParentLocationID, ParentFolderID: plan.ParentFolderID,
 		ThreadID: plan.ThreadID, Kind: plan.Kind, Threading: plan.Threading,
 		DerivedTo: plan.DerivedTo, DerivedCC: plan.DerivedCC,
 		AddedTo: plan.AddedTo, AddedCC: plan.AddedCC, AddedBCC: plan.AddedBCC,

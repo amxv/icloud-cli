@@ -50,6 +50,7 @@ type MailService interface {
 	MailSend(context.Context, string, string, maildomain.SendRequest) (account.Account, maildomain.OutboundAttempt, bool, int64, error)
 	MailReplyPreview(context.Context, string, string, maildomain.ReplyRequest) (account.Account, maildomain.ReplyPreview, int64, error)
 	MailReply(context.Context, string, string, maildomain.ReplyRequest) (account.Account, maildomain.OutboundAttempt, bool, int64, error)
+	MailReconcileReplyAnswer(context.Context, string, string, string) (account.Account, maildomain.OutboundAttempt, int64, error)
 	MailForwardPreview(context.Context, string, string, maildomain.ForwardRequest) (account.Account, maildomain.ForwardPreview, int64, error)
 	MailForward(context.Context, string, string, maildomain.ForwardRequest) (account.Account, maildomain.OutboundAttempt, bool, int64, error)
 	MailOutboundStatus(context.Context, string, string, int) (account.Account, []maildomain.OutboundAttempt, bool, int64, error)
@@ -159,6 +160,9 @@ type publicMessage struct {
 	AttachmentCount   int                           `json:"attachment_count,omitempty"`
 	Unread            bool                          `json:"unread"`
 	Flagged           bool                          `json:"flagged"`
+	Answered          bool                          `json:"answered"`
+	Replied           bool                          `json:"replied"`
+	ReplyState        string                        `json:"reply_state"`
 	CreatedAt         time.Time                     `json:"created_at"`
 	UpdatedAt         time.Time                     `json:"updated_at"`
 	Locations         []publicLocation              `json:"locations,omitempty"`
@@ -1050,6 +1054,8 @@ func renderInboxMessage(renderer *CompactTextRenderer, value maildomain.Message)
 		Field("at", value.SortAt),
 		Field("unread", value.Unread),
 		Field("flagged", value.Flagged),
+		Field("replied", value.Replied),
+		Field("reply_state", value.ReplyState),
 		Field("attachments", value.AttachmentCount),
 		Field("snippet", Excerpt(value.Snippet, DefaultExcerptRunes)),
 	)
@@ -1105,6 +1111,7 @@ func sanitizeMessage(value maildomain.Message) publicMessage {
 		Subject: value.Subject, Snippet: value.Snippet, HeaderDate: value.HeaderDate,
 		InternalDate: value.InternalDate, SortAt: value.SortAt, DateSource: value.DateSource,
 		AttachmentCount: value.AttachmentCount, Unread: value.Unread, Flagged: value.Flagged,
+		Answered: value.Answered, Replied: value.Replied, ReplyState: value.ReplyState,
 		CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt, Locations: locations,
 		ContentLocationID: value.ContentLocationID,
 		Identity:          append([]maildomain.IdentityEvidence(nil), value.Identity...),
@@ -1227,6 +1234,9 @@ func (unavailableMailService) MailReplyPreview(context.Context, string, string, 
 }
 func (unavailableMailService) MailReply(context.Context, string, string, maildomain.ReplyRequest) (account.Account, maildomain.OutboundAttempt, bool, int64, error) {
 	return account.Account{}, maildomain.OutboundAttempt{}, false, 0, NewAppError(ErrorConfiguration, "mail reply is unavailable", false)
+}
+func (unavailableMailService) MailReconcileReplyAnswer(context.Context, string, string, string) (account.Account, maildomain.OutboundAttempt, int64, error) {
+	return account.Account{}, maildomain.OutboundAttempt{}, 0, NewAppError(ErrorConfiguration, "reply answer reconciliation is unavailable", false)
 }
 func (unavailableMailService) MailForwardPreview(context.Context, string, string, maildomain.ForwardRequest) (account.Account, maildomain.ForwardPreview, int64, error) {
 	return account.Account{}, maildomain.ForwardPreview{}, 0, NewAppError(ErrorConfiguration, "mail forward preview is unavailable", false)

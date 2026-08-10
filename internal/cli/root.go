@@ -142,6 +142,7 @@ type capabilitiesData struct {
 	MailHydration         bool                 `json:"mail_hydration"`
 	MailSend              bool                 `json:"mail_send"`
 	MailReply             bool                 `json:"mail_reply"`
+	MailReplyAnswered     bool                 `json:"mail_reply_answered"`
 	MailForward           bool                 `json:"mail_forward"`
 	MailLocationMutations bool                 `json:"mail_location_mutations"`
 	InboundLimits         config.InboundLimits `json:"inbound_limits"`
@@ -395,6 +396,7 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				MailHydration:         true,
 				MailSend:              true,
 				MailReply:             true,
+				MailReplyAnswered:     true,
 				MailForward:           true,
 				MailLocationMutations: true,
 				InboundLimits:         limits,
@@ -453,6 +455,7 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				Field("mail_hydration", data.MailHydration),
 				Field("mail_send", data.MailSend),
 				Field("mail_reply", data.MailReply),
+				Field("mail_reply_answered", data.MailReplyAnswered),
 				Field("mail_forward", data.MailForward),
 				Field("mail_location_mutations", data.MailLocationMutations),
 				Field("default_output", data.Output.Default),

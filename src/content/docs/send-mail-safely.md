@@ -154,6 +154,14 @@ icloud mail reply msg_… \
 
 The preview identifies the exact parent and reconstructed thread, shows the resolved sender identity, then separates recipients derived from the parent from addresses you added. A normal reply prefers the parent's `Reply-To` address and otherwise uses `From`. It normalizes the subject to one `Re:` prefix and adds RFC `In-Reply-To` and `References` headers when the parent has a usable Message-ID. `--from` accepts the same enabled `mid_…`/address selector as `mail send`; omission uses the account's current local default identity.
 
+The reply also selects one exact current provider location for the parent so a proven send can update iCloud's standard Answered state safely. Most messages have only one eligible location. If the same logical message is present in multiple folders, choose the intended copy explicitly:
+
+```bash
+icloud mail reply msg_… --folder INBOX --body-file reply.txt --dry-run
+```
+
+The preview reports both `parent_location_id` and `parent_folder_id`; an ambiguous parent is rejected before SMTP is contacted.
+
 After review, send with the same safety controls as a new message:
 
 ```bash
@@ -163,7 +171,15 @@ icloud mail reply msg_… \
   --yes
 ```
 
-The success result includes `kind=reply`, `parent_message_id=msg_…`, the accepted child `message_id`, and the reconstructed `thread_id`. Repeating the same normalized reply with the same idempotency key returns the original attempt without contacting SMTP again.
+The success result includes `kind=reply`, `parent_message_id=msg_…`, `parent_location_id=loc_…`, the accepted child `message_id`, the reconstructed `thread_id`, and `answer_reconciliation`. After SMTP acceptance is proven, the CLI conditionally adds iCloud's standard `\Answered` flag to that exact parent location using its current UIDVALIDITY and modification sequence. The provider-returned flags become the new local state, including any unknown keywords already present.
+
+SMTP remains authoritative. A failed or unknown SMTP outcome never marks the parent answered. If SMTP acceptance is proven but the Answered-state write cannot be completed, the reply remains `status=sent` and reports `answer_reconciliation=pending` rather than pretending the send failed. Repair only that provider state—without retransmitting the message—with:
+
+```bash
+icloud mail operations outbound reconcile-answer send_…
+```
+
+Repeating the same normalized reply with the same idempotency key also returns the original sent attempt without contacting SMTP again; a confirmed Answered reconciliation is not repeated.
 
 Use `reply-all` only after inspecting the resolved participant lists:
 

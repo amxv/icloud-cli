@@ -167,6 +167,7 @@ type replyComposeJSONRequest struct {
 
 type replyJSONRequest struct {
 	MessageID string                  `json:"message_id"`
+	Folder    string                  `json:"folder,omitempty"`
 	Compose   replyComposeJSONRequest `json:"message"`
 	ReplaceTo bool                    `json:"replace_to,omitempty"`
 	ReplaceCC bool                    `json:"replace_cc,omitempty"`

@@ -2106,6 +2106,9 @@ LIMIT ?`, strings.TrimSpace(accountID), limit+1)
 	if err := applyThreadProjectionState(ctx, repository.db, accountID, values); err != nil {
 		return nil, false, err
 	}
+	if err := applyThreadReplyState(ctx, repository.db, accountID, values); err != nil {
+		return nil, false, err
+	}
 	return values, more, nil
 }
 
@@ -2123,6 +2126,9 @@ func (repository *ThreadRepository) Show(ctx context.Context, accountID, selecto
 	}
 	projection := []maildomain.Thread{thread}
 	if err := applyThreadProjectionState(ctx, repository.db, accountID, projection); err != nil {
+		return maildomain.ThreadPage{}, err
+	}
+	if err := applyThreadReplyState(ctx, repository.db, accountID, projection); err != nil {
 		return maildomain.ThreadPage{}, err
 	}
 	thread = projection[0]
@@ -2412,6 +2418,28 @@ func scanThreadWithExtra(scanner interface{ Scan(...any) error }, extra ...any) 
 	value.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
 	value.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updatedAt)
 	return value, nil
+}
+
+func applyThreadReplyState(ctx context.Context, db *sql.DB, accountID string, threads []maildomain.Thread) error {
+	for index := range threads {
+		var replied int
+		if err := db.QueryRowContext(ctx, `
+SELECT EXISTS (
+    SELECT 1
+    FROM thread_messages AS tm
+    LEFT JOIN message_locations AS l
+      ON l.message_id = tm.message_id AND l.present = 1 AND l.deleted = 0 AND l.draft = 0
+    LEFT JOIN outbound_attempts AS oa
+      ON oa.account_id = ? AND oa.parent_message_id = tm.message_id
+     AND oa.status = 'sent' AND oa.outbound_kind IN ('reply', 'reply_all')
+    WHERE tm.thread_id = ? AND (l.answered = 1 OR oa.attempt_id IS NOT NULL)
+    LIMIT 1
+)`, strings.TrimSpace(accountID), threads[index].ID).Scan(&replied); err != nil {
+			return fmt.Errorf("read thread reply state: %w", err)
+		}
+		threads[index].Replied = replied == 1
+	}
+	return nil
 }
 
 type threadUnion struct {

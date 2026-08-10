@@ -58,6 +58,7 @@ func (commands accountCommands) MailSendPreview(
 	}
 	preview := maildomain.SendPreview{
 		Kind: normalized.Kind, ParentMessageID: normalized.ParentMessageID,
+		ParentLocationID: normalized.ParentLocationID,
 		SourceMessageID:  normalized.SourceMessageID,
 		SenderIdentityID: normalized.SenderIdentityID,
 		AccountID:        accountValue.ID, From: normalized.From,
@@ -163,6 +164,7 @@ func (commands accountCommands) MailSend(
 		Attachments:      outboundAttemptAttachmentRecords(content.Attachments),
 		Kind:             normalized.Operation(),
 		ParentMessageID:  normalized.ParentMessageID,
+		ParentLocationID: normalized.ParentLocationID,
 		SourceMessageID:  normalized.SourceMessageID,
 		RetryOfAttemptID: normalized.RetryOfAttemptID,
 	})

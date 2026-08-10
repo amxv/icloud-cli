@@ -76,7 +76,7 @@ func TestParseLocationFlagsSeparatesCanonicalAndUnknownFlags(t *testing.T) {
 }
 
 func TestFlagMutationAchievementIsExplicit(t *testing.T) {
-	flags := LocationFlags{Seen: true, Flagged: false}
+	flags := LocationFlags{Seen: true, Flagged: false, Answered: true}
 	tests := []struct {
 		mutation FlagMutation
 		wantFlag string
@@ -87,6 +87,7 @@ func TestFlagMutationAchievementIsExplicit(t *testing.T) {
 		{FlagMutationMarkUnread, `\Seen`, false, false},
 		{FlagMutationFlag, `\Flagged`, true, false},
 		{FlagMutationUnflag, `\Flagged`, false, true},
+		{FlagMutationAnswer, `\Answered`, true, true},
 	}
 	for _, test := range tests {
 		flag, add, ok := test.mutation.ProviderFlag()

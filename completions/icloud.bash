@@ -4088,6 +4088,43 @@ _icloud_mail_operations_outbound_list()
     noun_aliases=()
 }
 
+_icloud_mail_operations_outbound_reconcile-answer()
+{
+    last_command="icloud_mail_operations_outbound_reconcile-answer"
+
+    command_aliases=()
+
+    commands=()
+
+    flags=()
+    two_word_flags=()
+    local_nonpersistent_flags=()
+    flags_with_completion=()
+    flags_completion=()
+
+    flags+=("--help")
+    flags+=("-h")
+    local_nonpersistent_flags+=("--help")
+    local_nonpersistent_flags+=("-h")
+    flags+=("--json")
+    local_nonpersistent_flags+=("--json")
+    flags+=("--account=")
+    two_word_flags+=("--account")
+    flags_with_completion+=("--account")
+    flags_completion+=("__icloud_handle_go_custom_completion")
+    flags+=("--home=")
+    two_word_flags+=("--home")
+    flags+=("--no-input")
+    flags+=("--request-id=")
+    two_word_flags+=("--request-id")
+    flags+=("--timeout=")
+    two_word_flags+=("--timeout")
+
+    must_have_one_flag=()
+    must_have_one_noun=()
+    noun_aliases=()
+}
+
 _icloud_mail_operations_outbound_show()
 {
     last_command="icloud_mail_operations_outbound_show"
@@ -4133,6 +4170,7 @@ _icloud_mail_operations_outbound()
 
     commands=()
     commands+=("list")
+    commands+=("reconcile-answer")
     commands+=("show")
 
     flags=()
@@ -4243,6 +4281,10 @@ _icloud_mail_reply()
     local_nonpersistent_flags+=("--cc=")
     flags+=("--dry-run")
     local_nonpersistent_flags+=("--dry-run")
+    flags+=("--folder=")
+    two_word_flags+=("--folder")
+    local_nonpersistent_flags+=("--folder")
+    local_nonpersistent_flags+=("--folder=")
     flags+=("--format=")
     two_word_flags+=("--format")
     local_nonpersistent_flags+=("--format")
@@ -4358,6 +4400,10 @@ _icloud_mail_reply-all()
     local_nonpersistent_flags+=("--cc=")
     flags+=("--dry-run")
     local_nonpersistent_flags+=("--dry-run")
+    flags+=("--folder=")
+    two_word_flags+=("--folder")
+    local_nonpersistent_flags+=("--folder")
+    local_nonpersistent_flags+=("--folder=")
     flags+=("--format=")
     two_word_flags+=("--format")
     local_nonpersistent_flags+=("--format")

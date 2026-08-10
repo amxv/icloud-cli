@@ -50,24 +50,27 @@ type mailSendData struct {
 }
 
 type publicOutboundAttempt struct {
-	ID                      string                         `json:"id"`
-	SenderIdentityID        string                         `json:"sender_identity_id"`
-	Status                  maildomain.OutboundStatus      `json:"status"`
-	MessageID               string                         `json:"message_id,omitempty"`
-	ThreadID                string                         `json:"thread_id,omitempty"`
-	Reconciliation          maildomain.ReconciliationState `json:"reconciliation"`
-	AttachmentCount         int                            `json:"attachment_count"`
-	AttachmentBytes         int64                          `json:"attachment_bytes"`
-	Kind                    maildomain.OutboundKind        `json:"kind"`
-	ParentMessageID         string                         `json:"parent_message_id,omitempty"`
-	SourceMessageID         string                         `json:"source_message_id,omitempty"`
-	RetryOfAttemptID        string                         `json:"retry_of_attempt_id,omitempty"`
-	ReconciledLocationID    string                         `json:"reconciled_location_id,omitempty"`
-	ReconciliationErrorCode string                         `json:"reconciliation_error_code,omitempty"`
-	ErrorCode               string                         `json:"error_code,omitempty"`
-	AcceptedAt              *time.Time                     `json:"accepted_at,omitempty"`
-	CreatedAt               time.Time                      `json:"created_at"`
-	UpdatedAt               time.Time                      `json:"updated_at"`
+	ID                      string                               `json:"id"`
+	SenderIdentityID        string                               `json:"sender_identity_id"`
+	Status                  maildomain.OutboundStatus            `json:"status"`
+	MessageID               string                               `json:"message_id,omitempty"`
+	ThreadID                string                               `json:"thread_id,omitempty"`
+	Reconciliation          maildomain.ReconciliationState       `json:"reconciliation"`
+	AttachmentCount         int                                  `json:"attachment_count"`
+	AttachmentBytes         int64                                `json:"attachment_bytes"`
+	Kind                    maildomain.OutboundKind              `json:"kind"`
+	ParentMessageID         string                               `json:"parent_message_id,omitempty"`
+	ParentLocationID        string                               `json:"parent_location_id,omitempty"`
+	SourceMessageID         string                               `json:"source_message_id,omitempty"`
+	RetryOfAttemptID        string                               `json:"retry_of_attempt_id,omitempty"`
+	ReconciledLocationID    string                               `json:"reconciled_location_id,omitempty"`
+	ReconciliationErrorCode string                               `json:"reconciliation_error_code,omitempty"`
+	AnswerReconciliation    maildomain.AnswerReconciliationState `json:"answer_reconciliation"`
+	AnswerErrorCode         string                               `json:"answer_error_code,omitempty"`
+	ErrorCode               string                               `json:"error_code,omitempty"`
+	AcceptedAt              *time.Time                           `json:"accepted_at,omitempty"`
+	CreatedAt               time.Time                            `json:"created_at"`
+	UpdatedAt               time.Time                            `json:"updated_at"`
 }
 
 type mailSendPreviewData struct {
@@ -476,10 +479,11 @@ func sanitizeOutboundAttempt(value maildomain.OutboundAttempt) publicOutboundAtt
 		ID: value.ID, SenderIdentityID: value.SenderIdentityID, Status: value.Status, MessageID: value.MessageID,
 		ThreadID: value.ThreadID, Reconciliation: value.Reconciliation,
 		AttachmentCount: value.AttachmentCount, AttachmentBytes: value.AttachmentBytes,
-		Kind: value.Kind, ParentMessageID: value.ParentMessageID, SourceMessageID: value.SourceMessageID,
+		Kind: value.Kind, ParentMessageID: value.ParentMessageID, ParentLocationID: value.ParentLocationID, SourceMessageID: value.SourceMessageID,
 		RetryOfAttemptID: value.RetryOfAttemptID, ReconciledLocationID: value.ReconciledLocationID,
 		ReconciliationErrorCode: value.ReconciliationErrorCode,
-		ErrorCode:               value.ErrorCode, AcceptedAt: value.AcceptedAt,
+		AnswerReconciliation:    value.AnswerReconciliation, AnswerErrorCode: value.AnswerErrorCode,
+		ErrorCode: value.ErrorCode, AcceptedAt: value.AcceptedAt,
 		CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt,
 	}
 }
@@ -498,7 +502,7 @@ func confirmMailSend(reader io.Reader, stderr io.Writer) (bool, error) {
 
 func previewToRequest(preview maildomain.SendPreview) maildomain.SendRequest {
 	return maildomain.SendRequest{
-		Kind: preview.Kind, ParentMessageID: preview.ParentMessageID, SourceMessageID: preview.SourceMessageID,
+		Kind: preview.Kind, ParentMessageID: preview.ParentMessageID, ParentLocationID: preview.ParentLocationID, SourceMessageID: preview.SourceMessageID,
 		SenderIdentityID: preview.SenderIdentityID,
 		From:             preview.From, To: preview.To, CC: preview.CC, BCC: preview.BCC,
 		ReplyTo: preview.ReplyTo, Subject: preview.Subject,

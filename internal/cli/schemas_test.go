@@ -127,6 +127,9 @@ func TestCapabilitiesPublishesVersionedAutomationAndSchemaContracts(t *testing.T
 	if !envelope.Data.MailIdentities {
 		t.Fatal("capabilities did not advertise local mail identities")
 	}
+	if !envelope.Data.MailReplyAnswered {
+		t.Fatal("capabilities did not advertise proven provider Answered reply reconciliation")
+	}
 	for command, schema := range map[string]string{
 		"mail identities list":       "mail-identity-list-read-input",
 		"mail identities show":       "mail-identity-show-read-input",

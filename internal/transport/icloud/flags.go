@@ -124,6 +124,8 @@ func mutableFlag(value string) (imap.Flag, bool) {
 		return imap.FlagSeen, true
 	case `\flagged`:
 		return imap.FlagFlagged, true
+	case `\answered`:
+		return imap.FlagAnswered, true
 	default:
 		return "", false
 	}

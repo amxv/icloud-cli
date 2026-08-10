@@ -1896,6 +1896,7 @@ ORDER BY present DESC, folder_id, uid`, value.ID)
 		if location.Present && location.Flags.Eligible() {
 			value.Unread = value.Unread || locationCountsUnread(location)
 			value.Flagged = value.Flagged || location.Flags.Flagged
+			value.Answered = value.Answered || location.Flags.Answered
 		}
 	}
 	if err := locationRows.Err(); err != nil {
@@ -1904,6 +1905,33 @@ ORDER BY present DESC, folder_id, uid`, value.ID)
 	}
 	if err := locationRows.Close(); err != nil {
 		return fmt.Errorf("close message locations: %w", err)
+	}
+
+	var sentReplies, pendingAnswers, unsupportedAnswers int
+	if err := repository.db.QueryRowContext(ctx, `
+SELECT
+    count(*),
+    COALESCE(sum(CASE WHEN answer_reconciliation = 'pending' THEN 1 ELSE 0 END), 0),
+    COALESCE(sum(CASE WHEN answer_reconciliation = 'unsupported' THEN 1 ELSE 0 END), 0)
+FROM outbound_attempts
+WHERE account_id = ? AND parent_message_id = ? AND status = 'sent'
+  AND outbound_kind IN ('reply', 'reply_all')`, value.AccountID, value.ID).Scan(
+		&sentReplies, &pendingAnswers, &unsupportedAnswers,
+	); err != nil {
+		return fmt.Errorf("read message reply provenance: %w", err)
+	}
+	value.Replied = value.Answered || sentReplies > 0
+	switch {
+	case value.Answered:
+		value.ReplyState = "answered"
+	case pendingAnswers > 0:
+		value.ReplyState = "provider_pending"
+	case unsupportedAnswers > 0:
+		value.ReplyState = "provider_unsupported"
+	case sentReplies > 0:
+		value.ReplyState = "replied"
+	default:
+		value.ReplyState = "none"
 	}
 
 	identityRows, err := repository.db.QueryContext(ctx, `

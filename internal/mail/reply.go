@@ -17,6 +17,7 @@ var ErrInvalidReplyRequest = errors.New("invalid reply request")
 
 type ReplyRequest struct {
 	ParentMessageID       string
+	ParentFolder          string
 	SenderIdentityID      string
 	ReplyAll              bool
 	To                    []Address
@@ -34,35 +35,39 @@ type ReplyRequest struct {
 }
 
 type ReplyPlan struct {
-	ParentMessageID string       `json:"parent_message_id"`
-	ParentRFCID     string       `json:"parent_rfc_message_id,omitempty"`
-	ThreadID        string       `json:"thread_id"`
-	Kind            OutboundKind `json:"kind"`
-	Threading       bool         `json:"threading"`
-	DerivedTo       []Address    `json:"derived_to,omitempty"`
-	DerivedCC       []Address    `json:"derived_cc,omitempty"`
-	AddedTo         []Address    `json:"added_to,omitempty"`
-	AddedCC         []Address    `json:"added_cc,omitempty"`
-	AddedBCC        []Address    `json:"added_bcc,omitempty"`
-	ReplaceTo       bool         `json:"replace_to"`
-	ReplaceCC       bool         `json:"replace_cc"`
-	Send            SendRequest  `json:"-"`
+	ParentMessageID  string       `json:"parent_message_id"`
+	ParentLocationID string       `json:"parent_location_id"`
+	ParentFolderID   string       `json:"parent_folder_id"`
+	ParentRFCID      string       `json:"parent_rfc_message_id,omitempty"`
+	ThreadID         string       `json:"thread_id"`
+	Kind             OutboundKind `json:"kind"`
+	Threading        bool         `json:"threading"`
+	DerivedTo        []Address    `json:"derived_to,omitempty"`
+	DerivedCC        []Address    `json:"derived_cc,omitempty"`
+	AddedTo          []Address    `json:"added_to,omitempty"`
+	AddedCC          []Address    `json:"added_cc,omitempty"`
+	AddedBCC         []Address    `json:"added_bcc,omitempty"`
+	ReplaceTo        bool         `json:"replace_to"`
+	ReplaceCC        bool         `json:"replace_cc"`
+	Send             SendRequest  `json:"-"`
 }
 
 type ReplyPreview struct {
-	ParentMessageID string       `json:"parent_message_id"`
-	ParentRFCID     string       `json:"parent_rfc_message_id,omitempty"`
-	ThreadID        string       `json:"thread_id"`
-	Kind            OutboundKind `json:"kind"`
-	Threading       bool         `json:"threading"`
-	DerivedTo       []Address    `json:"derived_to,omitempty"`
-	DerivedCC       []Address    `json:"derived_cc,omitempty"`
-	AddedTo         []Address    `json:"added_to,omitempty"`
-	AddedCC         []Address    `json:"added_cc,omitempty"`
-	AddedBCC        []Address    `json:"added_bcc,omitempty"`
-	ReplaceTo       bool         `json:"replace_to"`
-	ReplaceCC       bool         `json:"replace_cc"`
-	Send            SendPreview  `json:"send"`
+	ParentMessageID  string       `json:"parent_message_id"`
+	ParentLocationID string       `json:"parent_location_id"`
+	ParentFolderID   string       `json:"parent_folder_id"`
+	ParentRFCID      string       `json:"parent_rfc_message_id,omitempty"`
+	ThreadID         string       `json:"thread_id"`
+	Kind             OutboundKind `json:"kind"`
+	Threading        bool         `json:"threading"`
+	DerivedTo        []Address    `json:"derived_to,omitempty"`
+	DerivedCC        []Address    `json:"derived_cc,omitempty"`
+	AddedTo          []Address    `json:"added_to,omitempty"`
+	AddedCC          []Address    `json:"added_cc,omitempty"`
+	AddedBCC         []Address    `json:"added_bcc,omitempty"`
+	ReplaceTo        bool         `json:"replace_to"`
+	ReplaceCC        bool         `json:"replace_cc"`
+	Send             SendPreview  `json:"send"`
 }
 
 func BuildReplyPlan(parent Message, threadID string, selfAddresses []string, input ReplyRequest) (ReplyPlan, error) {

@@ -141,6 +141,7 @@ func TestOutboundReplyPersistsExactParentAndJoinsExistingThread(t *testing.T) {
 	request, err := maildomain.NormalizeSendRequest(maildomain.SendRequest{
 		Kind:             maildomain.OutboundKindReply,
 		ParentMessageID:  parent.MessageID,
+		ParentLocationID: parent.LocationID,
 		SenderIdentityID: primaryMailIdentityID(accountID),
 		From:             maildomain.Address{DisplayName: "Mail Test", Email: "mail-test@icloud.com"},
 		To:               []maildomain.Address{{Email: "reply-target@example.test"}},
@@ -173,7 +174,7 @@ func TestOutboundReplyPersistsExactParentAndJoinsExistingThread(t *testing.T) {
 		RFCMessageID:   content.Preview.RFCMessageID,
 		RawContentHash: rawHash, RawStorageKey: "raw/sha256/99/" + rawHash + ".eml", RawByteSize: int64(raw.Len()),
 		ToCount: len(request.To), BodyPartCount: request.BodyPartCount(),
-		Kind: request.Operation(), ParentMessageID: request.ParentMessageID, Now: base.Add(time.Minute),
+		Kind: request.Operation(), ParentMessageID: request.ParentMessageID, ParentLocationID: request.ParentLocationID, Now: base.Add(time.Minute),
 	})
 	if err != nil || existing {
 		t.Fatalf("begin reply attempt=%+v existing=%v err=%v", attempt, existing, err)
@@ -184,7 +185,7 @@ func TestOutboundReplyPersistsExactParentAndJoinsExistingThread(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if accepted.Kind != maildomain.OutboundKindReply || accepted.ParentMessageID != parent.MessageID || accepted.ThreadID != parentPage.Thread.ID {
+	if accepted.Kind != maildomain.OutboundKindReply || accepted.ParentMessageID != parent.MessageID || accepted.ParentLocationID != parent.LocationID || accepted.ThreadID != parentPage.Thread.ID || accepted.AnswerReconciliation != maildomain.AnswerReconciliationPending {
 		t.Fatalf("accepted reply metadata=%+v parent_thread=%s", accepted, parentPage.Thread.ID)
 	}
 	message, err := state.Mail().Message(ctx, accountID, accepted.MessageID)
