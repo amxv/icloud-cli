@@ -1,0 +1,19 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/unsubscribe-input.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "message_id": {
+      "type": "string"
+    },
+    "method": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "message_id"
+  ],
+  "title": "mailing-list unsubscribe JSON input",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

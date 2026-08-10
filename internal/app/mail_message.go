@@ -66,6 +66,10 @@ func (commands accountCommands) MailMessage(ctx context.Context, home, accountSe
 		}
 	}
 	source := &messageContentSource{store: blobStore, raw: rawSource, content: *message.Content}
+	capability := maildomain.ParseUnsubscribeCapability(message.Content.Headers)
+	if capability.Available || capability.OneClickDeclared {
+		message.Unsubscribe = &capability
+	}
 	return accountValue, message, source, state.SchemaVersion(), nil
 }
 

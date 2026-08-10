@@ -107,6 +107,7 @@ func newMailCommand(state *executionState) *cobra.Command {
 	command.AddCommand(newMailLatestCommand(state))
 	command.AddCommand(newMailAttachmentsCommand(state))
 	command.AddCommand(newMailSendCommand(state))
+	command.AddCommand(newMailUnsubscribeCommand(state))
 	command.AddCommand(newMailReplyCommand(state, false))
 	command.AddCommand(newMailReplyCommand(state, true))
 	command.AddCommand(newMailForwardCommand(state))

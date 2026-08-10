@@ -720,6 +720,22 @@ Re-run the same command with the same normalized request and idempotency key. Th
 
 A definite authentication/connect/select failure before APPEND is different: that import is durably failed. Correct the underlying problem, then make a new deliberate request with a new idempotency key. Import dry-run is always safe for re-review because it does not create recovery state or contact iCloud.
 
+## Mailing-list unsubscribe is unavailable or refused
+
+First inspect the local semantic capability without causing any external action:
+
+```bash
+icloud mail unsubscribe msg_… --dry-run
+```
+
+If no supported method is shown, the message either has no usable `List-Unsubscribe` metadata or advertises a form the CLI deliberately does not execute. Generic `http:` URLs, HTTPS userinfo, malformed/control-bearing URIs, and mailto query fields other than one `subject` and one `body` are rejected. Two or more RFC 8058 HTTPS endpoints are not guessed. Several mailto alternatives remain available but require `--method mailto:N` from the dry-run output.
+
+One-click may be visible in dry-run yet fail at execution if the raw message does not have a valid DKIM signature covering both `List-Unsubscribe` and `List-Unsubscribe-Post`. That check happens only after explicit confirmation because it may require DNS. Do not work around it by manually POSTing the tokenized endpoint through a browser session: RFC 8058 specifically defines a context-free POST, and the CLI refuses cookies, authorization, redirects, HTTP downgrade, loopback/private/link-local/multicast-only destinations, and oversized responses for that reason.
+
+An HTTP timeout or 5xx outcome can be ambiguous from the client's perspective: the sender may have processed the unsubscribe even though the response was lost. Inspect later mail/list behavior before repeatedly issuing one-click requests. A mailto action instead reuses the existing durable outbound-send journal, so repeating the same source message + method selection reuses the original attempt rather than sending a duplicate message.
+
+If the command shows multiple safe method IDs, choose one explicitly. Ordinary `mail message show` output intentionally reports only method/host capability and never the full opaque HTTPS URI or mailto payload; `--headers` is the explicit private-content expansion if you truly need to inspect the source header.
+
 ## Mailbox import is partial or will not resume
 
 Mailbox import deliberately resumes from the **earliest unconfirmed archive record**, not the last record that happened to succeed. This matters when `--mode continue-on-error` confirms later records after one earlier record fails: those later records are remembered and will not be APPENDed again, but `next_index` and `next_offset` remain at the gap until it is proven.

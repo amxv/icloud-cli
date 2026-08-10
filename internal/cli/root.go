@@ -149,6 +149,7 @@ type capabilitiesData struct {
 	MailRemoteSearch       bool                 `json:"mail_remote_search"`
 	MailHydration          bool                 `json:"mail_hydration"`
 	MailSend               bool                 `json:"mail_send"`
+	MailUnsubscribe        bool                 `json:"mail_unsubscribe"`
 	MailReply              bool                 `json:"mail_reply"`
 	MailReplyAnswered      bool                 `json:"mail_reply_answered"`
 	MailForward            bool                 `json:"mail_forward"`
@@ -409,6 +410,7 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				MailRemoteSearch:       true,
 				MailHydration:          true,
 				MailSend:               true,
+				MailUnsubscribe:        true,
 				MailReply:              true,
 				MailReplyAnswered:      true,
 				MailForward:            true,

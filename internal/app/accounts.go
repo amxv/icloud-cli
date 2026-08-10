@@ -34,6 +34,8 @@ type accountCommands struct {
 	locations       transport.IMAPLocationClient
 	sent            transport.IMAPSentAppender
 	appendMailbox   transport.IMAPMailboxAppender
+	unsubscribe     transport.OneClickUnsubscriber
+	lookupTXT       func(context.Context, string) ([]string, error)
 	blobs           func(config.AppPaths) blob.Stager
 	attachmentBlobs func(config.AppPaths) attachmentBlobStore
 	now             func() time.Time

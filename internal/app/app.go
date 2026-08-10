@@ -8,6 +8,7 @@ import (
 	"github.com/amxv/icloud-cli/internal/buildinfo"
 	"github.com/amxv/icloud-cli/internal/cli"
 	"github.com/amxv/icloud-cli/internal/store"
+	"github.com/amxv/icloud-cli/internal/transport"
 	transporticloud "github.com/amxv/icloud-cli/internal/transport/icloud"
 )
 
@@ -32,6 +33,7 @@ func RunWithInput(ctx context.Context, args []string, stdin io.Reader, stdout, s
 		remote:      protocolClient,
 		flags:       protocolClient,
 		locations:   protocolClient,
+		unsubscribe: transport.NewHTTPUnsubscriber(),
 	})
 }
 

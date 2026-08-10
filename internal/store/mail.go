@@ -2281,6 +2281,10 @@ FROM attachments WHERE message_id = ? ORDER BY ordinal`, value.ID)
 		return fmt.Errorf("close attachments: %w", err)
 	}
 	value.Content = &content
+	capability := maildomain.ParseUnsubscribeCapability(content.Headers)
+	if capability.Available || capability.OneClickDeclared {
+		value.Unsubscribe = &capability
+	}
 	return nil
 }
 

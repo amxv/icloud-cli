@@ -7792,6 +7792,55 @@ _icloud_mail_unflag()
     noun_aliases=()
 }
 
+_icloud_mail_unsubscribe()
+{
+    last_command="icloud_mail_unsubscribe"
+
+    command_aliases=()
+
+    commands=()
+
+    flags=()
+    two_word_flags=()
+    local_nonpersistent_flags=()
+    flags_with_completion=()
+    flags_completion=()
+
+    flags+=("--dry-run")
+    local_nonpersistent_flags+=("--dry-run")
+    flags+=("--help")
+    flags+=("-h")
+    local_nonpersistent_flags+=("--help")
+    local_nonpersistent_flags+=("-h")
+    flags+=("--input-json=")
+    two_word_flags+=("--input-json")
+    local_nonpersistent_flags+=("--input-json")
+    local_nonpersistent_flags+=("--input-json=")
+    flags+=("--json")
+    local_nonpersistent_flags+=("--json")
+    flags+=("--method=")
+    two_word_flags+=("--method")
+    local_nonpersistent_flags+=("--method")
+    local_nonpersistent_flags+=("--method=")
+    flags+=("--yes")
+    local_nonpersistent_flags+=("--yes")
+    flags+=("--account=")
+    two_word_flags+=("--account")
+    flags_with_completion+=("--account")
+    flags_completion+=("__icloud_handle_go_custom_completion")
+    flags+=("--home=")
+    two_word_flags+=("--home")
+    flags+=("--no-input")
+    flags+=("--request-id=")
+    two_word_flags+=("--request-id")
+    flags+=("--timeout=")
+    two_word_flags+=("--timeout")
+
+    must_have_one_flag=()
+    must_have_one_noun=()
+    noun_aliases=()
+}
+
 _icloud_mail_watch()
 {
     last_command="icloud_mail_watch"
@@ -7886,6 +7935,7 @@ _icloud_mail()
     commands+=("trash")
     commands+=("unarchive")
     commands+=("unflag")
+    commands+=("unsubscribe")
     commands+=("watch")
 
     flags=()

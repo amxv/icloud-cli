@@ -149,6 +149,11 @@ type mailboxImportJSONRequest struct {
 	MaxMessages int    `json:"max_messages,omitempty"`
 }
 
+type unsubscribeJSONRequest struct {
+	MessageID string `json:"message_id"`
+	Method    string `json:"method,omitempty"`
+}
+
 type attachmentSaveJSONRequest struct {
 	AttachmentID string `json:"attachment_id"`
 	Output       string `json:"output"`

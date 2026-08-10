@@ -165,35 +165,36 @@ type mailRepairData struct {
 }
 
 type publicMessage struct {
-	ID                string                        `json:"id"`
-	AccountID         string                        `json:"account_id"`
-	RFCMessageID      string                        `json:"rfc_message_id,omitempty"`
-	InReplyTo         string                        `json:"in_reply_to,omitempty"`
-	References        []string                      `json:"references,omitempty"`
-	Direction         maildomain.Direction          `json:"direction"`
-	From              maildomain.Address            `json:"from"`
-	ReplyTo           *maildomain.Address           `json:"reply_to,omitempty"`
-	To                []maildomain.Address          `json:"to,omitempty"`
-	CC                []maildomain.Address          `json:"cc,omitempty"`
-	Subject           string                        `json:"subject,omitempty"`
-	Snippet           string                        `json:"snippet,omitempty"`
-	HeaderDate        *time.Time                    `json:"header_date,omitempty"`
-	InternalDate      *time.Time                    `json:"internal_date,omitempty"`
-	SortAt            *time.Time                    `json:"sort_at,omitempty"`
-	DateSource        maildomain.DateSource         `json:"date_source"`
-	AttachmentCount   int                           `json:"attachment_count,omitempty"`
-	Unread            bool                          `json:"unread"`
-	Flagged           bool                          `json:"flagged"`
-	Answered          bool                          `json:"answered"`
-	Replied           bool                          `json:"replied"`
-	ReplyState        string                        `json:"reply_state"`
-	Forwarded         bool                          `json:"forwarded"`
-	CreatedAt         time.Time                     `json:"created_at"`
-	UpdatedAt         time.Time                     `json:"updated_at"`
-	Locations         []publicLocation              `json:"locations,omitempty"`
-	ContentLocationID string                        `json:"content_location_id,omitempty"`
-	Identity          []maildomain.IdentityEvidence `json:"identity,omitempty"`
-	DedupeConflicts   []maildomain.DedupeConflict   `json:"dedupe_conflicts,omitempty"`
+	ID                string                            `json:"id"`
+	AccountID         string                            `json:"account_id"`
+	RFCMessageID      string                            `json:"rfc_message_id,omitempty"`
+	InReplyTo         string                            `json:"in_reply_to,omitempty"`
+	References        []string                          `json:"references,omitempty"`
+	Direction         maildomain.Direction              `json:"direction"`
+	From              maildomain.Address                `json:"from"`
+	ReplyTo           *maildomain.Address               `json:"reply_to,omitempty"`
+	To                []maildomain.Address              `json:"to,omitempty"`
+	CC                []maildomain.Address              `json:"cc,omitempty"`
+	Subject           string                            `json:"subject,omitempty"`
+	Snippet           string                            `json:"snippet,omitempty"`
+	HeaderDate        *time.Time                        `json:"header_date,omitempty"`
+	InternalDate      *time.Time                        `json:"internal_date,omitempty"`
+	SortAt            *time.Time                        `json:"sort_at,omitempty"`
+	DateSource        maildomain.DateSource             `json:"date_source"`
+	AttachmentCount   int                               `json:"attachment_count,omitempty"`
+	Unread            bool                              `json:"unread"`
+	Flagged           bool                              `json:"flagged"`
+	Answered          bool                              `json:"answered"`
+	Replied           bool                              `json:"replied"`
+	ReplyState        string                            `json:"reply_state"`
+	Forwarded         bool                              `json:"forwarded"`
+	CreatedAt         time.Time                         `json:"created_at"`
+	UpdatedAt         time.Time                         `json:"updated_at"`
+	Locations         []publicLocation                  `json:"locations,omitempty"`
+	ContentLocationID string                            `json:"content_location_id,omitempty"`
+	Identity          []maildomain.IdentityEvidence     `json:"identity,omitempty"`
+	DedupeConflicts   []maildomain.DedupeConflict       `json:"dedupe_conflicts,omitempty"`
+	Unsubscribe       *maildomain.UnsubscribeCapability `json:"unsubscribe,omitempty"`
 }
 
 type publicLocation struct {
@@ -1286,7 +1287,21 @@ func sanitizeMessage(value maildomain.Message) publicMessage {
 		ContentLocationID: value.ContentLocationID,
 		Identity:          append([]maildomain.IdentityEvidence(nil), value.Identity...),
 		DedupeConflicts:   append([]maildomain.DedupeConflict(nil), value.DedupeConflicts...),
+		Unsubscribe:       publicUnsubscribeCapability(value.Unsubscribe),
 	}
+}
+
+func publicUnsubscribeCapability(value *maildomain.UnsubscribeCapability) *maildomain.UnsubscribeCapability {
+	if value == nil {
+		return nil
+	}
+	copy := &maildomain.UnsubscribeCapability{
+		Available: value.Available, OneClickDeclared: value.OneClickDeclared, SelectionRequired: value.SelectionRequired,
+	}
+	for _, method := range value.Methods {
+		copy.Methods = append(copy.Methods, maildomain.UnsubscribeMethod{ID: method.ID, Kind: method.Kind, Host: method.Host, DKIMRequired: method.DKIMRequired})
+	}
+	return copy
 }
 
 type unavailableMailService struct{}

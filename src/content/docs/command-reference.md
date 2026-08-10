@@ -630,6 +630,7 @@ Available Commands:
   trash       Move exact current locations to the semantic Trash folder
   unarchive   Move current Archive locations to Inbox
   unflag      Remove the flag from one selected message location
+  unsubscribe Safely execute a standards-based mailing-list unsubscribe action
   watch       Keep enabled mail folders fresh with IDLE or explicit polling fallback
 
 Flags:
@@ -4219,6 +4220,36 @@ Flags:
       --json                 Emit one stable JSON success envelope
       --jsonl                Emit typed per-item and completed JSONL events
       --mode string          Bulk failure mode: validate the bounded input then fail fast on target/provider errors, or continue-on-error (default "atomic")
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail unsubscribe`
+
+```text
+Safely execute a standards-based mailing-list unsubscribe action
+
+Usage:
+  icloud mail unsubscribe <msg_...> [flags]
+
+Examples:
+  icloud mail unsubscribe msg_… --dry-run
+  icloud mail unsubscribe msg_… --yes
+  icloud mail unsubscribe msg_… --method mailto:2 --yes --json
+  icloud mail unsubscribe --input-json request.json --dry-run --json
+
+Flags:
+      --dry-run             Review only local sanitized unsubscribe capability; do not verify DKIM, POST, or send mail
+  -h, --help                help for unsubscribe
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON envelope
+      --method string       Safe method ID from dry-run, for example one-click or mailto:2
+      --yes                 Confirm an intentional non-interactive unsubscribe action
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID

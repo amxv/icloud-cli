@@ -324,6 +324,49 @@
     "unread": {
       "type": "boolean"
     },
+    "unsubscribe": {
+      "additionalProperties": false,
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "methods": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "dkim_required": {
+                "type": "boolean"
+              },
+              "host": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "kind"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "one_click_declared": {
+          "type": "boolean"
+        },
+        "selection_required": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "available"
+      ],
+      "type": "object"
+    },
     "updated_at": {
       "format": "date-time",
       "type": "string"

@@ -420,6 +420,19 @@ icloud mail message export msg_… --output message.eml
 
 `--full` and `--format text` stream complete decoded text. HTML, headers, metadata-only, MIME-part detail, and raw RFC822 are separate opt-ins. Raw and exported bytes are verified against the local content address before they are returned.
 
+If a synchronized list message advertises `List-Unsubscribe`, ordinary message output exposes only a sanitized semantic capability such as the supported method ID and endpoint host. It never prints the tokenized HTTPS URI, `mailto:` recipient, subject, or body. Review the action locally first:
+
+```bash
+icloud mail unsubscribe msg_… --dry-run
+```
+
+For RFC 8058 one-click mail, the real action requires a valid DKIM signature covering both unsubscribe headers and then performs the exact credential-free HTTPS POST. For a `mailto:` method it composes the standards request through the same durable outbound send journal used by `mail send`. Multiple mailto alternatives are never guessed; dry-run shows safe IDs such as `mailto:1` and `mailto:2`, and execution requires `--method` when selection is ambiguous.
+
+```bash
+icloud mail unsubscribe msg_… --yes
+icloud mail unsubscribe msg_… --method mailto:2 --yes
+```
+
 Import one existing RFC message deliberately by reviewing it locally first:
 
 ```bash

@@ -51,6 +51,7 @@ const (
 	StageSMTPAccept      Stage = "smtp_accept"
 	StageSMTPNoop        Stage = "smtp_noop"
 	StageSMTPQuit        Stage = "smtp_quit"
+	StageHTTPUnsubscribe Stage = "http_unsubscribe"
 	StageTimeout         Stage = "timeout"
 )
 
@@ -553,6 +554,10 @@ func AsSMTPSendError(err error) (*SMTPSendError, bool) {
 
 type SMTPSender interface {
 	SendSMTP(context.Context, AuthRequest, SMTPSendRequest) (SMTPSendResult, error)
+}
+
+type OneClickUnsubscriber interface {
+	UnsubscribeOneClick(context.Context, string) error
 }
 
 func SanitizeCapabilities(values []string) []string {

@@ -284,6 +284,29 @@ icloud mail message show msg_… --metadata-only
 
 `--verbose` adds ordered MIME-part metadata and parse diagnostics. Use the attachment workflow when you need decoded files rather than message-body output.
 
+## Unsubscribe from a mailing list deliberately
+
+When a complete synchronized message contains supported `List-Unsubscribe` metadata, the normal message projection derives a semantic unsubscribe capability from the stored decoded headers. Compact and JSON reads expose only safe method IDs/kinds and host names; opaque HTTPS path/query tokens and `mailto:` recipient/query payloads remain private even though `--headers` can still reveal the original header when you explicitly ask for all decoded headers.
+
+Review without DNS, HTTP, SMTP, or any provider write:
+
+```bash
+icloud mail unsubscribe msg_… --dry-run
+icloud mail unsubscribe --input-json unsubscribe.json --dry-run --json
+```
+
+The default selection prefers one RFC 8058 one-click method when the message correctly declares exactly one HTTPS URI plus `List-Unsubscribe-Post: List-Unsubscribe=One-Click`. Otherwise one `mailto:` alternative may be selected automatically. Several mailto alternatives require an explicit safe ID from dry-run, for example:
+
+```bash
+icloud mail unsubscribe msg_… --method mailto:2 --yes
+```
+
+One-click execution rereads the exact stored raw message, verifies at least one valid DKIM signature whose `h=` set covers both `List-Unsubscribe` and `List-Unsubscribe-Post`, then sends `List-Unsubscribe=One-Click` as an HTTPS POST body. The HTTP client carries no cookies, HTTP authorization, Apple Account credentials, browser session, Referer, or message-defined custom headers. It does not follow redirects, never connects to loopback/private/link-local/multicast-only targets, bounds the response body, and honors the command context/deadline. A redirect, HTTP endpoint, private-network target, malformed method, missing required DKIM coverage, or oversized response fails closed.
+
+`mailto:` execution does not invent a new delivery path. It validates the URI recipient plus optional `subject` and `body`, rejects other query-driven mail headers such as BCC, and delegates the resulting message to the existing outbound send state machine using a deterministic private idempotency key derived from the source message and selected method. Repeating the same mailto unsubscribe therefore reuses the prior outbound attempt instead of sending another message.
+
+No unsubscribe method runs while reading mail. Real non-interactive execution requires `--yes`; an interactive cancellation exits before DKIM DNS lookup, HTTP, or SMTP.
+
 ## Inspect and save attachments
 
 ```bash
