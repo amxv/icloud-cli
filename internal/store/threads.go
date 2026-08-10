@@ -2106,7 +2106,7 @@ LIMIT ?`, strings.TrimSpace(accountID), limit+1)
 	if err := applyThreadProjectionState(ctx, repository.db, accountID, values); err != nil {
 		return nil, false, err
 	}
-	if err := applyThreadReplyState(ctx, repository.db, accountID, values); err != nil {
+	if err := applyThreadOutboundState(ctx, repository.db, accountID, values); err != nil {
 		return nil, false, err
 	}
 	return values, more, nil
@@ -2128,7 +2128,7 @@ func (repository *ThreadRepository) Show(ctx context.Context, accountID, selecto
 	if err := applyThreadProjectionState(ctx, repository.db, accountID, projection); err != nil {
 		return maildomain.ThreadPage{}, err
 	}
-	if err := applyThreadReplyState(ctx, repository.db, accountID, projection); err != nil {
+	if err := applyThreadOutboundState(ctx, repository.db, accountID, projection); err != nil {
 		return maildomain.ThreadPage{}, err
 	}
 	thread = projection[0]
@@ -2420,24 +2420,65 @@ func scanThreadWithExtra(scanner interface{ Scan(...any) error }, extra ...any) 
 	return value, nil
 }
 
-func applyThreadReplyState(ctx context.Context, db *sql.DB, accountID string, threads []maildomain.Thread) error {
+func applyThreadOutboundState(ctx context.Context, db *sql.DB, accountID string, threads []maildomain.Thread) error {
+	if len(threads) == 0 {
+		return nil
+	}
+	values := make([]string, len(threads))
+	arguments := make([]any, 0, len(threads)+2)
+	indices := make(map[string]int, len(threads))
 	for index := range threads {
-		var replied int
-		if err := db.QueryRowContext(ctx, `
-SELECT EXISTS (
-    SELECT 1
-    FROM thread_messages AS tm
-    LEFT JOIN message_locations AS l
-      ON l.message_id = tm.message_id AND l.present = 1 AND l.deleted = 0 AND l.draft = 0
-    LEFT JOIN outbound_attempts AS oa
-      ON oa.account_id = ? AND oa.parent_message_id = tm.message_id
-     AND oa.status = 'sent' AND oa.outbound_kind IN ('reply', 'reply_all')
-    WHERE tm.thread_id = ? AND (l.answered = 1 OR oa.attempt_id IS NOT NULL)
-    LIMIT 1
-)`, strings.TrimSpace(accountID), threads[index].ID).Scan(&replied); err != nil {
-			return fmt.Errorf("read thread reply state: %w", err)
+		values[index] = "(?)"
+		arguments = append(arguments, threads[index].ID)
+		indices[threads[index].ID] = index
+	}
+	arguments = append(arguments, strings.TrimSpace(accountID), strings.TrimSpace(accountID))
+	rows, err := db.QueryContext(ctx, `
+WITH selected(thread_id) AS (VALUES `+strings.Join(values, ",")+`)
+SELECT selected.thread_id,
+       EXISTS (
+           SELECT 1
+           FROM thread_messages AS tm
+           LEFT JOIN message_locations AS l
+             ON l.message_id = tm.message_id
+            AND l.present = 1 AND l.deleted = 0 AND l.draft = 0
+           LEFT JOIN outbound_attempts AS reply_attempt
+             ON reply_attempt.account_id = ?
+            AND reply_attempt.parent_message_id = tm.message_id
+            AND reply_attempt.status = 'sent'
+            AND reply_attempt.outbound_kind IN ('reply', 'reply_all')
+           WHERE tm.thread_id = selected.thread_id
+             AND (l.answered = 1 OR reply_attempt.attempt_id IS NOT NULL)
+           LIMIT 1
+       ),
+       EXISTS (
+           SELECT 1
+           FROM thread_messages AS tm
+           JOIN outbound_attempts AS forward_attempt
+             ON forward_attempt.account_id = ?
+            AND forward_attempt.source_message_id = tm.message_id
+            AND forward_attempt.status = 'sent'
+           WHERE tm.thread_id = selected.thread_id
+           LIMIT 1
+       )
+FROM selected`, arguments...)
+	if err != nil {
+		return fmt.Errorf("read thread outbound state: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var threadID string
+		var replied, forwarded int
+		if err := rows.Scan(&threadID, &replied, &forwarded); err != nil {
+			return fmt.Errorf("scan thread outbound state: %w", err)
 		}
-		threads[index].Replied = replied == 1
+		if index, ok := indices[threadID]; ok {
+			threads[index].Replied = replied == 1
+			threads[index].Forwarded = forwarded == 1
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate thread outbound state: %w", err)
 	}
 	return nil
 }

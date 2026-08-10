@@ -31,6 +31,35 @@ const messageColumnList = `m.message_id, m.account_id, m.rfc_message_id, m.in_re
        m.reply_to_email, m.subject, m.snippet, m.header_date,
        m.internal_date, m.sort_at, m.date_source, m.attachment_count,
        COALESCE((SELECT source_location_id FROM message_content WHERE message_content.message_id = m.message_id), ''),
+       EXISTS (
+           SELECT 1 FROM outbound_attempts AS reply_attempt
+           WHERE reply_attempt.account_id = m.account_id
+             AND reply_attempt.parent_message_id = m.message_id
+             AND reply_attempt.status = 'sent'
+             AND reply_attempt.outbound_kind IN ('reply', 'reply_all')
+       ),
+       EXISTS (
+           SELECT 1 FROM outbound_attempts AS pending_reply
+           WHERE pending_reply.account_id = m.account_id
+             AND pending_reply.parent_message_id = m.message_id
+             AND pending_reply.status = 'sent'
+             AND pending_reply.outbound_kind IN ('reply', 'reply_all')
+             AND pending_reply.answer_reconciliation = 'pending'
+       ),
+       EXISTS (
+           SELECT 1 FROM outbound_attempts AS unsupported_reply
+           WHERE unsupported_reply.account_id = m.account_id
+             AND unsupported_reply.parent_message_id = m.message_id
+             AND unsupported_reply.status = 'sent'
+             AND unsupported_reply.outbound_kind IN ('reply', 'reply_all')
+             AND unsupported_reply.answer_reconciliation = 'unsupported'
+       ),
+       EXISTS (
+           SELECT 1 FROM outbound_attempts AS forward_attempt
+           WHERE forward_attempt.account_id = m.account_id
+             AND forward_attempt.source_message_id = m.message_id
+             AND forward_attempt.status = 'sent'
+       ),
        m.created_at, m.updated_at`
 
 const messageColumns = `
@@ -1757,10 +1786,11 @@ func scanMessage(row rowScanner) (maildomain.Message, error) {
 
 func scanMessageWithExtra(row rowScanner, extra ...any) (maildomain.Message, error) {
 	var (
-		value                            maildomain.Message
-		direction, dateSource            string
-		headerDate, internalDate, sortAt sql.NullString
-		createdAt, updatedAt             string
+		value                                                  maildomain.Message
+		direction, dateSource                                  string
+		headerDate, internalDate, sortAt                       sql.NullString
+		createdAt, updatedAt                                   string
+		sentReply, pendingAnswer, unsupportedAnswer, forwarded int
 	)
 	targets := []any{
 		&value.ID, &value.AccountID, &value.RFCMessageID, &value.InReplyTo,
@@ -1769,6 +1799,11 @@ func scanMessageWithExtra(row rowScanner, extra ...any) (maildomain.Message, err
 		&value.Snippet, &headerDate, &internalDate, &sortAt, &dateSource,
 		&value.AttachmentCount, &value.ContentLocationID, &createdAt, &updatedAt,
 	}
+	targets = targets[:len(targets)-2]
+	targets = append(targets,
+		&sentReply, &pendingAnswer, &unsupportedAnswer, &forwarded,
+		&createdAt, &updatedAt,
+	)
 	targets = append(targets, extra...)
 	if err := row.Scan(targets...); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -1778,6 +1813,18 @@ func scanMessageWithExtra(row rowScanner, extra ...any) (maildomain.Message, err
 	}
 	value.Direction = maildomain.Direction(direction)
 	value.DateSource = maildomain.DateSource(dateSource)
+	value.Replied = sentReply == 1
+	value.Forwarded = forwarded == 1
+	switch {
+	case pendingAnswer == 1:
+		value.ReplyState = "provider_pending"
+	case unsupportedAnswer == 1:
+		value.ReplyState = "provider_unsupported"
+	case sentReply == 1:
+		value.ReplyState = "replied"
+	default:
+		value.ReplyState = "none"
+	}
 	var err error
 	value.HeaderDate, err = parseNullableTime(headerDate)
 	if err != nil {
@@ -1907,31 +1954,9 @@ ORDER BY present DESC, folder_id, uid`, value.ID)
 		return fmt.Errorf("close message locations: %w", err)
 	}
 
-	var sentReplies, pendingAnswers, unsupportedAnswers int
-	if err := repository.db.QueryRowContext(ctx, `
-SELECT
-    count(*),
-    COALESCE(sum(CASE WHEN answer_reconciliation = 'pending' THEN 1 ELSE 0 END), 0),
-    COALESCE(sum(CASE WHEN answer_reconciliation = 'unsupported' THEN 1 ELSE 0 END), 0)
-FROM outbound_attempts
-WHERE account_id = ? AND parent_message_id = ? AND status = 'sent'
-  AND outbound_kind IN ('reply', 'reply_all')`, value.AccountID, value.ID).Scan(
-		&sentReplies, &pendingAnswers, &unsupportedAnswers,
-	); err != nil {
-		return fmt.Errorf("read message reply provenance: %w", err)
-	}
-	value.Replied = value.Answered || sentReplies > 0
-	switch {
-	case value.Answered:
+	if value.Answered {
+		value.Replied = true
 		value.ReplyState = "answered"
-	case pendingAnswers > 0:
-		value.ReplyState = "provider_pending"
-	case unsupportedAnswers > 0:
-		value.ReplyState = "provider_unsupported"
-	case sentReplies > 0:
-		value.ReplyState = "replied"
-	default:
-		value.ReplyState = "none"
 	}
 
 	identityRows, err := repository.db.QueryContext(ctx, `

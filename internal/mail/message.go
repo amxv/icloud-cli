@@ -110,6 +110,7 @@ type Message struct {
 	Answered          bool               `json:"answered"`
 	Replied           bool               `json:"replied"`
 	ReplyState        string             `json:"reply_state"`
+	Forwarded         bool               `json:"forwarded"`
 	CreatedAt         time.Time          `json:"created_at"`
 	UpdatedAt         time.Time          `json:"updated_at"`
 	Locations         []Location         `json:"locations,omitempty"`

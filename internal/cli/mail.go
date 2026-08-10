@@ -163,6 +163,7 @@ type publicMessage struct {
 	Answered          bool                          `json:"answered"`
 	Replied           bool                          `json:"replied"`
 	ReplyState        string                        `json:"reply_state"`
+	Forwarded         bool                          `json:"forwarded"`
 	CreatedAt         time.Time                     `json:"created_at"`
 	UpdatedAt         time.Time                     `json:"updated_at"`
 	Locations         []publicLocation              `json:"locations,omitempty"`
@@ -1056,6 +1057,7 @@ func renderInboxMessage(renderer *CompactTextRenderer, value maildomain.Message)
 		Field("flagged", value.Flagged),
 		Field("replied", value.Replied),
 		Field("reply_state", value.ReplyState),
+		Field("forwarded", value.Forwarded),
 		Field("attachments", value.AttachmentCount),
 		Field("snippet", Excerpt(value.Snippet, DefaultExcerptRunes)),
 	)
@@ -1112,6 +1114,7 @@ func sanitizeMessage(value maildomain.Message) publicMessage {
 		InternalDate: value.InternalDate, SortAt: value.SortAt, DateSource: value.DateSource,
 		AttachmentCount: value.AttachmentCount, Unread: value.Unread, Flagged: value.Flagged,
 		Answered: value.Answered, Replied: value.Replied, ReplyState: value.ReplyState,
+		Forwarded: value.Forwarded,
 		CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt, Locations: locations,
 		ContentLocationID: value.ContentLocationID,
 		Identity:          append([]maildomain.IdentityEvidence(nil), value.Identity...),

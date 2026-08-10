@@ -56,6 +56,9 @@
       },
       "type": "array"
     },
+    "forwarded": {
+      "type": "boolean"
+    },
     "id": {
       "type": "string"
     },
@@ -323,6 +326,9 @@
               "flagged": {
                 "type": "boolean"
               },
+              "forwarded": {
+                "type": "boolean"
+              },
               "from": {
                 "additionalProperties": false,
                 "properties": {
@@ -556,6 +562,7 @@
               "date_source",
               "direction",
               "flagged",
+              "forwarded",
               "from",
               "id",
               "replied",
@@ -621,6 +628,7 @@
   "required": [
     "account_id",
     "attachment_count",
+    "forwarded",
     "id",
     "message_count",
     "messages",

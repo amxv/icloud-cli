@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/amxv/icloud-cli/internal/cli"
 	maildomain "github.com/amxv/icloud-cli/internal/mail"
+	"github.com/amxv/icloud-cli/internal/transport"
 )
 
 func TestMailForwardQuotesExactSourceSelectsAttachmentsAndKeepsSourceIndependent(t *testing.T) {
@@ -65,9 +67,15 @@ func TestMailForwardQuotesExactSourceSelectsAttachmentsAndKeepsSourceIndependent
 	if err != nil {
 		t.Fatal(err)
 	}
+	if sourceMessage.Forwarded {
+		t.Fatalf("fresh source is already forwarded: %+v", sourceMessage)
+	}
 	sourceThread, err := state.Threads().Show(context.Background(), accountValue.ID, sourceMessage.ID, "", 20)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if sourceThread.Thread.Forwarded {
+		t.Fatalf("fresh source thread is already forwarded: %+v", sourceThread.Thread)
 	}
 	sourceAttachments, more, err := state.Mail().Attachments(context.Background(), accountValue.ID, sourceMessage.ID, 20)
 	if err != nil || more || len(sourceAttachments) != 2 {
@@ -204,8 +212,82 @@ func TestMailForwardQuotesExactSourceSelectsAttachmentsAndKeepsSourceIndependent
 	}
 	sourceThreadAfter, err := state.Threads().Show(context.Background(), accountValue.ID, sourceMessage.ID, "", 20)
 	if err != nil || sourceThreadAfter.Thread.ID != sourceThread.Thread.ID || sourceThreadAfter.Thread.MessageCount != 1 ||
-		len(sourceAfter.Locations) != len(sourceMessage.Locations) || sourceAfter.Subject != sourceMessage.Subject || sourceAfter.Unread != sourceMessage.Unread {
+		len(sourceAfter.Locations) != len(sourceMessage.Locations) || sourceAfter.Subject != sourceMessage.Subject || sourceAfter.Unread != sourceMessage.Unread ||
+		!sourceAfter.Forwarded || !sourceThreadAfter.Thread.Forwarded {
 		t.Fatalf("source changed after forward message=%+v thread=%+v err=%v", sourceAfter, sourceThreadAfter, err)
+	}
+
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "message", "show", sourceMessage.ID, "--metadata-only")
+	if code != 0 || stderr != "" || !strings.Contains(stdout, "forwarded=true") {
+		t.Fatalf("forwarded message output code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "threads", "show", sourceThread.Thread.ID, "--metadata-only")
+	if code != 0 || stderr != "" || !strings.Contains(stdout, "forwarded=true") {
+		t.Fatalf("forwarded thread output code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+}
+
+func TestMailForwardFailedOrUnknownSMTPDoesNotCreateForwardedHistory(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		outcome transport.SMTPSendOutcome
+	}{
+		{name: "failed", outcome: transport.SMTPSendFailed},
+		{name: "unknown", outcome: transport.SMTPSendUnknown},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("ICLOUD_SEND_PASSWORD", "synthetic-forward-secret")
+			commands, _ := newTestAccountCommands()
+			sender := &fakeSMTPSender{}
+			commands.sender = sender
+			addSendAccount(t, commands, home)
+			code, _, stderr := runWithAccountCommands(t, commands, "",
+				"--home", home, "mail", "send", "--to", "source@example.test",
+				"--subject", "Forward failure source", "--body", "source", "--idempotency-key", "forward-failure-source-"+test.name, "--yes")
+			if code != 0 || stderr != "" || sender.calls != 1 {
+				t.Fatalf("source send code=%d stderr=%q calls=%d", code, stderr, sender.calls)
+			}
+			state, err := openState(context.Background(), home)
+			if err != nil {
+				t.Fatal(err)
+			}
+			accountValue, _ := state.Accounts().ResolveSelected(context.Background(), "")
+			attempts, _, err := state.Outbound().List(context.Background(), accountValue.ID, 5)
+			if err != nil || len(attempts) != 1 {
+				state.Close()
+				t.Fatalf("source attempts=%+v err=%v", attempts, err)
+			}
+			sourceID := attempts[0].MessageID
+			sourceThread, err := state.Threads().Show(context.Background(), accountValue.ID, sourceID, "", 5)
+			state.Close()
+			if err != nil {
+				t.Fatal(err)
+			}
+			sender.err = &transport.SMTPSendError{
+				Outcome: test.outcome,
+				Failure: transport.NewFailure(transport.StageSMTPData, transport.FailureUnavailable, test.outcome == transport.SMTPSendUnknown, errors.New("synthetic forward outcome")),
+			}
+			code, _, _ = runWithAccountCommands(t, commands, "",
+				"--home", home, "mail", "forward", sourceID, "--to", "target@example.test", "--original", "none", "--body", "forward",
+				"--idempotency-key", "forward-failure-"+test.name, "--yes")
+			if code == 0 || sender.calls != 2 {
+				t.Fatalf("forward outcome=%s code=%d calls=%d", test.name, code, sender.calls)
+			}
+			state, err = openState(context.Background(), home)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer state.Close()
+			source, err := state.Mail().Message(context.Background(), accountValue.ID, sourceID)
+			if err != nil || source.Forwarded {
+				t.Fatalf("source after %s=%+v err=%v", test.name, source, err)
+			}
+			thread, err := state.Threads().Show(context.Background(), accountValue.ID, sourceThread.Thread.ID, "", 5)
+			if err != nil || thread.Thread.Forwarded {
+				t.Fatalf("thread after %s=%+v err=%v", test.name, thread.Thread, err)
+			}
+		})
 	}
 }
 

@@ -357,6 +357,7 @@ func renderMessageShow(renderer *CompactTextRenderer, accountID string, message 
 		Field("answered", message.Answered),
 		Field("replied", message.Replied),
 		Field("reply_state", message.ReplyState),
+		Field("forwarded", message.Forwarded),
 		Field("locations", len(message.Locations)),
 		Field("folders", messageFolderIDs(message)),
 		Field("attachments", message.AttachmentCount),

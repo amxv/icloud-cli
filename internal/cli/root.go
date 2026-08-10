@@ -121,37 +121,38 @@ type capabilityProvider struct {
 }
 
 type capabilitiesData struct {
-	Command               string               `json:"command"`
-	Version               string               `json:"version"`
-	DataSchemaVersion     int64                `json:"data_schema_version"`
-	AccountMode           string               `json:"account_mode"`
-	CredentialSchemes     []string             `json:"credential_schemes"`
-	NetworkValidation     bool                 `json:"network_validation"`
-	Diagnostics           bool                 `json:"diagnostics"`
-	MailFolders           bool                 `json:"mail_folders"`
-	MailIdentities        bool                 `json:"mail_identities"`
-	MailSync              bool                 `json:"mail_sync"`
-	MailWatch             bool                 `json:"mail_watch"`
-	MailDrafts            bool                 `json:"mail_drafts"`
-	MailContent           bool                 `json:"mail_content"`
-	MailAttachments       bool                 `json:"mail_attachments"`
-	MailFlags             bool                 `json:"mail_flags"`
-	MailThreads           bool                 `json:"mail_threads"`
-	MailSearch            bool                 `json:"mail_search"`
-	MailRemoteSearch      bool                 `json:"mail_remote_search"`
-	MailHydration         bool                 `json:"mail_hydration"`
-	MailSend              bool                 `json:"mail_send"`
-	MailReply             bool                 `json:"mail_reply"`
-	MailReplyAnswered     bool                 `json:"mail_reply_answered"`
-	MailForward           bool                 `json:"mail_forward"`
-	MailLocationMutations bool                 `json:"mail_location_mutations"`
-	InboundLimits         config.InboundLimits `json:"inbound_limits"`
-	Output                capabilityOutput     `json:"output"`
-	Automation            capabilityAutomation `json:"automation"`
-	Schemas               map[string]string    `json:"schemas"`
-	Provider              *capabilityProvider  `json:"provider,omitempty"`
-	Completion            []string             `json:"completion"`
-	Man                   bool                 `json:"man"`
+	Command                string               `json:"command"`
+	Version                string               `json:"version"`
+	DataSchemaVersion      int64                `json:"data_schema_version"`
+	AccountMode            string               `json:"account_mode"`
+	CredentialSchemes      []string             `json:"credential_schemes"`
+	NetworkValidation      bool                 `json:"network_validation"`
+	Diagnostics            bool                 `json:"diagnostics"`
+	MailFolders            bool                 `json:"mail_folders"`
+	MailIdentities         bool                 `json:"mail_identities"`
+	MailSync               bool                 `json:"mail_sync"`
+	MailWatch              bool                 `json:"mail_watch"`
+	MailDrafts             bool                 `json:"mail_drafts"`
+	MailContent            bool                 `json:"mail_content"`
+	MailAttachments        bool                 `json:"mail_attachments"`
+	MailFlags              bool                 `json:"mail_flags"`
+	MailThreads            bool                 `json:"mail_threads"`
+	MailSearch             bool                 `json:"mail_search"`
+	MailRemoteSearch       bool                 `json:"mail_remote_search"`
+	MailHydration          bool                 `json:"mail_hydration"`
+	MailSend               bool                 `json:"mail_send"`
+	MailReply              bool                 `json:"mail_reply"`
+	MailReplyAnswered      bool                 `json:"mail_reply_answered"`
+	MailForward            bool                 `json:"mail_forward"`
+	ProviderForwardedState string               `json:"provider_forwarded_state"`
+	MailLocationMutations  bool                 `json:"mail_location_mutations"`
+	InboundLimits          config.InboundLimits `json:"inbound_limits"`
+	Output                 capabilityOutput     `json:"output"`
+	Automation             capabilityAutomation `json:"automation"`
+	Schemas                map[string]string    `json:"schemas"`
+	Provider               *capabilityProvider  `json:"provider,omitempty"`
+	Completion             []string             `json:"completion"`
+	Man                    bool                 `json:"man"`
 }
 
 type accountListData struct {
@@ -375,31 +376,32 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				return WrapAppError(ErrorConfiguration, "invalid inbound mail limit configuration", false, err)
 			}
 			data := capabilitiesData{
-				Command:               commandName,
-				Version:               state.version,
-				DataSchemaVersion:     state.schemaVersion,
-				AccountMode:           "validated_lifecycle",
-				CredentialSchemes:     []string{"keyring", "env", "file"},
-				NetworkValidation:     true,
-				Diagnostics:           true,
-				MailFolders:           true,
-				MailIdentities:        true,
-				MailSync:              true,
-				MailWatch:             true,
-				MailDrafts:            true,
-				MailContent:           true,
-				MailAttachments:       true,
-				MailFlags:             true,
-				MailThreads:           true,
-				MailSearch:            true,
-				MailRemoteSearch:      true,
-				MailHydration:         true,
-				MailSend:              true,
-				MailReply:             true,
-				MailReplyAnswered:     true,
-				MailForward:           true,
-				MailLocationMutations: true,
-				InboundLimits:         limits,
+				Command:                commandName,
+				Version:                state.version,
+				DataSchemaVersion:      state.schemaVersion,
+				AccountMode:            "validated_lifecycle",
+				CredentialSchemes:      []string{"keyring", "env", "file"},
+				NetworkValidation:      true,
+				Diagnostics:            true,
+				MailFolders:            true,
+				MailIdentities:         true,
+				MailSync:               true,
+				MailWatch:              true,
+				MailDrafts:             true,
+				MailContent:            true,
+				MailAttachments:        true,
+				MailFlags:              true,
+				MailThreads:            true,
+				MailSearch:             true,
+				MailRemoteSearch:       true,
+				MailHydration:          true,
+				MailSend:               true,
+				MailReply:              true,
+				MailReplyAnswered:      true,
+				MailForward:            true,
+				ProviderForwardedState: "unsupported",
+				MailLocationMutations:  true,
+				InboundLimits:          limits,
 				Output: capabilityOutput{
 					Default: "compact",
 					JSON:    true,
@@ -457,6 +459,7 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				Field("mail_reply", data.MailReply),
 				Field("mail_reply_answered", data.MailReplyAnswered),
 				Field("mail_forward", data.MailForward),
+				Field("provider_forwarded_state", data.ProviderForwardedState),
 				Field("mail_location_mutations", data.MailLocationMutations),
 				Field("default_output", data.Output.Default),
 				Field("json", data.Output.JSON),

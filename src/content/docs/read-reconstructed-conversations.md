@@ -122,6 +122,8 @@ The default is bounded and preview-only. It never prints BCC, private blob paths
 
 `replied=true` is aggregate proven reply history. On a message, `reply_state=answered` means a current eligible provider location carries standard `\Answered`; `provider_pending` means SMTP acceptance is proven but the exact provider-state write still needs reconciliation; and `replied` means durable local reply provenance exists even when no current provider Answered location is available. A thread's `replied=true` means at least one member has provider Answered state or a proven sent reply. It does not expose the reply's private recipients.
 
+`forwarded=true` is separate durable provenance. A message becomes forwarded only after a forward attempt for that exact `msg_…` has a proven sent outcome; failed and unknown SMTP attempts do not count. A thread is forwarded when at least one member has that proven history. iCloud currently exposes no verified provider forwarded marker through this integration, so this field is intentionally local and does not reinterpret unknown IMAP keywords.
+
 `direction` is canonical cached message state, not a folder-name guess. Any newly ingested message whose `From` matches an enabled `MailIdentity` is classified `outbound`, even when that copy is outside Sent. When a new self address is configured later, `mail identities reclassify` can promote older cached inbound rows in bounded resumable passes. Promotion does not change stable `msg_…`/`thr_…` IDs, and disabling an identity does not demote previously proven outbound history.
 
 When a page ends with `more=true`, continue from the returned cursor instead of rereading earlier messages:

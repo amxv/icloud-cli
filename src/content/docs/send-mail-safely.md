@@ -257,7 +257,11 @@ reconciliation=pending
 reused=false
 ```
 
-Forward uses the same confirmation, idempotency, retry, size, SMTP, local acceptance, Sent append, and reconciliation behavior as send and reply. Repeating an identical forward with the same key returns the existing attempt without contacting SMTP. The source message, its flags, locations, attachments, and reconstructed thread are not mutated.
+Forward uses the same confirmation, idempotency, retry, size, SMTP, local acceptance, Sent append, and reconciliation behavior as send and reply. Repeating an identical forward with the same key returns the existing attempt without contacting SMTP.
+
+After SMTP acceptance is proven, the source message and its reconstructed thread expose `forwarded=true` from the durable forward attempt. Failed or unknown SMTP outcomes do not create that history. This is a local provenance aggregate: the source MIME, provider locations, provider flags, attachments, and thread membership are not rewritten.
+
+The current iCloud IMAP compatibility probe did not expose a stable forwarded flag or keyword before versus after a real forward, so `icloud capabilities --json` reports `provider_forwarded_state="unsupported"`. The CLI does not guess `$Forwarded` or write an undocumented keyword merely to imitate an Apple Mail UI marker.
 
 ## Choose one safe body source
 
