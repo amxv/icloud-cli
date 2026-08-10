@@ -74,6 +74,10 @@ func (commands accountCommands) saveDraftInState(ctx context.Context, state *sto
 	if err != nil {
 		return account.Account{}, maildomain.Draft{}, state.SchemaVersion(), err
 	}
+	request, err = expandAccountSignature(ctx, state, accountValue.ID, sender.ID, request)
+	if err != nil {
+		return account.Account{}, maildomain.Draft{}, state.SchemaVersion(), err
+	}
 	preparedAttachments, stagedFiles, err := stageOutboundAttachments(ctx, commands.attachmentBlobStore(paths), request.Attachments)
 	request.Attachments = preparedAttachments
 	if err != nil {
@@ -560,9 +564,9 @@ func (unavailableMailboxAppender) AppendMailbox(context.Context, transport.AuthR
 func draftSendRequest(ctx context.Context, paths config.AppPaths, value maildomain.Draft, senderSelector string) (maildomain.SendRequest, error) {
 	message := value.Message
 	request := maildomain.SendRequest{
-		SenderIdentityID: strings.TrimSpace(senderSelector),
-		From:             message.From,
-		To:               append([]maildomain.Address(nil), message.To...), CC: append([]maildomain.Address(nil), message.CC...), BCC: append([]maildomain.Address(nil), message.BCC...),
+		SenderIdentityID: strings.TrimSpace(senderSelector), SignatureExpanded: true,
+		From: message.From,
+		To:   append([]maildomain.Address(nil), message.To...), CC: append([]maildomain.Address(nil), message.CC...), BCC: append([]maildomain.Address(nil), message.BCC...),
 		Subject: message.Subject, InReplyTo: message.InReplyTo, References: append([]string(nil), message.References...), Headers: append([]maildomain.CustomHeader(nil), value.CustomHeaders...),
 	}
 	if message.ReplyTo.Email != "" {

@@ -40,7 +40,7 @@ func newMailForwardCommand(state *executionState) *cobra.Command {
 			}
 			var jsonRequest forwardJSONRequest
 			if used, err := readJSONInput(cmd, state, input, &jsonRequest,
-				"from", "to", "cc", "bcc", "reply-to", "body", "body-file", "html-body", "html-body-file",
+				"from", "signature", "to", "cc", "bcc", "reply-to", "body", "body-file", "html-body", "html-body-file",
 				"header", "attach", "attach-name", "attach-type", "attach-disposition", "attach-cid", "original", "include-attachment", "idempotency-key", "retry-of", "retry-unknown"); err != nil {
 				return err
 			} else if used {
@@ -117,6 +117,7 @@ func newMailForwardCommand(state *executionState) *cobra.Command {
 
 func bindForwardFlags(command *cobra.Command, flags *forwardFlags) {
 	command.Flags().StringVar(&flags.From, "from", "", "Sender identity by stable mid_… ID or configured address (defaults to the account's local default identity)")
+	command.Flags().StringVar(&flags.Signature, "signature", "", "Override the configured forward signature with one sig_… ID or none")
 	command.Flags().StringArrayVar(&flags.To, "to", nil, "Recipient address; repeat or provide a comma-separated address list")
 	command.Flags().StringArrayVar(&flags.CC, "cc", nil, "Cc recipient address; repeat as needed")
 	command.Flags().StringArrayVar(&flags.BCC, "bcc", nil, "Bcc envelope recipient; omitted from message headers")
@@ -154,7 +155,7 @@ func forwardRequestFromFlags(state *executionState, sourceID string, flags forwa
 		return maildomain.ForwardRequest{}, false, NewAppError(ErrorUsage, "--original must be quoted, eml, or none", false)
 	}
 	return maildomain.ForwardRequest{
-		SourceMessageID: sourceID, SenderIdentityID: parsed.SenderIdentityID, OriginalMode: mode,
+		SourceMessageID: sourceID, SenderIdentityID: parsed.SenderIdentityID, SignatureSelector: parsed.SignatureSelector, OriginalMode: mode,
 		OriginalAttachmentIDs: append([]string(nil), flags.OriginalAttachments...),
 		To:                    parsed.To, CC: parsed.CC, BCC: parsed.BCC, ReplyTo: parsed.ReplyTo,
 		TextBody: parsed.TextBody, HTMLBody: parsed.HTMLBody,

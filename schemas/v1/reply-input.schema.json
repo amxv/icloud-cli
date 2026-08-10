@@ -78,6 +78,9 @@
         "retry_unknown": {
           "type": "boolean"
         },
+        "signature": {
+          "type": "string"
+        },
         "to": {
           "items": {
             "type": "string"

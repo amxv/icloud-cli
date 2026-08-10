@@ -624,6 +624,7 @@ Available Commands:
   selection   Create and apply short-lived immutable reviewed mail target sets
   send        Preview or send text, HTML, and attachments safely and idempotently
   senders     Manage local VIP and blocked sender preferences
+  signatures  Manage local per-identity compose signatures
   status      Compatibility alias for `mail operations … list`
   sync        Fetch and atomically commit bounded pages from enabled mail folders
   thread      Compatibility namespace for `mail threads show`
@@ -960,6 +961,7 @@ Flags:
       --input-json string                Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
       --json                             Emit one stable JSON success envelope
       --reply-to string                  Optional Reply-To address
+      --signature string                 Override the configured new-message signature with one sig_… ID or none
       --subject string                   Draft subject; may be empty
       --to stringArray                   Recipient address; repeat or provide a comma-separated address list
 
@@ -1145,6 +1147,7 @@ Flags:
       --input-json string                Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
       --json                             Emit one stable JSON success envelope
       --reply-to string                  Optional Reply-To address
+      --signature string                 Override the configured new-message signature with one sig_… ID or none
       --subject string                   Draft subject; may be empty
       --to stringArray                   Recipient address; repeat or provide a comma-separated address list
 
@@ -1792,6 +1795,7 @@ Flags:
       --reply-to string                  Optional Reply-To address
       --retry-of string                  Link an explicit retry to one failed or unknown send_… attempt
       --retry-unknown                    Authorize one duplicate-risk retry of an unknown attempt; requires --retry-of and --yes
+      --signature string                 Override the configured forward signature with one sig_… ID or none
       --to stringArray                   Recipient address; repeat or provide a comma-separated address list
       --verbose                          With --dry-run, include custom-header detail and HTML byte count
       --yes                              Confirm an intentional non-interactive forward
@@ -2893,6 +2897,7 @@ Flags:
       --replace-to                       Replace derived To recipients with the addresses supplied by --to
       --retry-of string                  Link an explicit retry to one failed or unknown send_… attempt
       --retry-unknown                    Authorize one duplicate-risk retry of an unknown attempt; requires --retry-of and --yes
+      --signature string                 Override the configured reply signature with one sig_… ID or none
       --to stringArray                   Add a To recipient; repeat or provide a comma-separated address list
       --verbose                          With --dry-run, include custom-header detail and HTML byte count
       --yes                              Confirm an intentional non-interactive reply
@@ -2943,6 +2948,7 @@ Flags:
       --replace-to                       Replace derived To recipients with the addresses supplied by --to
       --retry-of string                  Link an explicit retry to one failed or unknown send_… attempt
       --retry-unknown                    Authorize one duplicate-risk retry of an unknown attempt; requires --retry-of and --yes
+      --signature string                 Override the configured reply signature with one sig_… ID or none
       --to stringArray                   Add a To recipient; repeat or provide a comma-separated address list
       --verbose                          With --dry-run, include custom-header detail and HTML byte count
       --yes                              Confirm an intentional non-interactive reply
@@ -3273,6 +3279,7 @@ Flags:
       --reply-to string                  Optional Reply-To address
       --retry-of string                  Link an explicit retry to one failed or unknown send_… attempt
       --retry-unknown                    Authorize one duplicate-risk retry of an unknown attempt; requires --retry-of and --yes
+      --signature string                 Override the configured signature with one sig_… ID or none
       --subject string                   Message subject
       --to stringArray                   Recipient address; repeat or provide a comma-separated address list
       --verbose                          With --dry-run, include normalized custom-header detail and HTML byte count
@@ -3458,6 +3465,200 @@ Flags:
   -h, --help                help for vip
       --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
       --json                Emit one stable JSON success envelope
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail signatures`
+
+```text
+Manage local per-identity compose signatures
+
+Usage:
+  icloud mail signatures [command]
+
+Available Commands:
+  create      Create one account-local signature
+  default     Show or set one operation-family signature default
+  delete      Delete one local signature and defaults that reference it
+  list        List local signature metadata without dumping signature bodies
+  show        Show one local signature including its text and optional HTML body
+  update      Update selected fields of one local signature
+
+Flags:
+  -h, --help   help for signatures
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+
+Use "icloud mail signatures [command] --help" for more information about a command.
+```
+
+## `icloud mail signatures create`
+
+```text
+Create one account-local signature
+
+Usage:
+  icloud mail signatures create [flags]
+
+Examples:
+  icloud mail signatures create --text-file signature.txt
+  icloud mail signatures create --identity mid_… --text 'Thanks,
+Alex' --json
+
+Flags:
+  -h, --help                help for create
+      --html string         Optional inline HTML signature body
+      --html-file string    Optional HTML signature file path, or - for stdin
+      --identity string     Optionally bind this signature to one mail identity (use none on update to clear the binding)
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+      --text string         Inline plain-text signature body
+      --text-file string    Plain-text signature file path, or - for stdin
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail signatures default`
+
+```text
+Show or set one operation-family signature default
+
+Usage:
+  icloud mail signatures default <new|reply|reply-all|forward> [signature-id|none] [flags]
+
+Examples:
+  icloud mail signatures default new sig_…
+  icloud mail signatures default reply none --identity mid_…
+  icloud mail signatures default forward --json
+
+Flags:
+  -h, --help                help for default
+      --identity string     Optional identity scope by stable mid_… ID or configured address; omit for account-wide default
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail signatures delete`
+
+```text
+Delete one local signature and defaults that reference it
+
+Usage:
+  icloud mail signatures delete <signature-id> [flags]
+
+Examples:
+  icloud mail signatures delete sig_…
+  icloud mail signatures delete sig_… --json
+
+Flags:
+  -h, --help                help for delete
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail signatures list`
+
+```text
+List local signature metadata without dumping signature bodies
+
+Usage:
+  icloud mail signatures list [flags]
+
+Examples:
+  icloud mail signatures list
+  icloud mail signatures list --limit 50 --json
+
+Flags:
+      --cursor string       Continue from a next_cursor returned by the same account
+  -h, --help                help for list
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+      --limit int           Maximum signatures to return (1-100) (default 20)
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail signatures show`
+
+```text
+Show one local signature including its text and optional HTML body
+
+Usage:
+  icloud mail signatures show <signature-id> [flags]
+
+Examples:
+  icloud mail signatures show sig_…
+  icloud mail signatures show sig_… --json
+
+Flags:
+  -h, --help                help for show
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail signatures update`
+
+```text
+Update selected fields of one local signature
+
+Usage:
+  icloud mail signatures update <signature-id> [flags]
+
+Examples:
+  icloud mail signatures update sig_… --text-file signature.txt
+  icloud mail signatures update sig_… --identity none --json
+
+Flags:
+  -h, --help                help for update
+      --html string         Optional inline HTML signature body
+      --html-file string    Optional HTML signature file path, or - for stdin
+      --identity string     Optionally bind this signature to one mail identity (use none on update to clear the binding)
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+      --text string         Inline plain-text signature body
+      --text-file string    Plain-text signature file path, or - for stdin
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID

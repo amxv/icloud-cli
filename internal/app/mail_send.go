@@ -48,6 +48,10 @@ func (commands accountCommands) MailSendPreview(
 	if err != nil {
 		return account.Account{}, maildomain.SendPreview{}, state.SchemaVersion(), err
 	}
+	request, err = expandAccountSignature(ctx, state, accountValue.ID, sender.ID, request)
+	if err != nil {
+		return account.Account{}, maildomain.SendPreview{}, state.SchemaVersion(), err
+	}
 	request.Attachments, err = inspectOutboundAttachments(ctx, request.Attachments)
 	if err != nil {
 		return account.Account{}, maildomain.SendPreview{}, state.SchemaVersion(), mapOutboundAttachmentError(err)
@@ -64,7 +68,7 @@ func (commands accountCommands) MailSendPreview(
 		AccountID:        accountValue.ID, From: normalized.From,
 		To: normalized.To, CC: normalized.CC, BCC: normalized.BCC,
 		ReplyTo: normalized.ReplyTo, Subject: normalized.Subject,
-		TextBody: normalized.TextBody, HTMLBody: normalized.HTMLBody,
+		TextBody: normalized.TextBody, HTMLBody: normalized.HTMLBody, SignatureID: normalized.AppliedSignatureID,
 		Headers: normalized.Headers, InReplyTo: normalized.InReplyTo,
 		References: normalized.References, Attachments: normalized.Attachments,
 		BodyParts: normalized.BodyPartCount(), AttachmentCount: len(normalized.Attachments),
@@ -89,6 +93,10 @@ func (commands accountCommands) MailSend(
 		return account.Account{}, maildomain.OutboundAttempt{}, false, state.SchemaVersion(), mapAccountError(err)
 	}
 	sender, err := resolveSelectedMailIdentity(ctx, state, accountValue.ID, request.SenderIdentityID)
+	if err != nil {
+		return account.Account{}, maildomain.OutboundAttempt{}, false, state.SchemaVersion(), err
+	}
+	request, err = expandAccountSignature(ctx, state, accountValue.ID, sender.ID, request)
 	if err != nil {
 		return account.Account{}, maildomain.OutboundAttempt{}, false, state.SchemaVersion(), err
 	}
@@ -308,6 +316,33 @@ func normalizeAccountSendRequest(sender account.MailIdentity, request maildomain
 	}
 	hash, err := maildomain.SendRequestHash(normalized)
 	return normalized, hash, err
+}
+
+func expandAccountSignature(ctx context.Context, state *store.Store, accountID, senderIdentityID string, request maildomain.SendRequest) (maildomain.SendRequest, error) {
+	if request.SignatureExpanded {
+		return request, nil
+	}
+	selected, err := state.Signatures().ResolveForCompose(ctx, accountID, senderIdentityID, request.Operation(), request.SignatureSelector)
+	if err != nil {
+		return maildomain.SendRequest{}, mapSignatureError(err)
+	}
+	if selected == nil {
+		return maildomain.MarkSignatureExpanded(request), nil
+	}
+	return maildomain.ApplySignature(request, *selected), nil
+}
+
+func mapSignatureError(err error) error {
+	switch {
+	case errors.Is(err, maildomain.ErrSignatureNotFound):
+		return cli.WrapAppError(cli.ErrorNotFound, "mail signature was not found", false, err)
+	case errors.Is(err, maildomain.ErrSignatureIdentity):
+		return cli.WrapAppError(cli.ErrorUsage, "mail signature is not valid for the selected sender identity", false, err)
+	case errors.Is(err, maildomain.ErrSignatureInvalid), errors.Is(err, maildomain.ErrSignatureInvalidCursor):
+		return cli.WrapAppError(cli.ErrorUsage, "mail signature request is invalid", false, err)
+	default:
+		return cli.WrapAppError(cli.ErrorInternal, "cannot resolve local mail signature", false, err)
+	}
 }
 
 func resolveSelectedMailIdentity(ctx context.Context, state *store.Store, accountID, selector string) (account.MailIdentity, error) {

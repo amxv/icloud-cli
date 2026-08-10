@@ -107,7 +107,7 @@ func newDraftSaveCommand(state *executionState, update bool) *cobra.Command {
 			}
 			var jsonRequest draftSaveJSONRequest
 			if used, inputErr := readJSONInput(cmd, state, input, &jsonRequest,
-				"from", "to", "cc", "bcc", "reply-to", "subject", "body", "body-file", "html-body", "html-body-file", "header", "attach", "attach-name", "attach-type", "attach-disposition", "attach-cid"); inputErr != nil {
+				"from", "signature", "to", "cc", "bcc", "reply-to", "subject", "body", "body-file", "html-body", "html-body-file", "header", "attach", "attach-name", "attach-type", "attach-disposition", "attach-cid"); inputErr != nil {
 				return inputErr
 			} else if used {
 				if !update && strings.TrimSpace(jsonRequest.DraftID) != "" {
@@ -152,6 +152,7 @@ func newDraftSaveCommand(state *executionState, update bool) *cobra.Command {
 
 func bindDraftComposeFlags(command *cobra.Command, flags *sendFlags) {
 	command.Flags().StringVar(&flags.From, "from", "", "Sender identity by stable mid_… ID or configured address (defaults to the account's local default identity)")
+	command.Flags().StringVar(&flags.Signature, "signature", "", "Override the configured new-message signature with one sig_… ID or none")
 	command.Flags().StringArrayVar(&flags.To, "to", nil, "Recipient address; repeat or provide a comma-separated address list")
 	command.Flags().StringArrayVar(&flags.CC, "cc", nil, "Cc recipient address; repeat as needed")
 	command.Flags().StringArrayVar(&flags.BCC, "bcc", nil, "Bcc recipient preserved in the saved draft; hidden from default output")

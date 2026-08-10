@@ -119,6 +119,9 @@ type SendRequest struct {
 	IdempotencyKey        string               `json:"-"`
 	RetryOfAttemptID      string               `json:"-"`
 	AuthorizeUnknownRetry bool                 `json:"-"`
+	SignatureSelector     string               `json:"-"`
+	SignatureExpanded     bool                 `json:"-"`
+	AppliedSignatureID    string               `json:"-"`
 }
 
 type SendPreview struct {
@@ -136,6 +139,7 @@ type SendPreview struct {
 	Subject          string               `json:"subject"`
 	TextBody         string               `json:"text_body,omitempty"`
 	HTMLBody         string               `json:"html_body,omitempty"`
+	SignatureID      string               `json:"signature_id,omitempty"`
 	Headers          []CustomHeader       `json:"headers,omitempty"`
 	InReplyTo        string               `json:"in_reply_to,omitempty"`
 	References       []string             `json:"references,omitempty"`

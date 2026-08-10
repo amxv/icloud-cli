@@ -33,6 +33,49 @@ icloud mail send \
 
 `--from` accepts either a stable `mid_…` identity ID or a configured identity address. If omitted, the account's enabled local default identity is used. The selected identity controls the RFC `From`, SMTP envelope sender, and Message-ID domain; SMTP authentication still uses the selected account's existing login and credential. A disabled identity is rejected before SMTP is contacted.
 
+## Configure local signatures by identity and operation
+
+Signatures are account-local composition state. Create one reusable text signature, optionally with a matching HTML representation and optionally bound to one stable sender identity:
+
+```bash
+icloud mail signatures create \
+  --identity mid_… \
+  --text-file signature.txt \
+  --html-file signature.html
+```
+
+`mail signatures list` is intentionally metadata-only: it reports stable `sig_…` IDs, identity binding, byte counts, and timestamps without dumping reusable signature bodies. Use the explicit content read when you need to inspect one:
+
+```bash
+icloud mail signatures show sig_…
+```
+
+Set defaults independently for new mail, replies, reply-all, and forwards. Defaults may be account-wide or identity-specific:
+
+```bash
+icloud mail signatures default new sig_…
+icloud mail signatures default reply sig_… --identity mid_…
+icloud mail signatures default reply-all none --identity mid_…
+icloud mail signatures default forward sig_…
+```
+
+An identity-specific default wins over the account-wide default. An explicit `none` is also a real setting and prevents fallback. A signature bound to one `mid_…` identity cannot be selected for another sender identity; an unbound signature can be shared. These settings remain local to this CLI installation—they do not read or change Apple Mail/iCloud signature preferences.
+
+Override the selected default for one compose with `--signature sig_…`, or suppress it with `--signature none`. The same override is available on `mail send`, `reply`, `reply-all`, `forward`, and `draft create/update`:
+
+```bash
+icloud mail send \
+  --to client@example.com \
+  --subject 'Project update' \
+  --body-file message.txt \
+  --signature sig_… \
+  --dry-run
+```
+
+Signature expansion happens **before** the dry-run preview, body-size checks, MIME composition, and idempotency request hash. The bytes you review are therefore the bytes whose identity is protected by the idempotency key. If a configured signature later changes, reusing an existing key for what would now be different expanded content returns a conflict before SMTP rather than silently changing the message.
+
+For a text body, the signature is appended after one blank line. For an HTML body, the configured signature HTML is appended after `<br><br>`; if that signature has no HTML form, its escaped text form is used with newlines converted to `<br>`. Text-only messages remain text-only. An otherwise empty compose may use the signature as its text body. The 8 MiB per-body ceiling is enforced on the final expanded body, not only on the caller-supplied prefix.
+
 Use the account selector when more than one profile is configured:
 
 ```bash
@@ -129,6 +172,8 @@ icloud mail draft send drf_… --from alias@icloud.com --yes
 ```
 
 Draft create/update persist the stable `mid_…` identity used to compose that revision. Draft send also accepts `--from`; if omitted, it resolves the account's current enabled default sender before the outbound request is hashed. A proven send removes known `\Draft` provider copies before removing the local draft. If SMTP acceptance is unknown, the draft and provider copy stay in place. If the message is proven sent but cleanup is incomplete, do not resend; run `icloud mail draft sync drf_…` (adding the explicit `--folder` selector when needed) so cleanup can resume from the saved attempt state.
+
+Signature expansion is part of the saved draft revision. `draft create` and every explicit `draft update` apply the signature/default selected at that moment before storing the revision. Editing or replacing that signature later does **not** mutate an already-saved draft or change a later `draft send` implicitly. To apply the current signature to changed draft content, perform an explicit `draft update`; that creates a new revision whose expanded body can be previewed before sending.
 
 Likewise, a draft in `reconcile`, `cleanup_pending`, or `send_unknown` recovery state cannot be directly discarded by an ordinary send/delete path when doing so would lose the only provider-recovery evidence. Run `draft sync` first. A retry of a draft whose outbound attempt is already proven `sent` remains idempotent: it reuses that attempt and may resume cleanup without another SMTP transmission.
 
@@ -275,7 +320,7 @@ printf '%s\n' 'Hello' | icloud mail send --to client@example.com --subject Updat
 
 HTML uses the matching `--html-body` or `--html-body-file` flags. Text and HTML together produce one multipart alternative message. HTML without an explicit text body receives a simple plain-text alternative.
 
-Each body is bounded to 8 MiB before composition. One stdin stream cannot supply both text and HTML. A real interactive send cannot consume its body and confirmation from the same stdin; review with `--dry-run`, then rerun with `--yes`.
+Each final body is bounded to 8 MiB after local signature expansion and normalization, before MIME composition. One stdin stream cannot supply both text and HTML. A real interactive send cannot consume its body and confirmation from the same stdin; review with `--dry-run`, then rerun with `--yes`.
 
 ## Attach reviewed files without buffering the whole message
 

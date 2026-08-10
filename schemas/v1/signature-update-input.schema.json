@@ -1,0 +1,31 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/signature-update-input.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "html_body": {
+      "type": "string"
+    },
+    "html_file": {
+      "type": "string"
+    },
+    "identity_id": {
+      "type": "string"
+    },
+    "signature_id": {
+      "type": "string"
+    },
+    "text_body": {
+      "type": "string"
+    },
+    "text_file": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "signature_id"
+  ],
+  "title": "mail signature update JSON input",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

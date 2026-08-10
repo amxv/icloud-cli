@@ -1,0 +1,22 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/signature-default-input.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "identity_id": {
+      "type": "string"
+    },
+    "operation": {
+      "type": "string"
+    },
+    "signature_id": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "operation"
+  ],
+  "title": "mail signature default JSON input",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

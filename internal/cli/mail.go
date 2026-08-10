@@ -40,6 +40,13 @@ type MailService interface {
 	MailLatest(context.Context, string, string, int) (account.Account, []maildomain.Thread, bool, int64, error)
 	MailThread(context.Context, string, string, string, maildomain.ThreadReadOptions) (account.Account, maildomain.ThreadPage, []maildomain.ContentSource, int64, error)
 	MailThreadSetMuted(context.Context, string, string, string, bool) (account.Account, maildomain.ThreadPreference, int64, error)
+	MailSignaturesList(context.Context, string, string, string, int) (account.Account, maildomain.SignaturePage, int64, error)
+	MailSignatureShow(context.Context, string, string, string) (account.Account, maildomain.Signature, int64, error)
+	MailSignatureCreate(context.Context, string, string, maildomain.SignatureInput) (account.Account, maildomain.Signature, int64, error)
+	MailSignatureUpdate(context.Context, string, string, string, maildomain.SignatureUpdate) (account.Account, maildomain.Signature, int64, error)
+	MailSignatureRemove(context.Context, string, string, string) (account.Account, maildomain.Signature, int64, error)
+	MailSignatureDefault(context.Context, string, string, string, maildomain.OutboundKind) (account.Account, maildomain.SignatureDefault, int64, error)
+	MailSignatureSetDefault(context.Context, string, string, string, maildomain.OutboundKind, string) (account.Account, maildomain.SignatureDefault, int64, error)
 	MailThreadMutationTargets(context.Context, string, string, string, string, int, string, bool) (account.Account, maildomain.ThreadMutationTargetPage, int64, error)
 	MailSelectionCreate(context.Context, string, string, maildomain.SelectionCreateRequest) (account.Account, maildomain.MailSelection, int64, error)
 	MailSelection(context.Context, string, string, string) (account.Account, maildomain.MailSelection, int64, error)
@@ -1404,6 +1411,27 @@ func (unavailableMailService) MailThread(context.Context, string, string, string
 }
 func (unavailableMailService) MailThreadSetMuted(context.Context, string, string, string, bool) (account.Account, maildomain.ThreadPreference, int64, error) {
 	return account.Account{}, maildomain.ThreadPreference{}, 0, NewAppError(ErrorConfiguration, "local thread preferences are unavailable", false)
+}
+func (unavailableMailService) MailSignaturesList(context.Context, string, string, string, int) (account.Account, maildomain.SignaturePage, int64, error) {
+	return account.Account{}, maildomain.SignaturePage{}, 0, NewAppError(ErrorConfiguration, "local mail signatures are unavailable", false)
+}
+func (unavailableMailService) MailSignatureShow(context.Context, string, string, string) (account.Account, maildomain.Signature, int64, error) {
+	return account.Account{}, maildomain.Signature{}, 0, NewAppError(ErrorConfiguration, "local mail signatures are unavailable", false)
+}
+func (unavailableMailService) MailSignatureCreate(context.Context, string, string, maildomain.SignatureInput) (account.Account, maildomain.Signature, int64, error) {
+	return account.Account{}, maildomain.Signature{}, 0, NewAppError(ErrorConfiguration, "local mail signatures are unavailable", false)
+}
+func (unavailableMailService) MailSignatureUpdate(context.Context, string, string, string, maildomain.SignatureUpdate) (account.Account, maildomain.Signature, int64, error) {
+	return account.Account{}, maildomain.Signature{}, 0, NewAppError(ErrorConfiguration, "local mail signatures are unavailable", false)
+}
+func (unavailableMailService) MailSignatureRemove(context.Context, string, string, string) (account.Account, maildomain.Signature, int64, error) {
+	return account.Account{}, maildomain.Signature{}, 0, NewAppError(ErrorConfiguration, "local mail signatures are unavailable", false)
+}
+func (unavailableMailService) MailSignatureDefault(context.Context, string, string, string, maildomain.OutboundKind) (account.Account, maildomain.SignatureDefault, int64, error) {
+	return account.Account{}, maildomain.SignatureDefault{}, 0, NewAppError(ErrorConfiguration, "local mail signature defaults are unavailable", false)
+}
+func (unavailableMailService) MailSignatureSetDefault(context.Context, string, string, string, maildomain.OutboundKind, string) (account.Account, maildomain.SignatureDefault, int64, error) {
+	return account.Account{}, maildomain.SignatureDefault{}, 0, NewAppError(ErrorConfiguration, "local mail signature defaults are unavailable", false)
 }
 func (unavailableMailService) MailThreadMutationTargets(context.Context, string, string, string, string, int, string, bool) (account.Account, maildomain.ThreadMutationTargetPage, int64, error) {
 	return account.Account{}, maildomain.ThreadMutationTargetPage{}, 0, NewAppError(ErrorConfiguration, "thread mutation targets are unavailable", false)

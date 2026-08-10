@@ -1,0 +1,40 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/signature.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "account_id": {
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "html_body": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string"
+    },
+    "identity_id": {
+      "type": "string"
+    },
+    "text_body": {
+      "type": "string"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "type": "string"
+    }
+  },
+  "required": [
+    "account_id",
+    "created_at",
+    "id",
+    "text_body",
+    "updated_at"
+  ],
+  "title": "iCloud CLI local mail signature",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

@@ -182,6 +182,15 @@ icloud mail send \
 
 Success returns only stable attempt, message, and thread IDs plus attachment counts and reconciliation state. BCC addresses remain in the SMTP envelope and are omitted from the composed message. An `unknown` result means acceptance could not be proved either way and must not be retried automatically. Run `icloud mail sync --reconcile-outbound` before considering an explicit linked retry. Read [Send mail safely](/docs/send-mail-safely) for text/HTML input, attachments, display names, Reply-To, custom headers, dry-run expansions, idempotency, Sent confirmation, and recovery.
 
+If you reuse a closing/sign-off, create a local signature once and assign operation-specific defaults instead of copying it into every body:
+
+```bash
+icloud mail signatures create --text-file signature.txt
+icloud mail signatures default new sig_…
+```
+
+Dry-run previews include the expanded signature before size/idempotency checks. Use `--signature none` on an individual send/reply/forward/draft update when you deliberately want no configured signature.
+
 ## Save work as a draft before sending
 
 Create a draft locally first when the message is not ready to leave the machine:

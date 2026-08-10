@@ -42,6 +42,8 @@ User-entered aliases and provider-specific address types are recorded with `prov
 
 `mail send` and draft create/update/send accept `--from <mid_…|address>`. When SMTP accepts that envelope sender, the CLI records `verification=verified`. If iCloud permanently rejects an alternate at `MAIL FROM`, the CLI records `verification=rejected`, disables that identity, and does not retry with the primary address. Re-enabling it resets verification to `unverified` for another deliberate test after provider-side configuration changes.
 
+Local compose signatures may optionally bind to one stable identity ID. Use `mail signatures create --identity mid_…` when an alias or custom-domain address needs its own signature, then choose operation-specific defaults with `mail signatures default`. Identity-specific defaults override account-wide signature defaults; explicit `none` prevents fallback. Removing an identity also removes signatures/default rows owned by that identity, while unbound account-wide signatures remain. These are local CLI preferences and do not claim synchronization with Apple Mail signature settings.
+
 Addresses are normalized and unique case-insensitively within one account. The same address may exist under another configured account because each mailbox profile owns its own identity set.
 
 ## Choose the local default identity

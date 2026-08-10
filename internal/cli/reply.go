@@ -45,7 +45,7 @@ func newMailReplyCommand(state *executionState, replyAll bool) *cobra.Command {
 			}
 			var jsonRequest replyJSONRequest
 			if used, err := readJSONInput(cmd, state, input, &jsonRequest,
-				"folder", "from", "to", "cc", "bcc", "replace-to", "replace-cc", "body", "body-file", "html-body", "html-body-file",
+				"folder", "from", "signature", "to", "cc", "bcc", "replace-to", "replace-cc", "body", "body-file", "html-body", "html-body-file",
 				"header", "attach", "attach-name", "attach-type", "attach-disposition", "attach-cid", "idempotency-key", "retry-of", "retry-unknown"); err != nil {
 				return err
 			} else if used {
@@ -121,6 +121,7 @@ func newMailReplyCommand(state *executionState, replyAll bool) *cobra.Command {
 func bindReplyFlags(command *cobra.Command, flags *replyFlags) {
 	command.Flags().StringVar(&flags.Folder, "folder", "", "Select the exact current provider parent location when the message has multiple locations")
 	command.Flags().StringVar(&flags.From, "from", "", "Sender identity by stable mid_… ID or configured address (defaults to the account's local default identity)")
+	command.Flags().StringVar(&flags.Signature, "signature", "", "Override the configured reply signature with one sig_… ID or none")
 	command.Flags().StringArrayVar(&flags.To, "to", nil, "Add a To recipient; repeat or provide a comma-separated address list")
 	command.Flags().StringArrayVar(&flags.CC, "cc", nil, "Add a Cc recipient; repeat as needed")
 	command.Flags().StringArrayVar(&flags.BCC, "bcc", nil, "Add a new Bcc envelope recipient; prior Bcc recipients are never inferred")
@@ -156,7 +157,7 @@ func replyRequestFromFlags(state *executionState, parentID string, replyAll bool
 		return maildomain.ReplyRequest{}, false, NewAppError(ErrorUsage, "--replace-to requires at least one --to address", false)
 	}
 	return maildomain.ReplyRequest{
-		ParentMessageID: parentID, ParentFolder: flags.Folder, SenderIdentityID: parsed.SenderIdentityID, ReplyAll: replyAll,
+		ParentMessageID: parentID, ParentFolder: flags.Folder, SenderIdentityID: parsed.SenderIdentityID, SignatureSelector: parsed.SignatureSelector, ReplyAll: replyAll,
 		To: parsed.To, CC: parsed.CC, BCC: parsed.BCC,
 		ReplaceTo: flags.ReplaceTo, ReplaceCC: flags.ReplaceCC,
 		TextBody: parsed.TextBody, HTMLBody: parsed.HTMLBody,

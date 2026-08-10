@@ -72,6 +72,9 @@
         "reply_to": {
           "type": "string"
         },
+        "signature": {
+          "type": "string"
+        },
         "subject": {
           "type": "string"
         },

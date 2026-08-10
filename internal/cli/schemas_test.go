@@ -148,6 +148,9 @@ func TestCapabilitiesPublishesVersionedAutomationAndSchemaContracts(t *testing.T
 	if !envelope.Data.MailThreadPreferences {
 		t.Fatal("capabilities did not advertise local thread preferences")
 	}
+	if !envelope.Data.MailSignatures {
+		t.Fatal("capabilities did not advertise local mail signatures")
+	}
 	for command, schema := range map[string]string{
 		"mail senders list":    "sender-list-input",
 		"mail senders show":    "sender-preference-input",
@@ -163,6 +166,18 @@ func TestCapabilitiesPublishesVersionedAutomationAndSchemaContracts(t *testing.T
 	for _, command := range []string{"mail threads mute", "mail threads unmute"} {
 		if got := contracts[command].InputSchema; got != SchemaBaseID+"thread-preference-input.schema.json" {
 			t.Fatalf("thread preference contract %s=%q", command, got)
+		}
+	}
+	for command, schema := range map[string]string{
+		"mail signatures list":    "signature-list-input",
+		"mail signatures show":    "signature-target-input",
+		"mail signatures create":  "signature-create-input",
+		"mail signatures update":  "signature-update-input",
+		"mail signatures delete":  "signature-target-input",
+		"mail signatures default": "signature-default-input",
+	} {
+		if got := contracts[command].InputSchema; got != SchemaBaseID+schema+".schema.json" {
+			t.Fatalf("signature contract %s=%q", command, got)
 		}
 	}
 	for command, schema := range map[string]string{

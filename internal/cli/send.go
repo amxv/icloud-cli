@@ -18,6 +18,7 @@ import (
 
 type sendFlags struct {
 	From                   string
+	Signature              string
 	To                     []string
 	CC                     []string
 	BCC                    []string
@@ -95,7 +96,7 @@ func newMailSendCommand(state *executionState) *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			var jsonRequest composeJSONRequest
 			if used, err := readJSONInput(cmd, state, input, &jsonRequest,
-				"from", "to", "cc", "bcc", "reply-to", "subject", "body", "body-file", "html-body", "html-body-file",
+				"from", "signature", "to", "cc", "bcc", "reply-to", "subject", "body", "body-file", "html-body", "html-body-file",
 				"header", "attach", "attach-name", "attach-type", "attach-disposition", "attach-cid", "idempotency-key", "retry-of", "retry-unknown"); err != nil {
 				return err
 			} else if used {
@@ -169,6 +170,7 @@ func newMailSendCommand(state *executionState) *cobra.Command {
 	}
 	command.Flags().StringArrayVar(&flags.To, "to", nil, "Recipient address; repeat or provide a comma-separated address list")
 	command.Flags().StringVar(&flags.From, "from", "", "Sender identity by stable mid_… ID or configured address (defaults to the account's local default identity)")
+	command.Flags().StringVar(&flags.Signature, "signature", "", "Override the configured signature with one sig_… ID or none")
 	command.Flags().StringArrayVar(&flags.CC, "cc", nil, "Cc recipient address; repeat as needed")
 	command.Flags().StringArrayVar(&flags.BCC, "bcc", nil, "Bcc envelope recipient; omitted from message headers")
 	command.Flags().StringVar(&flags.ReplyTo, "reply-to", "", "Optional Reply-To address")
@@ -241,8 +243,8 @@ func sendRequestFromFlags(state *executionState, flags sendFlags) (maildomain.Se
 		return maildomain.SendRequest{}, false, err
 	}
 	return maildomain.SendRequest{
-		SenderIdentityID: flags.From,
-		To:               to, CC: cc, BCC: bcc, ReplyTo: replyTo,
+		SenderIdentityID: flags.From, SignatureSelector: flags.Signature,
+		To: to, CC: cc, BCC: bcc, ReplyTo: replyTo,
 		Subject: flags.Subject, TextBody: text, HTMLBody: html,
 		Headers: headers, Attachments: attachments, IdempotencyKey: flags.IdempotencyKey,
 		RetryOfAttemptID: flags.RetryOf, AuthorizeUnknownRetry: flags.RetryUnknown,
@@ -415,6 +417,7 @@ func renderCompactSendPreview(writer io.Writer, preview maildomain.SendPreview, 
 	renderer := NewCompactTextRenderer(writer)
 	if err := renderer.Record("send-preview", preview.AccountID,
 		Field("sender_identity", preview.SenderIdentityID),
+		Field("signature", preview.SignatureID),
 		Field("from", formatAddress(preview.From)),
 		Field("to", formatAddresses(preview.To)),
 		Field("cc", formatAddresses(preview.CC)),
