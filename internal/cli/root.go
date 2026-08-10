@@ -157,6 +157,7 @@ type capabilitiesData struct {
 	MailJunk               bool                 `json:"mail_junk"`
 	MailPurge              bool                 `json:"mail_purge"`
 	MailLocationMutations  bool                 `json:"mail_location_mutations"`
+	MailSenderPreferences  bool                 `json:"mail_sender_preferences"`
 	InboundLimits          config.InboundLimits `json:"inbound_limits"`
 	Output                 capabilityOutput     `json:"output"`
 	Automation             capabilityAutomation `json:"automation"`
@@ -418,6 +419,7 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				MailJunk:               true,
 				MailPurge:              true,
 				MailLocationMutations:  true,
+				MailSenderPreferences:  true,
 				InboundLimits:          limits,
 				Output: capabilityOutput{
 					Default: "compact",

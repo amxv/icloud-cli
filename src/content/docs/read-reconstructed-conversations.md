@@ -26,6 +26,7 @@ thr_… subject="Project update"
 messages=3
 unread=1
 replied=true
+vip_senders=1
 participants=owner@example.com,sender@example.com
 folders=fld_…
 attachments=2
@@ -39,6 +40,8 @@ more=false
 ```
 
 The default returns 20 conversations and accepts `--limit` through 100. `more=true` means additional local threads were not printed.
+
+When synchronized messages in a conversation come from addresses marked with `mail senders vip` or `mail senders block`, the thread summary also reports the nonzero `vip_senders` / `blocked_senders` counts. These are local account preferences used for triage only; they do not change thread membership, synchronization, read state, or provider mailboxes.
 
 Filter conversations with the same local index used by message search:
 
@@ -234,6 +237,7 @@ Thread counts derive from current local messages and locations:
 - `attachments` sums logical message attachment counts;
 - `folders` lists current non-deleted provider locations across the thread;
 - `participants` uses From, Reply-To, To, and CC addresses, never BCC;
+- `vip_senders` / `blocked_senders` count distinct message From addresses carrying those local sender preferences when the count is nonzero;
 - `first` and `last` use the best stored message times;
 - `snippet` follows the latest message with a usable bounded preview.
 

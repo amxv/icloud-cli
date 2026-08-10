@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/amxv/icloud-cli/internal/cli"
 	"github.com/amxv/icloud-cli/internal/config"
 	maildomain "github.com/amxv/icloud-cli/internal/mail"
+	"github.com/amxv/icloud-cli/internal/store"
 	"github.com/amxv/icloud-cli/internal/transport"
 )
 
@@ -258,7 +260,7 @@ func TestAgentParityPhase21ImportDryRunAndCancellationCreateNoIntentOrProviderTr
 		t.Fatal(err)
 	}
 	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "message", "import", "--input-json", requestPath, "--dry-run", "--json")
-	if code != 0 || stderr != "" || !strings.Contains(stdout, `"schema_version":31`) || strings.Contains(stdout, path) || strings.Contains(stdout, "phase21-json-review") || appender.calls != 0 || len(status.requests) != 0 {
+	if code != 0 || stderr != "" || !strings.Contains(stdout, fmt.Sprintf(`"schema_version":%d`, store.SchemaVersion)) || strings.Contains(stdout, path) || strings.Contains(stdout, "phase21-json-review") || appender.calls != 0 || len(status.requests) != 0 {
 		t.Fatalf("json dry-run code=%d stdout=%q stderr=%q append=%d status=%v", code, stdout, stderr, appender.calls, status.requests)
 	}
 

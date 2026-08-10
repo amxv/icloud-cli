@@ -18,6 +18,9 @@
     "before": {
       "type": "string"
     },
+    "blocked": {
+      "type": "boolean"
+    },
     "cursor": {
       "type": "string"
     },
@@ -58,6 +61,9 @@
       "type": "boolean"
     },
     "unread": {
+      "type": "boolean"
+    },
+    "vip": {
       "type": "boolean"
     }
   },

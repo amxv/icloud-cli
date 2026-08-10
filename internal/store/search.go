@@ -245,6 +245,15 @@ func (repository *SearchRepository) searchMessages(
 			return maildomain.SearchPage{}, err
 		}
 	}
+	messagePointers := make([]*maildomain.Message, 0, len(hits))
+	for index := range hits {
+		if hits[index].Message != nil {
+			messagePointers = append(messagePointers, hits[index].Message)
+		}
+	}
+	if err := applyMessageSenderPreferenceState(ctx, repository.db, accountID, messagePointers); err != nil {
+		return maildomain.SearchPage{}, err
+	}
 	more := len(hits) > options.Limit
 	if more {
 		hits = hits[:options.Limit]
@@ -307,6 +316,9 @@ func (repository *SearchRepository) searchThreads(
 		return maildomain.SearchPage{}, err
 	}
 	if err := applyThreadOutboundState(ctx, repository.db, accountID, projected); err != nil {
+		return maildomain.SearchPage{}, err
+	}
+	if err := applyThreadSenderPreferenceState(ctx, repository.db, accountID, projected); err != nil {
 		return maildomain.SearchPage{}, err
 	}
 	projectedIndex := 0
@@ -511,6 +523,30 @@ func structuredSearchWhere(options maildomain.SearchOptions, alias string) (stri
 		}
 		clauses = append(clauses, exists)
 	}
+	if options.VIP != nil {
+		exists := `EXISTS (
+    SELECT 1 FROM sender_preferences AS sv INDEXED BY sender_preferences_account_vip_email_idx
+    WHERE sv.account_id = ` + prefix + `account_id
+      AND sv.email_address = lower(trim(` + prefix + `from_email))
+      AND sv.vip = 1
+)`
+		if !*options.VIP {
+			exists = "NOT " + exists
+		}
+		clauses = append(clauses, exists)
+	}
+	if options.Blocked != nil {
+		exists := `EXISTS (
+    SELECT 1 FROM sender_preferences AS sb INDEXED BY sender_preferences_account_blocked_email_idx
+    WHERE sb.account_id = ` + prefix + `account_id
+      AND sb.email_address = lower(trim(` + prefix + `from_email))
+      AND sb.blocked = 1
+)`
+		if !*options.Blocked {
+			exists = "NOT " + exists
+		}
+		clauses = append(clauses, exists)
+	}
 	if options.Sender != "" {
 		clauses = append(clauses, `(instr(lower(`+prefix+`from_email), lower(?)) > 0
     OR instr(lower(`+prefix+`from_name), lower(?)) > 0
@@ -610,6 +646,10 @@ func firstStructuredMatchField(options maildomain.SearchOptions) string {
 		return "unread"
 	case options.Flagged != nil:
 		return "flagged"
+	case options.VIP != nil:
+		return "vip"
+	case options.Blocked != nil:
+		return "blocked"
 	case options.Sender != "":
 		return "sender"
 	case options.Participant != "":
@@ -696,6 +736,12 @@ func searchFilterCount(options maildomain.SearchOptions) int {
 	if options.Flagged != nil {
 		count++
 	}
+	if options.VIP != nil {
+		count++
+	}
+	if options.Blocked != nil {
+		count++
+	}
 	if options.Sender != "" {
 		count++
 	}
@@ -729,6 +775,8 @@ type searchSignatureInput struct {
 	FolderID           string                      `json:"folder"`
 	Unread             *bool                       `json:"unread,omitempty"`
 	Flagged            *bool                       `json:"flagged,omitempty"`
+	VIP                *bool                       `json:"vip,omitempty"`
+	Blocked            *bool                       `json:"blocked,omitempty"`
 	Sender             string                      `json:"sender"`
 	Participant        string                      `json:"participant"`
 	Subject            string                      `json:"subject"`
@@ -743,7 +791,7 @@ type searchSignatureInput struct {
 func searchSignature(accountID string, options maildomain.SearchOptions) (string, error) {
 	input := searchSignatureInput{
 		AccountID: accountID, Query: options.Query, FolderID: options.FolderID,
-		Unread: options.Unread, Flagged: options.Flagged, Sender: options.Sender,
+		Unread: options.Unread, Flagged: options.Flagged, VIP: options.VIP, Blocked: options.Blocked, Sender: options.Sender,
 		Participant: options.Participant, Subject: options.Subject,
 		RFCMessageID: options.RFCMessageID, AttachmentFilename: options.AttachmentFilename,
 		AttachmentType: options.AttachmentType, ResultKind: options.ResultKind,

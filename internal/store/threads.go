@@ -2109,6 +2109,9 @@ LIMIT ?`, strings.TrimSpace(accountID), limit+1)
 	if err := applyThreadOutboundState(ctx, repository.db, accountID, values); err != nil {
 		return nil, false, err
 	}
+	if err := applyThreadSenderPreferenceState(ctx, repository.db, accountID, values); err != nil {
+		return nil, false, err
+	}
 	return values, more, nil
 }
 
@@ -2129,6 +2132,9 @@ func (repository *ThreadRepository) Show(ctx context.Context, accountID, selecto
 		return maildomain.ThreadPage{}, err
 	}
 	if err := applyThreadOutboundState(ctx, repository.db, accountID, projection); err != nil {
+		return maildomain.ThreadPage{}, err
+	}
+	if err := applyThreadSenderPreferenceState(ctx, repository.db, accountID, projection); err != nil {
 		return maildomain.ThreadPage{}, err
 	}
 	thread = projection[0]
@@ -2188,6 +2194,13 @@ LIMIT ?`, arguments...)
 		if err := mailRepository.loadLocalRawSource(ctx, &messages[index]); err != nil {
 			return maildomain.ThreadPage{}, err
 		}
+	}
+	messagePointers := make([]*maildomain.Message, 0, len(messages))
+	for index := range messages {
+		messagePointers = append(messagePointers, &messages[index])
+	}
+	if err := applyMessageSenderPreferenceState(ctx, repository.db, accountID, messagePointers); err != nil {
+		return maildomain.ThreadPage{}, err
 	}
 	thread.Messages = messages
 	edges, edgeEvidenceTruncated, err := repository.edges(ctx, accountID, messageIDs(messages))

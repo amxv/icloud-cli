@@ -166,7 +166,7 @@ Run `account test` only when you are ready to resolve the external credential an
 
 ## Privacy and cleanup
 
-The local root stores account/folder metadata, synchronized message content and attachments, search/thread state, sync progress, drafts, outbound outcomes, and recovery evidence. It never stores a plaintext app-specific password. Ordinary status output keeps credentials, private content locations, submitted message payloads, and BCC out of routine results.
+The local root stores account/folder metadata, synchronized message content and attachments, search/thread state, account-local sender preferences such as VIP/blocked labels, sync progress, drafts, outbound outcomes, and recovery evidence. It never stores a plaintext app-specific password. Ordinary status output keeps credentials, private content locations, submitted message payloads, and BCC out of routine results.
 
 `mail sync repair --check` audits the local copy without changing it. Repair can fix deterministic index/cache inconsistencies, but it does not guess at ambiguous message identity or manufacture missing canonical content.
 

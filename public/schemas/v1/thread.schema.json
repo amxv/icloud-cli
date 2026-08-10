@@ -519,6 +519,30 @@
               "rfc_message_id": {
                 "type": "string"
               },
+              "sender_preference": {
+                "additionalProperties": false,
+                "properties": {
+                  "blocked": {
+                    "type": "boolean"
+                  },
+                  "email": {
+                    "type": "string"
+                  },
+                  "explicit": {
+                    "type": "boolean"
+                  },
+                  "vip": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "blocked",
+                  "email",
+                  "explicit",
+                  "vip"
+                ],
+                "type": "object"
+              },
               "snippet": {
                 "type": "string"
               },
@@ -654,6 +678,38 @@
     },
     "root_rfc_message_id": {
       "type": "string"
+    },
+    "sender_preferences": {
+      "additionalProperties": false,
+      "properties": {
+        "blocked_senders": {
+          "type": "integer"
+        },
+        "distinct_senders": {
+          "type": "integer"
+        },
+        "explicit_senders": {
+          "type": "integer"
+        },
+        "missing_sender_messages": {
+          "type": "integer"
+        },
+        "unpreferred_senders": {
+          "type": "integer"
+        },
+        "vip_senders": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "blocked_senders",
+        "distinct_senders",
+        "explicit_senders",
+        "missing_sender_messages",
+        "unpreferred_senders",
+        "vip_senders"
+      ],
+      "type": "object"
     },
     "snippet": {
       "type": "string"

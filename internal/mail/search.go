@@ -19,6 +19,8 @@ type SearchOptions struct {
 	FolderID           string
 	Unread             *bool
 	Flagged            *bool
+	VIP                *bool
+	Blocked            *bool
 	Sender             string
 	Participant        string
 	Subject            string

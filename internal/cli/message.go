@@ -488,6 +488,9 @@ func renderMessageShow(renderer *CompactTextRenderer, accountID string, message 
 	partCount := 0
 	diagnostics := 0
 	unsubscribe := ""
+	senderPreferenceExplicit := false
+	senderVIP := false
+	senderBlocked := false
 	if message.Content != nil {
 		if len(message.Content.TextPaths) > 0 || len(message.Content.HTMLPaths) > 0 {
 			if len(message.Content.TextPaths) > 0 {
@@ -506,6 +509,11 @@ func renderMessageShow(renderer *CompactTextRenderer, accountID string, message 
 			parts = append(parts, method.ID+":"+method.Host)
 		}
 		unsubscribe = strings.Join(parts, ",")
+	}
+	if message.SenderPreference != nil {
+		senderPreferenceExplicit = message.SenderPreference.Explicit
+		senderVIP = message.SenderPreference.VIP
+		senderBlocked = message.SenderPreference.Blocked
 	}
 	fields := []CompactField{
 		Field("account", accountID),
@@ -529,6 +537,9 @@ func renderMessageShow(renderer *CompactTextRenderer, accountID string, message 
 		Field("parts", partCount),
 		Field("diagnostics", diagnostics),
 		Field("unsubscribe", unsubscribe),
+		Field("sender_preference_explicit", senderPreferenceExplicit),
+		Field("sender_vip", senderVIP),
+		Field("sender_blocked", senderBlocked),
 	}
 	if !metadataOnly {
 		fields = append(fields, Field("excerpt", Excerpt(message.Snippet, DefaultExcerptRunes)))

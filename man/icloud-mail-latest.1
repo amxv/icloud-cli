@@ -30,6 +30,10 @@ Compatibility alias for \fBmail threads list\fR
 	Include messages before an RFC3339 timestamp or YYYY-MM-DD UTC date
 
 .PP
+\fB--blocked\fP[=false]
+	Include only messages from exact local blocked sender addresses
+
+.PP
 \fB--cursor\fP=""
 	Continue from a next_cursor returned by the same query
 
@@ -88,6 +92,10 @@ Compatibility alias for \fBmail threads list\fR
 .PP
 \fB--unread\fP[=false]
 	Include only messages with an unread eligible location
+
+.PP
+\fB--vip\fP[=false]
+	Include only messages from exact local VIP sender addresses
 
 
 .SH OPTIONS INHERITED FROM PARENT COMMANDS

@@ -52,6 +52,8 @@ type messageListReadJSONRequest struct {
 	Read               bool   `json:"read,omitempty"`
 	Flagged            bool   `json:"flagged,omitempty"`
 	Unflagged          bool   `json:"unflagged,omitempty"`
+	VIP                bool   `json:"vip,omitempty"`
+	Blocked            bool   `json:"blocked,omitempty"`
 	Limit              int    `json:"limit,omitempty"`
 }
 
@@ -62,6 +64,7 @@ func (request messageListReadJSONRequest) searchFlags() mailSearchFlags {
 		AttachmentFilename: request.AttachmentFilename, AttachmentType: request.AttachmentType,
 		After: request.After, Before: request.Before, Cursor: request.Cursor,
 		Unread: request.Unread, Read: request.Read, Flagged: request.Flagged, Unflagged: request.Unflagged,
+		VIP: request.VIP, Blocked: request.Blocked,
 	}
 }
 
@@ -81,6 +84,8 @@ type mailSearchReadJSONRequest struct {
 	Read               bool   `json:"read,omitempty"`
 	Flagged            bool   `json:"flagged,omitempty"`
 	Unflagged          bool   `json:"unflagged,omitempty"`
+	VIP                bool   `json:"vip,omitempty"`
+	Blocked            bool   `json:"blocked,omitempty"`
 	Result             string `json:"result,omitempty"`
 	Remote             bool   `json:"remote,omitempty"`
 	AllFolders         bool   `json:"all_folders,omitempty"`
@@ -94,6 +99,7 @@ func (request mailSearchReadJSONRequest) searchFlags() mailSearchFlags {
 		AttachmentFilename: request.AttachmentFilename, AttachmentType: request.AttachmentType,
 		After: request.After, Before: request.Before, Cursor: request.Cursor,
 		Unread: request.Unread, Read: request.Read, Flagged: request.Flagged, Unflagged: request.Unflagged,
+		VIP: request.VIP, Blocked: request.Blocked,
 	}
 }
 

@@ -414,6 +414,13 @@ LIMIT ?`, accountID, accountID, folderID, limit+1)
 	if more {
 		values = values[:limit]
 	}
+	messagePointers := make([]*maildomain.Message, 0, len(values))
+	for index := range values {
+		messagePointers = append(messagePointers, &values[index])
+	}
+	if err := applyMessageSenderPreferenceState(ctx, repository.db, accountID, messagePointers); err != nil {
+		return nil, false, err
+	}
 	return values, more, nil
 }
 
@@ -495,6 +502,9 @@ WHERE m.account_id = ? AND m.message_id = ?`, strings.TrimSpace(accountID), stri
 		return maildomain.Message{}, err
 	}
 	if err := repository.loadLocalRawSource(ctx, &value); err != nil {
+		return maildomain.Message{}, err
+	}
+	if err := applyMessageSenderPreferenceState(ctx, repository.db, accountID, []*maildomain.Message{&value}); err != nil {
 		return maildomain.Message{}, err
 	}
 	return value, nil

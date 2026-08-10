@@ -195,6 +195,7 @@ type publicMessage struct {
 	Identity          []maildomain.IdentityEvidence     `json:"identity,omitempty"`
 	DedupeConflicts   []maildomain.DedupeConflict       `json:"dedupe_conflicts,omitempty"`
 	Unsubscribe       *maildomain.UnsubscribeCapability `json:"unsubscribe,omitempty"`
+	SenderPreference  *maildomain.SenderPreferenceState `json:"sender_preference,omitempty"`
 }
 
 type publicLocation struct {
@@ -803,7 +804,7 @@ func newMailMessageListCommand(state *executionState, use, short, example string
 			request := messageListReadJSONRequest{Folder: string(folder.KindInbox), Limit: DefaultPageSize}
 			if used, err := readJSONInput(cmd, state, input, &request,
 				"folder", "query", "from", "participant", "subject", "rfc-id", "attachment-name", "attachment-type",
-				"after", "before", "cursor", "unread", "read", "flagged", "unflagged", "limit"); err != nil {
+				"after", "before", "cursor", "unread", "read", "flagged", "unflagged", "vip", "blocked", "limit"); err != nil {
 				return err
 			} else if used {
 				folderSelector = request.Folder
@@ -1226,6 +1227,8 @@ func renderInboxMessage(renderer *CompactTextRenderer, value maildomain.Message)
 		Field("replied", value.Replied),
 		Field("reply_state", value.ReplyState),
 		Field("forwarded", value.Forwarded),
+		Field("vip", value.SenderPreference != nil && value.SenderPreference.VIP),
+		Field("blocked", value.SenderPreference != nil && value.SenderPreference.Blocked),
 		Field("attachments", value.AttachmentCount),
 		Field("snippet", Excerpt(value.Snippet, DefaultExcerptRunes)),
 	)
@@ -1288,7 +1291,16 @@ func sanitizeMessage(value maildomain.Message) publicMessage {
 		Identity:          append([]maildomain.IdentityEvidence(nil), value.Identity...),
 		DedupeConflicts:   append([]maildomain.DedupeConflict(nil), value.DedupeConflicts...),
 		Unsubscribe:       publicUnsubscribeCapability(value.Unsubscribe),
+		SenderPreference:  publicSenderPreferenceState(value.SenderPreference),
 	}
+}
+
+func publicSenderPreferenceState(value *maildomain.SenderPreferenceState) *maildomain.SenderPreferenceState {
+	if value == nil {
+		return nil
+	}
+	copy := *value
+	return &copy
 }
 
 func publicUnsubscribeCapability(value *maildomain.UnsubscribeCapability) *maildomain.UnsubscribeCapability {

@@ -119,6 +119,7 @@ type Message struct {
 	Identity          []IdentityEvidence     `json:"identity,omitempty"`
 	DedupeConflicts   []DedupeConflict       `json:"dedupe_conflicts,omitempty"`
 	Unsubscribe       *UnsubscribeCapability `json:"unsubscribe,omitempty"`
+	SenderPreference  *SenderPreferenceState `json:"sender_preference,omitempty"`
 	LocalRaw          *LocalRawSource        `json:"-"`
 }
 

@@ -142,6 +142,21 @@ func TestCapabilitiesPublishesVersionedAutomationAndSchemaContracts(t *testing.T
 	if !envelope.Data.MailSelections {
 		t.Fatal("capabilities did not advertise immutable reviewed MailSelection snapshots")
 	}
+	if !envelope.Data.MailSenderPreferences {
+		t.Fatal("capabilities did not advertise local sender preferences")
+	}
+	for command, schema := range map[string]string{
+		"mail senders list":    "sender-list-input",
+		"mail senders show":    "sender-preference-input",
+		"mail senders vip":     "sender-preference-input",
+		"mail senders unvip":   "sender-preference-input",
+		"mail senders block":   "sender-preference-input",
+		"mail senders unblock": "sender-preference-input",
+	} {
+		if got := contracts[command].InputSchema; got != SchemaBaseID+schema+".schema.json" {
+			t.Fatalf("sender preference contract %s=%q", command, got)
+		}
+	}
 	for command, schema := range map[string]string{
 		"mail selection create": "selection-create-input",
 		"mail selection show":   "selection-target-read-input",

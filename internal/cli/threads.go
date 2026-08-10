@@ -24,30 +24,31 @@ type mailLatestData struct {
 }
 
 type publicThread struct {
-	ID                    string                `json:"id"`
-	AccountID             string                `json:"account_id"`
-	RootRFCMessageID      string                `json:"root_rfc_message_id,omitempty"`
-	Subject               string                `json:"subject,omitempty"`
-	Snippet               string                `json:"snippet,omitempty"`
-	Participants          []string              `json:"participants,omitempty"`
-	FolderIDs             []string              `json:"folder_ids,omitempty"`
-	MessageCount          int                   `json:"message_count"`
-	UnreadCount           int                   `json:"unread_count"`
-	Replied               bool                  `json:"replied"`
-	Forwarded             bool                  `json:"forwarded"`
-	AttachmentCount       int                   `json:"attachment_count"`
-	FirstMessageAt        *time.Time            `json:"first_message_at,omitempty"`
-	LastMessageAt         *time.Time            `json:"last_message_at,omitempty"`
-	Status                string                `json:"status"`
-	Reconstruction        string                `json:"reconstruction"`
-	RedirectedFrom        string                `json:"redirected_from,omitempty"`
-	ProjectionState       string                `json:"projection_state"`
-	ProjectionReason      string                `json:"projection_reason,omitempty"`
-	ProjectionPending     int                   `json:"projection_pending,omitempty"`
-	ProjectionUpdatedAt   *time.Time            `json:"projection_updated_at,omitempty"`
-	EdgeEvidenceTruncated bool                  `json:"edge_evidence_truncated,omitempty"`
-	Messages              []publicThreadMessage `json:"messages"`
-	Edges                 []publicThreadEdge    `json:"edges,omitempty"`
+	ID                    string                                    `json:"id"`
+	AccountID             string                                    `json:"account_id"`
+	RootRFCMessageID      string                                    `json:"root_rfc_message_id,omitempty"`
+	Subject               string                                    `json:"subject,omitempty"`
+	Snippet               string                                    `json:"snippet,omitempty"`
+	Participants          []string                                  `json:"participants,omitempty"`
+	FolderIDs             []string                                  `json:"folder_ids,omitempty"`
+	MessageCount          int                                       `json:"message_count"`
+	UnreadCount           int                                       `json:"unread_count"`
+	Replied               bool                                      `json:"replied"`
+	Forwarded             bool                                      `json:"forwarded"`
+	AttachmentCount       int                                       `json:"attachment_count"`
+	FirstMessageAt        *time.Time                                `json:"first_message_at,omitempty"`
+	LastMessageAt         *time.Time                                `json:"last_message_at,omitempty"`
+	Status                string                                    `json:"status"`
+	Reconstruction        string                                    `json:"reconstruction"`
+	RedirectedFrom        string                                    `json:"redirected_from,omitempty"`
+	ProjectionState       string                                    `json:"projection_state"`
+	ProjectionReason      string                                    `json:"projection_reason,omitempty"`
+	ProjectionPending     int                                       `json:"projection_pending,omitempty"`
+	ProjectionUpdatedAt   *time.Time                                `json:"projection_updated_at,omitempty"`
+	SenderPreferences     *maildomain.ThreadSenderPreferenceSummary `json:"sender_preferences,omitempty"`
+	EdgeEvidenceTruncated bool                                      `json:"edge_evidence_truncated,omitempty"`
+	Messages              []publicThreadMessage                     `json:"messages"`
+	Edges                 []publicThreadEdge                        `json:"edges,omitempty"`
 }
 
 type publicThreadEdge struct {
@@ -625,6 +626,8 @@ func renderThreadSummary(renderer *CompactTextRenderer, thread maildomain.Thread
 		Field("unread", thread.UnreadCount),
 		Field("replied", thread.Replied),
 		Field("forwarded", thread.Forwarded),
+		Field("vip_senders", threadSenderPreferenceCount(thread.SenderPreferences, "vip")),
+		Field("blocked_senders", threadSenderPreferenceCount(thread.SenderPreferences, "blocked")),
 		Field("participants", thread.Participants),
 		Field("folders", thread.FolderIDs),
 		Field("attachments", thread.AttachmentCount),
@@ -647,6 +650,8 @@ func renderThreadMessage(renderer *CompactTextRenderer, message maildomain.Messa
 		Field("replied", message.Replied),
 		Field("reply_state", message.ReplyState),
 		Field("forwarded", message.Forwarded),
+		Field("vip", message.SenderPreference != nil && message.SenderPreference.VIP),
+		Field("blocked", message.SenderPreference != nil && message.SenderPreference.Blocked),
 		Field("attachments", message.AttachmentCount),
 	}
 	if !metadataOnly {
@@ -699,6 +704,7 @@ func buildPublicThread(ctx context.Context, thread maildomain.Thread, sources []
 		RedirectedFrom:  thread.RedirectedFrom,
 		ProjectionState: thread.ProjectionState, ProjectionReason: thread.ProjectionReason,
 		ProjectionPending: thread.ProjectionPending, ProjectionUpdatedAt: thread.ProjectionUpdatedAt,
+		SenderPreferences:     thread.SenderPreferences,
 		EdgeEvidenceTruncated: thread.EdgeEvidenceTruncated,
 		Messages:              messages, Edges: edges,
 	}, nil

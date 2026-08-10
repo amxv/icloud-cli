@@ -25,6 +25,8 @@ type mailSearchFlags struct {
 	Read               bool
 	Flagged            bool
 	Unflagged          bool
+	VIP                bool
+	Blocked            bool
 }
 
 type publicSearchHit struct {
@@ -92,7 +94,7 @@ func newMailSearchCommand(state *executionState) *cobra.Command {
 			request := mailSearchReadJSONRequest{Query: query, Result: string(maildomain.SearchMessages), Limit: DefaultPageSize}
 			if used, err := readJSONInput(cmd, state, input, &request,
 				"folder", "from", "participant", "subject", "rfc-id", "attachment-name", "attachment-type",
-				"after", "before", "cursor", "unread", "read", "flagged", "unflagged", "result", "remote", "all-folders", "limit"); err != nil {
+				"after", "before", "cursor", "unread", "read", "flagged", "unflagged", "vip", "blocked", "result", "remote", "all-folders", "limit"); err != nil {
 				return err
 			} else if used {
 				query = request.Query
@@ -118,6 +120,9 @@ func newMailSearchCommand(state *executionState) *cobra.Command {
 			}
 			if allFolders && !remote {
 				return NewAppError(ErrorUsage, "--all-folders requires --remote", false)
+			}
+			if remote && (flags.VIP || flags.Blocked) {
+				return NewAppError(ErrorUsage, "--vip and --blocked are local sender-preference filters and cannot be used with --remote", false)
 			}
 			if remote {
 				accountValue, page, schemaVersion, err := state.mail.MailRemoteSearch(
@@ -280,6 +285,8 @@ func addMailSearchFlags(command *cobra.Command, flags *mailSearchFlags, includeF
 	command.Flags().BoolVar(&flags.Read, "read", false, "Include only messages without an unread eligible location")
 	command.Flags().BoolVar(&flags.Flagged, "flagged", false, "Include only messages with a flagged eligible location")
 	command.Flags().BoolVar(&flags.Unflagged, "unflagged", false, "Include only messages without a flagged eligible location")
+	command.Flags().BoolVar(&flags.VIP, "vip", false, "Include only messages from exact local VIP sender addresses")
+	command.Flags().BoolVar(&flags.Blocked, "blocked", false, "Include only messages from exact local blocked sender addresses")
 	command.MarkFlagsMutuallyExclusive("unread", "read")
 	command.MarkFlagsMutuallyExclusive("flagged", "unflagged")
 }
@@ -302,7 +309,7 @@ func (flags mailSearchFlags) options(query string, kind maildomain.SearchResultK
 	if after != nil && before != nil && !after.Before(*before) {
 		return maildomain.SearchOptions{}, NewAppError(ErrorUsage, "--after must precede --before", false)
 	}
-	var unread, flagged *bool
+	var unread, flagged, vip, blocked *bool
 	if flags.Unread || flags.Read {
 		value := flags.Unread
 		unread = &value
@@ -311,8 +318,16 @@ func (flags mailSearchFlags) options(query string, kind maildomain.SearchResultK
 		value := flags.Flagged
 		flagged = &value
 	}
+	if flags.VIP {
+		value := true
+		vip = &value
+	}
+	if flags.Blocked {
+		value := true
+		blocked = &value
+	}
 	return maildomain.SearchOptions{
-		Query: strings.TrimSpace(query), Unread: unread, Flagged: flagged,
+		Query: strings.TrimSpace(query), Unread: unread, Flagged: flagged, VIP: vip, Blocked: blocked,
 		Sender: flags.Sender, Participant: flags.Participant, Subject: flags.Subject,
 		RFCMessageID: flags.RFCMessageID, AttachmentFilename: flags.AttachmentFilename,
 		AttachmentType: flags.AttachmentType, After: after, Before: before,
@@ -366,6 +381,8 @@ func renderSearchHit(renderer *CompactTextRenderer, hit maildomain.SearchHit) er
 			Field("at", message.SortAt),
 			Field("state", messageReadState(message)),
 			Field("flagged", message.Flagged),
+			Field("vip", message.SenderPreference != nil && message.SenderPreference.VIP),
+			Field("blocked", message.SenderPreference != nil && message.SenderPreference.Blocked),
 			Field("match", hit.MatchedField),
 			Field("excerpt", Excerpt(hit.Excerpt, DefaultExcerptRunes)),
 		)
@@ -379,12 +396,28 @@ func renderSearchHit(renderer *CompactTextRenderer, hit maildomain.SearchHit) er
 			Field("last", thread.LastMessageAt),
 			Field("messages", thread.MessageCount),
 			Field("unread", thread.UnreadCount),
+			Field("vip_senders", threadSenderPreferenceCount(thread.SenderPreferences, "vip")),
+			Field("blocked_senders", threadSenderPreferenceCount(thread.SenderPreferences, "blocked")),
 			Field("match", hit.MatchedField),
 			Field("matched_message", hit.MatchedMessageID),
 			Field("excerpt", Excerpt(hit.Excerpt, DefaultExcerptRunes)),
 		)
 	}
 	return nil
+}
+
+func threadSenderPreferenceCount(summary *maildomain.ThreadSenderPreferenceSummary, kind string) int {
+	if summary == nil {
+		return 0
+	}
+	switch kind {
+	case "vip":
+		return summary.VIPSenders
+	case "blocked":
+		return summary.BlockedSenders
+	default:
+		return 0
+	}
 }
 
 func renderSearchSummary(renderer *CompactTextRenderer, accountID string, page maildomain.SearchPage) error {
@@ -431,5 +464,5 @@ func mailSearchFlagsActive(flags mailSearchFlags) bool {
 		strings.TrimSpace(flags.Participant) != "" || strings.TrimSpace(flags.Subject) != "" ||
 		strings.TrimSpace(flags.RFCMessageID) != "" || strings.TrimSpace(flags.AttachmentFilename) != "" ||
 		strings.TrimSpace(flags.AttachmentType) != "" || strings.TrimSpace(flags.After) != "" ||
-		strings.TrimSpace(flags.Before) != "" || flags.Unread || flags.Read || flags.Flagged || flags.Unflagged
+		strings.TrimSpace(flags.Before) != "" || flags.Unread || flags.Read || flags.Flagged || flags.Unflagged || flags.VIP || flags.Blocked
 }

@@ -312,6 +312,30 @@
         "rfc_message_id": {
           "type": "string"
         },
+        "sender_preference": {
+          "additionalProperties": false,
+          "properties": {
+            "blocked": {
+              "type": "boolean"
+            },
+            "email": {
+              "type": "string"
+            },
+            "explicit": {
+              "type": "boolean"
+            },
+            "vip": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "blocked",
+            "email",
+            "explicit",
+            "vip"
+          ],
+          "type": "object"
+        },
         "snippet": {
           "type": "string"
         },

@@ -145,6 +145,8 @@ Useful choices:
 
 - `--unread` or `--read` selects the logical read state across current eligible locations.
 - `--flagged` or `--unflagged` selects the logical flagged state.
+- `--vip` selects messages whose exact normalized From address is marked VIP in this account's local CLI preferences.
+- `--blocked` selects messages whose exact normalized From address is marked blocked in this account's local CLI preferences.
 - `--folder` requires a current synchronized location in the selected folder.
 - `--after` includes the boundary; `--before` excludes it. Use RFC3339 or a `YYYY-MM-DD` UTC date.
 - `--from` checks From and Reply-To. `--participant` also checks To and CC.
@@ -154,6 +156,32 @@ Free text and filters combine with AND. For example:
 ```bash
 icloud mail search invoice --from billing@example.com --unread --after 2026-08-01
 ```
+
+## Mark sender addresses for local triage
+
+VIP and blocked sender state belongs to the selected CLI account and stays local to this installation. Set it by one exact mailbox address:
+
+```bash
+icloud mail senders vip teammate@example.com
+icloud mail senders block noisy-list@example.com
+icloud mail senders list
+icloud mail senders show teammate@example.com
+```
+
+Addresses are trimmed and case-normalized, but the commands do not accept display-name forms, domains, patterns, or address lists. VIP and blocked are independent flags, so the same exact address can carry either, both, or neither. Clear them explicitly with `mail senders unvip` and `mail senders unblock`.
+
+These preferences are triage metadata only. They do not contact iCloud, synchronize with Apple Mail or Contacts, create a provider block, hide notifications, classify spam, move/delete messages, or change mailbox rules. Message and thread reads expose the matching local context so an agent can decide what to do next without an automatic side effect.
+
+Use the indexed local filters anywhere the ordinary synchronized search surface is available:
+
+```bash
+icloud mail search --vip
+icloud mail search --blocked
+icloud mail messages list --vip
+icloud mail threads list --blocked
+```
+
+The filters combine with the other local filters using AND and remain part of the local `cur_…` cursor scope. They are intentionally rejected with `--remote`, because uncached provider metadata has no authoritative copy of this installation's local preference state.
 
 ## Search conversations instead of individual messages
 
@@ -171,10 +199,13 @@ subject="Launch plan"
 last=2026-08-06T10:15:00Z
 messages=4
 unread=1
+vip_senders=1
 match=body
 matched_message=msg_…
 excerpt="The revised [launch] plan…"
 ```
+
+Thread results summarize the distinct From addresses represented in the reconstructed conversation. `vip_senders` and `blocked_senders` appear when nonzero; a thread is not itself automatically classified or mutated because one participant has a local preference.
 
 You can apply the same filters directly while browsing normal local views:
 

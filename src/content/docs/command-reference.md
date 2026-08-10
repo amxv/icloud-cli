@@ -623,6 +623,7 @@ Available Commands:
   search      Search synchronized mail locally or query bounded provider metadata explicitly
   selection   Create and apply short-lived immutable reviewed mail target sets
   send        Preview or send text, HTML, and attachments safely and idempotently
+  senders     Manage local VIP and blocked sender preferences
   status      Compatibility alias for `mail operations … list`
   sync        Fetch and atomically commit bounded pages from enabled mail folders
   thread      Compatibility namespace for `mail threads show`
@@ -2093,6 +2094,7 @@ Flags:
       --attachment-name string   Restrict attachment filename text
       --attachment-type string   Restrict attachment media type
       --before string            Include messages before an RFC3339 timestamp or YYYY-MM-DD UTC date
+      --blocked                  Include only messages from exact local blocked sender addresses
       --cursor string            Continue from a next_cursor returned by the same query
       --flagged                  Include only messages with a flagged eligible location
       --folder string            Folder kind, ID, name, or wire name (default "inbox")
@@ -2108,6 +2110,7 @@ Flags:
       --subject string           Restrict subject text
       --unflagged                Include only messages without a flagged eligible location
       --unread                   Include only messages with an unread eligible location
+      --vip                      Include only messages from exact local VIP sender addresses
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID
@@ -2168,6 +2171,7 @@ Flags:
       --attachment-name string   Restrict attachment filename text
       --attachment-type string   Restrict attachment media type
       --before string            Include messages before an RFC3339 timestamp or YYYY-MM-DD UTC date
+      --blocked                  Include only messages from exact local blocked sender addresses
       --cursor string            Continue from a next_cursor returned by the same query
       --flagged                  Include only messages with a flagged eligible location
       --folder string            Restrict matches to one folder kind, ID, name, or wire name
@@ -2183,6 +2187,7 @@ Flags:
       --subject string           Restrict subject text
       --unflagged                Include only messages without a flagged eligible location
       --unread                   Include only messages with an unread eligible location
+      --vip                      Include only messages from exact local VIP sender addresses
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID
@@ -2538,6 +2543,7 @@ Flags:
       --attachment-name string   Restrict attachment filename text
       --attachment-type string   Restrict attachment media type
       --before string            Include messages before an RFC3339 timestamp or YYYY-MM-DD UTC date
+      --blocked                  Include only messages from exact local blocked sender addresses
       --cursor string            Continue from a next_cursor returned by the same query
       --flagged                  Include only messages with a flagged eligible location
       --folder string            Folder kind, ID, name, or wire name (default "inbox")
@@ -2553,6 +2559,7 @@ Flags:
       --subject string           Restrict subject text
       --unflagged                Include only messages without a flagged eligible location
       --unread                   Include only messages with an unread eligible location
+      --vip                      Include only messages from exact local VIP sender addresses
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID
@@ -3009,6 +3016,7 @@ Flags:
       --attachment-name string   Restrict attachment filename text
       --attachment-type string   Restrict attachment media type
       --before string            Include messages before an RFC3339 timestamp or YYYY-MM-DD UTC date
+      --blocked                  Include only messages from exact local blocked sender addresses
       --cursor string            Continue from a next_cursor returned by the same query
       --flagged                  Include only messages with a flagged eligible location
       --folder string            Restrict matches to one folder kind, ID, name, or wire name
@@ -3025,6 +3033,7 @@ Flags:
       --subject string           Restrict subject text
       --unflagged                Include only messages without a flagged eligible location
       --unread                   Include only messages with an unread eligible location
+      --vip                      Include only messages from exact local VIP sender addresses
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID
@@ -3147,6 +3156,7 @@ Flags:
       --attachment-name string   Restrict attachment filename text
       --attachment-type string   Restrict attachment media type
       --before string            Include messages before an RFC3339 timestamp or YYYY-MM-DD UTC date
+      --blocked                  Include only messages from exact local blocked sender addresses
       --cursor string            Continue from a next_cursor returned by the same query
       --flagged                  Include only messages with a flagged eligible location
       --folder string            Restrict matches to one folder kind, ID, name, or wire name
@@ -3166,6 +3176,7 @@ Flags:
       --ttl duration             Selection lifetime from creation (1m-24h) (default 15m0s)
       --unflagged                Include only messages without a flagged eligible location
       --unread                   Include only messages with an unread eligible location
+      --vip                      Include only messages from exact local VIP sender addresses
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID
@@ -3266,6 +3277,187 @@ Flags:
       --to stringArray                   Recipient address; repeat or provide a comma-separated address list
       --verbose                          With --dry-run, include normalized custom-header detail and HTML byte count
       --yes                              Confirm an intentional non-interactive send
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail senders`
+
+```text
+Manage local VIP and blocked sender preferences
+
+Usage:
+  icloud mail senders [command]
+
+Available Commands:
+  block       Mark one exact sender address as locally blocked
+  list        List account-local sender preferences
+  show        Show one exact local sender preference
+  unblock     Clear the local blocked flag for one exact sender address
+  unvip       Clear the local VIP flag for one exact sender address
+  vip         Mark one exact sender address as a local VIP
+
+Flags:
+  -h, --help   help for senders
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+
+Use "icloud mail senders [command] --help" for more information about a command.
+```
+
+## `icloud mail senders block`
+
+```text
+Mark one exact sender address as locally blocked
+
+Usage:
+  icloud mail senders block <email> [flags]
+
+Examples:
+  icloud mail senders block alerts@example.com
+  icloud mail senders block alerts@example.com --json
+
+Flags:
+  -h, --help                help for block
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail senders list`
+
+```text
+List account-local sender preferences
+
+Usage:
+  icloud mail senders list [flags]
+
+Examples:
+  icloud mail senders list
+  icloud mail senders list --limit 50 --json
+
+Flags:
+      --cursor string       Continue from a next_cursor returned by the same account
+  -h, --help                help for list
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+      --limit int           Maximum sender preferences to return (1-100) (default 20)
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail senders show`
+
+```text
+Show one exact local sender preference
+
+Usage:
+  icloud mail senders show <email> [flags]
+
+Examples:
+  icloud mail senders show alerts@example.com
+  icloud mail senders show alerts@example.com --json
+
+Flags:
+  -h, --help                help for show
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail senders unblock`
+
+```text
+Clear the local blocked flag for one exact sender address
+
+Usage:
+  icloud mail senders unblock <email> [flags]
+
+Examples:
+  icloud mail senders unblock alerts@example.com
+  icloud mail senders unblock alerts@example.com --json
+
+Flags:
+  -h, --help                help for unblock
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail senders unvip`
+
+```text
+Clear the local VIP flag for one exact sender address
+
+Usage:
+  icloud mail senders unvip <email> [flags]
+
+Examples:
+  icloud mail senders unvip alerts@example.com
+  icloud mail senders unvip alerts@example.com --json
+
+Flags:
+  -h, --help                help for unvip
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail senders vip`
+
+```text
+Mark one exact sender address as a local VIP
+
+Usage:
+  icloud mail senders vip <email> [flags]
+
+Examples:
+  icloud mail senders vip alerts@example.com
+  icloud mail senders vip alerts@example.com --json
+
+Flags:
+  -h, --help                help for vip
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID
@@ -3805,6 +3997,7 @@ Flags:
       --attachment-name string   Restrict attachment filename text
       --attachment-type string   Restrict attachment media type
       --before string            Include messages before an RFC3339 timestamp or YYYY-MM-DD UTC date
+      --blocked                  Include only messages from exact local blocked sender addresses
       --cursor string            Continue from a next_cursor returned by the same query
       --flagged                  Include only messages with a flagged eligible location
       --folder string            Restrict matches to one folder kind, ID, name, or wire name
@@ -3820,6 +4013,7 @@ Flags:
       --subject string           Restrict subject text
       --unflagged                Include only messages without a flagged eligible location
       --unread                   Include only messages with an unread eligible location
+      --vip                      Include only messages from exact local VIP sender addresses
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID
