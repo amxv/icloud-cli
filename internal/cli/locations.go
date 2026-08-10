@@ -137,6 +137,10 @@ func locationMutationCommandMetadata(action maildomain.LocationMutationAction) (
 		return "trash", "Move one exact current location to the discovered Trash folder", "  icloud mail trash msg_… --dry-run\n  icloud mail trash msg_… --from inbox --idempotency-key trash-01 --yes"
 	case maildomain.LocationActionRestore:
 		return "restore", "Move one current Trash location to a deliberate destination", "  icloud mail restore msg_… --to inbox --dry-run\n  icloud mail restore msg_… --to inbox --idempotency-key restore-01 --yes"
+	case maildomain.LocationActionJunk:
+		return "junk", "Move one exact current message location to the semantic Junk folder", "  icloud mail junk msg_… --dry-run\n  icloud mail junk msg_… --from inbox --idempotency-key junk-01 --yes"
+	case maildomain.LocationActionNotJunk:
+		return "not-junk", "Move one current Junk location back to Inbox", "  icloud mail not-junk msg_… --dry-run\n  icloud mail not-junk msg_… --idempotency-key not-junk-01 --yes"
 	case maildomain.LocationActionDelete:
 		return "delete", "Permanently delete one exact current provider location", "  icloud mail delete msg_… --from trash --dry-run\n  icloud mail delete msg_… --from trash --idempotency-key delete-01 --yes"
 	default:

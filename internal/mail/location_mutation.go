@@ -24,6 +24,8 @@ const (
 	LocationActionUnarchive LocationMutationAction = "unarchive"
 	LocationActionTrash     LocationMutationAction = "trash"
 	LocationActionRestore   LocationMutationAction = "restore"
+	LocationActionJunk      LocationMutationAction = "junk"
+	LocationActionNotJunk   LocationMutationAction = "not_junk"
 	LocationActionDelete    LocationMutationAction = "delete"
 )
 
@@ -33,7 +35,7 @@ func (action LocationMutationAction) TransportOperation() LocationTransportOpera
 		return LocationTransportCopy
 	case LocationActionDelete:
 		return LocationTransportDelete
-	case LocationActionMove, LocationActionArchive, LocationActionUnarchive, LocationActionTrash, LocationActionRestore:
+	case LocationActionMove, LocationActionArchive, LocationActionUnarchive, LocationActionTrash, LocationActionRestore, LocationActionJunk, LocationActionNotJunk:
 		return LocationTransportMove
 	default:
 		return ""

@@ -188,6 +188,8 @@ Bindings are account-owned local intent. They do not contact iCloud and never ch
 
 The same resolver is used by existing shortcuts: Sent append/reconciliation, Drafts synchronization, archive/unarchive, and trash/restore. Resolution order is an explicit valid binding first, trustworthy current provider role second, and the narrow historical Sent-name fallback last. For example, a custom `kind=other` folder can become the Archive target after an explicit binding without being reclassified as a provider Archive folder.
 
+Junk and Not Junk use this same resolver. Binding a custom `kind=other` folder as Junk only chooses the provider location used by those explicit commands; it does not classify incoming mail, assign spam scores, or rewrite the folder's provider-derived kind.
+
 Remove user intent to return to provider discovery:
 
 ```bash

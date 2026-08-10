@@ -97,6 +97,39 @@ icloud mail folders role set archive fld_…
 
 The folder can remain `kind=other`; the binding is separate local intent. If no binding or trustworthy provider role exists, the shortcut still fails honestly. If an explicit binding later becomes stale or missing, the shortcut stops and asks you to clear or rebind it instead of silently choosing a different folder.
 
+## Move one exact message to Junk or back to Inbox
+
+Junk handling is a location move, not a local classifier. The CLI does not score spam, infer suspicious senders, add mail rules, or create its own category state. It resolves the semantic Junk folder from a valid local role binding or trustworthy provider metadata and leaves mailbox classification to iCloud.
+
+Preview the exact source and destination first:
+
+```bash
+icloud mail junk msg_… --dry-run
+icloud mail not-junk msg_… --dry-run
+```
+
+Then apply the reviewed move:
+
+```bash
+icloud mail junk msg_… --idempotency-key junk-2026-08-10-01 --yes
+icloud mail not-junk msg_… --idempotency-key not-junk-2026-08-10-01 --yes
+```
+
+`mail junk` moves one eligible current source location to the semantic Junk folder. It never moves a Sent location. If the same logical message has more than one eligible source, select the exact copy with `--from <folder>`.
+
+`mail not-junk` requires the source location to be the current semantic Junk folder and moves that exact provider copy to Inbox. An explicit `--from` cannot bypass the Junk-source requirement.
+
+Both commands use the same durable location-mutation journal, UIDVALIDITY checks, idempotency rules, provider MOVE support, and safe COPY plus UID-scoped EXPUNGE fallback as the other location operations. They never use mailbox-wide EXPUNGE. If iCloud accepts a provider mutation but the final mapping is uncertain, the normal unresolved/reconciliation state is preserved instead of guessing success.
+
+If iCloud does not advertise a Junk role but you deliberately use a current selectable folder for Junk, bind its stable ID without changing its provider metadata:
+
+```bash
+icloud mail folders role set junk fld_… --dry-run
+icloud mail folders role set junk fld_…
+```
+
+Clear the binding to return to provider role discovery.
+
 ## Unarchive and restore deliberately
 
 `unarchive` accepts only a current Archive source and moves it to the discovered Inbox:
@@ -154,6 +187,6 @@ Do not issue the provider mutation again automatically. Repeating the same reque
 
 ## Keep location state and logical identity separate
 
-Move, copy, archive, trash, restore, and delete change provider locations only. They do not rewrite stable message, MIME-part, attachment, blob, search, or thread IDs. A copy can add another independently flagged location; a move can replace one location; a permanent delete can make one location absent. Message unread and flagged summaries are recomputed from every eligible current location after each confirmed or partial outcome.
+Move, copy, archive, trash, Junk/Not Junk, restore, and delete change provider locations only. They do not rewrite stable message, MIME-part, attachment, blob, search, or thread IDs. A copy can add another independently flagged location; a move can replace one location; a permanent delete can make one location absent. Message unread and flagged summaries are recomputed from every eligible current location after each confirmed or partial outcome.
 
 Read [Sync and read mail](/docs/sync-and-read-inbox) for folder synchronization and reconciliation, [Folder discovery and sync policy](/docs/folder-discovery-and-sync-policy) for role metadata, and [Troubleshooting](/docs/troubleshooting) for stale or unresolved operations.

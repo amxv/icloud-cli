@@ -178,6 +178,8 @@ func automationCommandContracts() []capabilityCommandContract {
 		{"mail unarchive", "location-input", false},
 		{"mail trash", "location-input", false},
 		{"mail restore", "location-input", false},
+		{"mail junk", "location-input", false},
+		{"mail not-junk", "location-input", false},
 		{"mail delete", "location-input", false},
 		{"mail send", "send-input", false},
 		{"mail reply", "reply-input", false},

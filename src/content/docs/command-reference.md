@@ -606,12 +606,14 @@ Available Commands:
   forward     Forward one explicitly selected local message as a new conversation
   identities  Manage local Send From identities for the selected mail account
   inbox       Compatibility alias for `mail messages list`
+  junk        Move one exact current message location to the semantic Junk folder
   latest      Compatibility alias for `mail threads list`
   mark-read   Mark one selected message location as read
   mark-unread Mark one selected message location as unread
   message     Read complete local message content by stable ID
   messages    Read synchronized messages through the canonical message-list surface
   move        Move one exact current message location
+  not-junk    Move one current Junk location back to Inbox
   operations  Inspect local mail operation history by stable ID
   reply       Reply to one explicitly selected local message
   reply-all   Reply to all visible participants of one explicitly selected local message
@@ -1936,6 +1938,36 @@ Global Flags:
       --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
 ```
 
+## `icloud mail junk`
+
+```text
+Move one exact current message location to the semantic Junk folder
+
+Usage:
+  icloud mail junk <message-id> [flags]
+
+Examples:
+  icloud mail junk msg_… --dry-run
+  icloud mail junk msg_… --from inbox --idempotency-key junk-01 --yes
+
+Flags:
+      --dry-run                  Preview the exact location change without creating intent or contacting IMAP
+      --from string              Select one exact current source folder by ID, name, wire name, or kind
+  -h, --help                     help for junk
+      --idempotency-key string   Reuse the original operation when the same normalized request and idempotency key are repeated
+      --input-json string        Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                     Emit one stable JSON success envelope
+      --to string                Select one current destination folder by ID, name, wire name, or kind
+      --yes                      Confirm an intentional non-interactive location change
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
 ## `icloud mail latest`
 
 ```text
@@ -2243,6 +2275,36 @@ Flags:
       --dry-run                  Preview the exact location change without creating intent or contacting IMAP
       --from string              Select one exact current source folder by ID, name, wire name, or kind
   -h, --help                     help for move
+      --idempotency-key string   Reuse the original operation when the same normalized request and idempotency key are repeated
+      --input-json string        Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                     Emit one stable JSON success envelope
+      --to string                Select one current destination folder by ID, name, wire name, or kind
+      --yes                      Confirm an intentional non-interactive location change
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail not-junk`
+
+```text
+Move one current Junk location back to Inbox
+
+Usage:
+  icloud mail not-junk <message-id> [flags]
+
+Examples:
+  icloud mail not-junk msg_… --dry-run
+  icloud mail not-junk msg_… --idempotency-key not-junk-01 --yes
+
+Flags:
+      --dry-run                  Preview the exact location change without creating intent or contacting IMAP
+      --from string              Select one exact current source folder by ID, name, wire name, or kind
+  -h, --help                     help for not-junk
       --idempotency-key string   Reuse the original operation when the same normalized request and idempotency key are repeated
       --input-json string        Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
       --json                     Emit one stable JSON success envelope

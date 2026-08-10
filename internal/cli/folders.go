@@ -119,6 +119,8 @@ func newMailCommand(state *executionState) *cobra.Command {
 	command.AddCommand(newMailLocationMutationCommand(state, maildomain.LocationActionUnarchive))
 	command.AddCommand(newMailLocationMutationCommand(state, maildomain.LocationActionTrash))
 	command.AddCommand(newMailLocationMutationCommand(state, maildomain.LocationActionRestore))
+	command.AddCommand(newMailLocationMutationCommand(state, maildomain.LocationActionJunk))
+	command.AddCommand(newMailLocationMutationCommand(state, maildomain.LocationActionNotJunk))
 	command.AddCommand(newMailLocationMutationCommand(state, maildomain.LocationActionDelete))
 	return command
 }

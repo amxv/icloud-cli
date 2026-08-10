@@ -433,6 +433,7 @@ func seedLocationMutationFixture(t *testing.T, home string, seeds []locationSeed
 		{Name: "Archive Localized", WireName: "Archive Localized", Kind: folder.KindArchive, KindSource: "attribute", Selectable: true, Subscription: folder.SubscriptionSubscribed, UIDValidity: 300, StatusKnown: true},
 		{Name: "Trash Localized", WireName: "Trash Localized", Kind: folder.KindTrash, KindSource: "attribute", Selectable: true, Subscription: folder.SubscriptionSubscribed, UIDValidity: 400, StatusKnown: true},
 		{Name: "Projects-日本語", WireName: "Projects-&ZeVnLIqe-", Kind: folder.KindOther, Selectable: true, Subscription: folder.SubscriptionSubscribed, UIDValidity: 500, StatusKnown: true},
+		{Name: "Junk Localized", WireName: "Junk Localized", Kind: folder.KindJunk, KindSource: "attribute", Selectable: true, Subscription: folder.SubscriptionSubscribed, UIDValidity: 600, StatusKnown: true},
 	}
 	next := 800
 	values, err := state.Folders().Reconcile(context.Background(), accountValue.ID, observations, base, func() (string, error) {

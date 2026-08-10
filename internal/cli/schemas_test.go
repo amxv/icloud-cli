@@ -136,6 +136,9 @@ func TestCapabilitiesPublishesVersionedAutomationAndSchemaContracts(t *testing.T
 	if envelope.Data.ProviderForwardedState != "unsupported" {
 		t.Fatalf("provider forwarded-state capability=%q", envelope.Data.ProviderForwardedState)
 	}
+	if !envelope.Data.MailJunk {
+		t.Fatal("capabilities did not advertise provider-native Junk/Not Junk location workflows")
+	}
 	for command, schema := range map[string]string{
 		"mail identities list":       "mail-identity-list-read-input",
 		"mail identities show":       "mail-identity-show-read-input",
