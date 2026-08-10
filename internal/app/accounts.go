@@ -298,11 +298,7 @@ func (commands accountCommands) IdentityAdd(ctx context.Context, home, accountSe
 	if err != nil {
 		return account.Account{}, account.MailIdentity{}, state.SchemaVersion(), mapAccountError(err)
 	}
-	displayName := strings.TrimSpace(input.DisplayName)
-	if displayName == "" {
-		displayName = value.Name
-	}
-	displayName, err = account.NormalizeMailIdentityDisplayName(displayName)
+	label, err := account.NormalizeMailIdentityLabel(input.Label)
 	if err != nil {
 		return account.Account{}, account.MailIdentity{}, state.SchemaVersion(), mapAccountError(err)
 	}
@@ -317,6 +313,19 @@ func (commands accountCommands) IdentityAdd(ctx context.Context, home, accountSe
 	if kind == account.MailIdentityPrimary {
 		return account.Account{}, account.MailIdentity{}, state.SchemaVersion(), mapMailIdentityError(account.ErrIdentityProtected)
 	}
+	displayName := strings.TrimSpace(input.DisplayName)
+	if displayName == "" && kind != account.MailIdentityHideMyEmail {
+		displayName = value.Name
+	}
+	if displayName != "" {
+		displayName, err = account.NormalizeMailIdentityDisplayName(displayName)
+		if err != nil {
+			return account.Account{}, account.MailIdentity{}, state.SchemaVersion(), mapAccountError(err)
+		}
+	}
+	if input.MakeDefault && kind == account.MailIdentityHideMyEmail {
+		return account.Account{}, account.MailIdentity{}, state.SchemaVersion(), mapMailIdentityError(account.ErrIdentityOutboundUnready)
+	}
 	if _, err := state.Identities().Resolve(ctx, value.ID, address); err == nil {
 		return account.Account{}, account.MailIdentity{}, state.SchemaVersion(), mapMailIdentityError(account.ErrIdentityConflict)
 	} else if !errors.Is(err, account.ErrIdentityNotFound) {
@@ -328,7 +337,7 @@ func (commands accountCommands) IdentityAdd(ctx context.Context, home, accountSe
 			return account.Account{}, account.MailIdentity{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot generate a mail identity ID", false, generateErr)
 		}
 		identity, createErr := state.Identities().Create(ctx, account.MailIdentityCreateRecord{
-			IdentityID: identityID, AccountID: value.ID, Address: address, DisplayName: displayName,
+			IdentityID: identityID, AccountID: value.ID, Address: address, DisplayName: displayName, Label: label,
 			Kind: kind, Provenance: account.MailIdentityUserConfigured, Verification: account.MailIdentityUnverified,
 			Enabled: true, MakeDefault: input.MakeDefault, Now: commands.timeNow(),
 		})
@@ -353,6 +362,10 @@ func (commands accountCommands) IdentityUpdate(ctx context.Context, home, accoun
 	if err != nil {
 		return account.Account{}, account.MailIdentity{}, state.SchemaVersion(), mapAccountError(err)
 	}
+	current, err := state.Identities().Resolve(ctx, value.ID, selector)
+	if err != nil {
+		return account.Account{}, account.MailIdentity{}, state.SchemaVersion(), mapMailIdentityError(err)
+	}
 	update := input
 	if update.Address != nil {
 		normalized, normalizeErr := account.NormalizeEmail(*update.Address)
@@ -361,12 +374,12 @@ func (commands accountCommands) IdentityUpdate(ctx context.Context, home, accoun
 		}
 		update.Address = &normalized
 	}
-	if update.DisplayName != nil {
-		normalized, normalizeErr := account.NormalizeMailIdentityDisplayName(*update.DisplayName)
+	if update.Label != nil {
+		normalized, normalizeErr := account.NormalizeMailIdentityLabel(*update.Label)
 		if normalizeErr != nil {
 			return account.Account{}, account.MailIdentity{}, state.SchemaVersion(), mapAccountError(normalizeErr)
 		}
-		update.DisplayName = &normalized
+		update.Label = &normalized
 	}
 	if update.Kind != nil {
 		normalized, normalizeErr := account.NormalizeMailIdentityKind(*update.Kind)
@@ -374,6 +387,33 @@ func (commands accountCommands) IdentityUpdate(ctx context.Context, home, accoun
 			return account.Account{}, account.MailIdentity{}, state.SchemaVersion(), mapAccountError(normalizeErr)
 		}
 		update.Kind = &normalized
+	}
+	effectiveKind := current.Kind
+	if update.Kind != nil {
+		effectiveKind = *update.Kind
+	}
+	if update.DisplayName != nil {
+		displayName := strings.TrimSpace(*update.DisplayName)
+		if displayName == "" && effectiveKind != account.MailIdentityHideMyEmail {
+			return account.Account{}, account.MailIdentity{}, state.SchemaVersion(), mapAccountError(account.ErrInvalidInput)
+		}
+		if displayName != "" {
+			normalized, normalizeErr := account.NormalizeMailIdentityDisplayName(displayName)
+			if normalizeErr != nil {
+				return account.Account{}, account.MailIdentity{}, state.SchemaVersion(), mapAccountError(normalizeErr)
+			}
+			displayName = normalized
+		}
+		update.DisplayName = &displayName
+	} else if effectiveKind == account.MailIdentityHideMyEmail && current.Kind != account.MailIdentityHideMyEmail {
+		empty := ""
+		update.DisplayName = &empty
+	} else if effectiveKind != account.MailIdentityHideMyEmail && current.Kind == account.MailIdentityHideMyEmail && strings.TrimSpace(current.DisplayName) == "" {
+		displayName, normalizeErr := account.NormalizeMailIdentityDisplayName(value.Name)
+		if normalizeErr != nil {
+			return account.Account{}, account.MailIdentity{}, state.SchemaVersion(), mapAccountError(normalizeErr)
+		}
+		update.DisplayName = &displayName
 	}
 	identity, err := state.Identities().Update(ctx, value.ID, selector, update, commands.timeNow())
 	if err != nil {
@@ -1138,6 +1178,8 @@ func mapMailIdentityError(err error) error {
 		return cli.WrapAppError(cli.ErrorConflict, "the primary mail identity cannot be disabled, removed, or changed away from the account address", false, err)
 	case errors.Is(err, account.ErrIdentityDisabled):
 		return cli.WrapAppError(cli.ErrorConflict, "enable the mail identity before making it the default sender", false, err)
+	case errors.Is(err, account.ErrIdentityOutboundUnready):
+		return cli.WrapAppError(cli.ErrorConfiguration, "Hide My Email outbound use is unavailable until iCloud SMTP acceptance has been proven for that identity", false, err)
 	case errors.Is(err, account.ErrIdentityNoEnabledSender):
 		return cli.WrapAppError(cli.ErrorConflict, "mail identity change would leave the account without one enabled default sender", false, err)
 	case errors.Is(err, account.ErrInvalidInput):

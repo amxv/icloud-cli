@@ -13,6 +13,7 @@ var (
 	ErrIdentityInvalidCursor   = errors.New("invalid mail identity list cursor")
 	ErrIdentityProtected       = errors.New("mail identity is protected")
 	ErrIdentityDisabled        = errors.New("mail identity is disabled")
+	ErrIdentityOutboundUnready = errors.New("mail identity outbound use is not verified")
 	ErrIdentityNoEnabledSender = errors.New("mail identity change would leave no enabled sender")
 )
 
@@ -50,6 +51,7 @@ type MailIdentity struct {
 	AccountID    string                   `json:"account_id"`
 	Address      string                   `json:"address"`
 	DisplayName  string                   `json:"display_name"`
+	Label        string                   `json:"label,omitempty"`
 	Kind         MailIdentityKind         `json:"kind"`
 	Provenance   MailIdentityProvenance   `json:"provenance"`
 	Verification MailIdentityVerification `json:"verification"`
@@ -64,6 +66,7 @@ type MailIdentityCreateRecord struct {
 	AccountID    string
 	Address      string
 	DisplayName  string
+	Label        string
 	Kind         MailIdentityKind
 	Provenance   MailIdentityProvenance
 	Verification MailIdentityVerification
@@ -75,6 +78,7 @@ type MailIdentityCreateRecord struct {
 type MailIdentityAddInput struct {
 	Address     string
 	DisplayName string
+	Label       string
 	Kind        MailIdentityKind
 	MakeDefault bool
 }
@@ -82,6 +86,7 @@ type MailIdentityAddInput struct {
 type MailIdentityUpdateInput struct {
 	Address     *string
 	DisplayName *string
+	Label       *string
 	Kind        *MailIdentityKind
 }
 
@@ -104,5 +109,13 @@ func NormalizeMailIdentityKind(value MailIdentityKind) (MailIdentityKind, error)
 }
 
 func NormalizeMailIdentityDisplayName(value string) (string, error) {
+	return NormalizeName(value)
+}
+
+func NormalizeMailIdentityLabel(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", nil
+	}
 	return NormalizeName(value)
 }

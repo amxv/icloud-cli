@@ -177,7 +177,7 @@ func newMailIdentityShowCommand(state *executionState) *cobra.Command {
 }
 
 func newMailIdentityAddCommand(state *executionState) *cobra.Command {
-	var address, displayName, kind string
+	var address, displayName, label, kind string
 	var makeDefault, jsonOutput bool
 	var input jsonInputOptions
 	command := &cobra.Command{
@@ -186,17 +186,17 @@ func newMailIdentityAddCommand(state *executionState) *cobra.Command {
 		Args:    cobra.NoArgs,
 		Example: "  icloud mail identities add --address alias@icloud.com --kind icloud_alias\n  icloud mail identities add --address me@example.com --display-name 'Work Me' --kind custom_domain --default",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			request := mailIdentityAddJSONRequest{Address: address, DisplayName: displayName, Kind: kind, Default: makeDefault}
-			if used, err := readJSONInput(cmd, state, input, &request, "address", "display-name", "kind", "default"); err != nil {
+			request := mailIdentityAddJSONRequest{Address: address, DisplayName: displayName, Label: label, Kind: kind, Default: makeDefault}
+			if used, err := readJSONInput(cmd, state, input, &request, "address", "display-name", "label", "kind", "default"); err != nil {
 				return err
 			} else if used {
-				address, displayName, kind, makeDefault = request.Address, request.DisplayName, request.Kind, request.Default
+				address, displayName, label, kind, makeDefault = request.Address, request.DisplayName, request.Label, request.Kind, request.Default
 			}
 			if strings.TrimSpace(address) == "" {
 				return NewAppError(ErrorUsage, "mail identity add requires --address", false)
 			}
 			accountValue, identity, schemaVersion, err := state.accounts.IdentityAdd(cmd.Context(), state.global.Home, state.global.Account, account.MailIdentityAddInput{
-				Address: address, DisplayName: displayName, Kind: account.MailIdentityKind(kind), MakeDefault: makeDefault,
+				Address: address, DisplayName: displayName, Label: label, Kind: account.MailIdentityKind(kind), MakeDefault: makeDefault,
 			})
 			if err != nil {
 				return err
@@ -206,6 +206,7 @@ func newMailIdentityAddCommand(state *executionState) *cobra.Command {
 	}
 	command.Flags().StringVar(&address, "address", "", "RFC email address for this identity")
 	command.Flags().StringVar(&displayName, "display-name", "", "Local display name (defaults to the account name)")
+	command.Flags().StringVar(&label, "label", "", "Optional local label; for Hide My Email this never exposes or manages Apple's forwarding destination")
 	command.Flags().StringVar(&kind, "kind", string(account.MailIdentityOther), "Identity kind: icloud_alias, custom_domain, hide_my_email, or other")
 	command.Flags().BoolVar(&makeDefault, "default", false, "Make this enabled identity the local default sender")
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
@@ -214,12 +215,12 @@ func newMailIdentityAddCommand(state *executionState) *cobra.Command {
 }
 
 func newMailIdentityUpdateCommand(state *executionState) *cobra.Command {
-	var address, displayName, kind string
+	var address, displayName, label, kind string
 	var jsonOutput bool
 	var input jsonInputOptions
 	command := &cobra.Command{
 		Use:     "update <identity-id|address>",
-		Short:   "Update local address, display-name, or kind metadata",
+		Short:   "Update local address, display-name, label, or kind metadata",
 		Args:    exactArgsOrJSONInput(&input, 1),
 		Example: "  icloud mail identities update mid_… --display-name 'Work Me'\n  icloud mail identities update alias@icloud.com --kind custom_domain",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -228,12 +229,12 @@ func newMailIdentityUpdateCommand(state *executionState) *cobra.Command {
 				selector = args[0]
 			}
 			var request mailIdentityUpdateJSONRequest
-			if used, err := readJSONInput(cmd, state, input, &request, "address", "display-name", "kind"); err != nil {
+			if used, err := readJSONInput(cmd, state, input, &request, "address", "display-name", "label", "kind"); err != nil {
 				return err
 			} else if used {
 				selector = request.Identity
 				addressPtr, displayPtr, kindPtr := request.Address, request.DisplayName, request.Kind
-				update := account.MailIdentityUpdateInput{Address: addressPtr, DisplayName: displayPtr}
+				update := account.MailIdentityUpdateInput{Address: addressPtr, DisplayName: displayPtr, Label: request.Label}
 				if kindPtr != nil {
 					value := account.MailIdentityKind(*kindPtr)
 					update.Kind = &value
@@ -247,6 +248,9 @@ func newMailIdentityUpdateCommand(state *executionState) *cobra.Command {
 			if cmd.Flags().Changed("display-name") {
 				update.DisplayName = &displayName
 			}
+			if cmd.Flags().Changed("label") {
+				update.Label = &label
+			}
 			if cmd.Flags().Changed("kind") {
 				value := account.MailIdentityKind(kind)
 				update.Kind = &value
@@ -256,6 +260,7 @@ func newMailIdentityUpdateCommand(state *executionState) *cobra.Command {
 	}
 	command.Flags().StringVar(&address, "address", "", "Replace the RFC email address")
 	command.Flags().StringVar(&displayName, "display-name", "", "Replace the local display name")
+	command.Flags().StringVar(&label, "label", "", "Replace or clear the optional local label")
 	command.Flags().StringVar(&kind, "kind", "", "Replace the identity kind")
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
 	bindJSONInput(command, &input)
@@ -266,8 +271,8 @@ func runMailIdentityUpdate(cmd *cobra.Command, state *executionState, jsonOutput
 	if strings.TrimSpace(selector) == "" {
 		return NewAppError(ErrorUsage, "mail identity is required", false)
 	}
-	if update.Address == nil && update.DisplayName == nil && update.Kind == nil {
-		return NewAppError(ErrorUsage, "mail identity update requires at least one of --address, --display-name, or --kind", false)
+	if update.Address == nil && update.DisplayName == nil && update.Label == nil && update.Kind == nil {
+		return NewAppError(ErrorUsage, "mail identity update requires at least one of --address, --display-name, --label, or --kind", false)
 	}
 	accountValue, identity, schemaVersion, err := state.accounts.IdentityUpdate(cmd.Context(), state.global.Home, state.global.Account, selector, update)
 	if err != nil {
@@ -402,6 +407,7 @@ func renderMailIdentity(renderer *CompactTextRenderer, value account.MailIdentit
 	return renderer.Record("identity", value.ID,
 		Field("address", value.Address),
 		Field("display_name", value.DisplayName),
+		Field("label", value.Label),
 		Field("kind", value.Kind),
 		Field("provenance", value.Provenance),
 		Field("verification", value.Verification),

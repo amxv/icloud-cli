@@ -1831,7 +1831,7 @@ Available Commands:
   reclassify  Advance bounded local historical direction repair for newly recognized self addresses
   remove      Remove one non-primary local sender identity
   show        Show one local sender identity for the selected account
-  update      Update local address, display-name, or kind metadata
+  update      Update local address, display-name, label, or kind metadata
 
 Flags:
   -h, --help   help for identities
@@ -1866,6 +1866,7 @@ Flags:
       --input-json string     Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
       --json                  Emit one stable JSON success envelope
       --kind string           Identity kind: icloud_alias, custom_domain, hide_my_email, or other (default "other")
+      --label string          Optional local label; for Hide My Email this never exposes or manages Apple's forwarding destination
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID
@@ -2055,7 +2056,7 @@ Global Flags:
 ## `icloud mail identities update`
 
 ```text
-Update local address, display-name, or kind metadata
+Update local address, display-name, label, or kind metadata
 
 Usage:
   icloud mail identities update <identity-id|address> [flags]
@@ -2071,6 +2072,7 @@ Flags:
       --input-json string     Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
       --json                  Emit one stable JSON success envelope
       --kind string           Replace the identity kind
+      --label string          Replace or clear the optional local label
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID

@@ -20,7 +20,7 @@ func primaryMailIdentityID(accountID string) string {
 }
 
 const mailIdentityColumns = `
-SELECT identity_id, account_id, email_address, display_name, kind, provenance,
+SELECT identity_id, account_id, email_address, display_name, label, kind, provenance,
        verification, enabled, is_default_send, created_at, updated_at
 FROM mail_identities`
 
@@ -110,6 +110,9 @@ func (r *MailIdentityRepository) Create(ctx context.Context, record account.Mail
 	if record.MakeDefault && !record.Enabled {
 		return account.MailIdentity{}, account.ErrIdentityDisabled
 	}
+	if record.MakeDefault && record.Kind == account.MailIdentityHideMyEmail && record.Verification != account.MailIdentityVerified {
+		return account.MailIdentity{}, account.ErrIdentityOutboundUnready
+	}
 	if record.MakeDefault {
 		if _, err := tx.ExecContext(ctx, `UPDATE mail_identities SET is_default_send = 0 WHERE account_id = ? AND is_default_send = 1`, record.AccountID); err != nil {
 			return account.MailIdentity{}, fmt.Errorf("clear default mail identity: %w", err)
@@ -146,15 +149,18 @@ func (r *MailIdentityRepository) Update(ctx context.Context, accountID, selector
 	if err != nil {
 		return account.MailIdentity{}, err
 	}
-	if update.Address == nil && update.DisplayName == nil && update.Kind == nil {
+	if update.Address == nil && update.DisplayName == nil && update.Label == nil && update.Kind == nil {
 		return account.MailIdentity{}, account.ErrInvalidInput
 	}
-	address, displayName, kind := value.Address, value.DisplayName, value.Kind
+	address, displayName, label, kind := value.Address, value.DisplayName, value.Label, value.Kind
 	if update.Address != nil {
 		address = *update.Address
 	}
 	if update.DisplayName != nil {
 		displayName = *update.DisplayName
+	}
+	if update.Label != nil {
+		label = *update.Label
 	}
 	if update.Kind != nil {
 		kind = *update.Kind
@@ -165,11 +171,18 @@ func (r *MailIdentityRepository) Update(ctx context.Context, accountID, selector
 	if value.Kind != account.MailIdentityPrimary && kind == account.MailIdentityPrimary {
 		return account.MailIdentity{}, account.ErrIdentityProtected
 	}
+	verification := value.Verification
+	if !strings.EqualFold(address, value.Address) || kind != value.Kind {
+		verification = account.MailIdentityUnverified
+	}
+	if value.Default && kind == account.MailIdentityHideMyEmail && verification != account.MailIdentityVerified {
+		return account.MailIdentity{}, account.ErrIdentityOutboundUnready
+	}
 	_, err = tx.ExecContext(ctx, `
 UPDATE mail_identities
-SET email_address = ?, display_name = ?, kind = ?, verification = ?, updated_at = ?
+SET email_address = ?, display_name = ?, label = ?, kind = ?, verification = ?, updated_at = ?
 WHERE account_id = ? AND identity_id = ?`,
-		address, displayName, kind, account.MailIdentityUnverified, now.UTC().Format(time.RFC3339Nano), accountID, value.ID,
+		address, displayName, label, kind, verification, now.UTC().Format(time.RFC3339Nano), accountID, value.ID,
 	)
 	if err != nil {
 		return account.MailIdentity{}, classifyMailIdentityWrite("update mail identity", err)
@@ -404,6 +417,9 @@ func (r *MailIdentityRepository) SetDefault(ctx context.Context, accountID, sele
 	if !value.Enabled {
 		return account.MailIdentity{}, account.ErrIdentityDisabled
 	}
+	if value.Kind == account.MailIdentityHideMyEmail && value.Verification != account.MailIdentityVerified {
+		return account.MailIdentity{}, account.ErrIdentityOutboundUnready
+	}
 	timestamp := now.UTC().Format(time.RFC3339Nano)
 	if _, err := tx.ExecContext(ctx, `UPDATE mail_identities SET is_default_send = 0 WHERE account_id = ? AND is_default_send = 1`, accountID); err != nil {
 		return account.MailIdentity{}, fmt.Errorf("clear default mail identity: %w", err)
@@ -471,10 +487,10 @@ func insertMailIdentity(ctx context.Context, execer mailIdentityExecer, record a
 	timestamp := record.Now.UTC().Format(time.RFC3339Nano)
 	if _, err := execer.ExecContext(ctx, `
 INSERT INTO mail_identities (
-    identity_id, account_id, email_address, display_name, kind, provenance,
+    identity_id, account_id, email_address, display_name, label, kind, provenance,
     verification, enabled, is_default_send, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		record.IdentityID, record.AccountID, record.Address, record.DisplayName, record.Kind,
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		record.IdentityID, record.AccountID, record.Address, record.DisplayName, record.Label, record.Kind,
 		record.Provenance, record.Verification, boolInt(record.Enabled), boolInt(record.MakeDefault), timestamp, timestamp,
 	); err != nil {
 		return classifyMailIdentityWrite("create mail identity", err)
@@ -575,7 +591,7 @@ func scanMailIdentity(row rowScanner) (account.MailIdentity, error) {
 		createdAt, updatedAt string
 	)
 	if err := row.Scan(
-		&value.ID, &value.AccountID, &value.Address, &value.DisplayName,
+		&value.ID, &value.AccountID, &value.Address, &value.DisplayName, &value.Label,
 		&kind, &provenance, &verification, &enabled, &isDefault, &createdAt, &updatedAt,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

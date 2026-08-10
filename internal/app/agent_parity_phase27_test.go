@@ -7,6 +7,7 @@ import (
 
 	"github.com/amxv/icloud-cli/internal/cli"
 	maildomain "github.com/amxv/icloud-cli/internal/mail"
+	"github.com/amxv/icloud-cli/internal/store"
 )
 
 func TestAgentParityPhase27PreviewOverrideAndIdempotencyUseExpandedContent(t *testing.T) {
@@ -21,7 +22,7 @@ func TestAgentParityPhase27PreviewOverrideAndIdempotencyUseExpandedContent(t *te
 	accountValue, signature, schemaVersion, err := commands.MailSignatureCreate(ctx, home, "", maildomain.SignatureInput{
 		TextBody: "-- phase27 signature v1", HTMLBody: "<p>-- phase27 signature v1</p>",
 	})
-	if err != nil || signature.ID == "" || schemaVersion != 34 {
+	if err != nil || signature.ID == "" || schemaVersion != store.SchemaVersion {
 		t.Fatalf("create signature=%+v schema=%d err=%v", signature, schemaVersion, err)
 	}
 	configured, err := func() (maildomain.SignatureDefault, error) {

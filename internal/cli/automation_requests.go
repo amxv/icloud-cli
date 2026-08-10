@@ -27,6 +27,7 @@ type accountRenameJSONRequest struct {
 type mailIdentityAddJSONRequest struct {
 	Address     string `json:"address"`
 	DisplayName string `json:"display_name,omitempty"`
+	Label       string `json:"label,omitempty"`
 	Kind        string `json:"kind,omitempty"`
 	Default     bool   `json:"default,omitempty"`
 }
@@ -35,6 +36,7 @@ type mailIdentityUpdateJSONRequest struct {
 	Identity    string  `json:"identity"`
 	Address     *string `json:"address,omitempty"`
 	DisplayName *string `json:"display_name,omitempty"`
+	Label       *string `json:"label,omitempty"`
 	Kind        *string `json:"kind,omitempty"`
 }
 

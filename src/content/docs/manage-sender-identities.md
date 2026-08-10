@@ -40,7 +40,34 @@ Supported kinds are `icloud_alias`, `custom_domain`, `hide_my_email`, and `other
 
 User-entered aliases and provider-specific address types are recorded with `provenance=user_configured` and `verification=unverified`. That is deliberate: storing an address locally does not prove that iCloud SMTP accepts it, that Hide My Email can send from it, or that Apple has synchronized the setting. Account authentication remains owned by the existing account credential and IMAP username.
 
-`mail send` and draft create/update/send accept `--from <mid_…|address>`. When SMTP accepts that envelope sender, the CLI records `verification=verified`. If iCloud permanently rejects an alternate at `MAIL FROM`, the CLI records `verification=rejected`, disables that identity, and does not retry with the primary address. Re-enabling it resets verification to `unverified` for another deliberate test after provider-side configuration changes.
+`mail send` and draft create/update/send accept `--from <mid_…|address>`. For ordinary aliases and custom-domain identities, when SMTP accepts that envelope sender, the CLI records `verification=verified`. If iCloud permanently rejects an ordinary alternate at `MAIL FROM`, the CLI records `verification=rejected`, disables that identity, and does not retry with the primary address. Re-enabling it resets verification to `unverified` for another deliberate test after provider-side configuration changes.
+
+## Record a pre-existing Hide My Email address safely
+
+Hide My Email is deliberately narrower. Record only an address that already exists in your Apple account:
+
+```bash
+icloud mail identities add \
+  --address random-address@icloud.com \
+  --kind hide_my_email \
+  --label 'Shopping receipts'
+```
+
+`--label` is optional local CLI metadata. It does not read, update, or claim to synchronize the label stored by Apple. The identity record has no forwarding-destination field, and ordinary output never exposes an Apple forwarding address. This CLI also does not create, deactivate, delete, or enumerate Hide My Email addresses through Apple Account web surfaces.
+
+If you omit `--display-name` for a Hide My Email identity, the CLI leaves the RFC From display name empty instead of inheriting the account name. This avoids accidentally pairing a privacy address with a real-name local default. Set `--display-name` only when you deliberately want that text to accompany future outbound mail.
+
+Hide My Email outbound use is gated more strictly than ordinary aliases. An HME identity may become the default or be used for an actual SMTP send only after this local identity already has `verification=verified`, meaning the CLI has durable evidence that iCloud accepted that exact sender. `unverified` and `rejected` HME identities remain useful self/delivery identities but actual outbound use is refused before SMTP. A provider rejection records `verification=rejected` without disabling the HME identity, so reply-all self exclusion and delivery recognition remain intact.
+
+Inspect the account-scoped compatibility result with:
+
+```bash
+icloud --account Personal capabilities --json
+```
+
+`hide_my_email_outbound` is `unavailable` when the selected account has no usable evidence, `unverified` when it has a configured but unproven HME address, and `supported` only when at least one HME identity has accepted-SMTP verification. Without `--account`, the value is `account_scoped` rather than a provider claim about an unknown mailbox.
+
+Replies are privacy-safe by default. When an inbound message was delivered to exactly one enabled, verified HME identity, reply/reply-all automatically prefer that identity. If the delivered HME identity is unverified/rejected, or multiple HME identities appear in the recipient headers, the reply fails with a safety error instead of silently falling back to the primary address. Use an explicit `--from` identity only when you intentionally choose a different sender.
 
 Local compose signatures may optionally bind to one stable identity ID. Use `mail signatures create --identity mid_…` when an alias or custom-domain address needs its own signature, then choose operation-specific defaults with `mail signatures default`. Identity-specific defaults override account-wide signature defaults; explicit `none` prevents fallback. Removing an identity also removes signatures/default rows owned by that identity, while unbound account-wide signatures remain. These are local CLI preferences and do not claim synchronization with Apple Mail signature settings.
 
@@ -64,6 +91,8 @@ icloud mail identities add \
 ```
 
 The primary identity remains enabled and protected even when another address is the local default. This keeps the account from entering a state with no usable sender identity.
+
+An unverified or rejected `hide_my_email` identity cannot become the default. If an older local database had such an HME identity as the default before this compatibility boundary existed, schema migration restores the protected primary identity as default while preserving the HME record for recognition.
 
 ## Enable, disable, update, or remove an identity
 

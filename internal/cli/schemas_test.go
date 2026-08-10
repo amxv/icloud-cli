@@ -379,9 +379,21 @@ func TestCapabilitiesCompactOutputBudget(t *testing.T) {
 
 type localAccountService struct {
 	unavailableAccountService
-	listCalls int
-	showCalls int
-	values    []account.Account
+	listCalls     int
+	showCalls     int
+	identityCalls int
+	values        []account.Account
+	identities    []account.MailIdentity
+}
+
+func (service *localAccountService) IdentityListPage(_ context.Context, _, selector string, _ int, _ string) (account.Account, []account.MailIdentity, bool, string, int64, error) {
+	service.identityCalls++
+	for _, value := range service.values {
+		if value.ID == selector {
+			return value, append([]account.MailIdentity(nil), service.identities...), false, "", 18, nil
+		}
+	}
+	return account.Account{}, nil, false, "", 18, NewAppError(ErrorNotFound, "account not found", false)
 }
 
 func (service *localAccountService) List(context.Context, string, int) ([]account.Account, bool, int64, error) {

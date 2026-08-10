@@ -99,6 +99,10 @@ func resolveReplyPlan(
 	if err != nil {
 		return account.Account{}, maildomain.ReplyPlan{}, state.SchemaVersion(), err
 	}
+	request.SenderIdentityID, err = resolveReplySenderIdentity(ctx, state, accountValue.ID, parent, request.SenderIdentityID)
+	if err != nil {
+		return account.Account{}, maildomain.ReplyPlan{}, state.SchemaVersion(), err
+	}
 	plan, err := maildomain.BuildReplyPlan(parent, threadPage.Thread.ID, self, request)
 	if err != nil {
 		if errors.Is(err, maildomain.ErrInvalidReplyRequest) {
@@ -110,6 +114,50 @@ func resolveReplyPlan(
 	plan.ParentFolderID = parentFolder.ID
 	plan.Send.ParentLocationID = parentLocation.ID
 	return accountValue, plan, state.SchemaVersion(), nil
+}
+
+func resolveReplySenderIdentity(
+	ctx context.Context,
+	state *store.Store,
+	accountID string,
+	parent maildomain.Message,
+	explicitSelector string,
+) (string, error) {
+	if selector := strings.TrimSpace(explicitSelector); selector != "" {
+		return selector, nil
+	}
+	if parent.Direction != maildomain.DirectionInbound {
+		return "", nil
+	}
+	identities, err := state.Identities().Enabled(ctx, accountID)
+	if err != nil {
+		return "", cli.WrapAppError(cli.ErrorInternal, "cannot read enabled mail identities for reply sender selection", false, err)
+	}
+	recipients := make(map[string]struct{}, len(parent.To)+len(parent.CC)+len(parent.BCC))
+	for _, value := range append(append(append([]maildomain.Address(nil), parent.To...), parent.CC...), parent.BCC...) {
+		if address := strings.ToLower(strings.TrimSpace(value.Email)); address != "" {
+			recipients[address] = struct{}{}
+		}
+	}
+	matches := make([]account.MailIdentity, 0, 2)
+	for _, identity := range identities {
+		if identity.Kind != account.MailIdentityHideMyEmail {
+			continue
+		}
+		if _, ok := recipients[strings.ToLower(strings.TrimSpace(identity.Address))]; ok {
+			matches = append(matches, identity)
+		}
+	}
+	if len(matches) == 0 {
+		return "", nil
+	}
+	if len(matches) > 1 {
+		return "", cli.NewAppError(cli.ErrorSafety, "reply was delivered to multiple Hide My Email identities; choose --from explicitly", false)
+	}
+	if matches[0].Verification != account.MailIdentityVerified {
+		return "", cli.NewAppError(cli.ErrorSafety, "reply was delivered to a Hide My Email identity whose outbound SMTP support is not verified; choose --from explicitly", false)
+	}
+	return matches[0].ID, nil
 }
 
 func replyPreview(plan maildomain.ReplyPlan, preview maildomain.SendPreview) maildomain.ReplyPreview {

@@ -143,6 +143,7 @@ type capabilitiesData struct {
 	MailAttachments        bool                 `json:"mail_attachments"`
 	MailFlags              bool                 `json:"mail_flags"`
 	ColoredFlags           string               `json:"colored_flags"`
+	HideMyEmailOutbound    string               `json:"hide_my_email_outbound"`
 	MailThreads            bool                 `json:"mail_threads"`
 	MailThreadMutations    bool                 `json:"mail_thread_mutations"`
 	MailSelections         bool                 `json:"mail_selections"`
@@ -408,6 +409,7 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				MailAttachments:        true,
 				MailFlags:              true,
 				ColoredFlags:           "unsupported",
+				HideMyEmailOutbound:    "account_scoped",
 				MailThreads:            true,
 				MailThreadMutations:    true,
 				MailSelections:         true,
@@ -452,6 +454,10 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 					return err
 				}
 				data.Provider = &capabilityProvider{AccountID: value.ID, IMAPCapabilities: append([]string(nil), value.IMAPCapabilities...), SMTPCapabilities: append([]string(nil), value.SMTPCapabilities...)}
+				data.HideMyEmailOutbound, err = hideMyEmailOutboundCapability(cmd.Context(), state.accounts, state.global.Home, state.global.Account)
+				if err != nil {
+					return err
+				}
 			}
 			if jsonOutput {
 				return WriteJSON(state.stdout, OutputEnvelope{
@@ -478,6 +484,7 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				Field("mail_attachments", data.MailAttachments),
 				Field("mail_flags", data.MailFlags),
 				Field("colored_flags", data.ColoredFlags),
+				Field("hide_my_email_outbound", data.HideMyEmailOutbound),
 				Field("mail_threads", data.MailThreads),
 				Field("mail_search", data.MailSearch),
 				Field("mail_remote_search", data.MailRemoteSearch),
@@ -500,6 +507,35 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
 	return cmd
+}
+
+func hideMyEmailOutboundCapability(ctx context.Context, accounts AccountService, home, accountSelector string) (string, error) {
+	status := "unavailable"
+	cursor := ""
+	for {
+		_, identities, more, nextCursor, _, err := accounts.IdentityListPage(ctx, home, accountSelector, MaximumPageSize, cursor)
+		if err != nil {
+			return "", err
+		}
+		for _, identity := range identities {
+			if identity.Kind != account.MailIdentityHideMyEmail {
+				continue
+			}
+			switch identity.Verification {
+			case account.MailIdentityVerified:
+				return "supported", nil
+			case account.MailIdentityUnverified:
+				status = "unverified"
+			}
+		}
+		if !more {
+			return status, nil
+		}
+		if strings.TrimSpace(nextCursor) == "" {
+			return "", NewAppError(ErrorInternal, "mail identity capability pagination did not provide a continuation cursor", false)
+		}
+		cursor = nextCursor
+	}
 }
 
 func newAccountCommand(state *executionState) *cobra.Command {

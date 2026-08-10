@@ -28,6 +28,9 @@
     "kind": {
       "type": "string"
     },
+    "label": {
+      "type": "string"
+    },
     "provenance": {
       "type": "string"
     },

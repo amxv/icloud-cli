@@ -96,6 +96,9 @@ func (commands accountCommands) MailSend(
 	if err != nil {
 		return account.Account{}, maildomain.OutboundAttempt{}, false, state.SchemaVersion(), err
 	}
+	if err := requireMailIdentityOutboundReady(sender); err != nil {
+		return account.Account{}, maildomain.OutboundAttempt{}, false, state.SchemaVersion(), err
+	}
 	request, err = expandAccountSignature(ctx, state, accountValue.ID, sender.ID, request)
 	if err != nil {
 		return account.Account{}, maildomain.OutboundAttempt{}, false, state.SchemaVersion(), err
@@ -364,6 +367,17 @@ func resolveSelectedMailIdentity(ctx context.Context, state *store.Store, accoun
 	return value, nil
 }
 
+func requireMailIdentityOutboundReady(sender account.MailIdentity) error {
+	if sender.Kind != account.MailIdentityHideMyEmail || sender.Verification == account.MailIdentityVerified {
+		return nil
+	}
+	return cli.NewAppError(
+		cli.ErrorConfiguration,
+		"Hide My Email outbound use is unavailable until iCloud SMTP acceptance has been proven for this identity",
+		false,
+	)
+}
+
 func recordSenderProviderEvidence(ctx context.Context, state *store.Store, sender account.MailIdentity, result transport.SMTPSendResult, sendErr error, now time.Time) error {
 	verification := account.MailIdentityVerification("")
 	if sendErr == nil && result.Accepted {
@@ -378,10 +392,12 @@ func recordSenderProviderEvidence(ctx context.Context, state *store.Store, sende
 			verification = account.MailIdentityVerified
 		case transport.StageSMTPMail:
 			if !typed.Failure.Retryable && sender.Kind != account.MailIdentityPrimary {
-				outcomeCtx, cancel := durableOutcomeContext(ctx)
-				defer cancel()
-				if _, err := state.Identities().SetEnabled(outcomeCtx, sender.AccountID, sender.ID, false, now); err != nil {
-					return err
+				if sender.Kind != account.MailIdentityHideMyEmail {
+					outcomeCtx, cancel := durableOutcomeContext(ctx)
+					defer cancel()
+					if _, err := state.Identities().SetEnabled(outcomeCtx, sender.AccountID, sender.ID, false, now); err != nil {
+						return err
+					}
 				}
 				verification = account.MailIdentityRejected
 			}

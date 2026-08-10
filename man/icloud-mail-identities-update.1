@@ -2,7 +2,7 @@
 .TH "ICLOUD" "1" "Jan 1970" "icloud 0.1.0" "iCloud Mail CLI Manual"
 
 .SH NAME
-icloud-mail-identities-update - Update local address, display-name, or kind metadata
+icloud-mail-identities-update - Update local address, display-name, label, or kind metadata
 
 
 .SH SYNOPSIS
@@ -10,7 +10,7 @@ icloud-mail-identities-update - Update local address, display-name, or kind meta
 
 
 .SH DESCRIPTION
-Update local address, display-name, or kind metadata
+Update local address, display-name, label, or kind metadata
 
 
 .SH OPTIONS
@@ -36,6 +36,10 @@ Update local address, display-name, or kind metadata
 .PP
 \fB--kind\fP=""
 	Replace the identity kind
+
+.PP
+\fB--label\fP=""
+	Replace or clear the optional local label
 
 
 .SH OPTIONS INHERITED FROM PARENT COMMANDS

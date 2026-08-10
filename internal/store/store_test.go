@@ -165,6 +165,21 @@ INSERT INTO mail_identities (
 					database.Close()
 					t.Fatal(err)
 				}
+				if version == 34 {
+					if _, err := database.Exec(`UPDATE mail_identities SET is_default_send = 0 WHERE account_id = ? AND kind = 'primary'`, accountID); err != nil {
+						database.Close()
+						t.Fatal(err)
+					}
+					if _, err := database.Exec(`
+INSERT INTO mail_identities (
+    identity_id, account_id, email_address, display_name, kind, provenance,
+    verification, enabled, is_default_send, created_at, updated_at
+) VALUES ('mid_019fda7b-3ba1-7000-8000-000000000134', ?, 'legacy-private@icloud.com', 'Legacy Private',
+          'hide_my_email', 'user_configured', 'unverified', 1, 1, ?, ?)`, accountID, stamp, stamp); err != nil {
+						database.Close()
+						t.Fatal(err)
+					}
+				}
 				if version == 20 {
 					rawHash := strings.Repeat("a", 64)
 					if _, err := database.Exec(`INSERT INTO raw_blobs (content_hash, storage_key, byte_size, created_at) VALUES (?, ?, 1, ?)`, rawHash, "raw/phase5-migration.eml", stamp); err != nil {
@@ -255,6 +270,12 @@ INSERT INTO mail_identities (
 				var pending int
 				if err := state.db.QueryRowContext(context.Background(), `SELECT pending FROM mail_direction_reclassifications WHERE account_id = ?`, accountID).Scan(&pending); err != nil || pending != 1 {
 					t.Fatalf("schema-21 alternate identity did not queue direction reclassification: pending=%d err=%v", pending, err)
+				}
+			}
+			if version == 34 {
+				privateIdentity, err := state.Identities().Resolve(context.Background(), accountID, "legacy-private@icloud.com")
+				if err != nil || privateIdentity.Kind != account.MailIdentityHideMyEmail || privateIdentity.Label != "" || !privateIdentity.Enabled || privateIdentity.Default {
+					t.Fatalf("schema-34 HME migration=%+v err=%v", privateIdentity, err)
 				}
 			}
 			var integrity string
