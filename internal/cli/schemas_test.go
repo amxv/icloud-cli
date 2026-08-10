@@ -133,6 +133,9 @@ func TestCapabilitiesPublishesVersionedAutomationAndSchemaContracts(t *testing.T
 	if !envelope.Data.MailReplyAnswered {
 		t.Fatal("capabilities did not advertise proven provider Answered reply reconciliation")
 	}
+	if envelope.Data.ColoredFlags != "unsupported" {
+		t.Fatalf("colored-flags capability=%q", envelope.Data.ColoredFlags)
+	}
 	if envelope.Data.ProviderForwardedState != "unsupported" {
 		t.Fatalf("provider forwarded-state capability=%q", envelope.Data.ProviderForwardedState)
 	}

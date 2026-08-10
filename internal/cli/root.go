@@ -142,6 +142,7 @@ type capabilitiesData struct {
 	MailContent            bool                 `json:"mail_content"`
 	MailAttachments        bool                 `json:"mail_attachments"`
 	MailFlags              bool                 `json:"mail_flags"`
+	ColoredFlags           string               `json:"colored_flags"`
 	MailThreads            bool                 `json:"mail_threads"`
 	MailThreadMutations    bool                 `json:"mail_thread_mutations"`
 	MailSelections         bool                 `json:"mail_selections"`
@@ -406,6 +407,7 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				MailContent:            true,
 				MailAttachments:        true,
 				MailFlags:              true,
+				ColoredFlags:           "unsupported",
 				MailThreads:            true,
 				MailThreadMutations:    true,
 				MailSelections:         true,
@@ -475,6 +477,7 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				Field("mail_content", data.MailContent),
 				Field("mail_attachments", data.MailAttachments),
 				Field("mail_flags", data.MailFlags),
+				Field("colored_flags", data.ColoredFlags),
 				Field("mail_threads", data.MailThreads),
 				Field("mail_search", data.MailSearch),
 				Field("mail_remote_search", data.MailRemoteSearch),

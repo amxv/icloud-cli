@@ -477,11 +477,11 @@ func TestCapabilitiesCompactGoldenBudget(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("exit code = %d, stderr = %q", exitCode, stderr)
 	}
-	want := fmt.Sprintf("capabilities\ncommand=icloud\nversion=dev\nschema=%d\naccount_mode=validated_lifecycle\ncredentials=keyring,env,file\nnetwork_validation=true\ndiagnostics=true\nmail_folders=true\nmail_folder_roles=true\nmail_identities=true\nmail_sync=true\nmail_watch=true\nmail_drafts=true\nmail_content=true\nmail_attachments=true\nmail_flags=true\nmail_threads=true\nmail_search=true\nmail_remote_search=true\nmail_hydration=true\nmail_send=true\nmail_reply=true\nmail_reply_answered=true\nmail_forward=true\nprovider_forwarded_state=unsupported\nmail_junk=true\nmail_purge=true\nmail_location_mutations=true\ndefault_output=compact\njson=true\njsonl=true\ncompletion=bash,zsh,fish,powershell\nman=true\n", store.SchemaVersion)
+	want := fmt.Sprintf("capabilities\ncommand=icloud\nversion=dev\nschema=%d\naccount_mode=validated_lifecycle\ncredentials=keyring,env,file\nnetwork_validation=true\ndiagnostics=true\nmail_folders=true\nmail_folder_roles=true\nmail_identities=true\nmail_sync=true\nmail_watch=true\nmail_drafts=true\nmail_content=true\nmail_attachments=true\nmail_flags=true\ncolored_flags=unsupported\nmail_threads=true\nmail_search=true\nmail_remote_search=true\nmail_hydration=true\nmail_send=true\nmail_reply=true\nmail_reply_answered=true\nmail_forward=true\nprovider_forwarded_state=unsupported\nmail_junk=true\nmail_purge=true\nmail_location_mutations=true\ndefault_output=compact\njson=true\njsonl=true\ncompletion=bash,zsh,fish,powershell\nman=true\n", store.SchemaVersion)
 	if stdout != want {
 		t.Fatalf("stdout mismatch\nwant: %q\n got: %q", want, stdout)
 	}
-	if lines := strings.Count(stdout, "\n"); lines > 34 {
+	if lines := strings.Count(stdout, "\n"); lines > 35 {
 		t.Fatalf("line budget exceeded: %d", lines)
 	}
 	if len(stdout) > 820 {

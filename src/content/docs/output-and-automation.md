@@ -142,7 +142,7 @@ The explicit drain helpers keep the same rule while repeating several bounded pa
 icloud capabilities --json
 ```
 
-The capability envelope includes the CLI version, local data-schema version, automation-contract version, supported bulk modes/bounds, stable schema identifiers, and per-command read/write request and response schema IDs. When you explicitly select an account with `--account`, capabilities may also include the IMAP/SMTP capability strings already cached for that account; this lookup is local-only and never resolves a credential or opens a network connection.
+The capability envelope includes the CLI version, local data-schema version, automation-contract version, supported bulk modes/bounds, stable schema identifiers, and per-command read/write request and response schema IDs. It also reports compatibility outcomes that agents must not infer, including `colored_flags="unsupported"` when no stable Apple/iCloud color representation has been proven. When you explicitly select an account with `--account`, capabilities may also include the IMAP/SMTP capability strings already cached for that account; this lookup is local-only and never resolves a credential or opens a network connection.
 
 `capabilities --json` also reports the effective inbound raw-message and decoded-attachment byte limits. These are application configuration, not provider claims, and are independent from the iCloud composed-message send limit.
 

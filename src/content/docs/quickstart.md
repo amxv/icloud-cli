@@ -511,6 +511,8 @@ icloud mail mark-read msg_… --folder INBOX
 
 These commands do not search every mailbox or mutate every copy of a message. Choose `--folder sent` only when that exact synchronized Sent location should change. A later `mail sync` refreshes bounded location state without downloading message bodies again.
 
+`mail flag` is the portable provider `\Flagged` state. Apple Mail's colored flags do not currently have a proven writable iCloud IMAP representation, so the CLI reports `colored_flags=unsupported` instead of inventing local colors or guessing provider keywords.
+
 ## Move or copy one exact message location
 
 Review the current message locations, then dry-run the exact provider change:

@@ -360,6 +360,12 @@ flagged=false
 
 Use `--json` when automation needs the selected UID identity, canonical and unknown flags, provider mod-sequence when available, and recomputed summaries.
 
+### Colored flags are not exposed as provider state
+
+Apple Mail offers multiple flag colors, but this CLI has not proven a stable, writable color representation through iCloud's documented IMAP path. `icloud capabilities` therefore reports `colored_flags=unsupported`. `mail flag` and `mail unflag` remain the portable provider `\Flagged` operation; they do not select or rename an Apple Mail color.
+
+Unknown provider flags are still preserved when iCloud returns them, including across ordinary read/flag state updates. They remain opaque metadata: the CLI does not infer a color from an undocumented keyword or write guessed keywords back to the provider.
+
 ## Stream or export exact raw MIME
 
 ```bash
