@@ -1,0 +1,86 @@
+.nh
+.TH "ICLOUD" "1" "Jan 1970" "icloud 0.1.0" "iCloud Mail CLI Manual"
+
+.SH NAME
+icloud-mail-empty-folder - Permanently delete one reviewed bounded page from one deliberately named ordinary custom folder
+
+
+.SH SYNOPSIS
+\fBicloud mail empty folder  [flags]\fP
+
+
+.SH DESCRIPTION
+Permanently delete one reviewed bounded page from one deliberately named ordinary custom folder
+
+
+.SH OPTIONS
+\fB--dry-run\fP[=false]
+	Freeze and review one exact bounded purge page without provider writes
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for folder
+
+.PP
+\fB--input-json\fP=""
+	Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+
+.PP
+\fB--json\fP[=false]
+	Emit one stable JSON success envelope
+
+.PP
+\fB--jsonl\fP[=false]
+	Emit exact reviewed/apply item events and completion accounting
+
+.PP
+\fB--limit\fP=100
+	Maximum exact provider locations in this reviewed purge page
+
+.PP
+\fB--mode\fP="atomic"
+	Failure mode: validate then fail fast, or continue-on-error
+
+.PP
+\fB--purge-id\fP=""
+	Opaque bounded purge review ID emitted by --dry-run
+
+.PP
+\fB--request-hash\fP=""
+	Exact apply hash emitted by the matching --dry-run review
+
+.PP
+\fB--yes\fP[=false]
+	Confirm intentional non-interactive permanent deletion
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--account\fP=""
+	Select an account by name, email, or stable ID
+
+.PP
+\fB--home\fP=""
+	Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+
+.PP
+\fB--no-input\fP[=false]
+	Never prompt for interactive input
+
+.PP
+\fB--request-id\fP=""
+	Attach a stable request ID to structured output
+
+.PP
+\fB--timeout\fP=30s
+	Maximum normal command duration; watch applies it per provider/sync attempt
+
+
+.SH EXAMPLE
+.EX
+  icloud mail empty folder 'Temporary Import' --limit 50 --dry-run
+  icloud mail empty folder 'Temporary Import' --purge-id pur_… --request-hash <hash> --yes --jsonl
+.EE
+
+
+.SH SEE ALSO
+\fBicloud-mail-empty(1)\fP

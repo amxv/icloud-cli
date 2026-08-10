@@ -1,0 +1,25 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/mail-empty-folder-input.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "folder": {
+      "type": "string"
+    },
+    "limit": {
+      "type": "integer"
+    },
+    "mode": {
+      "type": "string"
+    },
+    "purge_id": {
+      "type": "string"
+    },
+    "request_hash": {
+      "type": "string"
+    }
+  },
+  "title": "explicit custom-folder bounded purge JSON input",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

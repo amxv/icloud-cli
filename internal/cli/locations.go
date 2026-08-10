@@ -59,6 +59,12 @@ type mailLocationBulkData struct {
 	SelectionID        string                     `json:"selection_id,omitempty"`
 	SelectionHash      string                     `json:"selection_hash,omitempty"`
 	ApplyRequestHash   string                     `json:"apply_request_hash,omitempty"`
+	PurgeID            string                     `json:"purge_id,omitempty"`
+	PurgeHash          string                     `json:"purge_hash,omitempty"`
+	PurgeScope         maildomain.PurgeScopeKind  `json:"purge_scope,omitempty"`
+	PurgeFolderID      string                     `json:"purge_folder_id,omitempty"`
+	BlockedUnresolved  int                        `json:"blocked_unresolved,omitempty"`
+	RetentionWarning   string                     `json:"retention_warning,omitempty"`
 }
 
 type mailLocationBulkPreviewData struct {
@@ -75,6 +81,12 @@ type mailLocationBulkPreviewData struct {
 	SelectionID        string                            `json:"selection_id,omitempty"`
 	SelectionHash      string                            `json:"selection_hash,omitempty"`
 	ApplyRequestHash   string                            `json:"apply_request_hash,omitempty"`
+	PurgeID            string                            `json:"purge_id,omitempty"`
+	PurgeHash          string                            `json:"purge_hash,omitempty"`
+	PurgeScope         maildomain.PurgeScopeKind         `json:"purge_scope,omitempty"`
+	PurgeFolderID      string                            `json:"purge_folder_id,omitempty"`
+	BlockedUnresolved  int                               `json:"blocked_unresolved,omitempty"`
+	RetentionWarning   string                            `json:"retention_warning,omitempty"`
 }
 
 type locationMutationItem struct {
@@ -207,6 +219,9 @@ func executeLocationMutationItems(cmd *cobra.Command, state *executionState, act
 		accountValue, _, message, mutation, reused, version, itemErr := state.mail.MailMutateLocation(
 			cmd.Context(), state.global.Home, state.global.Account, request,
 		)
+		if itemErr == nil && threadMeta != nil && threadMeta.RequireConfirmedLocation && mutation.Status != maildomain.LocationMutationConfirmed {
+			itemErr = purgeLocationMutationStatusError(mutation)
+		}
 		sequence++
 		if itemErr != nil {
 			failed++
@@ -307,6 +322,15 @@ func applyThreadMutationLocationData(data *mailLocationBulkData, meta *threadMut
 	data.SelectionID = meta.SelectionID
 	data.SelectionHash = meta.SelectionHash
 	data.ApplyRequestHash = meta.ApplyRequestHash
+	data.PurgeID = meta.PurgeID
+	data.PurgeHash = meta.PurgeHash
+	data.PurgeScope = meta.PurgeScope
+	data.PurgeFolderID = meta.PurgeFolderID
+	data.BlockedUnresolved = meta.PurgeBlockedUnresolved
+	data.RetentionWarning = meta.RetentionWarning
+	if meta.PurgeID != "" {
+		data.More = meta.PurgeMore
+	}
 }
 
 func applyThreadMutationLocationPreviewData(data *mailLocationBulkPreviewData, meta *threadMutationMeta) {
@@ -321,6 +345,15 @@ func applyThreadMutationLocationPreviewData(data *mailLocationBulkPreviewData, m
 	data.SelectionID = meta.SelectionID
 	data.SelectionHash = meta.SelectionHash
 	data.ApplyRequestHash = meta.ApplyRequestHash
+	data.PurgeID = meta.PurgeID
+	data.PurgeHash = meta.PurgeHash
+	data.PurgeScope = meta.PurgeScope
+	data.PurgeFolderID = meta.PurgeFolderID
+	data.BlockedUnresolved = meta.PurgeBlockedUnresolved
+	data.RetentionWarning = meta.RetentionWarning
+	if meta.PurgeID != "" {
+		data.More = meta.PurgeMore
+	}
 }
 
 func locationMutationItemsFromJSON(request locationJSONRequest) ([]locationMutationItem, error) {
@@ -401,6 +434,9 @@ func validateLocationMutationItems(action maildomain.LocationMutationAction, ite
 			return NewAppError(ErrorUsage, fmt.Sprintf("bulk item %d idempotency key is too long", index), false)
 		}
 		key := items[index].MessageID + "\x00" + items[index].From
+		if items[index].Snapshot != nil && strings.TrimSpace(items[index].Snapshot.LocationID) != "" {
+			key += "\x00" + strings.TrimSpace(items[index].Snapshot.LocationID)
+		}
 		if action == maildomain.LocationActionMove || action == maildomain.LocationActionCopy || action == maildomain.LocationActionRestore {
 			key += "\x00" + items[index].To
 		}
@@ -416,6 +452,20 @@ func validateLocationMutationItems(action maildomain.LocationMutationAction, ite
 		}
 	}
 	return nil
+}
+
+func purgeLocationMutationStatusError(mutation maildomain.LocationMutation) *AppError {
+	message := "purge exact delete did not reach a confirmed provider outcome; it will not be retried automatically under this reviewed scope"
+	if mutation.Status == maildomain.LocationMutationFailed {
+		message = "purge exact delete has a failed durable outcome under this reviewed scope; create a new purge review page before retrying"
+	}
+	err := NewAppError(ErrorConflict, message, false)
+	err.Details = map[string]any{
+		"mutation_id": mutation.ID, "status": mutation.Status,
+		"reconciliation_required": mutation.ReconciliationRequired,
+		"next":                    "synchronize/reconcile provider state as needed, then create and review a new bounded purge page",
+	}
+	return err
 }
 
 func locationMutationRequest(action maildomain.LocationMutationAction, item locationMutationItem) maildomain.LocationMutationRequest {

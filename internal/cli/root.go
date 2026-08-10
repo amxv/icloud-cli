@@ -154,6 +154,7 @@ type capabilitiesData struct {
 	MailForward            bool                 `json:"mail_forward"`
 	ProviderForwardedState string               `json:"provider_forwarded_state"`
 	MailJunk               bool                 `json:"mail_junk"`
+	MailPurge              bool                 `json:"mail_purge"`
 	MailLocationMutations  bool                 `json:"mail_location_mutations"`
 	InboundLimits          config.InboundLimits `json:"inbound_limits"`
 	Output                 capabilityOutput     `json:"output"`
@@ -413,6 +414,7 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				MailForward:            true,
 				ProviderForwardedState: "unsupported",
 				MailJunk:               true,
+				MailPurge:              true,
 				MailLocationMutations:  true,
 				InboundLimits:          limits,
 				Output: capabilityOutput{
@@ -475,6 +477,7 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				Field("mail_forward", data.MailForward),
 				Field("provider_forwarded_state", data.ProviderForwardedState),
 				Field("mail_junk", data.MailJunk),
+				Field("mail_purge", data.MailPurge),
 				Field("mail_location_mutations", data.MailLocationMutations),
 				Field("default_output", data.Output.Default),
 				Field("json", data.Output.JSON),

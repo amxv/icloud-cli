@@ -10,6 +10,7 @@ import (
 	"github.com/amxv/icloud-cli/internal/cli"
 	"github.com/amxv/icloud-cli/internal/folder"
 	maildomain "github.com/amxv/icloud-cli/internal/mail"
+	"github.com/amxv/icloud-cli/internal/store"
 	"github.com/amxv/icloud-cli/internal/transport"
 )
 
@@ -27,7 +28,7 @@ func TestAgentParityPhase13SearchSelectionIsImmutableExpiresAndRejectsCrossAccou
 		SearchFolder: "inbox", ScopeFolder: "inbox", TTL: 5 * time.Minute, MaximumMembership: 100,
 	}
 	accountValue, selection, schemaVersion, err := commands.MailSelectionCreate(context.Background(), home, "", request)
-	if err != nil || schemaVersion != 27 || selection.SourceKind != maildomain.SelectionSourceSearch || selection.SourceDescription != "one bounded local search page" || selection.ItemCount != 1 || len(selection.Items) != 1 || selection.Items[0].MessageID != fixture.messageID || selection.Items[0].LocationID == "" || selection.Items[0].FolderID != fixture.folders[folder.KindInbox].ID || len(selection.SourceQueryHash) != 64 || len(selection.RequestHash) != 64 {
+	if err != nil || schemaVersion != store.SchemaVersion || selection.SourceKind != maildomain.SelectionSourceSearch || selection.SourceDescription != "one bounded local search page" || selection.ItemCount != 1 || len(selection.Items) != 1 || selection.Items[0].MessageID != fixture.messageID || selection.Items[0].LocationID == "" || selection.Items[0].FolderID != fixture.folders[folder.KindInbox].ID || len(selection.SourceQueryHash) != 64 || len(selection.RequestHash) != 64 {
 		t.Fatalf("create selection account=%+v selection=%+v schema=%d err=%v", accountValue, selection, schemaVersion, err)
 	}
 	if strings.Contains(selection.SourceDescription, fixture.subject) {

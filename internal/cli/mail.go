@@ -1224,6 +1224,15 @@ func (unavailableMailService) MailSelectionDelete(context.Context, string, strin
 func (unavailableMailService) MailSelectionApplyHash(context.Context, maildomain.MailSelection, string, string, string, []string) (string, error) {
 	return "", NewAppError(ErrorConfiguration, "MailSelection is unavailable", false)
 }
+func (unavailableMailService) MailPurgeCreate(context.Context, string, string, maildomain.PurgeCreateRequest) (account.Account, folder.Folder, maildomain.MailPurge, int64, error) {
+	return account.Account{}, folder.Folder{}, maildomain.MailPurge{}, 0, NewAppError(ErrorConfiguration, "mail purge is unavailable", false)
+}
+func (unavailableMailService) MailPurge(context.Context, string, string, string, maildomain.PurgeCreateRequest) (account.Account, folder.Folder, maildomain.MailPurge, int64, error) {
+	return account.Account{}, folder.Folder{}, maildomain.MailPurge{}, 0, NewAppError(ErrorConfiguration, "mail purge is unavailable", false)
+}
+func (unavailableMailService) MailPurgeApplyHash(context.Context, maildomain.MailPurge, string, []string) (string, error) {
+	return "", NewAppError(ErrorConfiguration, "mail purge is unavailable", false)
+}
 func (unavailableMailService) MailAttachments(context.Context, string, string, string, int) (account.Account, maildomain.AttachmentTarget, []maildomain.Attachment, bool, int64, error) {
 	return account.Account{}, maildomain.AttachmentTarget{}, nil, false, 0, NewAppError(ErrorConfiguration, "local attachments are unavailable", false)
 }

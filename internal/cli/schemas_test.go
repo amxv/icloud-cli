@@ -66,7 +66,7 @@ func TestGeneratedSchemasMatchCommittedArtifacts(t *testing.T) {
 			t.Fatalf("public schema mirror drift for %s; run make schemas", name)
 		}
 	}
-	for _, required := range []string{"account", "mail-identity", "folder", "message", "thread", "selection", "attachment", "checkpoint", "attempt", "draft", "event", "error"} {
+	for _, required := range []string{"account", "mail-identity", "folder", "message", "thread", "selection", "purge", "attachment", "checkpoint", "attempt", "draft", "event", "error"} {
 		name := required + ".schema.json"
 		if _, ok := generated[name]; !ok {
 			t.Fatalf("required public resource schema missing: %s", name)
@@ -89,7 +89,7 @@ func TestCapabilitiesPublishesVersionedAutomationAndSchemaContracts(t *testing.T
 	if envelope.Data.Automation.ContractVersion != AutomationContractVersion || !envelope.Data.Automation.InputJSON || !envelope.Data.Automation.InputJSONL || envelope.Data.Automation.BulkMaximum != MaximumBulkItems {
 		t.Fatalf("automation=%+v", envelope.Data.Automation)
 	}
-	for _, target := range []string{"account", "mail-identity", "folder", "message", "thread", "selection", "attachment", "checkpoint", "attempt", "draft", "event", "error"} {
+	for _, target := range []string{"account", "mail-identity", "folder", "message", "thread", "selection", "purge", "attachment", "checkpoint", "attempt", "draft", "event", "error"} {
 		if got := envelope.Data.Schemas[target]; got != SchemaBaseID+target+".schema.json" {
 			t.Fatalf("schema %s=%q", target, got)
 		}
@@ -150,6 +150,18 @@ func TestCapabilitiesPublishesVersionedAutomationAndSchemaContracts(t *testing.T
 	} {
 		if got := contracts[command].InputSchema; got != SchemaBaseID+schema+".schema.json" {
 			t.Fatalf("MailSelection contract %s=%q", command, got)
+		}
+	}
+	for command, schema := range map[string]string{
+		"mail empty trash":  "mail-empty-role-input",
+		"mail empty junk":   "mail-empty-role-input",
+		"mail empty folder": "mail-empty-folder-input",
+	} {
+		if got := contracts[command].InputSchema; got != SchemaBaseID+schema+".schema.json" {
+			t.Fatalf("mail purge contract %s=%q", command, got)
+		}
+		if got := contracts[command].JSONLSchema; got != SchemaBaseID+"event.schema.json" {
+			t.Fatalf("mail purge JSONL contract %s=%q", command, got)
 		}
 	}
 	for command, schema := range map[string]string{

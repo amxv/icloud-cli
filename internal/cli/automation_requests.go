@@ -296,6 +296,21 @@ type selectionApplyJSONRequest struct {
 	RequestHash string `json:"request_hash,omitempty"`
 }
 
+type mailPurgeJSONRequest struct {
+	Folder      string `json:"folder,omitempty"`
+	PurgeID     string `json:"purge_id,omitempty"`
+	Limit       *int   `json:"limit,omitempty"`
+	Mode        string `json:"mode,omitempty"`
+	RequestHash string `json:"request_hash,omitempty"`
+}
+
+type mailRolePurgeJSONRequest struct {
+	PurgeID     string `json:"purge_id,omitempty"`
+	Limit       *int   `json:"limit,omitempty"`
+	Mode        string `json:"mode,omitempty"`
+	RequestHash string `json:"request_hash,omitempty"`
+}
+
 type flagBulkJSONRequest struct {
 	MessageIDs []string `json:"message_ids"`
 	Folder     string   `json:"folder,omitempty"`

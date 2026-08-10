@@ -338,7 +338,7 @@ func resolveLocationMutationPlan(
 	if action.TransportOperation() == "" {
 		return account.Account{}, maildomain.LocationMutationPlan{}, cli.NewAppError(cli.ErrorUsage, "location mutation action is invalid", false)
 	}
-	sourceFolder, sourceLocation, err := resolveLocationMutationSource(ctx, state, accountValue.ID, message, action, request.FromFolder)
+	sourceFolder, sourceLocation, err := resolveLocationMutationSource(ctx, state, accountValue.ID, message, action, request.FromFolder, request.ExpectedLocationID)
 	if err != nil {
 		return account.Account{}, maildomain.LocationMutationPlan{}, err
 	}
@@ -427,6 +427,7 @@ func resolveLocationMutationSource(
 	message maildomain.Message,
 	action maildomain.LocationMutationAction,
 	selector string,
+	expectedLocationID string,
 ) (folder.Folder, maildomain.Location, error) {
 	selector = strings.TrimSpace(selector)
 	roles, err := resolveLocationMutationRoles(ctx, state, accountID, action)
@@ -449,7 +450,7 @@ func resolveLocationMutationSource(
 			return folder.Folder{}, maildomain.Location{}, mapFolderError(err)
 		}
 		for _, location := range message.Locations {
-			if location.FolderID == folderValue.ID && location.Present {
+			if location.FolderID == folderValue.ID && location.Present && (strings.TrimSpace(expectedLocationID) == "" || location.ID == strings.TrimSpace(expectedLocationID)) {
 				if err := validateLocationMutationSourceRole(action, folderValue.ID, roles); err != nil {
 					return folder.Folder{}, maildomain.Location{}, err
 				}

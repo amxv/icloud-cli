@@ -101,6 +101,7 @@ func newMailCommand(state *executionState) *cobra.Command {
 	command.AddCommand(newMailMessageCommand(state))
 	command.AddCommand(newMailThreadsCommand(state))
 	command.AddCommand(newMailSelectionCommand(state))
+	command.AddCommand(newMailEmptyCommand(state))
 	command.AddCommand(newMailThreadCommand(state))
 	command.AddCommand(newMailLatestCommand(state))
 	command.AddCommand(newMailAttachmentsCommand(state))

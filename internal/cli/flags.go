@@ -249,6 +249,16 @@ func addThreadMutationPayload(payload map[string]any, meta *threadMutationMeta) 
 		payload["selection_hash"] = meta.SelectionHash
 		payload["apply_request_hash"] = meta.ApplyRequestHash
 	}
+	if meta.PurgeID != "" {
+		payload["purge_id"] = meta.PurgeID
+		payload["purge_hash"] = meta.PurgeHash
+		payload["purge_scope"] = meta.PurgeScope
+		payload["purge_folder_id"] = meta.PurgeFolderID
+		payload["more"] = meta.PurgeMore
+		payload["blocked_unresolved"] = meta.PurgeBlockedUnresolved
+		payload["retention_warning"] = meta.RetentionWarning
+		payload["apply_request_hash"] = meta.ApplyRequestHash
+	}
 	if meta.ThreadID == "" {
 		return
 	}
@@ -288,6 +298,18 @@ func appendThreadMutationCompactFields(fields []CompactField, meta *threadMutati
 			Field("apply_request_hash", meta.ApplyRequestHash),
 		)
 	}
+	if meta.PurgeID != "" {
+		fields = append(fields,
+			Field("purge", meta.PurgeID),
+			Field("purge_hash", meta.PurgeHash),
+			Field("purge_scope", meta.PurgeScope),
+			Field("purge_folder", meta.PurgeFolderID),
+			Field("more", meta.PurgeMore),
+			Field("blocked_unresolved", meta.PurgeBlockedUnresolved),
+			Field("retention_warning", meta.RetentionWarning),
+			Field("apply_request_hash", meta.ApplyRequestHash),
+		)
+	}
 	if meta.ThreadID == "" {
 		return fields
 	}
@@ -310,6 +332,16 @@ func addThreadMutationErrorDetails(err *AppError, meta *threadMutationMeta) {
 	if meta.SelectionID != "" {
 		err.Details["selection_id"] = meta.SelectionID
 		err.Details["selection_hash"] = meta.SelectionHash
+		err.Details["apply_request_hash"] = meta.ApplyRequestHash
+	}
+	if meta.PurgeID != "" {
+		err.Details["purge_id"] = meta.PurgeID
+		err.Details["purge_hash"] = meta.PurgeHash
+		err.Details["purge_scope"] = meta.PurgeScope
+		err.Details["purge_folder_id"] = meta.PurgeFolderID
+		err.Details["more"] = meta.PurgeMore
+		err.Details["blocked_unresolved"] = meta.PurgeBlockedUnresolved
+		err.Details["retention_warning"] = meta.RetentionWarning
 		err.Details["apply_request_hash"] = meta.ApplyRequestHash
 	}
 	if meta.ThreadID == "" {

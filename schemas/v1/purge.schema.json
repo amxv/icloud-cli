@@ -1,0 +1,88 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/purge.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "account_id": {
+      "type": "string"
+    },
+    "blocked_unresolved": {
+      "type": "integer"
+    },
+    "created_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "expires_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "folder_id": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string"
+    },
+    "item_count": {
+      "type": "integer"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "location_id": {
+            "type": "string"
+          },
+          "message_id": {
+            "type": "string"
+          },
+          "mod_sequence": {
+            "type": "integer"
+          },
+          "ordinal": {
+            "type": "integer"
+          },
+          "uid": {
+            "type": "integer"
+          },
+          "uid_validity": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "location_id",
+          "message_id",
+          "ordinal",
+          "uid",
+          "uid_validity"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "more": {
+      "type": "boolean"
+    },
+    "request_hash": {
+      "type": "string"
+    },
+    "scope_kind": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "account_id",
+    "blocked_unresolved",
+    "created_at",
+    "expires_at",
+    "folder_id",
+    "id",
+    "item_count",
+    "more",
+    "request_hash",
+    "scope_kind"
+  ],
+  "title": "bounded exact-location mail purge review",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

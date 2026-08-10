@@ -601,6 +601,7 @@ Available Commands:
   copy        Copy exact current message locations
   delete      Permanently delete exact current provider locations
   draft       Compose, synchronize, inspect, send, and delete iCloud-backed drafts
+  empty       Permanently delete reviewed bounded pages from Trash, Junk, or one named custom folder
   flag        Flag one selected message location
   folders     Discover folders, inspect provider status, and choose sync policy
   forward     Forward one explicitly selected local message as a new conversation
@@ -1107,6 +1108,134 @@ Flags:
       --reply-to string           Optional Reply-To address
       --subject string            Draft subject; may be empty
       --to stringArray            Recipient address; repeat or provide a comma-separated address list
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail empty`
+
+```text
+Permanently delete reviewed bounded pages from Trash, Junk, or one named custom folder
+
+Usage:
+  icloud mail empty [flags]
+  icloud mail empty [command]
+
+Examples:
+  icloud mail empty trash --dry-run
+  icloud mail empty junk --dry-run
+  icloud mail empty folder 'Temporary Import' --dry-run
+
+Available Commands:
+  folder      Permanently delete one reviewed bounded page from one deliberately named ordinary custom folder
+  junk        Permanently delete one reviewed bounded page from the semantic Junk folder
+  trash       Permanently delete one reviewed bounded page from the semantic Trash folder
+
+Flags:
+  -h, --help   help for empty
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+
+Use "icloud mail empty [command] --help" for more information about a command.
+```
+
+## `icloud mail empty folder`
+
+```text
+Permanently delete one reviewed bounded page from one deliberately named ordinary custom folder
+
+Usage:
+  icloud mail empty folder <folder> [flags]
+
+Examples:
+  icloud mail empty folder 'Temporary Import' --limit 50 --dry-run
+  icloud mail empty folder 'Temporary Import' --purge-id pur_… --request-hash <hash> --yes --jsonl
+
+Flags:
+      --dry-run               Freeze and review one exact bounded purge page without provider writes
+  -h, --help                  help for folder
+      --input-json string     Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                  Emit one stable JSON success envelope
+      --jsonl                 Emit exact reviewed/apply item events and completion accounting
+      --limit int             Maximum exact provider locations in this reviewed purge page (default 100)
+      --mode string           Failure mode: validate then fail fast, or continue-on-error (default "atomic")
+      --purge-id string       Opaque bounded purge review ID emitted by --dry-run
+      --request-hash string   Exact apply hash emitted by the matching --dry-run review
+      --yes                   Confirm intentional non-interactive permanent deletion
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail empty junk`
+
+```text
+Permanently delete one reviewed bounded page from the semantic Junk folder
+
+Usage:
+  icloud mail empty junk [flags]
+
+Examples:
+  icloud mail empty junk --limit 50 --dry-run
+  icloud mail empty junk --purge-id pur_… --request-hash <hash> --yes --jsonl
+
+Flags:
+      --dry-run               Freeze and review one exact bounded purge page without provider writes
+  -h, --help                  help for junk
+      --input-json string     Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                  Emit one stable JSON success envelope
+      --jsonl                 Emit exact reviewed/apply item events and completion accounting
+      --limit int             Maximum exact provider locations in this reviewed purge page (default 100)
+      --mode string           Failure mode: validate then fail fast, or continue-on-error (default "atomic")
+      --purge-id string       Opaque bounded purge review ID emitted by --dry-run
+      --request-hash string   Exact apply hash emitted by the matching --dry-run review
+      --yes                   Confirm intentional non-interactive permanent deletion
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail empty trash`
+
+```text
+Permanently delete one reviewed bounded page from the semantic Trash folder
+
+Usage:
+  icloud mail empty trash [flags]
+
+Examples:
+  icloud mail empty trash --limit 50 --dry-run
+  icloud mail empty trash --purge-id pur_… --request-hash <hash> --yes --jsonl
+
+Flags:
+      --dry-run               Freeze and review one exact bounded purge page without provider writes
+  -h, --help                  help for trash
+      --input-json string     Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                  Emit one stable JSON success envelope
+      --jsonl                 Emit exact reviewed/apply item events and completion accounting
+      --limit int             Maximum exact provider locations in this reviewed purge page (default 100)
+      --mode string           Failure mode: validate then fail fast, or continue-on-error (default "atomic")
+      --purge-id string       Opaque bounded purge review ID emitted by --dry-run
+      --request-hash string   Exact apply hash emitted by the matching --dry-run review
+      --yes                   Confirm intentional non-interactive permanent deletion
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID

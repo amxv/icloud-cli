@@ -76,6 +76,29 @@ func TestMutateLocationSafeCopyUIDExpungeFallback(t *testing.T) {
 	assertMailboxMessageCount(t, client, auth, "Archive Localized", 1)
 }
 
+func TestMutateLocationDeleteUIDExpungePreservesUnrelatedAlreadyDeletedNeighbor(t *testing.T) {
+	client, auth, closeServer := newLocationMemoryServerWithMessages(t, imap.CapSet{
+		imap.CapIMAP4rev1: {}, imap.CapUIDPlus: {},
+	}, []locationMemoryMessage{
+		{messageID: "purge-target@example.test", flags: []imap.Flag{imap.FlagSeen}},
+		{messageID: "unrelated-deleted@example.test", flags: []imap.Flag{imap.FlagDeleted}},
+	})
+	defer closeServer()
+	result, err := client.MutateLocation(context.Background(), auth, transport.LocationMutationRequest{
+		Operation: transport.LocationMutationDelete, SourceMailbox: "INBOX",
+		ExpectedSourceUIDValidity: 1, SourceUID: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ProviderMethod != "uid_expunge" || !result.ProviderMutationObserved || result.SourcePresent {
+		t.Fatalf("delete result=%+v", result)
+	}
+	// Generic EXPUNGE would remove both messages after the target is marked
+	// Deleted. UID EXPUNGE for UID 1 must leave the unrelated pre-deleted UID 2.
+	assertMailboxMessageCount(t, client, auth, "INBOX", 1)
+}
+
 func TestMutateLocationRefusesUnsafeFallbackAfterCopyAndPreservesSource(t *testing.T) {
 	client, auth, closeServer := newLocationMemoryServer(t, imap.CapSet{imap.CapIMAP4rev1: {}})
 	defer closeServer()
@@ -140,6 +163,17 @@ func TestMutateLocationCopyCancellationReturnsWithoutMutation(t *testing.T) {
 }
 
 func newLocationMemoryServer(t *testing.T, caps imap.CapSet) (*Client, transport.AuthRequest, func()) {
+	return newLocationMemoryServerWithMessages(t, caps, []locationMemoryMessage{{
+		messageID: "location-source@example.test", flags: []imap.Flag{imap.FlagSeen, imap.FlagFlagged},
+	}})
+}
+
+type locationMemoryMessage struct {
+	messageID string
+	flags     []imap.Flag
+}
+
+func newLocationMemoryServerWithMessages(t *testing.T, caps imap.CapSet, messages []locationMemoryMessage) (*Client, transport.AuthRequest, func()) {
 	t.Helper()
 	const username = "location-user"
 	const password = "location-password"
@@ -150,11 +184,13 @@ func newLocationMemoryServer(t *testing.T, caps imap.CapSet) (*Client, transport
 			t.Fatal(err)
 		}
 	}
-	raw := "From: sender@example.test\r\nTo: owner@example.test\r\nMessage-ID: <location-source@example.test>\r\n\r\nlocation mutation source\r\n"
-	if _, err := user.Append("INBOX", &literalReader{Reader: strings.NewReader(raw), size: int64(len(raw))}, &imap.AppendOptions{
-		Flags: []imap.Flag{imap.FlagSeen, imap.FlagFlagged}, Time: time.Date(2026, 8, 7, 2, 0, 0, 0, time.UTC),
-	}); err != nil {
-		t.Fatal(err)
+	for index, message := range messages {
+		raw := "From: sender@example.test\r\nTo: owner@example.test\r\nMessage-ID: <" + message.messageID + ">\r\n\r\nlocation mutation source\r\n"
+		if _, err := user.Append("INBOX", &literalReader{Reader: strings.NewReader(raw), size: int64(len(raw))}, &imap.AppendOptions{
+			Flags: message.flags, Time: time.Date(2026, 8, 7, 2, index, 0, 0, time.UTC),
+		}); err != nil {
+			t.Fatal(err)
+		}
 	}
 	memServer.AddUser(user)
 	certificate := newTestCertificate(t)

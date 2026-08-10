@@ -74,14 +74,22 @@ type mailThreadData struct {
 }
 
 type threadMutationMeta struct {
-	ThreadID         string
-	RedirectedFrom   string
-	MessageCount     int
-	More             bool
-	NextCursor       string
-	SelectionID      string
-	SelectionHash    string
-	ApplyRequestHash string
+	ThreadID                 string
+	RedirectedFrom           string
+	MessageCount             int
+	More                     bool
+	NextCursor               string
+	SelectionID              string
+	SelectionHash            string
+	ApplyRequestHash         string
+	PurgeID                  string
+	PurgeHash                string
+	PurgeScope               maildomain.PurgeScopeKind
+	PurgeFolderID            string
+	PurgeMore                bool
+	PurgeBlockedUnresolved   int
+	RetentionWarning         string
+	RequireConfirmedLocation bool
 }
 
 func newMailThreadsCommand(state *executionState) *cobra.Command {
