@@ -1,9 +1,9 @@
 ---
 title: Move, copy, archive, and delete mail
-description: Change one exact synchronized provider location safely, recover from partial provider outcomes, and preserve the logical message when other copies remain.
+description: Change exact synchronized provider locations safely, run bounded reviewed batches, recover from partial provider outcomes, and preserve logical messages when other copies remain.
 order: 9
 category: Guides
-summary: Exact source and destination selection, dry-run review, MOVE and safe fallback behavior, durable mutation status, archive/trash shortcuts, restore, and permanent deletion.
+summary: Exact source and destination selection, bounded batch review, truthful partial results, MOVE and safe fallback behavior, durable mutation status, archive/trash shortcuts, restore, and permanent deletion.
 ---
 
 ## Start from current synchronized locations
@@ -71,6 +71,52 @@ next=none
 ```
 
 The compact and JSON outcomes omit subject, participants, body, attachment names, raw storage coordinates, credentials, and submitted folder names.
+
+## Change up to 100 exact message targets in one bounded batch
+
+Every location command accepts one to 100 direct `msg_…` targets. Positional targets share the command's folder selectors:
+
+```bash
+icloud mail move msg_… msg_… msg_… \
+  --from inbox \
+  --to Projects \
+  --idempotency-key project-move-batch-01 \
+  --mode atomic \
+  --yes
+```
+
+Before the first provider write, the CLI resolves and validates the complete bounded target set against current local state. A bad message ID, ambiguous source, missing semantic role, stale folder, changed idempotent request, or unsafe source therefore stops the batch without contacting iCloud. `--dry-run` performs the same whole-set review and creates no mutation intents.
+
+After validation, provider writes remain deliberately sequential. The default `--mode atomic` means **validate the whole batch, then fail fast**: execution stops on the first target/provider failure, but any earlier provider writes remain committed and are reported truthfully. It never claims that IMAP rolled them back. Use `--mode continue-on-error` when independent later targets should still be attempted after a failure.
+
+For ordered automation results, request JSONL:
+
+```bash
+icloud mail archive msg_… msg_… msg_… \
+  --from inbox \
+  --mode continue-on-error \
+  --idempotency-key archive-batch-01 \
+  --yes \
+  --jsonl
+```
+
+The stream emits one `item` event for each attempted target in input order, followed by one `completed` event with `requested`, `attempted`, `completed`, `failed`, `skipped`, and `partial`. A failed batch exits non-zero even when earlier or later items succeeded.
+
+Strict JSON input can use one `message_id`, a `message_ids` array, or an `items` array. Choose exactly one target form. Global `from`, `to`, and `idempotency_key` values act as defaults; an `items` entry can override them when exact copies need different folders or keys:
+
+```json
+{
+  "items": [
+    {"message_id": "msg_…", "from": "inbox", "to": "Projects"},
+    {"message_id": "msg_…", "from": "Receipts", "to": "Archive"}
+  ],
+  "idempotency_key": "location-batch-01"
+}
+```
+
+For streaming input, each `--input-jsonl` line is one strict object with `message_id` and optional `from`, `to`, and `idempotency_key`. Command-line `--from`, `--to`, and `--idempotency-key` remain defaults for fields omitted from each line.
+
+When one idempotency key is supplied for a multi-message request, the CLI deterministically derives a separate private per-item key. Replaying the same reviewed batch therefore returns each existing durable `mut_…` outcome without issuing the provider write again. Supplying an explicit item key overrides the batch default for that item. One-message commands keep their existing output and idempotency behavior unchanged.
 
 ## Use archive and trash shortcuts with resolved semantic roles
 

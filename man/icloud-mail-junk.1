@@ -2,15 +2,15 @@
 .TH "ICLOUD" "1" "Jan 1970" "icloud 0.1.0" "iCloud Mail CLI Manual"
 
 .SH NAME
-icloud-mail-junk - Move one exact current message location to the semantic Junk folder
+icloud-mail-junk - Move exact current message locations to the semantic Junk folder
 
 
 .SH SYNOPSIS
-\fBicloud mail junk  [flags]\fP
+\fBicloud mail junk  [message-id...] [flags]\fP
 
 
 .SH DESCRIPTION
-Move one exact current message location to the semantic Junk folder
+Move exact current message locations to the semantic Junk folder
 
 
 .SH OPTIONS
@@ -34,8 +34,20 @@ Move one exact current message location to the semantic Junk folder
 	Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
 
 .PP
+\fB--input-jsonl\fP=""
+	Read up to 100 strict JSONL location items from a file, or - for stdin
+
+.PP
 \fB--json\fP[=false]
 	Emit one stable JSON success envelope
+
+.PP
+\fB--jsonl\fP[=false]
+	Emit typed per-item and completed JSONL events
+
+.PP
+\fB--mode\fP="atomic"
+	Bulk failure mode: validate the bounded target set then fail fast, or continue-on-error
 
 .PP
 \fB--to\fP=""

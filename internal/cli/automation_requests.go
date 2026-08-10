@@ -242,6 +242,15 @@ type draftSendJSONRequest struct {
 }
 
 type locationJSONRequest struct {
+	MessageID      string             `json:"message_id,omitempty"`
+	MessageIDs     []string           `json:"message_ids,omitempty"`
+	Items          []locationJSONItem `json:"items,omitempty"`
+	From           string             `json:"from,omitempty"`
+	To             string             `json:"to,omitempty"`
+	IdempotencyKey string             `json:"idempotency_key,omitempty"`
+}
+
+type locationJSONItem struct {
 	MessageID      string `json:"message_id"`
 	From           string `json:"from,omitempty"`
 	To             string `json:"to,omitempty"`

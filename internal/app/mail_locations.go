@@ -25,6 +25,20 @@ func (commands accountCommands) MailLocationPreview(
 		return account.Account{}, maildomain.LocationMutationPlan{}, 0, err
 	}
 	defer state.Close()
+	if strings.TrimSpace(request.IdempotencyKey) != "" {
+		accountValue, resolveErr := state.Accounts().ResolveSelected(ctx, accountSelector)
+		if resolveErr != nil {
+			return account.Account{}, maildomain.LocationMutationPlan{}, state.SchemaVersion(), mapAccountError(resolveErr)
+		}
+		existing, readErr := state.LocationMutations().ByIdempotencyKey(ctx, accountValue.ID, request.IdempotencyKey)
+		if readErr == nil {
+			plan, planErr := planForExistingLocationMutation(ctx, state, accountValue.ID, request, existing)
+			return accountValue, plan, state.SchemaVersion(), planErr
+		}
+		if !errors.Is(readErr, maildomain.ErrMutationNotFound) {
+			return account.Account{}, maildomain.LocationMutationPlan{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot resolve location mutation idempotency", false, readErr)
+		}
+	}
 	accountValue, plan, err := resolveLocationMutationPlan(ctx, state, accountSelector, request)
 	if err != nil {
 		return account.Account{}, maildomain.LocationMutationPlan{}, state.SchemaVersion(), err

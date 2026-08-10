@@ -596,36 +596,36 @@ Examples:
   icloud mail folders refresh
 
 Available Commands:
-  archive     Move one eligible non-Sent location to the discovered Archive folder
+  archive     Move eligible non-Sent locations to the semantic Archive folder
   attachments List and safely export decoded local attachments
-  copy        Copy one exact current message location
-  delete      Permanently delete one exact current provider location
+  copy        Copy exact current message locations
+  delete      Permanently delete exact current provider locations
   draft       Compose, synchronize, inspect, send, and delete iCloud-backed drafts
   flag        Flag one selected message location
   folders     Discover folders, inspect provider status, and choose sync policy
   forward     Forward one explicitly selected local message as a new conversation
   identities  Manage local Send From identities for the selected mail account
   inbox       Compatibility alias for `mail messages list`
-  junk        Move one exact current message location to the semantic Junk folder
+  junk        Move exact current message locations to the semantic Junk folder
   latest      Compatibility alias for `mail threads list`
   mark-read   Mark one selected message location as read
   mark-unread Mark one selected message location as unread
   message     Read complete local message content by stable ID
   messages    Read synchronized messages through the canonical message-list surface
-  move        Move one exact current message location
-  not-junk    Move one current Junk location back to Inbox
+  move        Move exact current message locations
+  not-junk    Move current Junk locations back to Inbox
   operations  Inspect local mail operation history by stable ID
   reply       Reply to one explicitly selected local message
   reply-all   Reply to all visible participants of one explicitly selected local message
-  restore     Move one current Trash location to a deliberate destination
+  restore     Move current Trash locations to deliberate destinations
   search      Search synchronized mail locally or query bounded provider metadata explicitly
   send        Preview or send text, HTML, and attachments safely and idempotently
   status      Compatibility alias for `mail operations … list`
   sync        Fetch and atomically commit bounded pages from enabled mail folders
   thread      Compatibility namespace for `mail threads show`
   threads     List and read locally reconstructed conversations
-  trash       Move one exact current location to the discovered Trash folder
-  unarchive   Move one current Archive location to Inbox
+  trash       Move exact current locations to the semantic Trash folder
+  unarchive   Move current Archive locations to Inbox
   unflag      Remove the flag from one selected message location
   watch       Keep enabled mail folders fresh with IDLE or explicit polling fallback
 
@@ -645,10 +645,10 @@ Use "icloud mail [command] --help" for more information about a command.
 ## `icloud mail archive`
 
 ```text
-Move one eligible non-Sent location to the discovered Archive folder
+Move eligible non-Sent locations to the semantic Archive folder
 
 Usage:
-  icloud mail archive <message-id> [flags]
+  icloud mail archive <message-id> [message-id...] [flags]
 
 Examples:
   icloud mail archive msg_… --dry-run
@@ -660,7 +660,10 @@ Flags:
   -h, --help                     help for archive
       --idempotency-key string   Reuse the original operation when the same normalized request and idempotency key are repeated
       --input-json string        Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --input-jsonl string       Read up to 100 strict JSONL location items from a file, or - for stdin
       --json                     Emit one stable JSON success envelope
+      --jsonl                    Emit typed per-item and completed JSONL events
+      --mode string              Bulk failure mode: validate the bounded target set then fail fast, or continue-on-error (default "atomic")
       --to string                Select one current destination folder by ID, name, wire name, or kind
       --yes                      Confirm an intentional non-interactive location change
 
@@ -790,10 +793,10 @@ Global Flags:
 ## `icloud mail copy`
 
 ```text
-Copy one exact current message location
+Copy exact current message locations
 
 Usage:
-  icloud mail copy <message-id> [flags]
+  icloud mail copy <message-id> [message-id...] [flags]
 
 Examples:
   icloud mail copy msg_… --from inbox --to Projects --dry-run
@@ -805,7 +808,10 @@ Flags:
   -h, --help                     help for copy
       --idempotency-key string   Reuse the original operation when the same normalized request and idempotency key are repeated
       --input-json string        Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --input-jsonl string       Read up to 100 strict JSONL location items from a file, or - for stdin
       --json                     Emit one stable JSON success envelope
+      --jsonl                    Emit typed per-item and completed JSONL events
+      --mode string              Bulk failure mode: validate the bounded target set then fail fast, or continue-on-error (default "atomic")
       --to string                Select one current destination folder by ID, name, wire name, or kind
       --yes                      Confirm an intentional non-interactive location change
 
@@ -820,10 +826,10 @@ Global Flags:
 ## `icloud mail delete`
 
 ```text
-Permanently delete one exact current provider location
+Permanently delete exact current provider locations
 
 Usage:
-  icloud mail delete <message-id> [flags]
+  icloud mail delete <message-id> [message-id...] [flags]
 
 Examples:
   icloud mail delete msg_… --from trash --dry-run
@@ -835,7 +841,10 @@ Flags:
   -h, --help                     help for delete
       --idempotency-key string   Reuse the original operation when the same normalized request and idempotency key are repeated
       --input-json string        Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --input-jsonl string       Read up to 100 strict JSONL location items from a file, or - for stdin
       --json                     Emit one stable JSON success envelope
+      --jsonl                    Emit typed per-item and completed JSONL events
+      --mode string              Bulk failure mode: validate the bounded target set then fail fast, or continue-on-error (default "atomic")
       --to string                Select one current destination folder by ID, name, wire name, or kind
       --yes                      Confirm an intentional non-interactive location change
 
@@ -1941,10 +1950,10 @@ Global Flags:
 ## `icloud mail junk`
 
 ```text
-Move one exact current message location to the semantic Junk folder
+Move exact current message locations to the semantic Junk folder
 
 Usage:
-  icloud mail junk <message-id> [flags]
+  icloud mail junk <message-id> [message-id...] [flags]
 
 Examples:
   icloud mail junk msg_… --dry-run
@@ -1956,7 +1965,10 @@ Flags:
   -h, --help                     help for junk
       --idempotency-key string   Reuse the original operation when the same normalized request and idempotency key are repeated
       --input-json string        Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --input-jsonl string       Read up to 100 strict JSONL location items from a file, or - for stdin
       --json                     Emit one stable JSON success envelope
+      --jsonl                    Emit typed per-item and completed JSONL events
+      --mode string              Bulk failure mode: validate the bounded target set then fail fast, or continue-on-error (default "atomic")
       --to string                Select one current destination folder by ID, name, wire name, or kind
       --yes                      Confirm an intentional non-interactive location change
 
@@ -2262,14 +2274,15 @@ Global Flags:
 ## `icloud mail move`
 
 ```text
-Move one exact current message location
+Move exact current message locations
 
 Usage:
-  icloud mail move <message-id> [flags]
+  icloud mail move <message-id> [message-id...] [flags]
 
 Examples:
   icloud mail move msg_… --from inbox --to Projects --dry-run
   icloud mail move msg_… --from inbox --to Projects --idempotency-key move-01 --yes
+  icloud mail move msg_… msg_… --from inbox --to Projects --idempotency-key move-batch-01 --yes --jsonl
 
 Flags:
       --dry-run                  Preview the exact location change without creating intent or contacting IMAP
@@ -2277,7 +2290,10 @@ Flags:
   -h, --help                     help for move
       --idempotency-key string   Reuse the original operation when the same normalized request and idempotency key are repeated
       --input-json string        Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --input-jsonl string       Read up to 100 strict JSONL location items from a file, or - for stdin
       --json                     Emit one stable JSON success envelope
+      --jsonl                    Emit typed per-item and completed JSONL events
+      --mode string              Bulk failure mode: validate the bounded target set then fail fast, or continue-on-error (default "atomic")
       --to string                Select one current destination folder by ID, name, wire name, or kind
       --yes                      Confirm an intentional non-interactive location change
 
@@ -2292,10 +2308,10 @@ Global Flags:
 ## `icloud mail not-junk`
 
 ```text
-Move one current Junk location back to Inbox
+Move current Junk locations back to Inbox
 
 Usage:
-  icloud mail not-junk <message-id> [flags]
+  icloud mail not-junk <message-id> [message-id...] [flags]
 
 Examples:
   icloud mail not-junk msg_… --dry-run
@@ -2307,7 +2323,10 @@ Flags:
   -h, --help                     help for not-junk
       --idempotency-key string   Reuse the original operation when the same normalized request and idempotency key are repeated
       --input-json string        Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --input-jsonl string       Read up to 100 strict JSONL location items from a file, or - for stdin
       --json                     Emit one stable JSON success envelope
+      --jsonl                    Emit typed per-item and completed JSONL events
+      --mode string              Bulk failure mode: validate the bounded target set then fail fast, or continue-on-error (default "atomic")
       --to string                Select one current destination folder by ID, name, wire name, or kind
       --yes                      Confirm an intentional non-interactive location change
 
@@ -2637,10 +2656,10 @@ Global Flags:
 ## `icloud mail restore`
 
 ```text
-Move one current Trash location to a deliberate destination
+Move current Trash locations to deliberate destinations
 
 Usage:
-  icloud mail restore <message-id> [flags]
+  icloud mail restore <message-id> [message-id...] [flags]
 
 Examples:
   icloud mail restore msg_… --to inbox --dry-run
@@ -2652,7 +2671,10 @@ Flags:
   -h, --help                     help for restore
       --idempotency-key string   Reuse the original operation when the same normalized request and idempotency key are repeated
       --input-json string        Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --input-jsonl string       Read up to 100 strict JSONL location items from a file, or - for stdin
       --json                     Emit one stable JSON success envelope
+      --jsonl                    Emit typed per-item and completed JSONL events
+      --mode string              Bulk failure mode: validate the bounded target set then fail fast, or continue-on-error (default "atomic")
       --to string                Select one current destination folder by ID, name, wire name, or kind
       --yes                      Confirm an intentional non-interactive location change
 
@@ -3192,10 +3214,10 @@ Global Flags:
 ## `icloud mail trash`
 
 ```text
-Move one exact current location to the discovered Trash folder
+Move exact current locations to the semantic Trash folder
 
 Usage:
-  icloud mail trash <message-id> [flags]
+  icloud mail trash <message-id> [message-id...] [flags]
 
 Examples:
   icloud mail trash msg_… --dry-run
@@ -3207,7 +3229,10 @@ Flags:
   -h, --help                     help for trash
       --idempotency-key string   Reuse the original operation when the same normalized request and idempotency key are repeated
       --input-json string        Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --input-jsonl string       Read up to 100 strict JSONL location items from a file, or - for stdin
       --json                     Emit one stable JSON success envelope
+      --jsonl                    Emit typed per-item and completed JSONL events
+      --mode string              Bulk failure mode: validate the bounded target set then fail fast, or continue-on-error (default "atomic")
       --to string                Select one current destination folder by ID, name, wire name, or kind
       --yes                      Confirm an intentional non-interactive location change
 
@@ -3222,10 +3247,10 @@ Global Flags:
 ## `icloud mail unarchive`
 
 ```text
-Move one current Archive location to Inbox
+Move current Archive locations to Inbox
 
 Usage:
-  icloud mail unarchive <message-id> [flags]
+  icloud mail unarchive <message-id> [message-id...] [flags]
 
 Examples:
   icloud mail unarchive msg_… --dry-run
@@ -3237,7 +3262,10 @@ Flags:
   -h, --help                     help for unarchive
       --idempotency-key string   Reuse the original operation when the same normalized request and idempotency key are repeated
       --input-json string        Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --input-jsonl string       Read up to 100 strict JSONL location items from a file, or - for stdin
       --json                     Emit one stable JSON success envelope
+      --jsonl                    Emit typed per-item and completed JSONL events
+      --mode string              Bulk failure mode: validate the bounded target set then fail fast, or continue-on-error (default "atomic")
       --to string                Select one current destination folder by ID, name, wire name, or kind
       --yes                      Confirm an intentional non-interactive location change
 

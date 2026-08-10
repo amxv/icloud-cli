@@ -9,16 +9,43 @@
     "idempotency_key": {
       "type": "string"
     },
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "idempotency_key": {
+            "type": "string"
+          },
+          "message_id": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message_id"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
     "message_id": {
       "type": "string"
+    },
+    "message_ids": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     },
     "to": {
       "type": "string"
     }
   },
-  "required": [
-    "message_id"
-  ],
   "title": "mail location mutation JSON input",
   "type": "object",
   "x-icloud-contract-version": "1.0.0"

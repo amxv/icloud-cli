@@ -1,0 +1,25 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/location-item.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "from": {
+      "type": "string"
+    },
+    "idempotency_key": {
+      "type": "string"
+    },
+    "message_id": {
+      "type": "string"
+    },
+    "to": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "message_id"
+  ],
+  "title": "mail location mutation JSONL item",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}
