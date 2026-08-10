@@ -9,6 +9,15 @@ type accountListReadJSONRequest struct {
 	Cursor string `json:"cursor,omitempty"`
 }
 
+type mailIdentityListReadJSONRequest struct {
+	Limit  int    `json:"limit,omitempty"`
+	Cursor string `json:"cursor,omitempty"`
+}
+
+type mailIdentityShowReadJSONRequest struct {
+	Identity string `json:"identity"`
+}
+
 type folderListReadJSONRequest struct {
 	Limit          int    `json:"limit,omitempty"`
 	Cursor         string `json:"cursor,omitempty"`

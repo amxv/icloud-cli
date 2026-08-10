@@ -247,6 +247,193 @@ func (commands accountCommands) Show(ctx context.Context, home, selector string)
 	return value, state.SchemaVersion(), nil
 }
 
+func (commands accountCommands) IdentityListPage(ctx context.Context, home, accountSelector string, limit int, cursor string) (account.Account, []account.MailIdentity, bool, string, int64, error) {
+	state, err := openState(ctx, home)
+	if err != nil {
+		return account.Account{}, nil, false, "", 0, err
+	}
+	defer state.Close()
+	value, err := state.Accounts().ResolveSelected(ctx, accountSelector)
+	if err != nil {
+		return account.Account{}, nil, false, "", state.SchemaVersion(), mapAccountError(err)
+	}
+	identities, more, nextCursor, err := state.Identities().ListPage(ctx, value.ID, limit, cursor)
+	if err != nil {
+		return account.Account{}, nil, false, "", state.SchemaVersion(), mapMailIdentityError(err)
+	}
+	return value, identities, more, nextCursor, state.SchemaVersion(), nil
+}
+
+func (commands accountCommands) IdentityShow(ctx context.Context, home, accountSelector, selector string) (account.Account, account.MailIdentity, int64, error) {
+	state, err := openState(ctx, home)
+	if err != nil {
+		return account.Account{}, account.MailIdentity{}, 0, err
+	}
+	defer state.Close()
+	value, err := state.Accounts().ResolveSelected(ctx, accountSelector)
+	if err != nil {
+		return account.Account{}, account.MailIdentity{}, state.SchemaVersion(), mapAccountError(err)
+	}
+	identity, err := state.Identities().Resolve(ctx, value.ID, selector)
+	if err != nil {
+		return account.Account{}, account.MailIdentity{}, state.SchemaVersion(), mapMailIdentityError(err)
+	}
+	return value, identity, state.SchemaVersion(), nil
+}
+
+func (commands accountCommands) IdentityAdd(ctx context.Context, home, accountSelector string, input account.MailIdentityAddInput) (account.Account, account.MailIdentity, int64, error) {
+	state, _, unlock, err := commands.openWriteState(ctx, home)
+	if err != nil {
+		return account.Account{}, account.MailIdentity{}, 0, err
+	}
+	defer state.Close()
+	defer unlock()
+	value, err := state.Accounts().ResolveSelected(ctx, accountSelector)
+	if err != nil {
+		return account.Account{}, account.MailIdentity{}, state.SchemaVersion(), mapAccountError(err)
+	}
+	address, err := account.NormalizeEmail(input.Address)
+	if err != nil {
+		return account.Account{}, account.MailIdentity{}, state.SchemaVersion(), mapAccountError(err)
+	}
+	displayName := strings.TrimSpace(input.DisplayName)
+	if displayName == "" {
+		displayName = value.Name
+	}
+	displayName, err = account.NormalizeMailIdentityDisplayName(displayName)
+	if err != nil {
+		return account.Account{}, account.MailIdentity{}, state.SchemaVersion(), mapAccountError(err)
+	}
+	kind := input.Kind
+	if strings.TrimSpace(string(kind)) == "" {
+		kind = account.MailIdentityOther
+	}
+	kind, err = account.NormalizeMailIdentityKind(kind)
+	if err != nil {
+		return account.Account{}, account.MailIdentity{}, state.SchemaVersion(), mapAccountError(err)
+	}
+	if kind == account.MailIdentityPrimary {
+		return account.Account{}, account.MailIdentity{}, state.SchemaVersion(), mapMailIdentityError(account.ErrIdentityProtected)
+	}
+	if _, err := state.Identities().Resolve(ctx, value.ID, address); err == nil {
+		return account.Account{}, account.MailIdentity{}, state.SchemaVersion(), mapMailIdentityError(account.ErrIdentityConflict)
+	} else if !errors.Is(err, account.ErrIdentityNotFound) {
+		return account.Account{}, account.MailIdentity{}, state.SchemaVersion(), mapMailIdentityError(err)
+	}
+	for attempt := 0; attempt < 4; attempt++ {
+		identityID, generateErr := commands.generateID("mid")
+		if generateErr != nil {
+			return account.Account{}, account.MailIdentity{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot generate a mail identity ID", false, generateErr)
+		}
+		identity, createErr := state.Identities().Create(ctx, account.MailIdentityCreateRecord{
+			IdentityID: identityID, AccountID: value.ID, Address: address, DisplayName: displayName,
+			Kind: kind, Provenance: account.MailIdentityUserConfigured, Verification: account.MailIdentityUnverified,
+			Enabled: true, MakeDefault: input.MakeDefault, Now: commands.timeNow(),
+		})
+		if createErr == nil {
+			return value, identity, state.SchemaVersion(), nil
+		}
+		if !errors.Is(createErr, account.ErrIdentityConflict) {
+			return account.Account{}, account.MailIdentity{}, state.SchemaVersion(), mapMailIdentityError(createErr)
+		}
+	}
+	return account.Account{}, account.MailIdentity{}, state.SchemaVersion(), mapMailIdentityError(account.ErrIdentityConflict)
+}
+
+func (commands accountCommands) IdentityUpdate(ctx context.Context, home, accountSelector, selector string, input account.MailIdentityUpdateInput) (account.Account, account.MailIdentity, int64, error) {
+	state, _, unlock, err := commands.openWriteState(ctx, home)
+	if err != nil {
+		return account.Account{}, account.MailIdentity{}, 0, err
+	}
+	defer state.Close()
+	defer unlock()
+	value, err := state.Accounts().ResolveSelected(ctx, accountSelector)
+	if err != nil {
+		return account.Account{}, account.MailIdentity{}, state.SchemaVersion(), mapAccountError(err)
+	}
+	update := input
+	if update.Address != nil {
+		normalized, normalizeErr := account.NormalizeEmail(*update.Address)
+		if normalizeErr != nil {
+			return account.Account{}, account.MailIdentity{}, state.SchemaVersion(), mapAccountError(normalizeErr)
+		}
+		update.Address = &normalized
+	}
+	if update.DisplayName != nil {
+		normalized, normalizeErr := account.NormalizeMailIdentityDisplayName(*update.DisplayName)
+		if normalizeErr != nil {
+			return account.Account{}, account.MailIdentity{}, state.SchemaVersion(), mapAccountError(normalizeErr)
+		}
+		update.DisplayName = &normalized
+	}
+	if update.Kind != nil {
+		normalized, normalizeErr := account.NormalizeMailIdentityKind(*update.Kind)
+		if normalizeErr != nil {
+			return account.Account{}, account.MailIdentity{}, state.SchemaVersion(), mapAccountError(normalizeErr)
+		}
+		update.Kind = &normalized
+	}
+	identity, err := state.Identities().Update(ctx, value.ID, selector, update, commands.timeNow())
+	if err != nil {
+		return account.Account{}, account.MailIdentity{}, state.SchemaVersion(), mapMailIdentityError(err)
+	}
+	return value, identity, state.SchemaVersion(), nil
+}
+
+func (commands accountCommands) IdentitySetEnabled(ctx context.Context, home, accountSelector, selector string, enabled bool) (account.Account, account.MailIdentity, int64, error) {
+	state, _, unlock, err := commands.openWriteState(ctx, home)
+	if err != nil {
+		return account.Account{}, account.MailIdentity{}, 0, err
+	}
+	defer state.Close()
+	defer unlock()
+	value, err := state.Accounts().ResolveSelected(ctx, accountSelector)
+	if err != nil {
+		return account.Account{}, account.MailIdentity{}, state.SchemaVersion(), mapAccountError(err)
+	}
+	identity, err := state.Identities().SetEnabled(ctx, value.ID, selector, enabled, commands.timeNow())
+	if err != nil {
+		return account.Account{}, account.MailIdentity{}, state.SchemaVersion(), mapMailIdentityError(err)
+	}
+	return value, identity, state.SchemaVersion(), nil
+}
+
+func (commands accountCommands) IdentitySetDefault(ctx context.Context, home, accountSelector, selector string) (account.Account, account.MailIdentity, int64, error) {
+	state, _, unlock, err := commands.openWriteState(ctx, home)
+	if err != nil {
+		return account.Account{}, account.MailIdentity{}, 0, err
+	}
+	defer state.Close()
+	defer unlock()
+	value, err := state.Accounts().ResolveSelected(ctx, accountSelector)
+	if err != nil {
+		return account.Account{}, account.MailIdentity{}, state.SchemaVersion(), mapAccountError(err)
+	}
+	identity, err := state.Identities().SetDefault(ctx, value.ID, selector, commands.timeNow())
+	if err != nil {
+		return account.Account{}, account.MailIdentity{}, state.SchemaVersion(), mapMailIdentityError(err)
+	}
+	return value, identity, state.SchemaVersion(), nil
+}
+
+func (commands accountCommands) IdentityRemove(ctx context.Context, home, accountSelector, selector string) (account.Account, account.MailIdentity, int64, error) {
+	state, _, unlock, err := commands.openWriteState(ctx, home)
+	if err != nil {
+		return account.Account{}, account.MailIdentity{}, 0, err
+	}
+	defer state.Close()
+	defer unlock()
+	value, err := state.Accounts().ResolveSelected(ctx, accountSelector)
+	if err != nil {
+		return account.Account{}, account.MailIdentity{}, state.SchemaVersion(), mapAccountError(err)
+	}
+	identity, err := state.Identities().Remove(ctx, value.ID, selector, commands.timeNow())
+	if err != nil {
+		return account.Account{}, account.MailIdentity{}, state.SchemaVersion(), mapMailIdentityError(err)
+	}
+	return value, identity, state.SchemaVersion(), nil
+}
+
 func (commands accountCommands) Add(ctx context.Context, home string, input account.AddInput) (account.Account, int64, error) {
 	name, email, imapUsername, err := normalizeAccountInput(input)
 	if err != nil {
@@ -916,6 +1103,27 @@ func mapAccountError(err error) error {
 		return cli.WrapAppError(cli.ErrorConflict, "select one account when more than 100 profiles exist", false, err)
 	default:
 		return cli.WrapAppError(cli.ErrorInternal, "cannot update local account state", false, err)
+	}
+}
+
+func mapMailIdentityError(err error) error {
+	switch {
+	case errors.Is(err, account.ErrIdentityNotFound):
+		return cli.WrapAppError(cli.ErrorNotFound, "mail identity not found for the selected account", false, err)
+	case errors.Is(err, account.ErrIdentityInvalidCursor):
+		return cli.WrapAppError(cli.ErrorUsage, "mail identity cursor is invalid for the selected account", false, err)
+	case errors.Is(err, account.ErrIdentityConflict):
+		return cli.WrapAppError(cli.ErrorConflict, "that mail identity address already exists for the selected account", false, err)
+	case errors.Is(err, account.ErrIdentityProtected):
+		return cli.WrapAppError(cli.ErrorConflict, "the primary mail identity cannot be disabled, removed, or changed away from the account address", false, err)
+	case errors.Is(err, account.ErrIdentityDisabled):
+		return cli.WrapAppError(cli.ErrorConflict, "enable the mail identity before making it the default sender", false, err)
+	case errors.Is(err, account.ErrIdentityNoEnabledSender):
+		return cli.WrapAppError(cli.ErrorConflict, "mail identity change would leave the account without one enabled default sender", false, err)
+	case errors.Is(err, account.ErrInvalidInput):
+		return mapAccountError(err)
+	default:
+		return cli.WrapAppError(cli.ErrorInternal, "cannot update local mail identity state", false, err)
 	}
 }
 

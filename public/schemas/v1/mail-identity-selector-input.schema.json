@@ -1,0 +1,16 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/mail-identity-selector-input.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "identity": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "identity"
+  ],
+  "title": "mail identity selector JSON input",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

@@ -66,7 +66,7 @@ func TestGeneratedSchemasMatchCommittedArtifacts(t *testing.T) {
 			t.Fatalf("public schema mirror drift for %s; run make schemas", name)
 		}
 	}
-	for _, required := range []string{"account", "folder", "message", "thread", "attachment", "checkpoint", "attempt", "draft", "event", "error"} {
+	for _, required := range []string{"account", "mail-identity", "folder", "message", "thread", "attachment", "checkpoint", "attempt", "draft", "event", "error"} {
 		name := required + ".schema.json"
 		if _, ok := generated[name]; !ok {
 			t.Fatalf("required public resource schema missing: %s", name)
@@ -89,7 +89,7 @@ func TestCapabilitiesPublishesVersionedAutomationAndSchemaContracts(t *testing.T
 	if envelope.Data.Automation.ContractVersion != AutomationContractVersion || !envelope.Data.Automation.InputJSON || !envelope.Data.Automation.InputJSONL || envelope.Data.Automation.BulkMaximum != MaximumBulkItems {
 		t.Fatalf("automation=%+v", envelope.Data.Automation)
 	}
-	for _, target := range []string{"account", "folder", "message", "thread", "attachment", "checkpoint", "attempt", "draft", "event", "error"} {
+	for _, target := range []string{"account", "mail-identity", "folder", "message", "thread", "attachment", "checkpoint", "attempt", "draft", "event", "error"} {
 		if got := envelope.Data.Schemas[target]; got != SchemaBaseID+target+".schema.json" {
 			t.Fatalf("schema %s=%q", target, got)
 		}
@@ -123,6 +123,23 @@ func TestCapabilitiesPublishesVersionedAutomationAndSchemaContracts(t *testing.T
 	}
 	if got := contracts["mail search"].InputSchema; got != SchemaBaseID+"mail-search-read-input.schema.json" {
 		t.Fatalf("mail search read contract=%q", got)
+	}
+	if !envelope.Data.MailIdentities {
+		t.Fatal("capabilities did not advertise local mail identities")
+	}
+	for command, schema := range map[string]string{
+		"mail identities list":    "mail-identity-list-read-input",
+		"mail identities show":    "mail-identity-show-read-input",
+		"mail identities add":     "mail-identity-add-input",
+		"mail identities update":  "mail-identity-update-input",
+		"mail identities enable":  "mail-identity-selector-input",
+		"mail identities disable": "mail-identity-selector-input",
+		"mail identities default": "mail-identity-selector-input",
+		"mail identities remove":  "mail-identity-selector-input",
+	} {
+		if got := contracts[command].InputSchema; got != SchemaBaseID+schema+".schema.json" {
+			t.Fatalf("identity contract %s=%q", command, got)
+		}
 	}
 	generated, err := GeneratedSchemas()
 	if err != nil {
@@ -213,6 +230,54 @@ func TestPhase3ReadRequestSchemasAreStrictPublicAndPrivateFieldFree(t *testing.T
 		}
 		if !found {
 			t.Fatalf("read capability contract missing: %s", required)
+		}
+	}
+}
+
+func TestPhase4MailIdentityRequestSchemasAreStrictAndSecretFree(t *testing.T) {
+	generated, err := GeneratedSchemas()
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := "updated@example.test"
+	display := "Updated"
+	kind := "custom_domain"
+	values := map[string]any{
+		"mail-identity-list-read-input": mailIdentityListReadJSONRequest{Limit: 20, Cursor: "icur_test"},
+		"mail-identity-show-read-input": mailIdentityShowReadJSONRequest{Identity: "mid_test"},
+		"mail-identity-add-input":       mailIdentityAddJSONRequest{Address: "alias@example.test", DisplayName: "Alias", Kind: "icloud_alias", Default: true},
+		"mail-identity-update-input":    mailIdentityUpdateJSONRequest{Identity: "mid_test", Address: &address, DisplayName: &display, Kind: &kind},
+		"mail-identity-selector-input":  mailIdentitySelectorJSONRequest{Identity: "mid_test"},
+	}
+	var combined bytes.Buffer
+	for name, typed := range values {
+		encodedSchema, ok := generated[name+".schema.json"]
+		if !ok {
+			t.Fatalf("missing generated identity schema %s", name)
+		}
+		combined.Write(encodedSchema)
+		var schema map[string]any
+		if err := json.Unmarshal(encodedSchema, &schema); err != nil {
+			t.Fatal(err)
+		}
+		if additional, ok := schema["additionalProperties"].(bool); !ok || additional {
+			t.Fatalf("identity schema %s must reject unknown fields", name)
+		}
+		encoded, err := json.Marshal(typed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var value any
+		if err := json.Unmarshal(encoded, &value); err != nil {
+			t.Fatal(err)
+		}
+		if err := validateSchemaValue(schema, value, "$", true); err != nil {
+			t.Fatalf("representative %s does not validate: %v", name, err)
+		}
+	}
+	for _, forbidden := range []string{"password", "credential", "raw_storage", "raw_content", "bcc", "idempotency"} {
+		if strings.Contains(strings.ToLower(combined.String()), forbidden) {
+			t.Fatalf("identity request schemas expose private field %q", forbidden)
 		}
 	}
 }
@@ -326,16 +391,17 @@ func TestPublicResourceSchemasValidateRepresentativePublicValues(t *testing.T) {
 		CreatedAt: now, UpdatedAt: now,
 	}
 	values := map[string]any{
-		"account":    account.Account{ID: "acct_schema", Name: "Schema", Email: "owner@example.test", IMAPUsername: "owner", Status: account.StatusConnected, CreatedAt: now, UpdatedAt: now},
-		"folder":     folder.Folder{ID: "fld_schema", AccountID: "acct_schema", Name: "Inbox", WireName: "INBOX", Kind: folder.KindInbox, Present: true, Selectable: true, CreatedAt: now, UpdatedAt: now, DiscoveredAt: now},
-		"message":    message,
-		"thread":     publicThread{ID: "thr_schema", AccountID: "acct_schema", MessageCount: 1, Status: "complete", Reconstruction: "rfc", FirstMessageAt: &now, LastMessageAt: &now, Messages: []publicThreadMessage{}},
-		"attachment": publicAttachment{ID: "att_schema", MessageID: "msg_schema", PartID: "part_schema", PartPath: "1", Availability: maildomain.AttachmentAvailable},
-		"checkpoint": maildomain.Checkpoint{ID: "chk_schema", AccountID: "acct_schema", FolderID: "fld_schema", State: maildomain.CheckpointIdle, CreatedAt: now, UpdatedAt: now},
-		"attempt":    publicOutboundAttempt{ID: "send_schema", Status: maildomain.OutboundSent, Reconciliation: maildomain.ReconciliationPending, Kind: maildomain.OutboundKindSend, CreatedAt: now, UpdatedAt: now},
-		"draft":      publicDraft{ID: "drf_schema", AccountID: "acct_schema", MessageID: "msg_schema", Revision: 1, SyncState: maildomain.DraftLocal, CreatedAt: now, UpdatedAt: now, Message: message},
-		"event":      JSONLEvent{Event: "completed", Sequence: 1, Timestamp: now},
-		"error":      NewAppError(ErrorUsage, "synthetic public error", false),
+		"account":       account.Account{ID: "acct_schema", Name: "Schema", Email: "owner@example.test", IMAPUsername: "owner", Status: account.StatusConnected, CreatedAt: now, UpdatedAt: now},
+		"mail-identity": account.MailIdentity{ID: "mid_schema", AccountID: "acct_schema", Address: "owner@example.test", DisplayName: "Schema", Kind: account.MailIdentityPrimary, Provenance: account.MailIdentityAccountPrimary, Verification: account.MailIdentityUnverified, Enabled: true, Default: true, CreatedAt: now, UpdatedAt: now},
+		"folder":        folder.Folder{ID: "fld_schema", AccountID: "acct_schema", Name: "Inbox", WireName: "INBOX", Kind: folder.KindInbox, Present: true, Selectable: true, CreatedAt: now, UpdatedAt: now, DiscoveredAt: now},
+		"message":       message,
+		"thread":        publicThread{ID: "thr_schema", AccountID: "acct_schema", MessageCount: 1, Status: "complete", Reconstruction: "rfc", FirstMessageAt: &now, LastMessageAt: &now, Messages: []publicThreadMessage{}},
+		"attachment":    publicAttachment{ID: "att_schema", MessageID: "msg_schema", PartID: "part_schema", PartPath: "1", Availability: maildomain.AttachmentAvailable},
+		"checkpoint":    maildomain.Checkpoint{ID: "chk_schema", AccountID: "acct_schema", FolderID: "fld_schema", State: maildomain.CheckpointIdle, CreatedAt: now, UpdatedAt: now},
+		"attempt":       publicOutboundAttempt{ID: "send_schema", Status: maildomain.OutboundSent, Reconciliation: maildomain.ReconciliationPending, Kind: maildomain.OutboundKindSend, CreatedAt: now, UpdatedAt: now},
+		"draft":         publicDraft{ID: "drf_schema", AccountID: "acct_schema", MessageID: "msg_schema", Revision: 1, SyncState: maildomain.DraftLocal, CreatedAt: now, UpdatedAt: now, Message: message},
+		"event":         JSONLEvent{Event: "completed", Sequence: 1, Timestamp: now},
+		"error":         NewAppError(ErrorUsage, "synthetic public error", false),
 	}
 	for name, typed := range values {
 		t.Run(name, func(t *testing.T) {

@@ -177,6 +177,20 @@ INSERT INTO accounts (
 	); err != nil {
 		return account.Account{}, classifyAccountWrite("create account", err)
 	}
+	if err := insertMailIdentity(ctx, tx, account.MailIdentityCreateRecord{
+		IdentityID:   primaryMailIdentityID(record.AccountID),
+		AccountID:    record.AccountID,
+		Address:      record.Email,
+		DisplayName:  record.Name,
+		Kind:         account.MailIdentityPrimary,
+		Provenance:   account.MailIdentityAccountPrimary,
+		Verification: account.MailIdentityUnverified,
+		Enabled:      true,
+		MakeDefault:  true,
+		Now:          record.Now,
+	}); err != nil {
+		return account.Account{}, err
+	}
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO credential_refs (
     credential_ref_id, account_id, scheme, reference, created_at, updated_at

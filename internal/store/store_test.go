@@ -42,7 +42,7 @@ func TestOpenCreatesAndReopensVersionedPrivateState(t *testing.T) {
 	if state.SchemaVersion() != SchemaVersion {
 		t.Fatalf("schema version = %d", state.SchemaVersion())
 	}
-	for _, table := range []string{"app_metadata", "accounts", "credential_refs", "folders", "raw_blobs", "messages", "message_recipients", "message_references", "message_locations", "message_content", "message_parts", "attachments", "sync_checkpoints", "mail_backfill_frontiers", "message_identity_evidence", "message_dedupe_conflicts", "threads", "thread_messages", "thread_aliases", "thread_edges", "message_search_documents", "message_search_fts", "outbound_attempts", "outbound_attempt_attachments", "idempotency_records", "local_message_sources", "goose_db_version"} {
+	for _, table := range []string{"app_metadata", "accounts", "credential_refs", "mail_identities", "folders", "raw_blobs", "messages", "message_recipients", "message_references", "message_locations", "message_content", "message_parts", "attachments", "sync_checkpoints", "mail_backfill_frontiers", "message_identity_evidence", "message_dedupe_conflicts", "threads", "thread_messages", "thread_aliases", "thread_edges", "message_search_documents", "message_search_fts", "outbound_attempts", "outbound_attempt_attachments", "idempotency_records", "local_message_sources", "goose_db_version"} {
 		var count int
 		if err := state.db.QueryRowContext(context.Background(),
 			"SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?", table,
@@ -173,6 +173,17 @@ INSERT INTO credential_refs (
 			}
 			if value.ID != accountID || credential.ID != credentialID || credential.Reference != fmt.Sprintf("env:LEGACY_%d_PASSWORD", version) {
 				t.Fatalf("stable IDs/reference changed: account=%+v credential=%+v", value, credential)
+			}
+			identity, err := state.Identities().Default(context.Background(), accountID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantAddress := fmt.Sprintf("legacy-%d@example.test", version)
+			if identity.ID != primaryMailIdentityID(accountID) || identity.AccountID != accountID || identity.Address != wantAddress ||
+				identity.DisplayName != fmt.Sprintf("Legacy %d", version) || identity.Kind != account.MailIdentityPrimary ||
+				identity.Provenance != account.MailIdentityMigratedPrimary || identity.Verification != account.MailIdentityUnverified ||
+				!identity.Enabled || !identity.Default {
+				t.Fatalf("migrated primary identity=%+v", identity)
 			}
 			var integrity string
 			if err := state.db.QueryRowContext(context.Background(), "PRAGMA integrity_check").Scan(&integrity); err != nil {

@@ -16,6 +16,7 @@ test("every completed Mail workflow has a discoverable task-focused guide", () =
   const coverage = new Map([
     ["account lifecycle", ["account-setup-and-credentials.md", ["account add", "credential replace", "account remove"]]],
     ["validation and doctor", ["account-validation-and-doctor.md", ["account test", "--live"]]],
+    ["sender identities", ["manage-sender-identities.md", ["mail identities", "verification=unverified", "--default"]]],
     ["folders", ["folder-discovery-and-sync-policy.md", ["folders status", "folders create", "folders rename", "folders delete"]]],
     ["sync operations", ["sync-and-read-inbox.md", ["mail sync", "mail watch", "sync backfill", "sync rebaseline", "sync repair"]]],
     ["search and hydration", ["search-synchronized-mail.md", ["mail search", "--remote", "--cache"]]],

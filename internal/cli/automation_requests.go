@@ -23,6 +23,24 @@ type accountRenameJSONRequest struct {
 	NewName  string `json:"new_name"`
 }
 
+type mailIdentityAddJSONRequest struct {
+	Address     string `json:"address"`
+	DisplayName string `json:"display_name,omitempty"`
+	Kind        string `json:"kind,omitempty"`
+	Default     bool   `json:"default,omitempty"`
+}
+
+type mailIdentityUpdateJSONRequest struct {
+	Identity    string  `json:"identity"`
+	Address     *string `json:"address,omitempty"`
+	DisplayName *string `json:"display_name,omitempty"`
+	Kind        *string `json:"kind,omitempty"`
+}
+
+type mailIdentitySelectorJSONRequest struct {
+	Identity string `json:"identity"`
+}
+
 type credentialReplaceJSONRequest struct {
 	Selector       string `json:"selector"`
 	PasswordStdin  bool   `json:"password_stdin,omitempty"`

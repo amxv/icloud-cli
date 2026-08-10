@@ -1,0 +1,58 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/mail-identity.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "account_id": {
+      "type": "string"
+    },
+    "address": {
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "default": {
+      "type": "boolean"
+    },
+    "display_name": {
+      "type": "string"
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "id": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string"
+    },
+    "provenance": {
+      "type": "string"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "verification": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "account_id",
+    "address",
+    "created_at",
+    "default",
+    "display_name",
+    "enabled",
+    "id",
+    "kind",
+    "provenance",
+    "updated_at",
+    "verification"
+  ],
+  "title": "iCloud CLI mail identity",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

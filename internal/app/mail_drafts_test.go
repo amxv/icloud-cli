@@ -15,6 +15,7 @@ import (
 	"github.com/amxv/icloud-cli/internal/cli"
 	"github.com/amxv/icloud-cli/internal/folder"
 	maildomain "github.com/amxv/icloud-cli/internal/mail"
+	"github.com/amxv/icloud-cli/internal/store"
 	"github.com/amxv/icloud-cli/internal/transport"
 )
 
@@ -186,7 +187,7 @@ func TestMailDraftCreateOfflinePreservesCanonicalContentBCCAndAttachment(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if schemaVersion != 19 || value.SyncState != maildomain.DraftLocal || value.Revision != 1 || value.Message.Direction != maildomain.DirectionOutbound || value.Message.Unread || len(value.Message.BCC) != 1 || value.Message.AttachmentCount != 1 {
+	if schemaVersion != store.SchemaVersion || value.SyncState != maildomain.DraftLocal || value.Revision != 1 || value.Message.Direction != maildomain.DirectionOutbound || value.Message.Unread || len(value.Message.BCC) != 1 || value.Message.AttachmentCount != 1 {
 		t.Fatalf("account=%+v draft=%+v schema=%d", accountValue, value, schemaVersion)
 	}
 	_, listed, more, _, err := commands.MailDraftList(context.Background(), home, "", 10)

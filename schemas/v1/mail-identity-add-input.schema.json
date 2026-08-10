@@ -1,0 +1,25 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/mail-identity-add-input.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "address": {
+      "type": "string"
+    },
+    "default": {
+      "type": "boolean"
+    },
+    "display_name": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "address"
+  ],
+  "title": "mail identity add JSON input",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

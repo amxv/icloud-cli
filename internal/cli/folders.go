@@ -70,6 +70,7 @@ func newMailCommand(state *executionState) *cobra.Command {
 		},
 	}
 	command.AddCommand(newMailFoldersCommand(state))
+	command.AddCommand(newMailIdentitiesCommand(state))
 	command.AddCommand(newMailSyncCommand(state))
 	command.AddCommand(newMailWatchCommand(state))
 	command.AddCommand(newMailDraftCommand(state))

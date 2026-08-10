@@ -47,6 +47,13 @@ type AccountService interface {
 	List(context.Context, string, int) ([]account.Account, bool, int64, error)
 	ListPage(context.Context, string, int, string) ([]account.Account, bool, string, int64, error)
 	Show(context.Context, string, string) (account.Account, int64, error)
+	IdentityListPage(context.Context, string, string, int, string) (account.Account, []account.MailIdentity, bool, string, int64, error)
+	IdentityShow(context.Context, string, string, string) (account.Account, account.MailIdentity, int64, error)
+	IdentityAdd(context.Context, string, string, account.MailIdentityAddInput) (account.Account, account.MailIdentity, int64, error)
+	IdentityUpdate(context.Context, string, string, string, account.MailIdentityUpdateInput) (account.Account, account.MailIdentity, int64, error)
+	IdentitySetEnabled(context.Context, string, string, string, bool) (account.Account, account.MailIdentity, int64, error)
+	IdentitySetDefault(context.Context, string, string, string) (account.Account, account.MailIdentity, int64, error)
+	IdentityRemove(context.Context, string, string, string) (account.Account, account.MailIdentity, int64, error)
 	Add(context.Context, string, account.AddInput) (account.Account, int64, error)
 	Rename(context.Context, string, string, string) (account.Account, int64, error)
 	SetDefault(context.Context, string, string) (account.Account, int64, error)
@@ -121,6 +128,7 @@ type capabilitiesData struct {
 	NetworkValidation     bool                 `json:"network_validation"`
 	Diagnostics           bool                 `json:"diagnostics"`
 	MailFolders           bool                 `json:"mail_folders"`
+	MailIdentities        bool                 `json:"mail_identities"`
 	MailSync              bool                 `json:"mail_sync"`
 	MailWatch             bool                 `json:"mail_watch"`
 	MailDrafts            bool                 `json:"mail_drafts"`
@@ -373,6 +381,7 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				NetworkValidation:     true,
 				Diagnostics:           true,
 				MailFolders:           true,
+				MailIdentities:        true,
 				MailSync:              true,
 				MailWatch:             true,
 				MailDrafts:            true,
@@ -430,6 +439,7 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				Field("network_validation", data.NetworkValidation),
 				Field("diagnostics", data.Diagnostics),
 				Field("mail_folders", data.MailFolders),
+				Field("mail_identities", data.MailIdentities),
 				Field("mail_sync", data.MailSync),
 				Field("mail_watch", data.MailWatch),
 				Field("mail_drafts", data.MailDrafts),
@@ -590,6 +600,34 @@ func (unavailableAccountService) ListPage(context.Context, string, int, string) 
 
 func (unavailableAccountService) Show(context.Context, string, string) (account.Account, int64, error) {
 	return account.Account{}, 0, NewAppError(ErrorConfiguration, "local account state is unavailable", false)
+}
+
+func (unavailableAccountService) IdentityListPage(context.Context, string, string, int, string) (account.Account, []account.MailIdentity, bool, string, int64, error) {
+	return account.Account{}, nil, false, "", 0, NewAppError(ErrorConfiguration, "local mail identity state is unavailable", false)
+}
+
+func (unavailableAccountService) IdentityShow(context.Context, string, string, string) (account.Account, account.MailIdentity, int64, error) {
+	return account.Account{}, account.MailIdentity{}, 0, NewAppError(ErrorConfiguration, "local mail identity state is unavailable", false)
+}
+
+func (unavailableAccountService) IdentityAdd(context.Context, string, string, account.MailIdentityAddInput) (account.Account, account.MailIdentity, int64, error) {
+	return account.Account{}, account.MailIdentity{}, 0, NewAppError(ErrorConfiguration, "local mail identity state is unavailable", false)
+}
+
+func (unavailableAccountService) IdentityUpdate(context.Context, string, string, string, account.MailIdentityUpdateInput) (account.Account, account.MailIdentity, int64, error) {
+	return account.Account{}, account.MailIdentity{}, 0, NewAppError(ErrorConfiguration, "local mail identity state is unavailable", false)
+}
+
+func (unavailableAccountService) IdentitySetEnabled(context.Context, string, string, string, bool) (account.Account, account.MailIdentity, int64, error) {
+	return account.Account{}, account.MailIdentity{}, 0, NewAppError(ErrorConfiguration, "local mail identity state is unavailable", false)
+}
+
+func (unavailableAccountService) IdentitySetDefault(context.Context, string, string, string) (account.Account, account.MailIdentity, int64, error) {
+	return account.Account{}, account.MailIdentity{}, 0, NewAppError(ErrorConfiguration, "local mail identity state is unavailable", false)
+}
+
+func (unavailableAccountService) IdentityRemove(context.Context, string, string, string) (account.Account, account.MailIdentity, int64, error) {
+	return account.Account{}, account.MailIdentity{}, 0, NewAppError(ErrorConfiguration, "local mail identity state is unavailable", false)
 }
 
 func (unavailableAccountService) Add(context.Context, string, account.AddInput) (account.Account, int64, error) {

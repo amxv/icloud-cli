@@ -604,6 +604,7 @@ Available Commands:
   flag        Flag one selected message location
   folders     Discover folders, inspect provider status, and choose sync policy
   forward     Forward one explicitly selected local message as a new conversation
+  identities  Manage local Send From identities for the selected mail account
   inbox       Compatibility alias for `mail messages list`
   latest      Compatibility alias for `mail threads list`
   mark-read   Mark one selected message location as read
@@ -1504,6 +1505,251 @@ Flags:
       --to stringArray                   Recipient address; repeat or provide a comma-separated address list
       --verbose                          With --dry-run, include custom-header detail and HTML byte count
       --yes                              Confirm an intentional non-interactive forward
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail identities`
+
+```text
+Manage local Send From identities for the selected mail account
+
+Usage:
+  icloud mail identities [flags]
+  icloud mail identities [command]
+
+Examples:
+  icloud mail identities list
+  icloud mail identities add --address alias@icloud.com --kind icloud_alias
+  icloud mail identities default mid_…
+
+Available Commands:
+  add         Add one local sender identity without claiming provider acceptance
+  default     Choose the local default enabled sender identity
+  disable     Disable one non-primary local sender identity
+  enable      Enable one local sender identity
+  list        List bounded local sender identities without contacting iCloud
+  remove      Remove one non-primary local sender identity
+  show        Show one local sender identity for the selected account
+  update      Update local address, display-name, or kind metadata
+
+Flags:
+  -h, --help   help for identities
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+
+Use "icloud mail identities [command] --help" for more information about a command.
+```
+
+## `icloud mail identities add`
+
+```text
+Add one local sender identity without claiming provider acceptance
+
+Usage:
+  icloud mail identities add [flags]
+
+Examples:
+  icloud mail identities add --address alias@icloud.com --kind icloud_alias
+  icloud mail identities add --address me@example.com --display-name 'Work Me' --kind custom_domain --default
+
+Flags:
+      --address string        RFC email address for this identity
+      --default               Make this enabled identity the local default sender
+      --display-name string   Local display name (defaults to the account name)
+  -h, --help                  help for add
+      --input-json string     Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                  Emit one stable JSON success envelope
+      --kind string           Identity kind: icloud_alias, custom_domain, hide_my_email, or other (default "other")
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail identities default`
+
+```text
+Choose the local default enabled sender identity
+
+Usage:
+  icloud mail identities default <identity-id|address> [flags]
+
+Examples:
+  icloud mail identities default mid_…
+
+Flags:
+  -h, --help                help for default
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail identities disable`
+
+```text
+Disable one non-primary local sender identity
+
+Usage:
+  icloud mail identities disable <identity-id|address> [flags]
+
+Examples:
+  icloud mail identities disable mid_…
+
+Flags:
+  -h, --help                help for disable
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail identities enable`
+
+```text
+Enable one local sender identity
+
+Usage:
+  icloud mail identities enable <identity-id|address> [flags]
+
+Examples:
+  icloud mail identities enable mid_…
+
+Flags:
+  -h, --help                help for enable
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail identities list`
+
+```text
+List bounded local sender identities without contacting iCloud
+
+Usage:
+  icloud mail identities list [flags]
+
+Examples:
+  icloud mail identities list
+  icloud --account Personal mail identities list --json
+  icloud mail identities list --input-json request.json --json
+
+Flags:
+      --cursor string       Continue from a next_cursor returned for the same account
+  -h, --help                help for list
+      --input-json string   Read one strict JSON read request from a file, or - for stdin; cannot be mixed with equivalent read flags or positional read arguments
+      --json                Emit one stable JSON success envelope
+      --limit int           Maximum identities to return (1-100) (default 20)
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail identities remove`
+
+```text
+Remove one non-primary local sender identity
+
+Usage:
+  icloud mail identities remove <identity-id|address> [flags]
+
+Examples:
+  icloud mail identities remove mid_… --yes
+
+Flags:
+  -h, --help                help for remove
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+      --yes                 Authorize local identity removal without prompting
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail identities show`
+
+```text
+Show one local sender identity for the selected account
+
+Usage:
+  icloud mail identities show <identity-id|address> [flags]
+
+Examples:
+  icloud mail identities show mid_…
+  icloud mail identities show alias@icloud.com --json
+  icloud mail identities show --input-json request.json --json
+
+Flags:
+  -h, --help                help for show
+      --input-json string   Read one strict JSON read request from a file, or - for stdin; cannot be mixed with equivalent read flags or positional read arguments
+      --json                Emit one stable JSON success envelope
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail identities update`
+
+```text
+Update local address, display-name, or kind metadata
+
+Usage:
+  icloud mail identities update <identity-id|address> [flags]
+
+Examples:
+  icloud mail identities update mid_… --display-name 'Work Me'
+  icloud mail identities update alias@icloud.com --kind custom_domain
+
+Flags:
+      --address string        Replace the RFC email address
+      --display-name string   Replace the local display name
+  -h, --help                  help for update
+      --input-json string     Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                  Emit one stable JSON success envelope
+      --kind string           Replace the identity kind
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID

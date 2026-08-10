@@ -139,6 +139,22 @@ Inspect saved health later without another network request:
 icloud doctor
 ```
 
+## Record alternate sender identities locally
+
+Every account has one protected `MailIdentity` matching its configured email address. Inspect it without contacting iCloud:
+
+```bash
+icloud mail identities list
+```
+
+Record an alias or custom-domain address you already control:
+
+```bash
+icloud mail identities add --address alias@icloud.com --kind icloud_alias
+```
+
+User-entered identities are labeled `verification=unverified` until a sending workflow proves provider acceptance. They reuse the account's existing credential rather than creating another mailbox profile. See [Manage sender identities](/docs/manage-sender-identities) for kinds, local defaults, enabled state, pagination, and protected-primary rules.
+
 ## Preview and send a message deliberately
 
 Review the normalized request without contacting SMTP or creating an attempt:
