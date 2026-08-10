@@ -127,6 +127,9 @@ func TestCapabilitiesPublishesVersionedAutomationAndSchemaContracts(t *testing.T
 	if !envelope.Data.MailIdentities {
 		t.Fatal("capabilities did not advertise local mail identities")
 	}
+	if !envelope.Data.MailFolderRoles {
+		t.Fatal("capabilities did not advertise local semantic folder-role bindings")
+	}
 	if !envelope.Data.MailReplyAnswered {
 		t.Fatal("capabilities did not advertise proven provider Answered reply reconciliation")
 	}

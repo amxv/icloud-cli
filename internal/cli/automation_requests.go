@@ -74,6 +74,15 @@ type folderDeleteJSONRequest struct {
 	AllowNonEmpty bool   `json:"allow_non_empty,omitempty"`
 }
 
+type folderRoleSetJSONRequest struct {
+	Role   string `json:"role"`
+	Folder string `json:"folder"`
+}
+
+type folderRoleJSONRequest struct {
+	Role string `json:"role"`
+}
+
 type mailSyncJSONRequest struct {
 	Folder            string   `json:"folder,omitempty"`
 	AllFolders        bool     `json:"all_folders,omitempty"`

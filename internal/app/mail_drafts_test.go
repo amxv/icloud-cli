@@ -583,6 +583,9 @@ func TestResolveDraftsFolderRejectsExplicitOverrideWhenProviderAdvertisesDraftsR
 	values, err := state.Folders().Reconcile(context.Background(), accountValue.ID, []folder.RemoteObservation{{
 		Name: "Ordinary", WireName: "Ordinary", Kind: folder.KindOther,
 		Selectable: true, Subscription: folder.SubscriptionUnknown, UIDValidity: 701, StatusKnown: true,
+	}, {
+		Name: "Drafts", WireName: "Drafts", Kind: folder.KindDrafts, KindSource: "special_use",
+		Selectable: true, Subscription: folder.SubscriptionSubscribed, UIDValidity: 300, StatusKnown: true,
 	}}, now, func() (string, error) { return "fld_0198d704-6c00-7000-8000-000000000701", nil })
 	if err != nil {
 		t.Fatalf("reconcile values=%+v err=%v", values, err)

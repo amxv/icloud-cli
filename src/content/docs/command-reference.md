@@ -1154,6 +1154,7 @@ Available Commands:
   list        List locally discovered folders without contacting iCloud
   refresh     Refresh every remote folder and its provider counts without fetching messages
   rename      Rename one custom iCloud Mail folder without changing its stable local ID
+  role        Manage local semantic folder-role bindings without changing provider folder metadata
   show        Show one locally discovered folder
   status      Compatibility alias for `mail folders refresh`
   subscribe   Subscribe one current iCloud Mail folder
@@ -1352,6 +1353,109 @@ Flags:
       --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
       --json                Emit one stable JSON success envelope
       --yes                 Confirm an intentional non-interactive folder change
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail folders role`
+
+```text
+Manage local semantic folder-role bindings without changing provider folder metadata
+
+Usage:
+  icloud mail folders role [flags]
+  icloud mail folders role [command]
+
+Available Commands:
+  clear       Remove one local semantic folder-role binding
+  list        List account-owned semantic folder-role bindings from local state
+  set         Bind one semantic role to one stable local folder ID
+
+Flags:
+  -h, --help   help for role
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+
+Use "icloud mail folders role [command] --help" for more information about a command.
+```
+
+## `icloud mail folders role clear`
+
+```text
+Remove one local semantic folder-role binding
+
+Usage:
+  icloud mail folders role clear <sent|drafts|archive|trash|junk> [flags]
+
+Examples:
+  icloud mail folders role clear archive --dry-run
+  icloud mail folders role clear archive
+
+Flags:
+      --dry-run             Preview the local binding removal without writing SQLite or contacting iCloud
+  -h, --help                help for clear
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail folders role list`
+
+```text
+List account-owned semantic folder-role bindings from local state
+
+Usage:
+  icloud mail folders role list [flags]
+
+Examples:
+  icloud mail folders role list
+  icloud --account Personal mail folders role list --json
+
+Flags:
+  -h, --help   help for list
+      --json   Emit one stable JSON success envelope
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail folders role set`
+
+```text
+Bind one semantic role to one stable local folder ID
+
+Usage:
+  icloud mail folders role set <sent|drafts|archive|trash|junk> <folder-id|name|wire-name> [flags]
+
+Examples:
+  icloud mail folders role set archive fld_… --dry-run
+  icloud mail folders role set drafts 'Drafts Local'
+
+Flags:
+      --dry-run             Preview the local binding change without writing SQLite or contacting iCloud
+  -h, --help                help for set
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID

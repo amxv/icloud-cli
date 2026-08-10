@@ -1,0 +1,34 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/folder-role-binding.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "account_id": {
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "folder_id": {
+      "type": "string"
+    },
+    "role": {
+      "type": "string"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "type": "string"
+    }
+  },
+  "required": [
+    "account_id",
+    "created_at",
+    "folder_id",
+    "role",
+    "updated_at"
+  ],
+  "title": "iCloud CLI folder role binding",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

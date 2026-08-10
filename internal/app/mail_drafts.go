@@ -265,27 +265,28 @@ func (commands accountCommands) MailDraftSync(ctx context.Context, home, account
 func resolveDraftsFolder(ctx context.Context, state *store.Store, accountID, selector string) (folder.Folder, error) {
 	selector = strings.TrimSpace(selector)
 	if selector == "" {
-		return state.Folders().ResolveKind(ctx, accountID, folder.KindDrafts)
+		resolution, err := resolveSemanticFolder(ctx, state, accountID, folder.RoleDrafts)
+		return resolution.Folder, err
 	}
 	selected, err := state.Folders().Resolve(ctx, accountID, selector)
 	if err != nil {
 		return folder.Folder{}, err
 	}
-	if selected.Kind == folder.KindDrafts {
-		return selected, nil
+	resolution, roleErr := state.FolderRoles().Resolve(ctx, accountID, folder.RoleDrafts)
+	if roleErr == nil {
+		if resolution.Folder.ID == selected.ID {
+			return selected, nil
+		}
+		return folder.Folder{}, fmt.Errorf("%w: a distinct semantic Drafts folder is already configured", errDraftFolderRoleConflict)
+	}
+	if errors.Is(roleErr, folder.ErrRoleBindingInvalid) {
+		return folder.Folder{}, mapFolderRoleError(roleErr)
+	}
+	if !errors.Is(roleErr, folder.ErrNotFound) {
+		return folder.Folder{}, mapFolderRoleError(roleErr)
 	}
 	if selected.Kind != folder.KindOther {
 		return folder.Folder{}, fmt.Errorf("%w: selected folder has provider role %s, not drafts", errDraftFolderRoleConflict, selected.Kind)
-	}
-	providerDrafts, roleErr := state.Folders().ResolveKind(ctx, accountID, folder.KindDrafts)
-	if roleErr == nil {
-		if providerDrafts.ID == selected.ID {
-			return selected, nil
-		}
-		return folder.Folder{}, fmt.Errorf("%w: provider already advertises a distinct Drafts folder", errDraftFolderRoleConflict)
-	}
-	if !errors.Is(roleErr, folder.ErrNotFound) {
-		return folder.Folder{}, roleErr
 	}
 	// The selector is an explicit operator declaration, not role inference.
 	// Keep the durable folder kind unchanged so ordinary system-folder safety

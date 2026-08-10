@@ -170,11 +170,32 @@ icloud mail folders delete fld_… --allow-non-empty --yes
 
 That flag means the provider folder and its contents may be removed. It is not a shortcut for moving mail to Trash. After a confirmed deletion, the historical local folder identity remains inspectable as `present=no stale=true`, while locations that existed only in that folder become absent.
 
-## Understand folder roles
+## Bind semantic roles without rewriting provider metadata
 
 `INBOX` is always recognized. Other system roles are taken from provider metadata when available, including Sent, Drafts, Archive, Trash, and Junk.
 
-When iCloud exposes no Sent role, the CLI can use a conservative compatibility fallback for common Sent names. It does not guess Archive, Drafts, Trash, or Junk merely from an English display name. A folder without trustworthy role metadata remains `kind=other` and can still be selected by name or stable ID.
+When iCloud exposes no Sent role, the CLI can use a conservative compatibility fallback for common Sent names. It does not guess Archive, Drafts, Trash, or Junk merely from an English display name. A folder without trustworthy role metadata remains `kind=other`.
+
+If you know that one current selectable folder should serve one of those semantic roles, bind the **stable `fld_…` ID** locally:
+
+```bash
+icloud mail folders role list
+icloud mail folders role set archive fld_… --dry-run
+icloud mail folders role set archive fld_…
+```
+
+Bindings are account-owned local intent. They do not contact iCloud and never change the folder's provider-derived `kind` or `kind_source`. A binding therefore survives a provider rename as long as the stable folder identity survives. One folder can serve only one bound role at a time.
+
+The same resolver is used by existing shortcuts: Sent append/reconciliation, Drafts synchronization, archive/unarchive, and trash/restore. Resolution order is an explicit valid binding first, trustworthy current provider role second, and the narrow historical Sent-name fallback last. For example, a custom `kind=other` folder can become the Archive target after an explicit binding without being reclassified as a provider Archive folder.
+
+Remove user intent to return to provider discovery:
+
+```bash
+icloud mail folders role clear archive --dry-run
+icloud mail folders role clear archive
+```
+
+If a bound folder is deleted, missing, stale, or non-selectable, role-based operations stop and ask you to clear or rebind the role. They do not silently guess another folder by display name or fall through to provider metadata while the explicit binding is invalid.
 
 Trash and Junk also show `retention_risk=provider_auto_delete_possible`, while Drafts shows `retention_risk=provider_mutable_draft`. These warnings stay attached to the provider-derived semantic kind so an explicit all-folder sync does not make a risky mailbox look like ordinary long-term storage.
 

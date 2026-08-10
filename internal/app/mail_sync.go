@@ -249,6 +249,10 @@ func (commands accountCommands) syncMailbox(
 	}
 
 	attemptedAt := commands.timeNow()
+	semanticKind, err := semanticFolderKind(ctx, state, accountValue.ID, folderValue)
+	if err != nil {
+		return maildomain.SyncSummary{}, "", err
+	}
 	stager := commands.blobStager(paths)
 	attachmentSet := newStagedAttachmentSet(commands.attachmentBlobStore(paths))
 	defer attachmentSet.Abort()
@@ -265,7 +269,7 @@ func (commands accountCommands) syncMailbox(
 			LastCommittedUID:    checkpoint.LastCommittedUID,
 			LastScannedUID:      checkpoint.LastScannedUID,
 			Bootstrap:           !checkpoint.BootstrapComplete,
-			TailOnlyBootstrap:   !checkpoint.BootstrapComplete && folderValue.Kind == folder.KindSent,
+			TailOnlyBootstrap:   !checkpoint.BootstrapComplete && semanticKind == folder.KindSent,
 			Limit:               limit,
 			ReconcileUIDs:       reconcileUIDs,
 		}, stager)
@@ -351,7 +355,7 @@ func (commands accountCommands) syncMailbox(
 		)
 	}
 	var outboundReconcile *maildomain.OutboundReconcileSummary
-	if folderValue.Kind == folder.KindSent {
+	if semanticKind == folder.KindSent {
 		outboundSummary, reconcileErr := state.Outbound().Reconcile(ctx, accountValue.ID, 100, attemptedAt)
 		if reconcileErr != nil {
 			return summary, usedUsername, cli.WrapAppError(cli.ErrorInternal, "Sent mail committed but outbound reconciliation failed", true, reconcileErr)

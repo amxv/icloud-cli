@@ -37,6 +37,11 @@ type FolderService interface {
 	FolderShow(context.Context, string, string, string) (account.Account, folder.Folder, int64, error)
 	FolderStatus(context.Context, string, string) (account.Account, []folder.Folder, int64, error)
 	FolderSetSync(context.Context, string, string, string, bool) (account.Account, folder.Folder, int64, error)
+	FolderRoleList(context.Context, string, string) (account.Account, []folder.FolderRoleBinding, int64, error)
+	FolderRoleSetPreview(context.Context, string, string, string, string) (account.Account, folder.FolderRolePlan, int64, error)
+	FolderRoleSet(context.Context, string, string, string, string) (account.Account, folder.FolderRoleBinding, folder.Folder, int64, error)
+	FolderRoleClearPreview(context.Context, string, string, string) (account.Account, folder.FolderRolePlan, int64, error)
+	FolderRoleClear(context.Context, string, string, string) (account.Account, folder.FolderRoleBinding, int64, error)
 	FolderAdminPreview(context.Context, string, string, folder.AdminRequest) (account.Account, folder.AdminPlan, int64, error)
 	FolderAdmin(context.Context, string, string, folder.AdminRequest) (account.Account, folder.AdminOutcome, int64, error)
 }
@@ -129,6 +134,7 @@ type capabilitiesData struct {
 	NetworkValidation      bool                 `json:"network_validation"`
 	Diagnostics            bool                 `json:"diagnostics"`
 	MailFolders            bool                 `json:"mail_folders"`
+	MailFolderRoles        bool                 `json:"mail_folder_roles"`
 	MailIdentities         bool                 `json:"mail_identities"`
 	MailSync               bool                 `json:"mail_sync"`
 	MailWatch              bool                 `json:"mail_watch"`
@@ -384,6 +390,7 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				NetworkValidation:      true,
 				Diagnostics:            true,
 				MailFolders:            true,
+				MailFolderRoles:        true,
 				MailIdentities:         true,
 				MailSync:               true,
 				MailWatch:              true,
@@ -444,6 +451,7 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				Field("network_validation", data.NetworkValidation),
 				Field("diagnostics", data.Diagnostics),
 				Field("mail_folders", data.MailFolders),
+				Field("mail_folder_roles", data.MailFolderRoles),
 				Field("mail_identities", data.MailIdentities),
 				Field("mail_sync", data.MailSync),
 				Field("mail_watch", data.MailWatch),

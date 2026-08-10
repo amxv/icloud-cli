@@ -333,11 +333,17 @@ func resolveLocationMutationPlan(
 		destinationSelector := strings.TrimSpace(request.ToFolder)
 		switch action {
 		case maildomain.LocationActionArchive:
-			destinationFolder, err = state.Folders().ResolveKind(ctx, accountValue.ID, folder.KindArchive)
+			var resolution folder.FolderRoleResolution
+			resolution, err = resolveSemanticFolder(ctx, state, accountValue.ID, folder.RoleArchive)
+			destinationFolder = resolution.Folder
 		case maildomain.LocationActionUnarchive:
-			destinationFolder, err = state.Folders().ResolveKind(ctx, accountValue.ID, folder.KindInbox)
+			var resolution folder.FolderRoleResolution
+			resolution, err = resolveSemanticFolder(ctx, state, accountValue.ID, folder.RoleInbox)
+			destinationFolder = resolution.Folder
 		case maildomain.LocationActionTrash:
-			destinationFolder, err = state.Folders().ResolveKind(ctx, accountValue.ID, folder.KindTrash)
+			var resolution folder.FolderRoleResolution
+			resolution, err = resolveSemanticFolder(ctx, state, accountValue.ID, folder.RoleTrash)
+			destinationFolder = resolution.Folder
 		case maildomain.LocationActionRestore:
 			if destinationSelector == "" {
 				return account.Account{}, maildomain.LocationMutationPlan{}, cli.NewAppError(cli.ErrorUsage, "restore requires a deliberate --to folder", false)
@@ -351,6 +357,9 @@ func resolveLocationMutationPlan(
 			destinationFolder, err = state.Folders().Resolve(ctx, accountValue.ID, destinationSelector)
 		}
 		if err != nil {
+			if action == maildomain.LocationActionArchive || action == maildomain.LocationActionUnarchive || action == maildomain.LocationActionTrash {
+				return account.Account{}, maildomain.LocationMutationPlan{}, err
+			}
 			return account.Account{}, maildomain.LocationMutationPlan{}, mapFolderError(err)
 		}
 		if !destinationFolder.Present || destinationFolder.Stale || !destinationFolder.Selectable {
@@ -382,6 +391,18 @@ func resolveLocationMutationSource(
 	selector string,
 ) (folder.Folder, maildomain.Location, error) {
 	selector = strings.TrimSpace(selector)
+	roles, err := resolveLocationMutationRoles(ctx, state, accountID, action)
+	if err != nil {
+		if selector != "" && errors.Is(err, folder.ErrNotFound) {
+			switch action {
+			case maildomain.LocationActionUnarchive:
+				return folder.Folder{}, maildomain.Location{}, cli.NewAppError(cli.ErrorConflict, "unarchive requires a current Archive source location", false)
+			case maildomain.LocationActionRestore:
+				return folder.Folder{}, maildomain.Location{}, cli.NewAppError(cli.ErrorConflict, "restore requires a current Trash source location", false)
+			}
+		}
+		return folder.Folder{}, maildomain.Location{}, err
+	}
 	if selector != "" {
 		folderValue, err := state.Folders().Resolve(ctx, accountID, selector)
 		if err != nil {
@@ -389,7 +410,7 @@ func resolveLocationMutationSource(
 		}
 		for _, location := range message.Locations {
 			if location.FolderID == folderValue.ID && location.Present {
-				if err := validateLocationMutationSourceRole(action, folderValue.Kind); err != nil {
+				if err := validateLocationMutationSourceRole(action, folderValue.ID, roles); err != nil {
 					return folder.Folder{}, maildomain.Location{}, err
 				}
 				if action != maildomain.LocationActionDelete && !location.Flags.Eligible() {
@@ -410,19 +431,19 @@ func resolveLocationMutationSource(
 		}
 		switch action {
 		case maildomain.LocationActionArchive:
-			if location.FolderKind == string(folder.KindSent) || location.FolderKind == string(folder.KindArchive) || location.FolderKind == string(folder.KindTrash) {
+			if location.FolderID == roles.sentID || location.FolderID == roles.archiveID || location.FolderID == roles.trashID {
 				continue
 			}
 		case maildomain.LocationActionUnarchive:
-			if location.FolderKind != string(folder.KindArchive) {
+			if location.FolderID != roles.archiveID {
 				continue
 			}
 		case maildomain.LocationActionTrash:
-			if location.FolderKind == string(folder.KindTrash) {
+			if location.FolderID == roles.trashID {
 				continue
 			}
 		case maildomain.LocationActionRestore:
-			if location.FolderKind != string(folder.KindTrash) {
+			if location.FolderID != roles.trashID {
 				continue
 			}
 		}
@@ -441,18 +462,65 @@ func resolveLocationMutationSource(
 	return folderValue, candidates[0], nil
 }
 
-func validateLocationMutationSourceRole(action maildomain.LocationMutationAction, kind folder.Kind) error {
+type locationMutationRoles struct {
+	sentID    string
+	archiveID string
+	trashID   string
+}
+
+func resolveLocationMutationRoles(ctx context.Context, state *store.Store, accountID string, action maildomain.LocationMutationAction) (locationMutationRoles, error) {
+	var result locationMutationRoles
+	if action == maildomain.LocationActionArchive {
+		if resolution, ok, err := resolveOptionalSemanticFolder(ctx, state, accountID, folder.RoleSent); err != nil {
+			return result, err
+		} else if ok {
+			result.sentID = resolution.Folder.ID
+		}
+	}
+	if action == maildomain.LocationActionArchive || action == maildomain.LocationActionUnarchive {
+		resolution, err := resolveSemanticFolder(ctx, state, accountID, folder.RoleArchive)
+		if err != nil {
+			return result, err
+		}
+		result.archiveID = resolution.Folder.ID
+	}
+	if action == maildomain.LocationActionArchive || action == maildomain.LocationActionTrash || action == maildomain.LocationActionRestore {
+		if action == maildomain.LocationActionArchive {
+			if resolution, ok, err := resolveOptionalSemanticFolder(ctx, state, accountID, folder.RoleTrash); err != nil {
+				return result, err
+			} else if ok {
+				result.trashID = resolution.Folder.ID
+			}
+		} else {
+			resolution, err := resolveSemanticFolder(ctx, state, accountID, folder.RoleTrash)
+			if err != nil {
+				return result, err
+			}
+			result.trashID = resolution.Folder.ID
+		}
+	}
+	return result, nil
+}
+
+func validateLocationMutationSourceRole(action maildomain.LocationMutationAction, folderID string, roles locationMutationRoles) error {
 	switch action {
 	case maildomain.LocationActionArchive:
-		if kind == folder.KindSent {
+		if folderID == roles.sentID {
 			return cli.NewAppError(cli.ErrorSafety, "archive never moves a Sent location", false)
 		}
+		if folderID == roles.archiveID || folderID == roles.trashID {
+			return cli.NewAppError(cli.ErrorConflict, "archive requires a source outside Archive and Trash", false)
+		}
 	case maildomain.LocationActionUnarchive:
-		if kind != folder.KindArchive {
+		if folderID != roles.archiveID {
 			return cli.NewAppError(cli.ErrorConflict, "unarchive requires a current Archive source location", false)
 		}
+	case maildomain.LocationActionTrash:
+		if folderID == roles.trashID {
+			return cli.NewAppError(cli.ErrorConflict, "trash requires a source outside Trash", false)
+		}
 	case maildomain.LocationActionRestore:
-		if kind != folder.KindTrash {
+		if folderID != roles.trashID {
 			return cli.NewAppError(cli.ErrorConflict, "restore requires a current Trash source location", false)
 		}
 	}

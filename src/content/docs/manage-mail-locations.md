@@ -72,9 +72,9 @@ next=none
 
 The compact and JSON outcomes omit subject, participants, body, attachment names, raw storage coordinates, credentials, and submitted folder names.
 
-## Use archive and trash shortcuts only when roles are discovered
+## Use archive and trash shortcuts with resolved semantic roles
 
-Convenience commands resolve current special-use roles from folder discovery rather than guessing English mailbox names:
+Convenience commands resolve the account's semantic role rather than guessing English mailbox names:
 
 ```bash
 icloud mail archive msg_… --dry-run
@@ -88,7 +88,14 @@ icloud mail archive msg_… --from inbox --idempotency-key archive-01 --yes
 icloud mail trash msg_… --from Projects --idempotency-key trash-01 --yes
 ```
 
-When iCloud does not advertise an Archive or Trash role, the shortcut fails honestly. Use `mail folders list --verbose` to inspect current provider metadata and use explicit `move --from … --to …` only when you know the intended folder.
+When iCloud does not advertise an Archive or Trash role, you can keep provider metadata truthful and explicitly bind a current stable folder ID:
+
+```bash
+icloud mail folders role set archive fld_… --dry-run
+icloud mail folders role set archive fld_…
+```
+
+The folder can remain `kind=other`; the binding is separate local intent. If no binding or trustworthy provider role exists, the shortcut still fails honestly. If an explicit binding later becomes stale or missing, the shortcut stops and asks you to clear or rebind it instead of silently choosing a different folder.
 
 ## Unarchive and restore deliberately
 

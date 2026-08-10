@@ -2424,6 +2424,167 @@ _icloud_mail_folders_rename()
     noun_aliases=()
 }
 
+_icloud_mail_folders_role_clear()
+{
+    last_command="icloud_mail_folders_role_clear"
+
+    command_aliases=()
+
+    commands=()
+
+    flags=()
+    two_word_flags=()
+    local_nonpersistent_flags=()
+    flags_with_completion=()
+    flags_completion=()
+
+    flags+=("--dry-run")
+    local_nonpersistent_flags+=("--dry-run")
+    flags+=("--help")
+    flags+=("-h")
+    local_nonpersistent_flags+=("--help")
+    local_nonpersistent_flags+=("-h")
+    flags+=("--input-json=")
+    two_word_flags+=("--input-json")
+    local_nonpersistent_flags+=("--input-json")
+    local_nonpersistent_flags+=("--input-json=")
+    flags+=("--json")
+    local_nonpersistent_flags+=("--json")
+    flags+=("--account=")
+    two_word_flags+=("--account")
+    flags_with_completion+=("--account")
+    flags_completion+=("__icloud_handle_go_custom_completion")
+    flags+=("--home=")
+    two_word_flags+=("--home")
+    flags+=("--no-input")
+    flags+=("--request-id=")
+    two_word_flags+=("--request-id")
+    flags+=("--timeout=")
+    two_word_flags+=("--timeout")
+
+    must_have_one_flag=()
+    must_have_one_noun=()
+    noun_aliases=()
+}
+
+_icloud_mail_folders_role_list()
+{
+    last_command="icloud_mail_folders_role_list"
+
+    command_aliases=()
+
+    commands=()
+
+    flags=()
+    two_word_flags=()
+    local_nonpersistent_flags=()
+    flags_with_completion=()
+    flags_completion=()
+
+    flags+=("--help")
+    flags+=("-h")
+    local_nonpersistent_flags+=("--help")
+    local_nonpersistent_flags+=("-h")
+    flags+=("--json")
+    local_nonpersistent_flags+=("--json")
+    flags+=("--account=")
+    two_word_flags+=("--account")
+    flags_with_completion+=("--account")
+    flags_completion+=("__icloud_handle_go_custom_completion")
+    flags+=("--home=")
+    two_word_flags+=("--home")
+    flags+=("--no-input")
+    flags+=("--request-id=")
+    two_word_flags+=("--request-id")
+    flags+=("--timeout=")
+    two_word_flags+=("--timeout")
+
+    must_have_one_flag=()
+    must_have_one_noun=()
+    noun_aliases=()
+}
+
+_icloud_mail_folders_role_set()
+{
+    last_command="icloud_mail_folders_role_set"
+
+    command_aliases=()
+
+    commands=()
+
+    flags=()
+    two_word_flags=()
+    local_nonpersistent_flags=()
+    flags_with_completion=()
+    flags_completion=()
+
+    flags+=("--dry-run")
+    local_nonpersistent_flags+=("--dry-run")
+    flags+=("--help")
+    flags+=("-h")
+    local_nonpersistent_flags+=("--help")
+    local_nonpersistent_flags+=("-h")
+    flags+=("--input-json=")
+    two_word_flags+=("--input-json")
+    local_nonpersistent_flags+=("--input-json")
+    local_nonpersistent_flags+=("--input-json=")
+    flags+=("--json")
+    local_nonpersistent_flags+=("--json")
+    flags+=("--account=")
+    two_word_flags+=("--account")
+    flags_with_completion+=("--account")
+    flags_completion+=("__icloud_handle_go_custom_completion")
+    flags+=("--home=")
+    two_word_flags+=("--home")
+    flags+=("--no-input")
+    flags+=("--request-id=")
+    two_word_flags+=("--request-id")
+    flags+=("--timeout=")
+    two_word_flags+=("--timeout")
+
+    must_have_one_flag=()
+    must_have_one_noun=()
+    noun_aliases=()
+}
+
+_icloud_mail_folders_role()
+{
+    last_command="icloud_mail_folders_role"
+
+    command_aliases=()
+
+    commands=()
+    commands+=("clear")
+    commands+=("list")
+    commands+=("set")
+
+    flags=()
+    two_word_flags=()
+    local_nonpersistent_flags=()
+    flags_with_completion=()
+    flags_completion=()
+
+    flags+=("--help")
+    flags+=("-h")
+    local_nonpersistent_flags+=("--help")
+    local_nonpersistent_flags+=("-h")
+    flags+=("--account=")
+    two_word_flags+=("--account")
+    flags_with_completion+=("--account")
+    flags_completion+=("__icloud_handle_go_custom_completion")
+    flags+=("--home=")
+    two_word_flags+=("--home")
+    flags+=("--no-input")
+    flags+=("--request-id=")
+    two_word_flags+=("--request-id")
+    flags+=("--timeout=")
+    two_word_flags+=("--timeout")
+
+    must_have_one_flag=()
+    must_have_one_noun=()
+    noun_aliases=()
+}
+
 _icloud_mail_folders_show()
 {
     last_command="icloud_mail_folders_show"
@@ -2625,6 +2786,7 @@ _icloud_mail_folders()
     commands+=("list")
     commands+=("refresh")
     commands+=("rename")
+    commands+=("role")
     commands+=("show")
     commands+=("status")
     commands+=("subscribe")

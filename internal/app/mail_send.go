@@ -274,7 +274,8 @@ func (commands accountCommands) MailSend(
 	if ctx.Err() != nil {
 		return markAcceptedSentCopyIssue(ctx, state.Outbound(), accountValue, attempt, "sent_copy_deferred", commands.timeNow(), ctx.Err(), state.SchemaVersion())
 	}
-	sentFolder, folderErr := state.Folders().Resolve(ctx, accountValue.ID, string(folder.KindSent))
+	sentResolution, folderErr := state.FolderRoles().Resolve(ctx, accountValue.ID, folder.RoleSent)
+	sentFolder := sentResolution.Folder
 	if folderErr == nil && sentFolder.Present && sentFolder.Selectable {
 		rawReader, openErr := blob.New(paths.BlobRoot).OpenVerifiedContext(ctx, staged.StorageKey, staged.ContentHash, staged.ByteSize)
 		if openErr != nil {
@@ -293,7 +294,7 @@ func (commands accountCommands) MailSend(
 			return markAcceptedSentCopyIssue(ctx, state.Outbound(), accountValue, attempt, "sent_copy_append", commands.timeNow(), appendErr, state.SchemaVersion())
 		}
 	} else if folderErr != nil && !errors.Is(folderErr, folder.ErrNotFound) {
-		return markAcceptedSentCopyIssue(ctx, state.Outbound(), accountValue, attempt, "sent_folder_lookup", commands.timeNow(), folderErr, state.SchemaVersion())
+		return markAcceptedSentCopyIssue(ctx, state.Outbound(), accountValue, attempt, "sent_folder_lookup", commands.timeNow(), mapFolderRoleError(folderErr), state.SchemaVersion())
 	}
 	return accountValue, attempt, false, state.SchemaVersion(), nil
 }

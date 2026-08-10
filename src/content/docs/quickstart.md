@@ -199,17 +199,19 @@ icloud mail draft create \
 icloud mail draft sync drf_…
 ```
 
-If `icloud mail folders refresh` shows the real provider Drafts mailbox as `kind=other`, iCloud did not advertise a Drafts role. Keep that classification truthful and select the discovered mailbox explicitly for this workflow:
+If `icloud mail folders refresh` shows the real provider Drafts mailbox as `kind=other`, iCloud did not advertise a Drafts role. Keep that classification truthful. You can select the mailbox explicitly for one workflow, or bind its stable ID once so ordinary Drafts commands can resolve it without changing provider metadata:
 
 ```bash
 icloud mail draft sync drf_… --folder Drafts
+icloud mail folders role set drafts fld_… --dry-run
+icloud mail folders role set drafts fld_…
 ```
 
 Update locally, sync the replacement, then preview the exact saved revision before sending:
 
 ```bash
 icloud mail draft update drf_… --to client@example.com --subject 'Project update' --body-file revised.txt
-icloud mail draft sync drf_… --folder Drafts
+icloud mail draft sync drf_…
 icloud mail draft send drf_… --dry-run
 icloud mail draft send drf_… --yes
 ```

@@ -58,6 +58,27 @@ type folderAdminData struct {
 	SchemaVersion int64               `json:"schema_version"`
 }
 
+type folderRoleListData struct {
+	AccountID     string                     `json:"account_id"`
+	Bindings      []folder.FolderRoleBinding `json:"bindings"`
+	Count         int                        `json:"count"`
+	SchemaVersion int64                      `json:"schema_version"`
+}
+
+type folderRolePreviewData struct {
+	Mode          string                `json:"mode"`
+	Plan          folder.FolderRolePlan `json:"plan"`
+	SchemaVersion int64                 `json:"schema_version"`
+}
+
+type folderRoleData struct {
+	Action        folder.RoleAction        `json:"action"`
+	AccountID     string                   `json:"account_id"`
+	Binding       folder.FolderRoleBinding `json:"binding"`
+	Folder        *folder.Folder           `json:"folder,omitempty"`
+	SchemaVersion int64                    `json:"schema_version"`
+}
+
 func newMailCommand(state *executionState) *cobra.Command {
 	command := &cobra.Command{
 		Use:     "mail",
@@ -118,6 +139,7 @@ func newMailFoldersCommand(state *executionState) *cobra.Command {
 	command.AddCommand(newFolderStatusCommand(state))
 	command.AddCommand(newFolderPolicyCommand(state, true))
 	command.AddCommand(newFolderPolicyCommand(state, false))
+	command.AddCommand(newFolderRoleCommand(state))
 	command.AddCommand(newFolderAdminCommand(state, folder.AdminCreate))
 	command.AddCommand(newFolderAdminCommand(state, folder.AdminRename))
 	command.AddCommand(newFolderAdminCommand(state, folder.AdminDelete))
@@ -394,6 +416,150 @@ func newFolderPolicyCommand(state *executionState, enabled bool) *cobra.Command 
 	return command
 }
 
+func newFolderRoleCommand(state *executionState) *cobra.Command {
+	command := &cobra.Command{
+		Use:   "role",
+		Short: "Manage local semantic folder-role bindings without changing provider folder metadata",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return cmd.Help()
+		},
+	}
+	command.AddCommand(newFolderRoleListCommand(state))
+	command.AddCommand(newFolderRoleSetCommand(state))
+	command.AddCommand(newFolderRoleClearCommand(state))
+	return command
+}
+
+func newFolderRoleListCommand(state *executionState) *cobra.Command {
+	var jsonOutput bool
+	command := &cobra.Command{
+		Use:     "list",
+		Short:   "List account-owned semantic folder-role bindings from local state",
+		Args:    cobra.NoArgs,
+		Example: "  icloud mail folders role list\n  icloud --account Personal mail folders role list --json",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			accountValue, bindings, schemaVersion, err := state.folders.FolderRoleList(cmd.Context(), state.global.Home, state.global.Account)
+			if err != nil {
+				return err
+			}
+			if jsonOutput {
+				return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: folderRoleListData{
+					AccountID: accountValue.ID, Bindings: bindings, Count: len(bindings), SchemaVersion: schemaVersion,
+				}, Meta: EnvelopeMeta{RequestID: state.requestID}})
+			}
+			renderer := NewCompactTextRenderer(state.stdout)
+			for _, binding := range bindings {
+				if err := renderer.Record("folder-role", string(binding.Role), Field("folder_id", binding.FolderID)); err != nil {
+					return err
+				}
+			}
+			return renderer.Summary("folder-roles", Field("account", accountValue.ID), Field("count", len(bindings)))
+		},
+	}
+	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
+	return command
+}
+
+func newFolderRoleSetCommand(state *executionState) *cobra.Command {
+	var dryRun, jsonOutput bool
+	var input jsonInputOptions
+	command := &cobra.Command{
+		Use:     "set <sent|drafts|archive|trash|junk> <folder-id|name|wire-name>",
+		Short:   "Bind one semantic role to one stable local folder ID",
+		Args:    exactArgsOrJSONInput(&input, 2),
+		Example: "  icloud mail folders role set archive fld_… --dry-run\n  icloud mail folders role set drafts 'Drafts Local'",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			roleValue, folderSelector := "", ""
+			if len(args) == 2 {
+				roleValue, folderSelector = args[0], args[1]
+			}
+			var request folderRoleSetJSONRequest
+			if used, err := readJSONInput(cmd, state, input, &request); err != nil {
+				return err
+			} else if used {
+				roleValue, folderSelector = request.Role, request.Folder
+			}
+			if dryRun {
+				_, plan, schemaVersion, err := state.folders.FolderRoleSetPreview(cmd.Context(), state.global.Home, state.global.Account, roleValue, folderSelector)
+				if err != nil {
+					return err
+				}
+				return renderFolderRolePreview(state, plan, schemaVersion, jsonOutput)
+			}
+			accountValue, binding, folderValue, schemaVersion, err := state.folders.FolderRoleSet(cmd.Context(), state.global.Home, state.global.Account, roleValue, folderSelector)
+			if err != nil {
+				return err
+			}
+			if jsonOutput {
+				return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: folderRoleData{
+					Action: folder.RoleActionSet, AccountID: accountValue.ID, Binding: binding, Folder: &folderValue, SchemaVersion: schemaVersion,
+				}, Meta: EnvelopeMeta{RequestID: state.requestID}})
+			}
+			return NewCompactTextRenderer(state.stdout).Record("folder-role", string(binding.Role),
+				Field("folder_id", binding.FolderID), Field("folder", folderValue.Name),
+				Field("provider_kind", folderValue.Kind), Field("provider_kind_source", folderValue.KindSource), Field("action", "set"))
+		},
+	}
+	command.Flags().BoolVar(&dryRun, "dry-run", false, "Preview the local binding change without writing SQLite or contacting iCloud")
+	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
+	bindJSONInput(command, &input)
+	return command
+}
+
+func newFolderRoleClearCommand(state *executionState) *cobra.Command {
+	var dryRun, jsonOutput bool
+	var input jsonInputOptions
+	command := &cobra.Command{
+		Use:     "clear <sent|drafts|archive|trash|junk>",
+		Short:   "Remove one local semantic folder-role binding",
+		Args:    exactArgsOrJSONInput(&input, 1),
+		Example: "  icloud mail folders role clear archive --dry-run\n  icloud mail folders role clear archive",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			roleValue := ""
+			if len(args) == 1 {
+				roleValue = args[0]
+			}
+			var request folderRoleJSONRequest
+			if used, err := readJSONInput(cmd, state, input, &request); err != nil {
+				return err
+			} else if used {
+				roleValue = request.Role
+			}
+			if dryRun {
+				_, plan, schemaVersion, err := state.folders.FolderRoleClearPreview(cmd.Context(), state.global.Home, state.global.Account, roleValue)
+				if err != nil {
+					return err
+				}
+				return renderFolderRolePreview(state, plan, schemaVersion, jsonOutput)
+			}
+			accountValue, binding, schemaVersion, err := state.folders.FolderRoleClear(cmd.Context(), state.global.Home, state.global.Account, roleValue)
+			if err != nil {
+				return err
+			}
+			if jsonOutput {
+				return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: folderRoleData{
+					Action: folder.RoleActionClear, AccountID: accountValue.ID, Binding: binding, SchemaVersion: schemaVersion,
+				}, Meta: EnvelopeMeta{RequestID: state.requestID}})
+			}
+			return NewCompactTextRenderer(state.stdout).Record("folder-role", string(binding.Role), Field("folder_id", binding.FolderID), Field("action", "cleared"))
+		},
+	}
+	command.Flags().BoolVar(&dryRun, "dry-run", false, "Preview the local binding removal without writing SQLite or contacting iCloud")
+	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
+	bindJSONInput(command, &input)
+	return command
+}
+
+func renderFolderRolePreview(state *executionState, plan folder.FolderRolePlan, schemaVersion int64, jsonOutput bool) error {
+	if jsonOutput {
+		return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: folderRolePreviewData{Mode: "dry_run", Plan: plan, SchemaVersion: schemaVersion}, Meta: EnvelopeMeta{RequestID: state.requestID}})
+	}
+	return NewCompactTextRenderer(state.stdout).Record("folder-role-preview", string(plan.Role),
+		Field("action", plan.Action), Field("folder_id", plan.FolderID), Field("folder", plan.FolderName),
+		Field("provider_kind", plan.FolderKind), Field("provider_kind_source", plan.FolderKindSource), Field("provider_contact", "false"))
+}
+
 func newFolderAdminCommand(state *executionState, action folder.AdminAction) *cobra.Command {
 	use, short, example := folderAdminCommandMetadata(action)
 	var dryRun, yes, jsonOutput, allowNonEmpty bool
@@ -667,6 +833,26 @@ func (unavailableFolderService) FolderStatus(context.Context, string, string) (a
 
 func (unavailableFolderService) FolderSetSync(context.Context, string, string, string, bool) (account.Account, folder.Folder, int64, error) {
 	return account.Account{}, folder.Folder{}, 0, NewAppError(ErrorConfiguration, "folder state is unavailable", false)
+}
+
+func (unavailableFolderService) FolderRoleList(context.Context, string, string) (account.Account, []folder.FolderRoleBinding, int64, error) {
+	return account.Account{}, nil, 0, NewAppError(ErrorConfiguration, "folder role bindings are unavailable", false)
+}
+
+func (unavailableFolderService) FolderRoleSetPreview(context.Context, string, string, string, string) (account.Account, folder.FolderRolePlan, int64, error) {
+	return account.Account{}, folder.FolderRolePlan{}, 0, NewAppError(ErrorConfiguration, "folder role bindings are unavailable", false)
+}
+
+func (unavailableFolderService) FolderRoleSet(context.Context, string, string, string, string) (account.Account, folder.FolderRoleBinding, folder.Folder, int64, error) {
+	return account.Account{}, folder.FolderRoleBinding{}, folder.Folder{}, 0, NewAppError(ErrorConfiguration, "folder role bindings are unavailable", false)
+}
+
+func (unavailableFolderService) FolderRoleClearPreview(context.Context, string, string, string) (account.Account, folder.FolderRolePlan, int64, error) {
+	return account.Account{}, folder.FolderRolePlan{}, 0, NewAppError(ErrorConfiguration, "folder role bindings are unavailable", false)
+}
+
+func (unavailableFolderService) FolderRoleClear(context.Context, string, string, string) (account.Account, folder.FolderRoleBinding, int64, error) {
+	return account.Account{}, folder.FolderRoleBinding{}, 0, NewAppError(ErrorConfiguration, "folder role bindings are unavailable", false)
 }
 
 func (unavailableFolderService) FolderAdminPreview(context.Context, string, string, folder.AdminRequest) (account.Account, folder.AdminPlan, int64, error) {

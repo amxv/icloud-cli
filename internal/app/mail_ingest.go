@@ -65,6 +65,12 @@ func (commands accountCommands) prepareFetchedMailRecords(
 		return nil, &fetchedPreparationError{code: "identity_state", message: "cannot classify mail direction from enabled identities", err: err}
 	}
 	self := mailIdentityAddressSet(selfAddresses)
+	semanticKind, err := semanticFolderKind(ctx, state, accountValue.ID, folderValue)
+	if err != nil {
+		return nil, &fetchedPreparationError{code: "folder_role_state", message: "cannot classify mail from semantic folder roles", err: err}
+	}
+	classificationFolder := folderValue
+	classificationFolder.Kind = semanticKind
 	records := make([]maildomain.IngestRecord, 0, len(messages))
 	for _, fetched := range messages {
 		if fetched.Raw == nil {
@@ -106,7 +112,7 @@ func (commands accountCommands) prepareFetchedMailRecords(
 		)
 		record.Content = &normalized
 		record.ModSequence = fetched.ModSequence
-		record.Direction = messageDirection(self, folderValue, normalized.Preview, maildomain.ParseLocationFlags(fetched.Flags))
+		record.Direction = messageDirection(self, classificationFolder, normalized.Preview, maildomain.ParseLocationFlags(fetched.Flags))
 		record.ContentFingerprint = maildomain.BuildContentFingerprint(
 			accountValue.ID, normalized.Preview, fetched.InternalDate, normalized.Attachments,
 		)
