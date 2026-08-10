@@ -609,7 +609,7 @@ Available Commands:
   inbox       Compatibility alias for `mail messages list`
   junk        Move exact current message locations to the semantic Junk folder
   latest      Compatibility alias for `mail threads list`
-  mailbox     Export synchronized local mailbox copies
+  mailbox     Import or export complete mailbox archives
   mark-read   Mark one selected message location as read
   mark-unread Mark one selected message location as unread
   message     Read, export, or deliberately import complete RFC messages
@@ -2194,13 +2194,14 @@ Global Flags:
 ## `icloud mail mailbox`
 
 ```text
-Export synchronized local mailbox copies
+Import or export complete mailbox archives
 
 Usage:
   icloud mail mailbox [command]
 
 Available Commands:
   export      Stream one synchronized mailbox as mboxrd without contacting iCloud
+  import      Resume a bounded mboxrd import through exact single-message APPEND recovery
 
 Flags:
   -h, --help   help for mailbox
@@ -2235,6 +2236,39 @@ Flags:
       --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
       --json                Emit one stable JSON summary when output is a file
       --output string       Archive destination path, or - for native stdout
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail mailbox import`
+
+```text
+Resume a bounded mboxrd import through exact single-message APPEND recovery
+
+Usage:
+  icloud mail mailbox import <file.mbox> [flags]
+
+Examples:
+  icloud mail mailbox import archive.mbox --to inbox --dry-run
+  icloud mail mailbox import archive.mbox --to Archive --max-messages 100 --yes
+  icloud mail mailbox import archive.mbox --to inbox --mode continue-on-error --yes --jsonl
+  icloud mail mailbox import --input-json request.json --yes --json
+
+Flags:
+      --dry-run             Fingerprint and validate the next archive record locally without creating a job or contacting IMAP
+  -h, --help                help for import
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+      --jsonl               Emit ordered record results plus one terminal completed event
+      --max-messages int    Maximum archive records to attempt in this invocation (default 100)
+      --mode string         Failure mode for this bounded pass: fail fast or continue-on-error (default "atomic")
+      --to string           Current selectable destination folder kind, ID, name, or wire name
+      --yes                 Confirm an intentional non-interactive provider import
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID

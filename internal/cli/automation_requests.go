@@ -142,6 +142,13 @@ type mailboxExportJSONRequest struct {
 	Force  bool   `json:"force,omitempty"`
 }
 
+type mailboxImportJSONRequest struct {
+	File        string `json:"file"`
+	To          string `json:"to"`
+	Mode        string `json:"mode,omitempty"`
+	MaxMessages int    `json:"max_messages,omitempty"`
+}
+
 type attachmentSaveJSONRequest struct {
 	AttachmentID string `json:"attachment_id"`
 	Output       string `json:"output"`

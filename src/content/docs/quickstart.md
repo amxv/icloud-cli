@@ -442,6 +442,21 @@ icloud mail mailbox export Archive --output - > archive.mbox
 
 Mailbox export never refreshes or synchronizes iCloud implicitly. It walks only provider copies already present in the selected local mailbox, in deterministic provider order, verifies every raw content address before writing that record, and streams the exact canonical RFC bytes through reversible mboxrd framing. File output is private (`0600`), no-clobber by default, and installed atomically only after the complete archive succeeds.
 
+Restore an mboxrd archive with a bounded, resumable mailbox import. Review the exact source and destination locally first:
+
+```bash
+icloud mail mailbox import archive.mbox --to inbox --dry-run
+
+icloud mail mailbox import archive.mbox \
+  --to inbox \
+  --max-messages 100 \
+  --yes
+```
+
+Each invocation attempts at most 100 records by default. The CLI fingerprints the complete regular source file, persists the earliest unconfirmed byte/message frontier, decodes only one mboxrd record at a time, and sends that record through the same single-message import recovery state machine described above. A provider-confirmed record advances the durable frontier only after its exact provider copy is canonically ingested. Re-running the same archive resumes rather than APPENDing confirmed records again, including after a process exit or an ambiguous APPEND outcome.
+
+Use `--mode continue-on-error --jsonl` only when you deliberately want later independent records attempted after one record fails. Later confirmed records are recorded, but the durable resume frontier stays at the earliest failed record; the command never skips that gap or claims provider rollback. If the source file's content changes while a job is incomplete, continuation is refused.
+
 ## Save attachments explicitly
 
 List metadata first, then save by stable attachment ID:

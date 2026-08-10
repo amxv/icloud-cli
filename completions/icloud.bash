@@ -4048,6 +4048,65 @@ _icloud_mail_mailbox_export()
     noun_aliases=()
 }
 
+_icloud_mail_mailbox_import()
+{
+    last_command="icloud_mail_mailbox_import"
+
+    command_aliases=()
+
+    commands=()
+
+    flags=()
+    two_word_flags=()
+    local_nonpersistent_flags=()
+    flags_with_completion=()
+    flags_completion=()
+
+    flags+=("--dry-run")
+    local_nonpersistent_flags+=("--dry-run")
+    flags+=("--help")
+    flags+=("-h")
+    local_nonpersistent_flags+=("--help")
+    local_nonpersistent_flags+=("-h")
+    flags+=("--input-json=")
+    two_word_flags+=("--input-json")
+    local_nonpersistent_flags+=("--input-json")
+    local_nonpersistent_flags+=("--input-json=")
+    flags+=("--json")
+    local_nonpersistent_flags+=("--json")
+    flags+=("--jsonl")
+    local_nonpersistent_flags+=("--jsonl")
+    flags+=("--max-messages=")
+    two_word_flags+=("--max-messages")
+    local_nonpersistent_flags+=("--max-messages")
+    local_nonpersistent_flags+=("--max-messages=")
+    flags+=("--mode=")
+    two_word_flags+=("--mode")
+    local_nonpersistent_flags+=("--mode")
+    local_nonpersistent_flags+=("--mode=")
+    flags+=("--to=")
+    two_word_flags+=("--to")
+    local_nonpersistent_flags+=("--to")
+    local_nonpersistent_flags+=("--to=")
+    flags+=("--yes")
+    local_nonpersistent_flags+=("--yes")
+    flags+=("--account=")
+    two_word_flags+=("--account")
+    flags_with_completion+=("--account")
+    flags_completion+=("__icloud_handle_go_custom_completion")
+    flags+=("--home=")
+    two_word_flags+=("--home")
+    flags+=("--no-input")
+    flags+=("--request-id=")
+    two_word_flags+=("--request-id")
+    flags+=("--timeout=")
+    two_word_flags+=("--timeout")
+
+    must_have_one_flag=()
+    must_have_one_noun=()
+    noun_aliases=()
+}
+
 _icloud_mail_mailbox()
 {
     last_command="icloud_mail_mailbox"
@@ -4056,6 +4115,7 @@ _icloud_mail_mailbox()
 
     commands=()
     commands+=("export")
+    commands+=("import")
 
     flags=()
     two_word_flags=()

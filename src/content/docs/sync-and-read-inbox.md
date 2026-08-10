@@ -365,6 +365,26 @@ File output is written to a private `0600` temporary file in the destination dir
 
 `--output -` writes only native mboxrd bytes to stdout and sends the compact completion summary to stderr. `--json` is intentionally incompatible with stdout archives; write to a file when automation needs the structured summary. The summary reports exported record count, archive byte count, `complete=true`, and the final provider cursor. A downstream stdout write failure can naturally leave the caller with a partial stream, whereas file output retains the atomic install guarantee.
 
+## Import a mailbox archive with a durable frontier
+
+Use mailbox import for an mboxrd archive that may contain many RFC messages. Dry-run fingerprints the complete regular file, resolves the selectable destination, and validates the record at the current durable frontier without contacting iCloud or creating an import job:
+
+```bash
+icloud mail mailbox import archive.mbox --to inbox --dry-run
+```
+
+Confirmed import is intentionally bounded:
+
+```bash
+icloud mail mailbox import archive.mbox --to inbox --max-messages 100 --yes
+```
+
+The job is scoped to the selected account, stable folder ID, and exact archive fingerprint/size. It stores the earliest unconfirmed byte offset and record index plus immutable evidence for every attempted record. Only one decoded EML record is staged at a time; the whole archive and multiple records' attachment payloads are never buffered together. Each record delegates APPEND fencing, UID reconciliation, exact-provider-byte verification, and canonical ingestion to the single-message import state machine. When a standard mbox separator carries a parseable envelope date, that date is supplied as the provider `INTERNALDATE`; this preserves the date emitted by `mail mailbox export` during an export/import migration. Third-party separator dates that cannot be parsed are not treated as malformed message content, and the single-message importer falls back to the RFC `Date:` behavior. Normal sync and historical-backfill checkpoints are independent and are not advanced by mailbox import.
+
+If the process exits after APPEND but before the batch frontier advances, rerun the same archive. The record keeps the same single-message recovery key and reconciles the existing provider copy before any new APPEND. A provider failure proven to occur before APPEND is different: the record advances to a new private per-attempt key on retry because the earlier key is durably failed and cannot represent a new deliberate provider attempt.
+
+`--mode atomic` is the default: stop at the first record failure without pretending earlier confirmed APPENDs were rolled back. `--mode continue-on-error` attempts later records in the same bounded pass and reports them individually, but the durable resume frontier remains at the earliest unconfirmed record. This means later confirmed records are safely recognized and skipped on the next traversal while the gap is retried. Any incomplete job refuses continuation if the archive at that canonical path has changed.
+
 ## Import one exact EML message
 
 Use import when you already have one RFC822/EML file and want one deliberate provider copy in a current selectable mailbox. Review is local-only:

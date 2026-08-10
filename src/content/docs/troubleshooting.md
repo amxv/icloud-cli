@@ -720,6 +720,16 @@ Re-run the same command with the same normalized request and idempotency key. Th
 
 A definite authentication/connect/select failure before APPEND is different: that import is durably failed. Correct the underlying problem, then make a new deliberate request with a new idempotency key. Import dry-run is always safe for re-review because it does not create recovery state or contact iCloud.
 
+## Mailbox import is partial or will not resume
+
+Mailbox import deliberately resumes from the **earliest unconfirmed archive record**, not the last record that happened to succeed. This matters when `--mode continue-on-error` confirms later records after one earlier record fails: those later records are remembered and will not be APPENDed again, but `next_index` and `next_offset` remain at the gap until it is proven.
+
+Re-run the same archive path and destination. A record whose APPEND outcome was ambiguous keeps the same private single-message recovery key so the CLI reconciles the fenced provider candidates before any new APPEND. A provider failure proven to have occurred before APPEND is safe to retry with a new private per-attempt key; the mailbox job makes that transition automatically. Malformed source records remain failed because changing or silently skipping the archived bytes would make the durable frontier dishonest.
+
+If the command reports that the source file changed, do not force continuation. An incomplete job is bound to the canonical source path plus the exact archive SHA-256 and byte size. Restore the exact original archive if that is what you intended to resume, or treat a corrected/rebuilt archive as a separate deliberate migration source rather than splicing new bytes into the old job.
+
+`--dry-run` is safe while diagnosing an archive: it fingerprints the file and validates only the record at the current frontier without creating a mailbox-import job or contacting IMAP. `--jsonl` is useful for a partial pass because each attempted record and the terminal durable summary remain visible even when the command exits non-zero.
+
 ## Raw JSON is too large
 
 Body/raw content in JSON is deliberately bounded. Use a streaming mode instead:

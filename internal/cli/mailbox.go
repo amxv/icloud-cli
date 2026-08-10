@@ -29,9 +29,10 @@ type mailMailboxExportData struct {
 func newMailMailboxCommand(state *executionState) *cobra.Command {
 	command := &cobra.Command{
 		Use:   "mailbox",
-		Short: "Export synchronized local mailbox copies",
+		Short: "Import or export complete mailbox archives",
 		Args:  cobra.NoArgs,
 	}
+	command.AddCommand(newMailMailboxImportCommand(state))
 	command.AddCommand(newMailMailboxExportCommand(state))
 	return command
 }
