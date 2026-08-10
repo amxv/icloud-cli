@@ -43,6 +43,8 @@ The default returns 20 conversations and accepts `--limit` through 100. `more=tr
 
 When synchronized messages in a conversation come from addresses marked with `mail senders vip` or `mail senders block`, the thread summary also reports the nonzero `vip_senders` / `blocked_senders` counts. These are local account preferences used for triage only; they do not change thread membership, synchronization, read state, or provider mailboxes.
 
+A locally muted conversation reports `muted=true`; message/search context inside that current reconstructed conversation reports `thread_muted=true`. Mute is presentation metadata only and does not remove the mail from thread lists, local search, message reads, synchronization, or provider mailboxes.
+
 Filter conversations with the same local index used by message search:
 
 ```bash
@@ -196,6 +198,24 @@ icloud mail threads show thr_old…
 
 The command resolves the alias and reports `redirected_from=thr_old…`. Message, location, MIME-part, attachment, and blob IDs never change during a thread merge.
 
+## Mute a conversation locally without changing mail
+
+Use the current thread ID, any member message ID, or a durable retired alias:
+
+```bash
+icloud mail threads mute thr_…
+icloud mail threads unmute thr_…
+icloud mail threads mute msg_… --json
+```
+
+These commands update only this CLI installation's account-local thread preference state. They do **not** archive, trash, move, mark read, create an iCloud rule, change Apple Mail notification settings, or contact the provider. Compact output labels the result `scope=local`; JSON labels it `local_only=true` and returns the canonical current `thread_id` plus the stable message anchor that owns the preference.
+
+A local RFC thread ID is derived state, so the preference is deliberately not stored against one transient `thr_…` row. It is anchored to a stable logical `msg_…` member and projected through current graph membership. If later evidence merges a muted provisional conversation into another thread, the mute follows the current canonical result and old aliases remain valid command selectors. If stronger evidence later splits that graph, mute remains only with the component containing the original anchor; unrelated split mail is not muted by inheritance.
+
+`unmute` clears the active local mute anchors in the conversation as it exists at that moment. This keeps explicit user intent truthful even if the merged graph later separates again. Restarting the CLI does not lose the preference because the anchor is durable local state.
+
+Foreground `mail watch` still synchronizes every provider change before considering mute. When the committed changed message identities can all be resolved confidently to muted conversations, default compact watch output suppresses only the corresponding attention/change chatter. `--verbose` and `--jsonl` still emit the change and synchronization truth, and the synchronized mail remains available through ordinary thread/message/search reads. If the post-sync identity cannot be resolved confidently—for example while reconstruction is deferred—the event is not hidden.
+
 ## Change one canonical thread without guessing provider copies
 
 Thread actions are built on the same exact per-message state and location engines as direct `msg_…` commands. Start from a reviewed canonical thread or any durable retired alias, then always name the provider-copy scope explicitly:
@@ -238,6 +258,7 @@ Thread counts derive from current local messages and locations:
 - `folders` lists current non-deleted provider locations across the thread;
 - `participants` uses From, Reply-To, To, and CC addresses, never BCC;
 - `vip_senders` / `blocked_senders` count distinct message From addresses carrying those local sender preferences when the count is nonzero;
+- `muted` is durable client-local presentation state projected through the current reconstructed graph; it never changes provider locations or message flags;
 - `first` and `last` use the best stored message times;
 - `snippet` follows the latest message with a usable bounded preview.
 

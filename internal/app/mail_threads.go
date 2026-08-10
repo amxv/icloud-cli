@@ -75,6 +75,27 @@ func (commands accountCommands) MailThread(ctx context.Context, home, accountSel
 	return accountValue, page, sources, state.SchemaVersion(), nil
 }
 
+func (commands accountCommands) MailThreadSetMuted(ctx context.Context, home, accountSelector, selector string, muted bool) (account.Account, maildomain.ThreadPreference, int64, error) {
+	state, _, unlock, err := commands.openWriteState(ctx, home)
+	if err != nil {
+		return account.Account{}, maildomain.ThreadPreference{}, 0, err
+	}
+	defer state.Close()
+	defer unlock()
+	accountValue, err := state.Accounts().ResolveSelected(ctx, accountSelector)
+	if err != nil {
+		return account.Account{}, maildomain.ThreadPreference{}, state.SchemaVersion(), mapAccountError(err)
+	}
+	preference, err := state.Threads().SetMuted(ctx, accountValue.ID, strings.TrimSpace(selector), muted, commands.timeNow())
+	if err != nil {
+		if errors.Is(err, maildomain.ErrThreadNotFound) {
+			return accountValue, maildomain.ThreadPreference{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorNotFound, "mail thread was not found", false, err)
+		}
+		return accountValue, maildomain.ThreadPreference{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot update local thread mute preference", false, err)
+	}
+	return accountValue, preference, state.SchemaVersion(), nil
+}
+
 func (commands accountCommands) MailThreadMutationTargets(ctx context.Context, home, accountSelector, selector, cursor string, limit int, sourceFolderSelector string, includeDeleted bool) (account.Account, maildomain.ThreadMutationTargetPage, int64, error) {
 	state, err := openState(ctx, home)
 	if err != nil {

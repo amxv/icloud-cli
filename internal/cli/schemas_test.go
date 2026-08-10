@@ -145,6 +145,9 @@ func TestCapabilitiesPublishesVersionedAutomationAndSchemaContracts(t *testing.T
 	if !envelope.Data.MailSenderPreferences {
 		t.Fatal("capabilities did not advertise local sender preferences")
 	}
+	if !envelope.Data.MailThreadPreferences {
+		t.Fatal("capabilities did not advertise local thread preferences")
+	}
 	for command, schema := range map[string]string{
 		"mail senders list":    "sender-list-input",
 		"mail senders show":    "sender-preference-input",
@@ -155,6 +158,11 @@ func TestCapabilitiesPublishesVersionedAutomationAndSchemaContracts(t *testing.T
 	} {
 		if got := contracts[command].InputSchema; got != SchemaBaseID+schema+".schema.json" {
 			t.Fatalf("sender preference contract %s=%q", command, got)
+		}
+	}
+	for _, command := range []string{"mail threads mute", "mail threads unmute"} {
+		if got := contracts[command].InputSchema; got != SchemaBaseID+"thread-preference-input.schema.json" {
+			t.Fatalf("thread preference contract %s=%q", command, got)
 		}
 	}
 	for command, schema := range map[string]string{

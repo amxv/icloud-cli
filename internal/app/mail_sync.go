@@ -345,6 +345,7 @@ func (commands accountCommands) syncMailbox(
 		IdentityMerges: commit.IdentityMerges, DedupeConflicts: commit.DedupeConflicts,
 		LastUID: commit.Checkpoint.LastCommittedUID, MoreAvailable: commit.Checkpoint.MoreAvailable,
 		Bootstrap: page.Bootstrap, CompletedAt: attemptedAt, Checkpoint: commit.Checkpoint,
+		ChangedMessageIDs: append([]string(nil), commit.ChangedMessageIDs...),
 	}
 	if commit.Created+commit.Updated != len(records) {
 		return summary, usedUsername, cli.WrapAppError(

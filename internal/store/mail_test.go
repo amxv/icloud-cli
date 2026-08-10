@@ -890,7 +890,12 @@ INSERT INTO folders (
 
 func newMailStoreFixture(t *testing.T) (*Store, string, string) {
 	t.Helper()
-	state, err := Open(context.Background(), testPaths(t, t.TempDir()))
+	return newMailStoreFixtureAt(t, t.TempDir())
+}
+
+func newMailStoreFixtureAt(t *testing.T, root string) (*Store, string, string) {
+	t.Helper()
+	state, err := Open(context.Background(), testPaths(t, root))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -929,4 +934,37 @@ func mailRecordFixture(accountID, folderID string, uidValidity, uid uint32, rfcM
 	locationID := fmt.Sprintf("loc_0198d704-6c00-7000-8000-%012d", uid)
 	return maildomain.BuildIngestRecord(messageID, locationID, accountID, folderID, uidValidity, uid, []string{`\Flagged`}, internal, 256,
 		hash, "raw/sha256/aa/"+hash+".eml", 256, parsed)
+}
+
+func TestReconcileLocationReportsOnlyActualStateChangesForWatchIdentity(t *testing.T) {
+	state, accountID, folderID := newMailStoreFixture(t)
+	defer state.Close()
+	ctx := context.Background()
+	now := time.Date(2026, 8, 11, 5, 45, 0, 0, time.UTC)
+	record := mailRecordFixture(accountID, folderID, 100, 611, "phase26-reconcile@example.test")
+	if _, err := state.Mail().CommitInboxPage(ctx, maildomain.CommitPage{
+		CheckpointID: "chk_phase26_reconcile", AccountID: accountID, FolderID: folderID, UIDValidity: 100,
+		LastCommittedUID: 611, LastScannedUID: 611, Bootstrap: true, AttemptedAt: now,
+		Records: []maildomain.IngestRecord{record},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	unchanged, err := state.Mail().CommitInboxPage(ctx, maildomain.CommitPage{
+		CheckpointID: "chk_phase26_reconcile", AccountID: accountID, FolderID: folderID, UIDValidity: 100,
+		LastCommittedUID: 611, LastScannedUID: 611, AttemptedAt: now.Add(time.Minute),
+		Reconciled: []maildomain.ReconcileRecord{{UID: 611, Flags: maildomain.ParseLocationFlags([]string{`\Flagged`}), Present: true}},
+	})
+	if err != nil || unchanged.Reconciled != 1 || unchanged.StateChanges != 0 || len(unchanged.ChangedMessageIDs) != 0 {
+		t.Fatalf("unchanged reconciliation=%+v err=%v", unchanged, err)
+	}
+
+	changed, err := state.Mail().CommitInboxPage(ctx, maildomain.CommitPage{
+		CheckpointID: "chk_phase26_reconcile", AccountID: accountID, FolderID: folderID, UIDValidity: 100,
+		LastCommittedUID: 611, LastScannedUID: 611, AttemptedAt: now.Add(2 * time.Minute),
+		Reconciled: []maildomain.ReconcileRecord{{UID: 611, Flags: maildomain.ParseLocationFlags([]string{`\Flagged`, `\Seen`}), ModSequence: 9, Present: true}},
+	})
+	if err != nil || changed.StateChanges != 1 || len(changed.ChangedMessageIDs) != 1 || changed.ChangedMessageIDs[0] != record.MessageID {
+		t.Fatalf("changed reconciliation=%+v err=%v", changed, err)
+	}
 }

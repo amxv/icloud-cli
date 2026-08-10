@@ -2112,6 +2112,9 @@ LIMIT ?`, strings.TrimSpace(accountID), limit+1)
 	if err := applyThreadSenderPreferenceState(ctx, repository.db, accountID, values); err != nil {
 		return nil, false, err
 	}
+	if err := applyThreadMuteState(ctx, repository.db, accountID, values); err != nil {
+		return nil, false, err
+	}
 	return values, more, nil
 }
 
@@ -2135,6 +2138,9 @@ func (repository *ThreadRepository) Show(ctx context.Context, accountID, selecto
 		return maildomain.ThreadPage{}, err
 	}
 	if err := applyThreadSenderPreferenceState(ctx, repository.db, accountID, projection); err != nil {
+		return maildomain.ThreadPage{}, err
+	}
+	if err := applyThreadMuteState(ctx, repository.db, accountID, projection); err != nil {
 		return maildomain.ThreadPage{}, err
 	}
 	thread = projection[0]
@@ -2200,6 +2206,9 @@ LIMIT ?`, arguments...)
 		messagePointers = append(messagePointers, &messages[index])
 	}
 	if err := applyMessageSenderPreferenceState(ctx, repository.db, accountID, messagePointers); err != nil {
+		return maildomain.ThreadPage{}, err
+	}
+	if err := applyMessageThreadMuteState(ctx, repository.db, accountID, messagePointers); err != nil {
 		return maildomain.ThreadPage{}, err
 	}
 	thread.Messages = messages
@@ -2312,11 +2321,17 @@ func decodeThreadCursor(value, threadID string) (storedThreadCursor, error) {
 }
 
 func (repository *ThreadRepository) resolve(ctx context.Context, accountID, selector string) (string, string, error) {
+	return resolveThread(ctx, repository.db, accountID, selector)
+}
+
+func resolveThread(ctx context.Context, queryer interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}, accountID, selector string) (string, string, error) {
 	accountID = strings.TrimSpace(accountID)
 	selector = strings.TrimSpace(selector)
 	if strings.HasPrefix(selector, "msg_") {
 		var threadID string
-		err := repository.db.QueryRowContext(ctx, `
+		err := queryer.QueryRowContext(ctx, `
 SELECT tm.thread_id
 FROM thread_messages AS tm
 JOIN threads AS t ON t.thread_id = tm.thread_id
@@ -2330,14 +2345,14 @@ WHERE t.account_id = ? AND tm.message_id = ?`, accountID, selector).Scan(&thread
 		return threadID, "", nil
 	}
 	var threadID string
-	err := repository.db.QueryRowContext(ctx, `SELECT thread_id FROM threads WHERE account_id = ? AND thread_id = ?`, accountID, selector).Scan(&threadID)
+	err := queryer.QueryRowContext(ctx, `SELECT thread_id FROM threads WHERE account_id = ? AND thread_id = ?`, accountID, selector).Scan(&threadID)
 	if err == nil {
 		return threadID, "", nil
 	}
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return "", "", fmt.Errorf("resolve thread: %w", err)
 	}
-	err = repository.db.QueryRowContext(ctx, `
+	err = queryer.QueryRowContext(ctx, `
 SELECT canonical_thread_id FROM thread_aliases WHERE account_id = ? AND alias_thread_id = ?`, accountID, selector).Scan(&threadID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", "", maildomain.ErrThreadNotFound

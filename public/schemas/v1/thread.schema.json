@@ -553,6 +553,9 @@
               "subject": {
                 "type": "string"
               },
+              "thread_muted": {
+                "type": "boolean"
+              },
               "to": {
                 "items": {
                   "additionalProperties": false,
@@ -634,6 +637,7 @@
               "id",
               "replied",
               "reply_state",
+              "thread_muted",
               "unread",
               "updated_at"
             ],
@@ -647,6 +651,9 @@
         "type": "object"
       },
       "type": "array"
+    },
+    "muted": {
+      "type": "boolean"
     },
     "participants": {
       "items": {
@@ -731,6 +738,7 @@
     "id",
     "message_count",
     "messages",
+    "muted",
     "projection_state",
     "reconstruction",
     "replied",

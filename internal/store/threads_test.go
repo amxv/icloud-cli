@@ -356,6 +356,11 @@ FROM n`, maxAffectedThreadMessages+1, accountID, timestamp, timestamp); err != n
 		t.Fatal(err)
 	}
 
+	preference, err := state.Threads().SetMuted(ctx, accountID, threadID, true, now.Add(-time.Minute))
+	if err != nil || !preference.Muted || preference.ThreadID != threadID {
+		t.Fatalf("mute oversized thread preference=%+v err=%v", preference, err)
+	}
+
 	first := mailRecordFixture(accountID, folderID, 100, 50001, "late-root@example.test")
 	first.Parsed.InReplyTo = ""
 	first.Parsed.References = nil
@@ -471,6 +476,13 @@ SELECT count(*) FROM thread_edges WHERE account_id=? AND token='late-root@exampl
 	}
 	if repaired.Thread.ID != threadID || repaired.Thread.MessageCount != maxAffectedThreadMessages+2 {
 		t.Fatalf("bounded repair did not join the deferred reply: %+v", repaired.Thread)
+	}
+	if !repaired.Thread.Muted {
+		t.Fatalf("bounded repair lost local mute preference: %+v", repaired.Thread)
+	}
+	firstMessage, err := state.Mail().Message(ctx, accountID, first.MessageID)
+	if err != nil || !firstMessage.ThreadMuted {
+		t.Fatalf("deferred thread message mute=%+v err=%v", firstMessage, err)
 	}
 	var unresolvedAfterRepair int
 	if err := state.db.QueryRowContext(ctx, `

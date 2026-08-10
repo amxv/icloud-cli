@@ -3786,12 +3786,14 @@ Available Commands:
   mark-read   Mark selected locations for a canonical thread page as read
   mark-unread Mark selected locations for a canonical thread page as unread
   move        Apply move to exact locations for one canonical thread page
+  mute        Mute one reconstructed conversation locally
   not-junk    Apply not-junk to exact locations for one canonical thread page
   restore     Apply restore to exact locations for one canonical thread page
   show        Show a bounded chronological page from a reconstructed conversation
   trash       Apply trash to exact locations for one canonical thread page
   unarchive   Apply unarchive to exact locations for one canonical thread page
   unflag      Remove flags from selected locations for a canonical thread page
+  unmute      Clear local mute state for one reconstructed conversation
 
 Flags:
   -h, --help   help for threads
@@ -4120,6 +4122,31 @@ Global Flags:
       --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
 ```
 
+## `icloud mail threads mute`
+
+```text
+Mute one reconstructed conversation locally
+
+Usage:
+  icloud mail threads mute <thread-id|message-id> [flags]
+
+Examples:
+  icloud mail threads mute thr_…
+  icloud mail threads mute msg_… --json
+
+Flags:
+  -h, --help                help for mute
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
 ## `icloud mail threads not-junk`
 
 ```text
@@ -4319,6 +4346,31 @@ Flags:
       --limit int           Maximum chronological thread members to mutate in this page (1-100) (default 100)
       --mode string         Failure mode for this bounded thread page: fail fast or continue-on-error (default "atomic")
       --page                Explicitly allow a partial first page when the canonical thread exceeds the bounded limit
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail threads unmute`
+
+```text
+Clear local mute state for one reconstructed conversation
+
+Usage:
+  icloud mail threads unmute <thread-id|message-id> [flags]
+
+Examples:
+  icloud mail threads unmute thr_…
+  icloud mail threads unmute msg_… --json
+
+Flags:
+  -h, --help                help for unmute
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID

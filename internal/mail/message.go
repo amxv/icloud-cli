@@ -111,6 +111,7 @@ type Message struct {
 	Replied           bool                   `json:"replied"`
 	ReplyState        string                 `json:"reply_state"`
 	Forwarded         bool                   `json:"forwarded"`
+	ThreadMuted       bool                   `json:"thread_muted"`
 	CreatedAt         time.Time              `json:"created_at"`
 	UpdatedAt         time.Time              `json:"updated_at"`
 	Locations         []Location             `json:"locations,omitempty"`
@@ -364,13 +365,14 @@ type CommitPage struct {
 }
 
 type CommitResult struct {
-	Created         int        `json:"created"`
-	Updated         int        `json:"updated"`
-	Reconciled      int        `json:"reconciled"`
-	StateChanges    int        `json:"state_changes"`
-	IdentityMerges  int        `json:"identity_merges"`
-	DedupeConflicts int        `json:"dedupe_conflicts"`
-	Checkpoint      Checkpoint `json:"checkpoint"`
+	Created           int        `json:"created"`
+	Updated           int        `json:"updated"`
+	Reconciled        int        `json:"reconciled"`
+	StateChanges      int        `json:"state_changes"`
+	IdentityMerges    int        `json:"identity_merges"`
+	DedupeConflicts   int        `json:"dedupe_conflicts"`
+	Checkpoint        Checkpoint `json:"checkpoint"`
+	ChangedMessageIDs []string   `json:"-"`
 }
 
 type SyncSummary struct {
@@ -390,6 +392,7 @@ type SyncSummary struct {
 	CompletedAt       time.Time                 `json:"completed_at"`
 	Checkpoint        Checkpoint                `json:"checkpoint"`
 	OutboundReconcile *OutboundReconcileSummary `json:"outbound_reconcile,omitempty"`
+	ChangedMessageIDs []string                  `json:"-"`
 }
 
 type DrainStopReason string

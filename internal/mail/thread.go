@@ -20,6 +20,7 @@ type Thread struct {
 	UnreadCount           int                            `json:"unread_count"`
 	Replied               bool                           `json:"replied"`
 	Forwarded             bool                           `json:"forwarded"`
+	Muted                 bool                           `json:"muted"`
 	AttachmentCount       int                            `json:"attachment_count"`
 	FirstMessageAt        time.Time                      `json:"first_message_at,omitempty"`
 	LastMessageAt         time.Time                      `json:"last_message_at,omitempty"`

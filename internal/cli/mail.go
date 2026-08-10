@@ -39,6 +39,7 @@ type MailService interface {
 	MailMessage(context.Context, string, string, string) (account.Account, maildomain.Message, maildomain.ContentSource, int64, error)
 	MailLatest(context.Context, string, string, int) (account.Account, []maildomain.Thread, bool, int64, error)
 	MailThread(context.Context, string, string, string, maildomain.ThreadReadOptions) (account.Account, maildomain.ThreadPage, []maildomain.ContentSource, int64, error)
+	MailThreadSetMuted(context.Context, string, string, string, bool) (account.Account, maildomain.ThreadPreference, int64, error)
 	MailThreadMutationTargets(context.Context, string, string, string, string, int, string, bool) (account.Account, maildomain.ThreadMutationTargetPage, int64, error)
 	MailSelectionCreate(context.Context, string, string, maildomain.SelectionCreateRequest) (account.Account, maildomain.MailSelection, int64, error)
 	MailSelection(context.Context, string, string, string) (account.Account, maildomain.MailSelection, int64, error)
@@ -188,6 +189,7 @@ type publicMessage struct {
 	Replied           bool                              `json:"replied"`
 	ReplyState        string                            `json:"reply_state"`
 	Forwarded         bool                              `json:"forwarded"`
+	ThreadMuted       bool                              `json:"thread_muted"`
 	CreatedAt         time.Time                         `json:"created_at"`
 	UpdatedAt         time.Time                         `json:"updated_at"`
 	Locations         []publicLocation                  `json:"locations,omitempty"`
@@ -1227,6 +1229,7 @@ func renderInboxMessage(renderer *CompactTextRenderer, value maildomain.Message)
 		Field("replied", value.Replied),
 		Field("reply_state", value.ReplyState),
 		Field("forwarded", value.Forwarded),
+		Field("thread_muted", value.ThreadMuted),
 		Field("vip", value.SenderPreference != nil && value.SenderPreference.VIP),
 		Field("blocked", value.SenderPreference != nil && value.SenderPreference.Blocked),
 		Field("attachments", value.AttachmentCount),
@@ -1285,7 +1288,7 @@ func sanitizeMessage(value maildomain.Message) publicMessage {
 		InternalDate: value.InternalDate, SortAt: value.SortAt, DateSource: value.DateSource,
 		AttachmentCount: value.AttachmentCount, Unread: value.Unread, Flagged: value.Flagged,
 		Answered: value.Answered, Replied: value.Replied, ReplyState: value.ReplyState,
-		Forwarded: value.Forwarded,
+		Forwarded: value.Forwarded, ThreadMuted: value.ThreadMuted,
 		CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt, Locations: locations,
 		ContentLocationID: value.ContentLocationID,
 		Identity:          append([]maildomain.IdentityEvidence(nil), value.Identity...),
@@ -1398,6 +1401,9 @@ func (unavailableMailService) MailLatest(context.Context, string, string, int) (
 }
 func (unavailableMailService) MailThread(context.Context, string, string, string, maildomain.ThreadReadOptions) (account.Account, maildomain.ThreadPage, []maildomain.ContentSource, int64, error) {
 	return account.Account{}, maildomain.ThreadPage{}, nil, 0, NewAppError(ErrorConfiguration, "local mail threads are unavailable", false)
+}
+func (unavailableMailService) MailThreadSetMuted(context.Context, string, string, string, bool) (account.Account, maildomain.ThreadPreference, int64, error) {
+	return account.Account{}, maildomain.ThreadPreference{}, 0, NewAppError(ErrorConfiguration, "local thread preferences are unavailable", false)
 }
 func (unavailableMailService) MailThreadMutationTargets(context.Context, string, string, string, string, int, string, bool) (account.Account, maildomain.ThreadMutationTargetPage, int64, error) {
 	return account.Account{}, maildomain.ThreadMutationTargetPage{}, 0, NewAppError(ErrorConfiguration, "thread mutation targets are unavailable", false)

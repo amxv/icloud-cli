@@ -254,6 +254,9 @@ func (repository *SearchRepository) searchMessages(
 	if err := applyMessageSenderPreferenceState(ctx, repository.db, accountID, messagePointers); err != nil {
 		return maildomain.SearchPage{}, err
 	}
+	if err := applyMessageThreadMuteState(ctx, repository.db, accountID, messagePointers); err != nil {
+		return maildomain.SearchPage{}, err
+	}
 	more := len(hits) > options.Limit
 	if more {
 		hits = hits[:options.Limit]
@@ -319,6 +322,9 @@ func (repository *SearchRepository) searchThreads(
 		return maildomain.SearchPage{}, err
 	}
 	if err := applyThreadSenderPreferenceState(ctx, repository.db, accountID, projected); err != nil {
+		return maildomain.SearchPage{}, err
+	}
+	if err := applyThreadMuteState(ctx, repository.db, accountID, projected); err != nil {
 		return maildomain.SearchPage{}, err
 	}
 	projectedIndex := 0

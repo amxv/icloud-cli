@@ -210,6 +210,10 @@ func (repository *MailRepository) CommitInboxPage(ctx context.Context, page mail
 	}
 	stateChanges := 0
 	affectedMessages := ingested.Affected
+	changedMessages := make(map[string]struct{}, len(ingested.Affected)+len(page.Reconciled))
+	for messageID := range ingested.Affected {
+		changedMessages[messageID] = struct{}{}
+	}
 	seenReconciled := make(map[uint32]struct{}, len(page.Reconciled))
 	for _, record := range page.Reconciled {
 		if record.UID == 0 {
@@ -230,6 +234,7 @@ func (repository *MailRepository) CommitInboxPage(ctx context.Context, page mail
 		affectedMessages[messageID] = struct{}{}
 		if changed {
 			stateChanges++
+			changedMessages[messageID] = struct{}{}
 		}
 	}
 	if err := rebuildCanonicalThreadProjection(ctx, tx, page.AccountID, mapKeysSorted(affectedMessages), page.AttemptedAt); err != nil {
@@ -278,6 +283,7 @@ ON CONFLICT(account_id, folder_id) DO UPDATE SET
 		Created: ingested.Created, Updated: ingested.Updated, Reconciled: len(page.Reconciled),
 		StateChanges: stateChanges, IdentityMerges: ingested.IdentityMerges,
 		DedupeConflicts: ingested.DedupeConflicts, Checkpoint: checkpoint,
+		ChangedMessageIDs: mapKeysSorted(changedMessages),
 	}, nil
 }
 
@@ -421,6 +427,9 @@ LIMIT ?`, accountID, accountID, folderID, limit+1)
 	if err := applyMessageSenderPreferenceState(ctx, repository.db, accountID, messagePointers); err != nil {
 		return nil, false, err
 	}
+	if err := applyMessageThreadMuteState(ctx, repository.db, accountID, messagePointers); err != nil {
+		return nil, false, err
+	}
 	return values, more, nil
 }
 
@@ -505,6 +514,9 @@ WHERE m.account_id = ? AND m.message_id = ?`, strings.TrimSpace(accountID), stri
 		return maildomain.Message{}, err
 	}
 	if err := applyMessageSenderPreferenceState(ctx, repository.db, accountID, []*maildomain.Message{&value}); err != nil {
+		return maildomain.Message{}, err
+	}
+	if err := applyMessageThreadMuteState(ctx, repository.db, accountID, []*maildomain.Message{&value}); err != nil {
 		return maildomain.Message{}, err
 	}
 	return value, nil
@@ -1286,7 +1298,7 @@ WHERE account_id = ? AND folder_id = ? AND uid_validity = ? AND uid = ?`,
 	); err != nil {
 		return false, fmt.Errorf("reconcile message location: %w", err)
 	}
-	return true, nil
+	return changed, nil
 }
 
 func messageIDForProviderLocation(

@@ -309,6 +309,10 @@ type threadFlagMutationJSONRequest struct {
 	Mode   string `json:"mode,omitempty"`
 }
 
+type threadPreferenceJSONRequest struct {
+	Target string `json:"target"`
+}
+
 type threadLocationMutationJSONRequest struct {
 	Target         string `json:"target"`
 	From           string `json:"from,omitempty"`

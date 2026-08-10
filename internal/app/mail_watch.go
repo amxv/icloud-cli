@@ -328,7 +328,7 @@ func (commands accountCommands) watchAccount(ctx context.Context, home string, v
 	if err := emitter.send(maildomain.WatchEvent{Type: maildomain.WatchEventStartup, PollInterval: options.PollInterval, ReconcileInterval: options.ReconcileInterval}); err != nil {
 		return err
 	}
-	if err := commands.runWatchSync(ctx, home, value.ID, "", false, true, options, syncGate, emitter); err != nil {
+	if _, err := commands.runWatchSync(ctx, home, value.ID, "", false, true, options, syncGate, emitter, nil); err != nil {
 		if emitErr := emitter.send(degradedWatchEvent(err)); emitErr != nil {
 			return emitErr
 		}
@@ -395,17 +395,17 @@ func (commands accountCommands) watchAccount(ctx context.Context, home string, v
 			continue
 		}
 		if trigger.reason == transport.MailboxWatchChanged {
-			if err := emitter.send(maildomain.WatchEvent{Type: maildomain.WatchEventChange, FolderID: trigger.folder.ID, FolderName: trigger.folder.Name, Reason: string(trigger.reason)}); err != nil {
-				return err
-			}
-			if err := commands.runWatchSync(ctx, home, value.ID, trigger.folder.ID, false, false, options, syncGate, emitter); err != nil {
-				if emitErr := emitter.send(degradedWatchEvent(err)); emitErr != nil {
+			_, syncErr := commands.runWatchSync(ctx, home, value.ID, trigger.folder.ID, false, false, options, syncGate, emitter, func(suppressed bool) error {
+				return emitter.send(maildomain.WatchEvent{Type: maildomain.WatchEventChange, FolderID: trigger.folder.ID, FolderName: trigger.folder.Name, Reason: string(trigger.reason), Quiet: suppressed})
+			})
+			if syncErr != nil {
+				if emitErr := emitter.send(degradedWatchEvent(syncErr)); emitErr != nil {
 					return emitErr
 				}
 			}
 			continue
 		}
-		if err := commands.runWatchSync(ctx, home, value.ID, "", true, false, options, syncGate, emitter); err != nil {
+		if _, err := commands.runWatchSync(ctx, home, value.ID, "", true, false, options, syncGate, emitter, nil); err != nil {
 			if emitErr := emitter.send(degradedWatchEvent(err)); emitErr != nil {
 				return emitErr
 			}
@@ -423,14 +423,14 @@ func (commands accountCommands) runPollingWatch(ctx context.Context, home, accou
 		case <-ctx.Done():
 			return nil
 		case <-poll.C:
-			if err := commands.runWatchSync(ctx, home, accountID, "", false, false, options, syncGate, emitter); err != nil {
+			if _, err := commands.runWatchSync(ctx, home, accountID, "", false, false, options, syncGate, emitter, nil); err != nil {
 				if emitErr := emitter.send(degradedWatchEvent(err)); emitErr != nil {
 					return emitErr
 				}
 			}
 			poll.Reset(options.PollInterval)
 		case <-reconcile.C:
-			if err := commands.runWatchSync(ctx, home, accountID, "", true, false, options, syncGate, emitter); err != nil {
+			if _, err := commands.runWatchSync(ctx, home, accountID, "", true, false, options, syncGate, emitter, nil); err != nil {
 				if emitErr := emitter.send(degradedWatchEvent(err)); emitErr != nil {
 					return emitErr
 				}
@@ -440,31 +440,70 @@ func (commands accountCommands) runPollingWatch(ctx context.Context, home, accou
 	}
 }
 
-func (commands accountCommands) runWatchSync(ctx context.Context, home, accountID, folderSelector string, refreshFolders, initial bool, options maildomain.WatchOptions, syncGate *watchSyncGate, emitter *accountWatchEmitter) error {
+func (commands accountCommands) runWatchSync(ctx context.Context, home, accountID, folderSelector string, refreshFolders, initial bool, options maildomain.WatchOptions, syncGate *watchSyncGate, emitter *accountWatchEmitter, beforeSyncEvents func(bool) error) (bool, error) {
 	release, err := syncGate.acquire(ctx)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer release()
 	operationCtx, cancel := context.WithTimeout(ctx, options.OperationTimeout)
 	defer cancel()
 	if refreshFolders {
 		if _, _, _, err := commands.FolderStatus(operationCtx, home, accountID); err != nil {
-			return err
+			return false, err
 		}
 	}
 	_, _, summaries, _, err := commands.MailSync(operationCtx, home, accountID, folderSelector, options.Limit)
 	if err != nil {
-		return err
+		if beforeSyncEvents != nil {
+			if emitErr := beforeSyncEvents(false); emitErr != nil {
+				return false, emitErr
+			}
+		}
+		return false, err
 	}
+	attentionChanged := false
+	allAttentionMuted := true
+	quietSummaries := make([]bool, len(summaries))
 	for index := range summaries {
 		summary := summaries[index]
 		quiet := !initial && watchSummaryUnchanged(summary)
-		if err := emitter.send(maildomain.WatchEvent{Type: maildomain.WatchEventSync, FolderID: summary.FolderID, FolderName: summary.FolderName, Summary: &summary, Quiet: quiet}); err != nil {
-			return err
+		if !initial && !quiet {
+			attentionChanged = true
+			muted, confident, classifyErr := commands.watchSummaryMuted(operationCtx, home, accountID, summary)
+			if classifyErr != nil || !confident || !muted {
+				allAttentionMuted = false
+			} else {
+				quiet = true
+			}
+		}
+		quietSummaries[index] = quiet
+	}
+	suppressed := attentionChanged && allAttentionMuted
+	if beforeSyncEvents != nil {
+		if err := beforeSyncEvents(suppressed); err != nil {
+			return false, err
 		}
 	}
-	return nil
+	for index := range summaries {
+		summary := summaries[index]
+		if err := emitter.send(maildomain.WatchEvent{Type: maildomain.WatchEventSync, FolderID: summary.FolderID, FolderName: summary.FolderName, Summary: &summary, Quiet: quietSummaries[index]}); err != nil {
+			return false, err
+		}
+	}
+	return suppressed, nil
+}
+
+func (commands accountCommands) watchSummaryMuted(ctx context.Context, home, accountID string, summary maildomain.SyncSummary) (bool, bool, error) {
+	if len(summary.ChangedMessageIDs) == 0 {
+		return false, false, nil
+	}
+	state, err := openState(ctx, home)
+	if err != nil {
+		return false, false, err
+	}
+	defer state.Close()
+	return state.Threads().AllMessagesMuted(ctx, strings.TrimSpace(accountID), summary.ChangedMessageIDs)
 }
 
 func watchSummaryUnchanged(summary maildomain.SyncSummary) bool {

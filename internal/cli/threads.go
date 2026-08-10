@@ -35,6 +35,7 @@ type publicThread struct {
 	UnreadCount           int                                       `json:"unread_count"`
 	Replied               bool                                      `json:"replied"`
 	Forwarded             bool                                      `json:"forwarded"`
+	Muted                 bool                                      `json:"muted"`
 	AttachmentCount       int                                       `json:"attachment_count"`
 	FirstMessageAt        *time.Time                                `json:"first_message_at,omitempty"`
 	LastMessageAt         *time.Time                                `json:"last_message_at,omitempty"`
@@ -74,6 +75,13 @@ type mailThreadData struct {
 	SchemaVersion int64        `json:"schema_version"`
 }
 
+type mailThreadPreferenceData struct {
+	AccountID     string                      `json:"account_id"`
+	Preference    maildomain.ThreadPreference `json:"preference"`
+	LocalOnly     bool                        `json:"local_only"`
+	SchemaVersion int64                       `json:"schema_version"`
+}
+
 type threadMutationMeta struct {
 	ThreadID                 string
 	RedirectedFrom           string
@@ -103,6 +111,8 @@ func newMailThreadsCommand(state *executionState) *cobra.Command {
 	}
 	command.AddCommand(newMailThreadsListCommand(state))
 	command.AddCommand(newMailThreadsShowCommand(state))
+	command.AddCommand(newMailThreadPreferenceCommand(state, "mute", true))
+	command.AddCommand(newMailThreadPreferenceCommand(state, "unmute", false))
 	command.AddCommand(newMailThreadFlagMutationCommand(state, "mark-read", "Mark selected locations for a canonical thread page as read", maildomain.FlagMutationMarkRead))
 	command.AddCommand(newMailThreadFlagMutationCommand(state, "mark-unread", "Mark selected locations for a canonical thread page as unread", maildomain.FlagMutationMarkUnread))
 	command.AddCommand(newMailThreadFlagMutationCommand(state, "flag", "Flag selected locations for a canonical thread page", maildomain.FlagMutationFlag))
@@ -120,6 +130,52 @@ func newMailThreadsCommand(state *executionState) *cobra.Command {
 	} {
 		command.AddCommand(newMailThreadLocationMutationCommand(state, action))
 	}
+	return command
+}
+
+func newMailThreadPreferenceCommand(state *executionState, name string, muted bool) *cobra.Command {
+	var jsonOutput bool
+	var input jsonInputOptions
+	command := &cobra.Command{
+		Use:     name + " <thread-id|message-id>",
+		Short:   map[bool]string{true: "Mute one reconstructed conversation locally", false: "Clear local mute state for one reconstructed conversation"}[muted],
+		Args:    exactArgsOrJSONInput(&input, 1),
+		Example: fmt.Sprintf("  icloud mail threads %s thr_…\n  icloud mail threads %s msg_… --json", name, name),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			target := ""
+			if len(args) == 1 {
+				target = strings.TrimSpace(args[0])
+			}
+			request := threadPreferenceJSONRequest{Target: target}
+			if used, err := readJSONInput(cmd, state, input, &request); err != nil {
+				return err
+			} else if used {
+				target = strings.TrimSpace(request.Target)
+			}
+			if target == "" {
+				return NewAppError(ErrorUsage, "thread target is required", false)
+			}
+			accountValue, preference, schemaVersion, err := state.mail.MailThreadSetMuted(cmd.Context(), state.global.Home, state.global.Account, target, muted)
+			if err != nil {
+				return err
+			}
+			if jsonOutput {
+				return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: mailThreadPreferenceData{
+					AccountID: accountValue.ID, Preference: preference, LocalOnly: true, SchemaVersion: schemaVersion,
+				}, Meta: EnvelopeMeta{RequestID: state.requestID}})
+			}
+			renderer := NewCompactTextRenderer(state.stdout)
+			return renderer.Record("thread-preference", preference.ThreadID,
+				Field("thread", preference.ThreadID), Field("scope", "local"), Field("muted", fmt.Sprintf("%t", preference.Muted)), Field("anchor", preference.AnchorMessageID), Field("redirected_from", func() string {
+					if strings.HasPrefix(target, "thr_") && target != preference.ThreadID {
+						return target
+					}
+					return ""
+				}()))
+		},
+	}
+	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
+	bindJSONInput(command, &input)
 	return command
 }
 
@@ -626,6 +682,7 @@ func renderThreadSummary(renderer *CompactTextRenderer, thread maildomain.Thread
 		Field("unread", thread.UnreadCount),
 		Field("replied", thread.Replied),
 		Field("forwarded", thread.Forwarded),
+		Field("muted", thread.Muted),
 		Field("vip_senders", threadSenderPreferenceCount(thread.SenderPreferences, "vip")),
 		Field("blocked_senders", threadSenderPreferenceCount(thread.SenderPreferences, "blocked")),
 		Field("participants", thread.Participants),
@@ -650,6 +707,7 @@ func renderThreadMessage(renderer *CompactTextRenderer, message maildomain.Messa
 		Field("replied", message.Replied),
 		Field("reply_state", message.ReplyState),
 		Field("forwarded", message.Forwarded),
+		Field("thread_muted", message.ThreadMuted),
 		Field("vip", message.SenderPreference != nil && message.SenderPreference.VIP),
 		Field("blocked", message.SenderPreference != nil && message.SenderPreference.Blocked),
 		Field("attachments", message.AttachmentCount),
@@ -699,7 +757,7 @@ func buildPublicThread(ctx context.Context, thread maildomain.Thread, sources []
 		ID: thread.ID, AccountID: thread.AccountID, RootRFCMessageID: thread.RootRFCMessageID,
 		Subject: thread.CanonicalSubject, Snippet: snippet,
 		Participants: append([]string(nil), thread.Participants...), FolderIDs: append([]string(nil), thread.FolderIDs...),
-		MessageCount: thread.MessageCount, UnreadCount: thread.UnreadCount, Replied: thread.Replied, Forwarded: thread.Forwarded, AttachmentCount: thread.AttachmentCount,
+		MessageCount: thread.MessageCount, UnreadCount: thread.UnreadCount, Replied: thread.Replied, Forwarded: thread.Forwarded, Muted: thread.Muted, AttachmentCount: thread.AttachmentCount,
 		FirstMessageAt: first, LastMessageAt: last, Status: thread.Status, Reconstruction: thread.Reconstruction,
 		RedirectedFrom:  thread.RedirectedFrom,
 		ProjectionState: thread.ProjectionState, ProjectionReason: thread.ProjectionReason,
