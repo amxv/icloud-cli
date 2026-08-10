@@ -1,0 +1,33 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/message-import-input.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "file": {
+      "type": "string"
+    },
+    "flags": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "idempotency_key": {
+      "type": "string"
+    },
+    "internal_date": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "to": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "file",
+    "to"
+  ],
+  "title": "single RFC message import JSON input",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

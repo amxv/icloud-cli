@@ -4158,6 +4158,67 @@ _icloud_mail_message_export()
     noun_aliases=()
 }
 
+_icloud_mail_message_import()
+{
+    last_command="icloud_mail_message_import"
+
+    command_aliases=()
+
+    commands=()
+
+    flags=()
+    two_word_flags=()
+    local_nonpersistent_flags=()
+    flags_with_completion=()
+    flags_completion=()
+
+    flags+=("--dry-run")
+    local_nonpersistent_flags+=("--dry-run")
+    flags+=("--flag=")
+    two_word_flags+=("--flag")
+    local_nonpersistent_flags+=("--flag")
+    local_nonpersistent_flags+=("--flag=")
+    flags+=("--help")
+    flags+=("-h")
+    local_nonpersistent_flags+=("--help")
+    local_nonpersistent_flags+=("-h")
+    flags+=("--idempotency-key=")
+    two_word_flags+=("--idempotency-key")
+    local_nonpersistent_flags+=("--idempotency-key")
+    local_nonpersistent_flags+=("--idempotency-key=")
+    flags+=("--input-json=")
+    two_word_flags+=("--input-json")
+    local_nonpersistent_flags+=("--input-json")
+    local_nonpersistent_flags+=("--input-json=")
+    flags+=("--internal-date=")
+    two_word_flags+=("--internal-date")
+    local_nonpersistent_flags+=("--internal-date")
+    local_nonpersistent_flags+=("--internal-date=")
+    flags+=("--json")
+    local_nonpersistent_flags+=("--json")
+    flags+=("--to=")
+    two_word_flags+=("--to")
+    local_nonpersistent_flags+=("--to")
+    local_nonpersistent_flags+=("--to=")
+    flags+=("--yes")
+    local_nonpersistent_flags+=("--yes")
+    flags+=("--account=")
+    two_word_flags+=("--account")
+    flags_with_completion+=("--account")
+    flags_completion+=("__icloud_handle_go_custom_completion")
+    flags+=("--home=")
+    two_word_flags+=("--home")
+    flags+=("--no-input")
+    flags+=("--request-id=")
+    two_word_flags+=("--request-id")
+    flags+=("--timeout=")
+    two_word_flags+=("--timeout")
+
+    must_have_one_flag=()
+    must_have_one_noun=()
+    noun_aliases=()
+}
+
 _icloud_mail_message_raw()
 {
     last_command="icloud_mail_message_raw"
@@ -4260,6 +4321,7 @@ _icloud_mail_message()
 
     commands=()
     commands+=("export")
+    commands+=("import")
     commands+=("raw")
     commands+=("show")
 

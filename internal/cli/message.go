@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -11,7 +12,10 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
+	"github.com/amxv/icloud-cli/internal/account"
+	"github.com/amxv/icloud-cli/internal/folder"
 	maildomain "github.com/amxv/icloud-cli/internal/mail"
 	"github.com/spf13/cobra"
 )
@@ -47,12 +51,31 @@ type remoteMessageData struct {
 	SchemaVersion int64                      `json:"schema_version"`
 }
 
+type messageImportService interface {
+	MailMessageImportPreview(context.Context, string, string, string, maildomain.MessageImportRequest) (account.Account, folder.Folder, maildomain.MessageImportPlan, int64, error)
+	MailMessageImport(context.Context, string, string, string, maildomain.MessageImportRequest) (account.Account, folder.Folder, maildomain.MessageImportPlan, maildomain.MessageImport, maildomain.Message, int64, error)
+}
+
+type mailMessageImportPreviewData struct {
+	AccountID     string                       `json:"account_id"`
+	Plan          maildomain.MessageImportPlan `json:"plan"`
+	SchemaVersion int64                        `json:"schema_version"`
+}
+
+type mailMessageImportData struct {
+	AccountID     string                   `json:"account_id"`
+	FolderID      string                   `json:"folder_id"`
+	Import        maildomain.MessageImport `json:"import"`
+	Message       publicMessage            `json:"message"`
+	SchemaVersion int64                    `json:"schema_version"`
+}
+
 func newMailMessageCommand(state *executionState) *cobra.Command {
 	command := &cobra.Command{
 		Use:     "message",
-		Short:   "Read complete local message content by stable ID",
+		Short:   "Read, export, or deliberately import complete RFC messages",
 		Args:    cobra.NoArgs,
-		Example: "  icloud mail message show msg_…\n  icloud mail message raw msg_…\n  icloud mail message export msg_… --output message.eml",
+		Example: "  icloud mail message show msg_…\n  icloud mail message raw msg_…\n  icloud mail message export msg_… --output message.eml\n  icloud mail message import message.eml --to inbox --dry-run",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
 		},
@@ -60,7 +83,139 @@ func newMailMessageCommand(state *executionState) *cobra.Command {
 	command.AddCommand(newMailMessageShowCommand(state))
 	command.AddCommand(newMailMessageRawCommand(state))
 	command.AddCommand(newMailMessageExportCommand(state))
+	command.AddCommand(newMailMessageImportCommand(state))
 	return command
+}
+
+func newMailMessageImportCommand(state *executionState) *cobra.Command {
+	var destination, internalDateText, idempotencyKey string
+	var flags []string
+	var dryRun, yes, jsonOutput bool
+	var input jsonInputOptions
+	command := &cobra.Command{
+		Use:     "import <file.eml>",
+		Short:   "Append one validated RFC message and ingest the exact provider copy",
+		Args:    exactArgsOrJSONInput(&input, 1),
+		Example: "  icloud mail message import message.eml --to inbox --dry-run\n  icloud mail message import message.eml --to Archive --flag seen --idempotency-key import-01 --yes\n  icloud mail message import --input-json request.json --dry-run --json",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if dryRun && yes {
+				return NewAppError(ErrorUsage, "--dry-run and --yes cannot be combined", false)
+			}
+			service, ok := state.mail.(messageImportService)
+			if !ok {
+				return NewAppError(ErrorConfiguration, "message import is unavailable", false)
+			}
+			sourcePath := ""
+			if len(args) == 1 {
+				sourcePath = args[0]
+			}
+			request := maildomain.MessageImportRequest{Folder: destination, Flags: append([]string(nil), flags...), IdempotencyKey: idempotencyKey}
+			if strings.TrimSpace(internalDateText) != "" {
+				parsed, err := time.Parse(time.RFC3339, strings.TrimSpace(internalDateText))
+				if err != nil {
+					return NewAppError(ErrorUsage, "--internal-date must be an RFC3339 timestamp", false)
+				}
+				parsed = parsed.UTC()
+				request.InternalDate = &parsed
+			}
+			var jsonRequest messageImportJSONRequest
+			if used, err := readJSONInput(cmd, state, input, &jsonRequest, "to", "internal-date", "flag", "idempotency-key"); err != nil {
+				return err
+			} else if used {
+				sourcePath = jsonRequest.File
+				request = maildomain.MessageImportRequest{
+					Folder: jsonRequest.To, InternalDate: jsonRequest.InternalDate,
+					Flags: append([]string(nil), jsonRequest.Flags...), IdempotencyKey: jsonRequest.IdempotencyKey,
+				}
+			}
+			if strings.TrimSpace(sourcePath) == "" {
+				return NewAppError(ErrorUsage, "one .eml source file is required", false)
+			}
+			if dryRun {
+				accountValue, _, plan, schemaVersion, err := service.MailMessageImportPreview(cmd.Context(), state.global.Home, state.global.Account, sourcePath, request)
+				if err != nil {
+					return err
+				}
+				if jsonOutput {
+					return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: mailMessageImportPreviewData{
+						AccountID: accountValue.ID, Plan: plan, SchemaVersion: schemaVersion,
+					}, Meta: EnvelopeMeta{RequestID: state.requestID}})
+				}
+				return renderMessageImportPreview(state.stdout, plan, true)
+			}
+			if strings.TrimSpace(request.IdempotencyKey) == "" {
+				return NewAppError(ErrorUsage, "message import requires --idempotency-key", false)
+			}
+			interactive := isTerminalReader(state.stdin) && !state.global.NoInput
+			if !yes && !interactive {
+				return NewAppError(ErrorSafety, "non-interactive message import requires --yes", false)
+			}
+			if !yes {
+				_, _, plan, _, err := service.MailMessageImportPreview(cmd.Context(), state.global.Home, state.global.Account, sourcePath, request)
+				if err != nil {
+					return err
+				}
+				if err := renderMessageImportPreview(state.stdout, plan, false); err != nil {
+					return err
+				}
+				confirmed, err := confirmMessageImport(state.stdin, state.stderr, plan.FolderName)
+				if err != nil {
+					return err
+				}
+				if !confirmed {
+					return NewAppError(ErrorSafety, "message import canceled before creating intent or contacting IMAP", false)
+				}
+			}
+			accountValue, folderValue, _, importValue, message, schemaVersion, err := service.MailMessageImport(cmd.Context(), state.global.Home, state.global.Account, sourcePath, request)
+			if err != nil {
+				return err
+			}
+			if jsonOutput {
+				return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: mailMessageImportData{
+					AccountID: accountValue.ID, FolderID: folderValue.ID, Import: importValue,
+					Message: sanitizeMessage(message), SchemaVersion: schemaVersion,
+				}, Meta: EnvelopeMeta{RequestID: state.requestID}})
+			}
+			return NewCompactTextRenderer(state.stdout).Record("message-import", importValue.ID,
+				Field("message", message.ID), Field("folder", folderValue.Name), Field("folder_id", folderValue.ID),
+				Field("status", importValue.Status), Field("provider_method", importValue.ProviderMethod),
+				Field("uid_validity", importValue.ProviderUIDValidity), Field("uid", importValue.ProviderUID),
+				Field("reconciliation_required", importValue.ReconciliationRequired),
+			)
+		},
+	}
+	command.Flags().StringVar(&destination, "to", "", "Current selectable destination folder kind, ID, name, or wire name")
+	command.Flags().StringVar(&internalDateText, "internal-date", "", "Provider INTERNALDATE as RFC3339; defaults to the message Date header or current time")
+	command.Flags().StringArrayVar(&flags, "flag", nil, "Initial provider flag: seen, flagged, or answered; repeat as needed")
+	command.Flags().StringVar(&idempotencyKey, "idempotency-key", "", idempotencyKeyHelp)
+	command.Flags().BoolVar(&dryRun, "dry-run", false, "Validate and review the exact source locally without creating import intent or contacting IMAP")
+	command.Flags().BoolVar(&yes, "yes", false, "Confirm an intentional non-interactive provider APPEND")
+	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
+	bindJSONInput(command, &input)
+	return command
+}
+
+func renderMessageImportPreview(writer io.Writer, plan maildomain.MessageImportPlan, dryRun bool) error {
+	return NewCompactTextRenderer(writer).Summary("message-import-review",
+		Field("folder", plan.FolderName), Field("folder_id", plan.FolderID),
+		Field("raw_bytes", plan.RawByteSize), Field("raw_sha256", plan.RawContentHash),
+		Field("rfc_message_id", plan.RFCMessageID), Field("subject", Excerpt(plan.Subject, DefaultExcerptRunes)),
+		Field("attachments", plan.AttachmentCount), Field("flags", plan.Flags), Field("internal_date", plan.InternalDate),
+		Field("request_hash", plan.RequestHash), Field("dry_run", dryRun),
+		Field("imap_contacted", "false"), Field("intent_created", "false"),
+	)
+}
+
+func confirmMessageImport(reader io.Reader, stderr io.Writer, folderName string) (bool, error) {
+	if _, err := fmt.Fprintf(stderr, "Append the reviewed RFC message to %s and ingest that exact provider copy? [y/N]: ", folderName); err != nil {
+		return false, WrapAppError(ErrorInternal, "cannot write the message import confirmation prompt", false, err)
+	}
+	line, err := bufio.NewReader(io.LimitReader(reader, 64)).ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return false, WrapAppError(ErrorConfiguration, "cannot read message import confirmation", false, err)
+	}
+	answer := strings.ToLower(strings.TrimSpace(line))
+	return answer == "y" || answer == "yes", nil
 }
 
 func newMailMessageShowCommand(state *executionState) *cobra.Command {

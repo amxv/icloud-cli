@@ -2,6 +2,7 @@ package cli
 
 import (
 	"strings"
+	"time"
 )
 
 type accountAddJSONRequest struct {
@@ -124,6 +125,14 @@ type messageExportJSONRequest struct {
 	MessageID string `json:"message_id"`
 	Output    string `json:"output"`
 	Force     bool   `json:"force,omitempty"`
+}
+
+type messageImportJSONRequest struct {
+	File           string     `json:"file"`
+	To             string     `json:"to"`
+	InternalDate   *time.Time `json:"internal_date,omitempty"`
+	Flags          []string   `json:"flags,omitempty"`
+	IdempotencyKey string     `json:"idempotency_key,omitempty"`
 }
 
 type attachmentSaveJSONRequest struct {

@@ -2,7 +2,7 @@
 .TH "ICLOUD" "1" "Jan 1970" "icloud 0.1.0" "iCloud Mail CLI Manual"
 
 .SH NAME
-icloud-mail-message - Read complete local message content by stable ID
+icloud-mail-message - Read, export, or deliberately import complete RFC messages
 
 
 .SH SYNOPSIS
@@ -10,7 +10,7 @@ icloud-mail-message - Read complete local message content by stable ID
 
 
 .SH DESCRIPTION
-Read complete local message content by stable ID
+Read, export, or deliberately import complete RFC messages
 
 
 .SH OPTIONS
@@ -44,8 +44,9 @@ Read complete local message content by stable ID
   icloud mail message show msg_…
   icloud mail message raw msg_…
   icloud mail message export msg_… --output message.eml
+  icloud mail message import message.eml --to inbox --dry-run
 .EE
 
 
 .SH SEE ALSO
-\fBicloud-mail(1)\fP, \fBicloud-mail-message-export(1)\fP, \fBicloud-mail-message-raw(1)\fP, \fBicloud-mail-message-show(1)\fP
+\fBicloud-mail(1)\fP, \fBicloud-mail-message-export(1)\fP, \fBicloud-mail-message-import(1)\fP, \fBicloud-mail-message-raw(1)\fP, \fBicloud-mail-message-show(1)\fP

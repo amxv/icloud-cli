@@ -348,6 +348,33 @@ icloud mail message export msg_… --output - > message.eml
 
 Raw output is byte-for-byte the synchronized RFC822 message. The CLI verifies its stored size and SHA-256 content address before streaming. File export uses a private temporary file, mode `0600`, and refuses an existing regular file unless `--force` is supplied.
 
+## Import one exact EML message
+
+Use import when you already have one RFC822/EML file and want one deliberate provider copy in a current selectable mailbox. Review is local-only:
+
+```bash
+icloud mail message import message.eml --to inbox --dry-run
+```
+
+The preview reports the destination, exact source SHA-256 and byte size, decoded subject/Message-ID when present, attachment count, flags, and effective internal date. It creates no durable import intent and does not contact IMAP.
+
+Confirm with a stable idempotency key:
+
+```bash
+icloud mail message import message.eml \
+  --to 'Unicode-日本語' \
+  --flag seen \
+  --flag flagged \
+  --idempotency-key import-archive-2026-01 \
+  --yes
+```
+
+`--flag` accepts only `seen`, `flagged`, and `answered`; deletion and Draft state are not import options. `--internal-date <RFC3339>` can override provider INTERNALDATE. Without it, the decoded message `Date` is used when available, otherwise the first durable import attempt chooses the current time and reuses that same value on recovery.
+
+Import accepts only one regular file, rejects symlinks/special files and oversize input, stages an immutable content-addressed copy, and reparses it before provider mutation. After APPEND, the exact provider UID is fetched and committed through canonical ingestion. iCloud has been observed to append one terminal CRLF to an otherwise byte-identical APPEND literal. Import accepts only the source bytes exactly or exactly `source + "\r\n"`; the success result identifies that proof as `provider_raw_variant=exact` or `provider_raw_variant=terminal_crlf`. Headers, bodies, MIME boundaries, attachment bytes, or any other change still fail closed. Canonical raw reads/exports always reflect the exact bytes fetched back from the provider. **Targeted import does not create or advance the ordinary synchronization checkpoint**; a later normal sync remains independently responsible for its own frontier and recognizes the already-cached provider location idempotently.
+
+If APPEND succeeds without APPENDUID, or the connection drops after iCloud may have accepted the literal, the CLI does not blindly upload the file again. The durable import remembers the pre-APPEND UIDVALIDITY/UIDNEXT fence and exact source hash, inspects only a bounded post-fence UID range, and proceeds only when exactly one provider copy is proven as either byte-identical or the exact one-CRLF provider form above. Retry the same normalized request with the same idempotency key. Multiple matching candidates remain an explicit conflict; a definite failure before APPEND is marked failed and a new deliberate attempt needs a new key.
+
 ## Inspect each synchronization frontier
 
 Status defaults to Inbox. Select Sent or another folder explicitly:

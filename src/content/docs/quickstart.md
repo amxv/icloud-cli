@@ -420,6 +420,19 @@ icloud mail message export msg_… --output message.eml
 
 `--full` and `--format text` stream complete decoded text. HTML, headers, metadata-only, MIME-part detail, and raw RFC822 are separate opt-ins. Raw and exported bytes are verified against the local content address before they are returned.
 
+Import one existing RFC message deliberately by reviewing it locally first:
+
+```bash
+icloud mail message import message.eml --to inbox --dry-run
+
+icloud mail message import message.eml \
+  --to inbox \
+  --idempotency-key import-message-01 \
+  --yes
+```
+
+Import stages and parses one regular file under the configured raw-message limit before any provider contact. The confirmed operation APPENDs those exact reviewed bytes, proves the provider UID, and then sends that provider copy through the same canonical message, MIME, attachment, search, identity, and thread ingestion path as synchronized mail. iCloud may store one additional terminal CRLF after an APPEND literal; the result reports `provider_raw_variant=terminal_crlf` only when the fetched provider bytes are cryptographically proven to be exactly `source + "\r\n"`. `provider_raw_variant=exact` means no byte changed. Any other provider rewrite is rejected. Repeating the same normalized request with the same idempotency key resumes or returns the same import instead of uploading another copy.
+
 ## Save attachments explicitly
 
 List metadata first, then save by stable attachment ID:

@@ -401,6 +401,7 @@ func (store *Store) MailBlobReferences(ctx context.Context, accountID string, li
 		{kind: "attachment", query: `SELECT min(a.attachment_id), a.storage_key, a.content_hash, a.byte_size FROM attachments AS a JOIN messages AS m ON m.message_id=a.message_id WHERE m.account_id=? AND a.storage_key<>'' GROUP BY a.storage_key, a.content_hash, a.byte_size ORDER BY min(a.attachment_id) LIMIT ?`},
 		{kind: "outbound_raw", query: `SELECT min(o.attempt_id), o.raw_storage_key, o.raw_content_hash, o.raw_byte_size FROM outbound_attempts AS o WHERE o.account_id=? GROUP BY o.raw_storage_key, o.raw_content_hash, o.raw_byte_size ORDER BY min(o.attempt_id) LIMIT ?`},
 		{kind: "outbound_attachment", query: `SELECT min(oa.attempt_id || ':' || oa.ordinal), oa.storage_key, oa.content_hash, oa.byte_size FROM outbound_attempt_attachments AS oa JOIN outbound_attempts AS o ON o.attempt_id=oa.attempt_id WHERE o.account_id=? GROUP BY oa.storage_key, oa.content_hash, oa.byte_size ORDER BY min(oa.attempt_id || ':' || oa.ordinal) LIMIT ?`},
+		{kind: "import_raw", query: `SELECT min(i.import_id), i.raw_storage_key, i.raw_content_hash, i.raw_byte_size FROM message_imports AS i WHERE i.account_id=? GROUP BY i.raw_storage_key, i.raw_content_hash, i.raw_byte_size ORDER BY min(i.import_id) LIMIT ?`},
 	}
 	values := make([]BlobReference, 0, len(categories)*limit)
 	more := false

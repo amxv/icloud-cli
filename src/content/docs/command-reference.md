@@ -611,7 +611,7 @@ Available Commands:
   latest      Compatibility alias for `mail threads list`
   mark-read   Mark one selected message location as read
   mark-unread Mark one selected message location as unread
-  message     Read complete local message content by stable ID
+  message     Read, export, or deliberately import complete RFC messages
   messages    Read synchronized messages through the canonical message-list surface
   move        Move exact current message locations
   not-junk    Move current Junk locations back to Inbox
@@ -2251,7 +2251,7 @@ Global Flags:
 ## `icloud mail message`
 
 ```text
-Read complete local message content by stable ID
+Read, export, or deliberately import complete RFC messages
 
 Usage:
   icloud mail message [flags]
@@ -2261,9 +2261,11 @@ Examples:
   icloud mail message show msg_…
   icloud mail message raw msg_…
   icloud mail message export msg_… --output message.eml
+  icloud mail message import message.eml --to inbox --dry-run
 
 Available Commands:
   export      Export the exact locally stored RFC822 message atomically
+  import      Append one validated RFC message and ingest the exact provider copy
   raw         Stream the exact locally stored RFC822 message to stdout
   show        Show bounded metadata or explicitly requested complete content
 
@@ -2298,6 +2300,38 @@ Flags:
       --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
       --json                Emit one stable JSON success envelope after file export
       --output string       Destination path, or - for stdout
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail message import`
+
+```text
+Append one validated RFC message and ingest the exact provider copy
+
+Usage:
+  icloud mail message import <file.eml> [flags]
+
+Examples:
+  icloud mail message import message.eml --to inbox --dry-run
+  icloud mail message import message.eml --to Archive --flag seen --idempotency-key import-01 --yes
+  icloud mail message import --input-json request.json --dry-run --json
+
+Flags:
+      --dry-run                  Validate and review the exact source locally without creating import intent or contacting IMAP
+      --flag stringArray         Initial provider flag: seen, flagged, or answered; repeat as needed
+  -h, --help                     help for import
+      --idempotency-key string   Reuse the original operation when the same normalized request and idempotency key are repeated
+      --input-json string        Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --internal-date string     Provider INTERNALDATE as RFC3339; defaults to the message Date header or current time
+      --json                     Emit one stable JSON success envelope
+      --to string                Current selectable destination folder kind, ID, name, or wire name
+      --yes                      Confirm an intentional non-interactive provider APPEND
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID

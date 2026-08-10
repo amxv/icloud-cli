@@ -704,6 +704,14 @@ icloud mail message export msg_… --output message.eml --force
 
 `--force` is required to replace an existing regular file. Directories and special files are rejected. The command writes a private temporary file first and does not echo the destination path in normal output.
 
+## EML import is unresolved
+
+An unresolved import means the provider may have accepted the APPEND but the CLI does not yet have exactly one safe provider identity to commit. Do **not** change the file, destination, flags, internal date, or idempotency key and then retry as though it were a new upload.
+
+Re-run the same command with the same normalized request and idempotency key. The CLI uses the durable pre-APPEND UID fence and exact raw hash to inspect the bounded candidate range without issuing another APPEND. A provider candidate is accepted only when it is byte-identical to the reviewed source or exactly that source plus one terminal CRLF, an iCloud APPEND normalization reported as `provider_raw_variant=terminal_crlf`. If one such copy is proven, canonical ingestion resumes. If none is visible yet, retry later; if several matching copies exist, the command reports a conflict instead of guessing.
+
+A definite authentication/connect/select failure before APPEND is different: that import is durably failed. Correct the underlying problem, then make a new deliberate request with a new idempotency key. Import dry-run is always safe for re-review because it does not create recovery state or contact iCloud.
+
 ## Raw JSON is too large
 
 Body/raw content in JSON is deliberately bounded. Use a streaming mode instead:
