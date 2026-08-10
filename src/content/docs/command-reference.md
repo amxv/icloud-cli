@@ -2831,6 +2831,7 @@ Examples:
   icloud mail search launch --result threads --limit 20
   icloud mail search invoice --remote --folder inbox
   icloud mail search invoice --remote --folder inbox --cursor rcur_…
+  icloud mail search invoice --remote --all-folders --cursor rcur_…
   icloud mail search --attachment-type application/pdf --json
   icloud mail search --input-json request.json --json
 
@@ -2839,7 +2840,7 @@ Available Commands:
 
 Flags:
       --after string             Include messages at or after an RFC3339 timestamp or YYYY-MM-DD UTC date
-      --all-folders              Search every current selectable folder, up to the documented fan-out bound
+      --all-folders              Search every current selectable folder through bounded resumable fan-out
       --attachment-name string   Restrict attachment filename text
       --attachment-type string   Restrict attachment media type
       --before string            Include messages before an RFC3339 timestamp or YYYY-MM-DD UTC date

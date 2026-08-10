@@ -350,10 +350,17 @@ When you need a fresh iCloud check without moving the normal sync frontier, sear
 icloud mail search invoice --remote --folder inbox
 ```
 
-If the one-folder provider search reports `more=true` or `partial=true`, continue from its `next_cursor` without repeating newer UID windows:
+If provider search reports `more=true` or `partial=true`, continue from its `next_cursor` with the same scope. One-folder continuation resumes the next unscanned UID boundary without repeating newer windows:
 
 ```bash
 icloud mail search invoice --remote --folder inbox --cursor rcur_…
+```
+
+All-folder provider search is resumable too. It pages the current selectable-folder inventory and maintains a bounded merge frontier across folders, with at most two provider mailbox operations per invocation. An early page can contain zero hits with `partial=true` while the CLI is still establishing globally ordered folder heads:
+
+```bash
+icloud mail search invoice --remote --all-folders --limit 20
+icloud mail search invoice --remote --all-folders --limit 20 --cursor rcur_…
 ```
 
 The result uses a stale-safe `rem_…` reference until you choose to cache it:
@@ -363,7 +370,7 @@ icloud mail message show rem_… --remote
 icloud mail message show rem_… --remote --cache --full
 ```
 
-Targeted caching returns stable local IDs and leaves the ordinary folder checkpoint unchanged. See [Search synchronized mail](/docs/search-synchronized-mail) for provider filter limits, one-folder remote cursors, `partial`, all-folder fan-out, and batch hydration.
+Targeted caching returns stable local IDs and leaves the ordinary folder checkpoint unchanged. See [Search synchronized mail](/docs/search-synchronized-mail) for provider filter limits, remote cursor scope, bounded all-folder merge behavior, `partial`, and batch hydration.
 
 ## Browse reconstructed conversations
 

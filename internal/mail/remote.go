@@ -17,14 +17,34 @@ var (
 )
 
 type RemoteSearchCursor struct {
-	Version     int      `json:"v"`
-	AccountID   string   `json:"account"`
-	FolderID    string   `json:"folder"`
-	UIDValidity uint32   `json:"uid_validity"`
-	QueryHash   string   `json:"query_hash"`
-	Limit       int      `json:"limit"`
-	NextUID     uint32   `json:"next_uid"`
-	PendingUIDs []uint32 `json:"pending_uids,omitempty"`
+	Version           int                        `json:"v"`
+	AccountID         string                     `json:"account"`
+	FolderID          string                     `json:"folder,omitempty"`
+	UIDValidity       uint32                     `json:"uid_validity,omitempty"`
+	QueryHash         string                     `json:"query_hash"`
+	Limit             int                        `json:"limit"`
+	NextUID           uint32                     `json:"next_uid,omitempty"`
+	PendingUIDs       []uint32                   `json:"pending_uids,omitempty"`
+	AllFolders        bool                       `json:"all_folders,omitempty"`
+	FolderSignature   string                     `json:"folder_signature,omitempty"`
+	FolderCount       int                        `json:"folder_count,omitempty"`
+	FolderAfterID     string                     `json:"folder_after_id,omitempty"`
+	InventoryComplete bool                       `json:"inventory_complete,omitempty"`
+	Folders           []RemoteSearchFolderCursor `json:"folders,omitempty"`
+}
+
+type RemoteSearchFolderCursor struct {
+	FolderID    string                  `json:"folder"`
+	UIDValidity uint32                  `json:"uid_validity"`
+	NextUID     uint32                  `json:"next_uid,omitempty"`
+	PendingUIDs []uint32                `json:"pending_uids,omitempty"`
+	Head        *RemoteSearchCursorHead `json:"head,omitempty"`
+	Done        bool                    `json:"done,omitempty"`
+}
+
+type RemoteSearchCursorHead struct {
+	UID          uint32    `json:"uid"`
+	InternalDate time.Time `json:"internal_date"`
 }
 
 func EncodeRemoteSearchCursor(value RemoteSearchCursor) (string, error) {
@@ -34,7 +54,8 @@ func EncodeRemoteSearchCursor(value RemoteSearchCursor) (string, error) {
 	if value.Version == 0 {
 		value.Version = 1
 	}
-	if value.Version != 1 || value.AccountID == "" || value.FolderID == "" || value.UIDValidity == 0 || len(value.QueryHash) != 64 || value.Limit < 1 || value.Limit > 100 || !validRemoteSearchContinuation(value.NextUID, value.PendingUIDs) {
+	normalizeRemoteSearchCursor(&value)
+	if !validRemoteSearchCursor(value) {
 		return "", ErrInvalidRemoteSearchCursor
 	}
 	payload, err := json.Marshal(value)
@@ -57,10 +78,96 @@ func DecodeRemoteSearchCursor(value string) (RemoteSearchCursor, error) {
 	if err := json.Unmarshal(payload, &cursor); err != nil {
 		return RemoteSearchCursor{}, ErrInvalidRemoteSearchCursor
 	}
-	if cursor.Version != 1 || strings.TrimSpace(cursor.AccountID) == "" || strings.TrimSpace(cursor.FolderID) == "" || cursor.UIDValidity == 0 || len(strings.TrimSpace(cursor.QueryHash)) != 64 || cursor.Limit < 1 || cursor.Limit > 100 || !validRemoteSearchContinuation(cursor.NextUID, cursor.PendingUIDs) {
+	normalizeRemoteSearchCursor(&cursor)
+	if !validRemoteSearchCursor(cursor) {
 		return RemoteSearchCursor{}, ErrInvalidRemoteSearchCursor
 	}
 	return cursor, nil
+}
+
+func normalizeRemoteSearchCursor(cursor *RemoteSearchCursor) {
+	if cursor == nil {
+		return
+	}
+	cursor.AccountID = strings.TrimSpace(cursor.AccountID)
+	cursor.FolderID = strings.TrimSpace(cursor.FolderID)
+	cursor.QueryHash = strings.TrimSpace(cursor.QueryHash)
+	cursor.FolderSignature = strings.TrimSpace(cursor.FolderSignature)
+	cursor.FolderAfterID = strings.TrimSpace(cursor.FolderAfterID)
+	for index := range cursor.Folders {
+		cursor.Folders[index].FolderID = strings.TrimSpace(cursor.Folders[index].FolderID)
+		if cursor.Folders[index].Head != nil {
+			cursor.Folders[index].Head.InternalDate = cursor.Folders[index].Head.InternalDate.UTC()
+		}
+	}
+}
+
+func validRemoteSearchCursor(cursor RemoteSearchCursor) bool {
+	if cursor.AccountID == "" || len(cursor.QueryHash) != 64 || cursor.Limit < 1 || cursor.Limit > 100 {
+		return false
+	}
+	switch cursor.Version {
+	case 1:
+		return !cursor.AllFolders && cursor.FolderID != "" && cursor.UIDValidity != 0 &&
+			cursor.FolderSignature == "" && cursor.FolderCount == 0 && cursor.FolderAfterID == "" &&
+			!cursor.InventoryComplete && len(cursor.Folders) == 0 &&
+			validRemoteSearchContinuation(cursor.NextUID, cursor.PendingUIDs)
+	case 2:
+		return validAllFolderRemoteSearchCursor(cursor)
+	default:
+		return false
+	}
+}
+
+func validAllFolderRemoteSearchCursor(cursor RemoteSearchCursor) bool {
+	const maxCursorFolders = 1000
+	if !cursor.AllFolders || cursor.FolderID != "" || cursor.UIDValidity != 0 || cursor.NextUID != 0 || len(cursor.PendingUIDs) != 0 ||
+		len(cursor.FolderSignature) != 64 || cursor.FolderCount < 1 || cursor.FolderCount > maxCursorFolders ||
+		len(cursor.Folders) > cursor.FolderCount {
+		return false
+	}
+	if cursor.InventoryComplete {
+		if cursor.FolderAfterID != "" || len(cursor.Folders) != cursor.FolderCount {
+			return false
+		}
+	} else if cursor.FolderAfterID == "" || len(cursor.Folders) == 0 || len(cursor.Folders) >= cursor.FolderCount {
+		return false
+	}
+	previousFolderID := ""
+	for index, state := range cursor.Folders {
+		if state.FolderID == "" || state.UIDValidity == 0 || (index > 0 && state.FolderID <= previousFolderID) {
+			return false
+		}
+		previousFolderID = state.FolderID
+		hasContinuation := state.NextUID != 0 || len(state.PendingUIDs) != 0
+		if hasContinuation && !validRemoteSearchContinuation(state.NextUID, state.PendingUIDs) {
+			return false
+		}
+		if state.Done {
+			if state.Head != nil || hasContinuation {
+				return false
+			}
+			continue
+		}
+		if state.Head == nil {
+			if !hasContinuation {
+				return false
+			}
+			continue
+		}
+		if state.Head.UID == 0 || state.Head.InternalDate.IsZero() || (state.NextUID != 0 && state.Head.UID <= state.NextUID) {
+			return false
+		}
+		for _, uid := range state.PendingUIDs {
+			if uid >= state.Head.UID {
+				return false
+			}
+		}
+	}
+	if !cursor.InventoryComplete && previousFolderID != cursor.FolderAfterID {
+		return false
+	}
+	return true
 }
 
 func validRemoteSearchContinuation(nextUID uint32, pendingUIDs []uint32) bool {

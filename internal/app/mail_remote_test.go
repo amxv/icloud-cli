@@ -15,25 +15,42 @@ import (
 )
 
 type fakeRemoteClient struct {
-	searchMessages  []transport.RemoteMessageSummary
-	searchPages     []transport.RemoteSearchPage
-	searchMore      bool
-	searchPartial   bool
-	searchRequests  []transport.RemoteSearchRequest
-	summaryRequests []transport.RemoteFetchRequest
-	fetchRequests   []transport.RemoteFetchRequest
-	rawByUID        map[uint32]string
-	uidValidity     uint32
+	searchMessages       []transport.RemoteMessageSummary
+	searchPages          []transport.RemoteSearchPage
+	searchPagesByMailbox map[string][]transport.RemoteSearchPage
+	searchMore           bool
+	searchPartial        bool
+	searchRequests       []transport.RemoteSearchRequest
+	summaryRequests      []transport.RemoteFetchRequest
+	fetchRequests        []transport.RemoteFetchRequest
+	summariesByMailbox   map[string]map[uint32]transport.RemoteMessageSummary
+	rawByUID             map[uint32]string
+	uidValidity          uint32
+	uidValidityByMailbox map[string]uint32
 }
 
 func (client *fakeRemoteClient) SearchRemote(_ context.Context, _ transport.AuthRequest, request transport.RemoteSearchRequest) (transport.RemoteSearchPage, error) {
 	client.searchRequests = append(client.searchRequests, request)
 	uidValidity := client.uidValidity
+	if value := client.uidValidityByMailbox[request.Mailbox]; value != 0 {
+		uidValidity = value
+	}
 	if uidValidity == 0 {
 		uidValidity = 100
 	}
 	if request.ExpectedUIDValidity != 0 && request.ExpectedUIDValidity != uidValidity {
 		return transport.RemoteSearchPage{}, &transport.UIDValidityError{Expected: request.ExpectedUIDValidity, Observed: uidValidity}
+	}
+	if pages := client.searchPagesByMailbox[request.Mailbox]; len(pages) > 0 {
+		page := pages[0]
+		client.searchPagesByMailbox[request.Mailbox] = pages[1:]
+		if page.Mailbox == "" {
+			page.Mailbox = request.Mailbox
+		}
+		if page.UIDValidity == 0 {
+			page.UIDValidity = uidValidity
+		}
+		return page, nil
 	}
 	if len(client.searchPages) > 0 {
 		page := client.searchPages[0]
@@ -61,11 +78,19 @@ func (client *fakeRemoteClient) SearchRemote(_ context.Context, _ transport.Auth
 func (client *fakeRemoteClient) FetchRemoteSummary(_ context.Context, _ transport.AuthRequest, request transport.RemoteFetchRequest) (transport.RemoteSummaryResult, error) {
 	client.summaryRequests = append(client.summaryRequests, request)
 	uidValidity := client.uidValidity
+	if value := client.uidValidityByMailbox[request.Mailbox]; value != 0 {
+		uidValidity = value
+	}
 	if uidValidity == 0 {
 		uidValidity = 100
 	}
 	if request.ExpectedUIDValidity != uidValidity {
 		return transport.RemoteSummaryResult{}, &transport.UIDValidityError{Expected: request.ExpectedUIDValidity, Observed: uidValidity}
+	}
+	if values := client.summariesByMailbox[request.Mailbox]; values != nil {
+		if value, ok := values[request.UID]; ok {
+			return transport.RemoteSummaryResult{Mailbox: request.Mailbox, UIDValidity: uidValidity, Message: value}, nil
+		}
 	}
 	for _, value := range client.searchMessages {
 		if value.UID == request.UID {

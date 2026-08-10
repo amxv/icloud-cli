@@ -82,11 +82,22 @@ For one folder, `more=true` or `partial=true` is accompanied by an opaque `rcur_
 icloud mail search invoice --remote --folder inbox --limit 20 --cursor rcur_…
 ```
 
-The remote cursor is not a local `cur_…` search cursor and is not a `rem_…` message reference. It is bound to the stable account/folder identity, UIDVALIDITY, complete normalized provider query/filter signature, result limit, and the next older UID frontier. Changing any bound scope rejects the cursor before a provider search. A UIDVALIDITY rollover also rejects it and tells you to restart from current folder state.
+The remote cursor is not a local `cur_…` search cursor and is not a `rem_…` message reference. The one-folder shape is bound to the stable account/folder identity, UIDVALIDITY, complete normalized provider query/filter signature, result limit, and the next unscanned UID frontier. Changing any bound scope rejects the cursor before a provider search. A UIDVALIDITY rollover also rejects it and tells you to restart from current folder state.
 
 Precise RFC3339 `--after` and `--before` filters are enforced after iCloud's day-granularity IMAP match, but same-day candidates rejected by the exact timestamp do not consume the requested result quota. The CLI continues through bounded UID windows until it has enough exact matches or reaches its candidate-position bound; `partial=true` means older provider positions remain and the cursor resumes from the next unconsumed UID boundary rather than repeating from the last returned hit.
 
-Use `--all-folders` only when you deliberately want every current selectable folder. The fan-out is capped at 10 folders. Remote continuation is currently one-folder only: `--all-folders` does not accept an `rcur_…` cursor. Each folder still examines a bounded recent provider range; when all-folder results are partial, narrow the folder, dates, sender, subject, or Message-ID.
+Use `--all-folders` only when you deliberately want every current selectable folder. All-folder search is resumable and does not turn one command into an unbounded account scan:
+
+```bash
+icloud mail search invoice --remote --all-folders --limit 20
+icloud mail search invoice --remote --all-folders --limit 20 --cursor rcur_…
+```
+
+Each invocation performs at most two provider mailbox operations total. An operation can be a bounded search scan or an exact summary fetch for a buffered merge head; search scans examine at most 4,096 candidate UID positions per invocation. The CLI pages the persisted selectable-folder inventory by stable folder ID and keeps one bounded merge head plus that folder's unscanned UID frontier in the cursor. This is enough to merge provider hits deterministically by internal date, then stable folder ID, then descending UID without loading all results or persisting a server-side search session.
+
+For more than two folders, an early page can legitimately contain `count=0`, `partial=true`, and `next_cursor=rcur_…` while the CLI seeds the bounded merge frontier. A sparse folder can produce the same shape while its next exact match is still unknown. Continue the cursor: an empty partial page is work-in-progress, not proof that the account has no match.
+
+The all-folder cursor binds the account, complete normalized query/filter signature, result limit, and a signature of the full current selectable-folder membership plus known UIDVALIDITY values. It also records live UIDVALIDITY for each provider folder it has already scanned. Adding/removing a selectable folder or changing a known mailbox incarnation makes the cursor stale and requires a fresh search; a live UIDVALIDITY mismatch on any resumed folder does the same before that folder's old UIDs can be reused.
 
 Remote text previews are bounded and decoded from the provider response when possible. They are useful for selection, not a substitute for the verified local MIME parser.
 

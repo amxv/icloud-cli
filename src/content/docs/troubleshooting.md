@@ -485,9 +485,9 @@ For a fresh provider check without advancing sync, use explicit remote search:
 icloud mail search invoice --remote --folder inbox
 ```
 
-Remote search is bounded and is not local FTS parity. For one folder, `partial=true` or `more=true` includes an `rcur_…` `next_cursor`; resume the exact same query/filter/folder/result-limit scope to continue older UID windows. Attachment metadata and reconstructed-thread filters require synchronization or targeted hydration first.
+Remote search is bounded and is not local FTS parity. `partial=true` or `more=true` includes an `rcur_…` `next_cursor`; resume the exact same remote scope. One-folder search continues older unscanned UID windows. All-folder search uses at most two provider mailbox operations per invocation, so it may return an empty partial page while it pages the selectable-folder inventory or advances a sparse folder far enough to establish its next merge head. Continue the cursor instead of treating that partial empty page as a terminal “no matches” result. Attachment metadata and reconstructed-thread filters require synchronization or targeted hydration first.
 
-If a remote cursor is rejected because the query, folder, account, result limit, or UIDVALIDITY changed, restart the search from current provider state instead of editing or reusing the old cursor. Local `cur_…` cursors and remote `rcur_…` cursors are distinct contracts.
+If a remote cursor is rejected because the query, folder, account, result limit, selectable-folder membership, or UIDVALIDITY changed, restart the search from current provider state instead of editing or reusing the old cursor. Local `cur_…` cursors and remote `rcur_…` cursors are distinct contracts.
 
 ## A remote reference is stale
 

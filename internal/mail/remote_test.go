@@ -2,7 +2,9 @@ package mail
 
 import (
 	"errors"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestRemoteReferenceRoundTripAndValidation(t *testing.T) {
@@ -39,6 +41,39 @@ func TestRemoteReferenceRoundTripAndValidation(t *testing.T) {
 	for _, value := range []string{"", "rem_", "rem_not-base64", "cur_abc"} {
 		if _, err := DecodeRemoteReference(value); !errors.Is(err, ErrInvalidRemoteReference) {
 			t.Fatalf("DecodeRemoteReference(%q) error = %v", value, err)
+		}
+	}
+}
+
+func TestRemoteSearchCursorV2RoundTripAndValidation(t *testing.T) {
+	want := RemoteSearchCursor{
+		Version: 2, AccountID: "acct_test", QueryHash: strings.Repeat("a", 64), Limit: 20,
+		AllFolders: true, FolderSignature: strings.Repeat("b", 64), FolderCount: 2, InventoryComplete: true,
+		Folders: []RemoteSearchFolderCursor{
+			{FolderID: "fld_a", UIDValidity: 11, Head: &RemoteSearchCursorHead{UID: 90, InternalDate: time.Date(2026, 8, 10, 9, 0, 0, 0, time.UTC)}},
+			{FolderID: "fld_b", UIDValidity: 12, NextUID: 40, PendingUIDs: []uint32{60, 50}},
+		},
+	}
+	encoded, err := EncodeRemoteSearchCursor(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := DecodeRemoteSearchCursor(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Version != 2 || !got.AllFolders || got.FolderCount != 2 || !got.InventoryComplete || len(got.Folders) != 2 || got.Folders[0].Head == nil || got.Folders[0].Head.UID != 90 || got.Folders[1].NextUID != 40 || len(got.Folders[1].PendingUIDs) != 2 {
+		t.Fatalf("decoded cursor = %+v", got)
+	}
+
+	invalid := []RemoteSearchCursor{
+		{Version: 2, AccountID: "acct_test", QueryHash: strings.Repeat("a", 64), Limit: 20, AllFolders: true, FolderSignature: strings.Repeat("b", 64), FolderCount: 2},
+		{Version: 2, AccountID: "acct_test", QueryHash: strings.Repeat("a", 64), Limit: 20, AllFolders: true, FolderSignature: strings.Repeat("b", 64), FolderCount: 2, InventoryComplete: true, Folders: []RemoteSearchFolderCursor{{FolderID: "fld_b", UIDValidity: 1, Done: true}, {FolderID: "fld_a", UIDValidity: 1, Done: true}}},
+		{Version: 2, AccountID: "acct_test", QueryHash: strings.Repeat("a", 64), Limit: 20, AllFolders: true, FolderSignature: strings.Repeat("b", 64), FolderCount: 1, InventoryComplete: true, Folders: []RemoteSearchFolderCursor{{FolderID: "fld_a", UIDValidity: 1}}},
+	}
+	for _, value := range invalid {
+		if _, err := EncodeRemoteSearchCursor(value); !errors.Is(err, ErrInvalidRemoteSearchCursor) {
+			t.Fatalf("EncodeRemoteSearchCursor(%+v) error = %v", value, err)
 		}
 	}
 }

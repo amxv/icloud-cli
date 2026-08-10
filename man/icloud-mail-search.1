@@ -19,7 +19,7 @@ Search synchronized mail locally or query bounded provider metadata explicitly
 
 .PP
 \fB--all-folders\fP[=false]
-	Search every current selectable folder, up to the documented fan-out bound
+	Search every current selectable folder through bounded resumable fan-out
 
 .PP
 \fB--attachment-name\fP=""
@@ -126,6 +126,7 @@ Search synchronized mail locally or query bounded provider metadata explicitly
   icloud mail search launch --result threads --limit 20
   icloud mail search invoice --remote --folder inbox
   icloud mail search invoice --remote --folder inbox --cursor rcur_…
+  icloud mail search invoice --remote --all-folders --cursor rcur_…
   icloud mail search --attachment-type application/pdf --json
   icloud mail search --input-json request.json --json
 .EE

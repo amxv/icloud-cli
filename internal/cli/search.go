@@ -81,6 +81,7 @@ func newMailSearchCommand(state *executionState) *cobra.Command {
 			"  icloud mail search launch --result threads --limit 20\n" +
 			"  icloud mail search invoice --remote --folder inbox\n" +
 			"  icloud mail search invoice --remote --folder inbox --cursor rcur_…\n" +
+			"  icloud mail search invoice --remote --all-folders --cursor rcur_…\n" +
 			"  icloud mail search --attachment-type application/pdf --json\n" +
 			"  icloud mail search --input-json request.json --json",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -168,7 +169,7 @@ func newMailSearchCommand(state *executionState) *cobra.Command {
 	addMailSearchFlags(command, &flags, true, false)
 	command.Flags().StringVar(&resultKind, "result", string(maildomain.SearchMessages), "Result kind: messages or threads")
 	command.Flags().BoolVar(&remote, "remote", false, "Query bounded provider metadata instead of local synchronized state")
-	command.Flags().BoolVar(&allFolders, "all-folders", false, "Search every current selectable folder, up to the documented fan-out bound")
+	command.Flags().BoolVar(&allFolders, "all-folders", false, "Search every current selectable folder through bounded resumable fan-out")
 	command.Flags().IntVar(&limit, "limit", DefaultPageSize, fmt.Sprintf("Maximum hits to return (1-%d)", MaximumPageSize))
 	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
 	bindReadJSONInput(command, &input)
