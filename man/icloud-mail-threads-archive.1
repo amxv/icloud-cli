@@ -1,0 +1,98 @@
+.nh
+.TH "ICLOUD" "1" "Jan 1970" "icloud 0.1.0" "iCloud Mail CLI Manual"
+
+.SH NAME
+icloud-mail-threads-archive - Apply archive to exact locations for one canonical thread page
+
+
+.SH SYNOPSIS
+\fBicloud mail threads archive  [flags]\fP
+
+
+.SH DESCRIPTION
+Apply archive to exact locations for one canonical thread page
+
+
+.SH OPTIONS
+\fB--cursor\fP=""
+	Continue a previously paged thread mutation from its next_cursor
+
+.PP
+\fB--dry-run\fP[=false]
+	Preview every exact per-message location change without creating intents or contacting IMAP
+
+.PP
+\fB--from\fP=""
+	Select one exact current source folder for every canonical thread member
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for archive
+
+.PP
+\fB--idempotency-key\fP=""
+	Reuse the original operation when the same normalized request and idempotency key are repeated
+
+.PP
+\fB--input-json\fP=""
+	Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+
+.PP
+\fB--json\fP[=false]
+	Emit one stable JSON success envelope
+
+.PP
+\fB--jsonl\fP[=false]
+	Emit ordered per-message and completed JSONL events
+
+.PP
+\fB--limit\fP=100
+	Maximum chronological thread members to mutate in this page (1-100)
+
+.PP
+\fB--mode\fP="atomic"
+	Failure mode for this bounded thread page: fail fast or continue-on-error
+
+.PP
+\fB--page\fP[=false]
+	Explicitly allow a partial first page when the canonical thread exceeds the bounded limit
+
+.PP
+\fB--to\fP=""
+	Select one current destination folder for every canonical thread member
+
+.PP
+\fB--yes\fP[=false]
+	Confirm an intentional non-interactive thread location change
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--account\fP=""
+	Select an account by name, email, or stable ID
+
+.PP
+\fB--home\fP=""
+	Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+
+.PP
+\fB--no-input\fP[=false]
+	Never prompt for interactive input
+
+.PP
+\fB--request-id\fP=""
+	Attach a stable request ID to structured output
+
+.PP
+\fB--timeout\fP=30s
+	Maximum normal command duration; watch applies it per provider/sync attempt
+
+
+.SH EXAMPLE
+.EX
+  icloud mail threads archive thr_… --dry-run
+  icloud mail threads archive thr_… --idempotency-key thread-archive-01 --yes
+.EE
+
+
+.SH SEE ALSO
+\fBicloud-mail-threads(1)\fP

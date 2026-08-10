@@ -61,3 +61,19 @@ type ThreadReadOptions struct {
 	RequireSource  bool
 	HydrateContent bool
 }
+
+// ThreadMutationTargetPage is a bounded canonical thread-membership page for
+// consequential writes. It deliberately carries stable logical message IDs,
+// not provider locations: the existing per-message flag/location engines own
+// exact location selection and provider race protection.
+type ThreadMutationTargetPage struct {
+	ThreadID          string   `json:"thread_id"`
+	RedirectedFrom    string   `json:"redirected_from,omitempty"`
+	MessageIDs        []string `json:"message_ids"`
+	MessageCount      int      `json:"message_count"`
+	More              bool     `json:"more"`
+	NextCursor        string   `json:"next_cursor,omitempty"`
+	ProjectionState   string   `json:"projection_state"`
+	ProjectionReason  string   `json:"projection_reason,omitempty"`
+	ProjectionPending int      `json:"projection_pending,omitempty"`
+}

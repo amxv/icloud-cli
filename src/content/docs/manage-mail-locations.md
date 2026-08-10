@@ -8,10 +8,11 @@ summary: Exact source and destination selection, bounded batch review, truthful 
 
 ## Start from current synchronized locations
 
-Location-changing commands act on one exact provider copy, not every copy of a logical message and never an entire reconstructed thread. Inspect the message first:
+Direct location-changing commands act on one exact provider copy, not every copy of a logical message. Thread-scoped commands can apply the same exact engine to the eligible members of one canonical conversation, but only inside an explicit `--from` folder scope. Inspect the message or conversation first:
 
 ```bash
 icloud mail message show msg_… --metadata-only
+icloud mail threads show thr_… --metadata-only
 icloud mail folders list
 ```
 
@@ -117,6 +118,33 @@ Strict JSON input can use one `message_id`, a `message_ids` array, or an `items`
 For streaming input, each `--input-jsonl` line is one strict object with `message_id` and optional `from`, `to`, and `idempotency_key`. Command-line `--from`, `--to`, and `--idempotency-key` remain defaults for fields omitted from each line.
 
 When one idempotency key is supplied for a multi-message request, the CLI deterministically derives a separate private per-item key. Replaying the same reviewed batch therefore returns each existing durable `mut_…` outcome without issuing the provider write again. Supplying an explicit item key overrides the batch default for that item. One-message commands keep their existing output and idempotency behavior unchanged.
+
+## Apply the same exact location engine to a thread
+
+Use `mail threads <action>` when the reviewed target is one reconstructed RFC conversation rather than an argv list of message IDs:
+
+```bash
+icloud mail threads copy thr_… \
+  --from inbox \
+  --to Projects \
+  --idempotency-key thread-copy-01 \
+  --dry-run
+
+icloud mail threads copy thr_… \
+  --from inbox \
+  --to Projects \
+  --idempotency-key thread-copy-01 \
+  --yes \
+  --jsonl
+```
+
+Thread location writes always require `--from`. The reconstructed conversation can contain messages in several folders or several copies of one logical message; only members with a current eligible copy in the selected source folder enter that bounded operation. A Sent-only reply is skipped by `--from inbox`, and an Archive copy of an Inbox message is left unchanged.
+
+The canonical thread/alias resolver only chooses logical membership. Every eligible member still goes through the same exact source-location planner, UIDVALIDITY checks, role rules, durable `mut_…` journal, provider MOVE/COPY/UID-EXPUNGE path, partial-work accounting, and reconciliation behavior documented above. There is no separate thread mutation protocol.
+
+A complete thread of up to 100 members can be reviewed in one invocation. Larger conversations refuse an implicit partial first write; use `--page` after review, then continue with the returned thread-bound `next_cursor`. The response always reports the full canonical `thread_message_count` separately from the eligible/attempted count for the selected page and folder scope. Pending or degraded thread reconstruction is rejected until `mail sync repair --apply` restores a complete projection.
+
+Thread idempotency is stable across aliases and pages: one base `--idempotency-key` derives a private key from the canonical thread plus each stable `msg_…`. A retry through the canonical ID after an earlier retired alias therefore reuses accepted per-message mutations without sending them to iCloud again.
 
 ## Use archive and trash shortcuts with resolved semantic roles
 

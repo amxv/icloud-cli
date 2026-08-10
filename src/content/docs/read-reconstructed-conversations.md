@@ -193,6 +193,38 @@ icloud mail threads show thr_old…
 
 The command resolves the alias and reports `redirected_from=thr_old…`. Message, location, MIME-part, attachment, and blob IDs never change during a thread merge.
 
+## Change one canonical thread without guessing provider copies
+
+Thread actions are built on the same exact per-message state and location engines as direct `msg_…` commands. Start from a reviewed canonical thread or any durable retired alias, then always name the provider-copy scope explicitly:
+
+```bash
+icloud mail threads mark-read thr_… --folder inbox --jsonl
+icloud mail threads flag thr_… --folder inbox --jsonl
+
+icloud mail threads copy thr_… \
+  --from inbox \
+  --to Projects \
+  --idempotency-key thread-copy-01 \
+  --dry-run
+```
+
+`--folder` and `--from` are required on thread writes. The CLI resolves the supplied `thr_…` alias or `msg_…` selector to one current canonical conversation, walks its members chronologically, and includes only members with an eligible current location in that exact selected folder. A Sent-only member is therefore skipped by an Inbox-scoped action, and another copy of the same logical message in Archive or a custom folder is never changed implicitly.
+
+State actions are `mark-read`, `mark-unread`, `flag`, and `unflag`. Location actions are `move`, `copy`, `archive`, `unarchive`, `trash`, `restore`, `junk`, `not-junk`, and `delete`; each still applies the normal per-message role and destination checks. Location dry runs resolve every eligible exact source/destination before provider contact, create no mutation intents, and preserve the existing fail-fast/continue and unknown-provider-outcome rules.
+
+Thread writes are bounded to at most 100 chronological thread members per page. A conversation that fits in one page is treated as one complete reviewed target set. If the canonical conversation has more members than the selected `--limit`, the first invocation refuses to mutate an implicit partial thread. Review the conversation, then opt into bounded paging deliberately:
+
+```bash
+icloud mail threads mark-read thr_… --folder inbox --limit 100 --page --jsonl
+icloud mail threads mark-read thr_… --folder inbox --limit 100 --cursor cur_… --jsonl
+```
+
+Each page reports the canonical `thread_id`, total `thread_message_count`, `more`, and `next_cursor`. A page can contain zero eligible locations when the selected folder has no copy among those chronological members; in that case no provider call occurs and the cursor still advances when another thread page exists. The cursor remains thread-bound and cannot be reused on another conversation.
+
+For location writes, one supplied idempotency key derives stable private per-message replay identities from the canonical thread ID and each `msg_…` ID. That means a retry through a retired alias, canonical ID, or later page returns already recorded `mut_…` outcomes without repeating accepted provider writes. `atomic` means validate the bounded location page then stop on the first provider failure; it never claims earlier accepted IMAP writes were rolled back. `continue-on-error` attempts independent remaining eligible members.
+
+Thread mutation is intentionally unavailable while local reconstruction reports `projection_state=pending` or `projection_state=degraded`. The CLI refuses to treat an incomplete projection as destructive scope; run the bounded repair workflow above, review the repaired thread, and only then retry. This does not block direct exact-message operations while reconstruction catches up.
+
 ## Interpret aggregates
 
 Thread counts derive from current local messages and locations:

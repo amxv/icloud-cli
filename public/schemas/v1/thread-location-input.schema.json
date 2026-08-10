@@ -1,0 +1,37 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/thread-location-input.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "cursor": {
+      "type": "string"
+    },
+    "from": {
+      "type": "string"
+    },
+    "idempotency_key": {
+      "type": "string"
+    },
+    "limit": {
+      "type": "integer"
+    },
+    "mode": {
+      "type": "string"
+    },
+    "page": {
+      "type": "boolean"
+    },
+    "target": {
+      "type": "string"
+    },
+    "to": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "target"
+  ],
+  "title": "thread location mutation JSON input",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

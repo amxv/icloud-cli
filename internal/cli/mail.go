@@ -37,6 +37,7 @@ type MailService interface {
 	MailMessage(context.Context, string, string, string) (account.Account, maildomain.Message, maildomain.ContentSource, int64, error)
 	MailLatest(context.Context, string, string, int) (account.Account, []maildomain.Thread, bool, int64, error)
 	MailThread(context.Context, string, string, string, maildomain.ThreadReadOptions) (account.Account, maildomain.ThreadPage, []maildomain.ContentSource, int64, error)
+	MailThreadMutationTargets(context.Context, string, string, string, string, int, string, bool) (account.Account, maildomain.ThreadMutationTargetPage, int64, error)
 	MailAttachments(context.Context, string, string, string, int) (account.Account, maildomain.AttachmentTarget, []maildomain.Attachment, bool, int64, error)
 	MailAttachmentsPage(context.Context, string, string, string, string, int) (account.Account, maildomain.AttachmentTarget, []maildomain.Attachment, bool, string, int64, error)
 	MailAttachment(context.Context, string, string, string) (account.Account, maildomain.Attachment, maildomain.AttachmentSource, int64, error)
@@ -1198,6 +1199,9 @@ func (unavailableMailService) MailLatest(context.Context, string, string, int) (
 }
 func (unavailableMailService) MailThread(context.Context, string, string, string, maildomain.ThreadReadOptions) (account.Account, maildomain.ThreadPage, []maildomain.ContentSource, int64, error) {
 	return account.Account{}, maildomain.ThreadPage{}, nil, 0, NewAppError(ErrorConfiguration, "local mail threads are unavailable", false)
+}
+func (unavailableMailService) MailThreadMutationTargets(context.Context, string, string, string, string, int, string, bool) (account.Account, maildomain.ThreadMutationTargetPage, int64, error) {
+	return account.Account{}, maildomain.ThreadMutationTargetPage{}, 0, NewAppError(ErrorConfiguration, "thread mutation targets are unavailable", false)
 }
 func (unavailableMailService) MailAttachments(context.Context, string, string, string, int) (account.Account, maildomain.AttachmentTarget, []maildomain.Attachment, bool, int64, error) {
 	return account.Account{}, maildomain.AttachmentTarget{}, nil, false, 0, NewAppError(ErrorConfiguration, "local attachments are unavailable", false)

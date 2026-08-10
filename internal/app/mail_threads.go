@@ -75,6 +75,62 @@ func (commands accountCommands) MailThread(ctx context.Context, home, accountSel
 	return accountValue, page, sources, state.SchemaVersion(), nil
 }
 
+func (commands accountCommands) MailThreadMutationTargets(ctx context.Context, home, accountSelector, selector, cursor string, limit int, sourceFolderSelector string, includeDeleted bool) (account.Account, maildomain.ThreadMutationTargetPage, int64, error) {
+	state, err := openState(ctx, home)
+	if err != nil {
+		return account.Account{}, maildomain.ThreadMutationTargetPage{}, 0, err
+	}
+	defer state.Close()
+	accountValue, err := state.Accounts().ResolveSelected(ctx, accountSelector)
+	if err != nil {
+		return account.Account{}, maildomain.ThreadMutationTargetPage{}, state.SchemaVersion(), mapAccountError(err)
+	}
+	page, err := state.Threads().Show(ctx, accountValue.ID, strings.TrimSpace(selector), strings.TrimSpace(cursor), limit)
+	if err != nil {
+		if errors.Is(err, maildomain.ErrThreadNotFound) {
+			return account.Account{}, maildomain.ThreadMutationTargetPage{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorNotFound, "mail thread not found", false, err)
+		}
+		if errors.Is(err, maildomain.ErrInvalidThreadCursor) {
+			return account.Account{}, maildomain.ThreadMutationTargetPage{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorUsage, "mail thread cursor is invalid or belongs to another thread", false, err)
+		}
+		return account.Account{}, maildomain.ThreadMutationTargetPage{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot resolve thread mutation targets", false, err)
+	}
+	if page.Thread.ProjectionState != "" && page.Thread.ProjectionState != "ready" {
+		err := cli.NewAppError(cli.ErrorConflict, "thread projection is not complete; repair it before a whole-thread mutation", false)
+		err.Details = map[string]any{
+			"thread_id":          page.Thread.ID,
+			"projection_state":   page.Thread.ProjectionState,
+			"projection_reason":  page.Thread.ProjectionReason,
+			"projection_pending": page.Thread.ProjectionPending,
+			"next":               "run `icloud mail sync repair --apply`, then review the thread again before mutating it",
+		}
+		return account.Account{}, maildomain.ThreadMutationTargetPage{}, state.SchemaVersion(), err
+	}
+	sourceFolder, err := state.Folders().Resolve(ctx, accountValue.ID, strings.TrimSpace(sourceFolderSelector))
+	if err != nil {
+		return account.Account{}, maildomain.ThreadMutationTargetPage{}, state.SchemaVersion(), mapFolderError(err)
+	}
+	if !sourceFolder.Present || sourceFolder.Stale || !sourceFolder.Selectable {
+		return account.Account{}, maildomain.ThreadMutationTargetPage{}, state.SchemaVersion(), cli.NewAppError(cli.ErrorConflict, "selected thread mutation folder is not current and selectable", false)
+	}
+	messageIDs := make([]string, 0, len(page.Thread.Messages))
+	for _, message := range page.Thread.Messages {
+		for _, location := range message.Locations {
+			if location.FolderID == sourceFolder.ID && location.Present && (includeDeleted || location.Flags.Eligible()) {
+				messageIDs = append(messageIDs, message.ID)
+				break
+			}
+		}
+	}
+	return accountValue, maildomain.ThreadMutationTargetPage{
+		ThreadID: page.Thread.ID, RedirectedFrom: page.Thread.RedirectedFrom,
+		MessageIDs: messageIDs, MessageCount: page.Thread.MessageCount,
+		More: page.More, NextCursor: page.NextCursor,
+		ProjectionState: page.Thread.ProjectionState, ProjectionReason: page.Thread.ProjectionReason,
+		ProjectionPending: page.Thread.ProjectionPending,
+	}, state.SchemaVersion(), nil
+}
+
 func (commands accountCommands) threadMessageSource(ctx context.Context, state *store.Store, paths config.AppPaths, accountID string, message maildomain.Message, options maildomain.ThreadReadOptions) (maildomain.Message, maildomain.ContentSource, error) {
 	rawSource, ok := rawMessageSource(message)
 	if !ok {

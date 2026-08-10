@@ -2,7 +2,7 @@
 .TH "ICLOUD" "1" "Jan 1970" "icloud 0.1.0" "iCloud Mail CLI Manual"
 
 .SH NAME
-icloud-mail-threads - List and read locally reconstructed conversations
+icloud-mail-threads - List, read, and change locally reconstructed conversations
 
 
 .SH SYNOPSIS
@@ -10,7 +10,7 @@ icloud-mail-threads - List and read locally reconstructed conversations
 
 
 .SH DESCRIPTION
-List and read locally reconstructed conversations
+List, read, and change locally reconstructed conversations
 
 
 .SH OPTIONS
@@ -43,8 +43,10 @@ List and read locally reconstructed conversations
 .EX
   icloud mail threads list
   icloud mail threads show thr_…
+  icloud mail threads mark-read thr_… --folder inbox
+  icloud mail threads archive thr_… --from inbox --dry-run
 .EE
 
 
 .SH SEE ALSO
-\fBicloud-mail(1)\fP, \fBicloud-mail-threads-list(1)\fP, \fBicloud-mail-threads-show(1)\fP
+\fBicloud-mail(1)\fP, \fBicloud-mail-threads-archive(1)\fP, \fBicloud-mail-threads-copy(1)\fP, \fBicloud-mail-threads-delete(1)\fP, \fBicloud-mail-threads-flag(1)\fP, \fBicloud-mail-threads-junk(1)\fP, \fBicloud-mail-threads-list(1)\fP, \fBicloud-mail-threads-mark-read(1)\fP, \fBicloud-mail-threads-mark-unread(1)\fP, \fBicloud-mail-threads-move(1)\fP, \fBicloud-mail-threads-not-junk(1)\fP, \fBicloud-mail-threads-restore(1)\fP, \fBicloud-mail-threads-show(1)\fP, \fBicloud-mail-threads-trash(1)\fP, \fBicloud-mail-threads-unarchive(1)\fP, \fBicloud-mail-threads-unflag(1)\fP

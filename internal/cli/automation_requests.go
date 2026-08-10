@@ -257,6 +257,26 @@ type locationJSONItem struct {
 	IdempotencyKey string `json:"idempotency_key,omitempty"`
 }
 
+type threadFlagMutationJSONRequest struct {
+	Target string `json:"target"`
+	Folder string `json:"folder,omitempty"`
+	Cursor string `json:"cursor,omitempty"`
+	Limit  int    `json:"limit,omitempty"`
+	Page   bool   `json:"page,omitempty"`
+	Mode   string `json:"mode,omitempty"`
+}
+
+type threadLocationMutationJSONRequest struct {
+	Target         string `json:"target"`
+	From           string `json:"from,omitempty"`
+	To             string `json:"to,omitempty"`
+	IdempotencyKey string `json:"idempotency_key,omitempty"`
+	Cursor         string `json:"cursor,omitempty"`
+	Limit          int    `json:"limit,omitempty"`
+	Page           bool   `json:"page,omitempty"`
+	Mode           string `json:"mode,omitempty"`
+}
+
 type flagBulkJSONRequest struct {
 	MessageIDs []string `json:"message_ids"`
 	Folder     string   `json:"folder,omitempty"`

@@ -27,15 +27,20 @@ type mailFlagMutationData struct {
 }
 
 type mailFlagBulkData struct {
-	Mode          string                 `json:"mode"`
-	Results       []mailFlagMutationData `json:"results"`
-	Requested     int                    `json:"requested"`
-	Attempted     int                    `json:"attempted"`
-	Count         int                    `json:"count"`
-	Failed        int                    `json:"failed"`
-	Skipped       int                    `json:"skipped"`
-	Partial       bool                   `json:"partial"`
-	SchemaVersion int64                  `json:"schema_version,omitempty"`
+	Mode               string                 `json:"mode"`
+	Results            []mailFlagMutationData `json:"results"`
+	Requested          int                    `json:"requested"`
+	Attempted          int                    `json:"attempted"`
+	Count              int                    `json:"count"`
+	Failed             int                    `json:"failed"`
+	Skipped            int                    `json:"skipped"`
+	Partial            bool                   `json:"partial"`
+	SchemaVersion      int64                  `json:"schema_version,omitempty"`
+	ThreadID           string                 `json:"thread_id,omitempty"`
+	RedirectedFrom     string                 `json:"redirected_from,omitempty"`
+	ThreadMessageCount int                    `json:"thread_message_count,omitempty"`
+	More               bool                   `json:"more,omitempty"`
+	NextCursor         string                 `json:"next_cursor,omitempty"`
 }
 
 type flagMutationItem struct {
@@ -108,88 +113,7 @@ func newMailFlagMutationCommand(state *executionState, name, short string, mutat
 			if err := validateFlagMutationItems(items); err != nil {
 				return err
 			}
-			bulkInvocation := len(items) > 1 || strings.TrimSpace(inputJSONL) != ""
-
-			results := make([]mailFlagMutationData, 0, len(items))
-			failed := 0
-			var firstFailure *AppError
-			var accountID string
-			var schemaVersion int64
-			sequence := uint64(0)
-			renderer := NewCompactTextRenderer(state.stdout)
-			for index, item := range items {
-				accountValue, folderValue, message, location, version, err := state.mail.MailUpdateFlag(
-					cmd.Context(), state.global.Home, state.global.Account, item.MessageID, item.Folder, mutation,
-				)
-				sequence++
-				if err != nil {
-					failed++
-					normalized := NormalizeError(err)
-					if firstFailure == nil {
-						firstFailure = normalized
-					}
-					if jsonlOutput {
-						if writeErr := WriteJSONLEvent(state.stdout, JSONLEvent{Event: "item", Sequence: sequence, AccountID: accountID, Timestamp: time.Now().UTC(), Payload: map[string]any{"index": index, "message_id": item.MessageID, "action": mutation, "status": "error", "mode": mode}, Error: normalized}); writeErr != nil {
-							return writeErr
-						}
-					} else if !jsonOutput && bulkInvocation {
-						if writeErr := renderer.Record("mail-state-error", item.MessageID, Field("action", mutation), Field("code", normalized.Code), Field("retryable", normalized.Retryable)); writeErr != nil {
-							return writeErr
-						}
-					}
-					if mode == "atomic" {
-						break
-					}
-					continue
-				}
-				accountID, schemaVersion = accountValue.ID, version
-				data := mailFlagMutationData{
-					Outcome: "updated", Action: mutation, AccountID: accountValue.ID,
-					MessageID: message.ID, LocationID: location.ID, FolderID: folderValue.ID,
-					UIDValidity: location.UIDValidity, UID: location.UID, Flags: location.Flags,
-					ModSequence: location.ModSequence, FlagsCheckedAt: location.FlagsCheckedAt,
-					Unread: message.Unread, Flagged: message.Flagged,
-					SchemaVersion: schemaVersion,
-				}
-				results = append(results, data)
-				if jsonlOutput {
-					if err := WriteJSONLEvent(state.stdout, JSONLEvent{Event: "item", Sequence: sequence, AccountID: accountID, Timestamp: time.Now().UTC(), Payload: map[string]any{"index": index, "status": "updated", "mode": mode, "result": data}}); err != nil {
-						return err
-					}
-				} else if !jsonOutput {
-					if err := renderFlagMutation(renderer, data); err != nil {
-						return err
-					}
-				}
-			}
-
-			attempted := len(results) + failed
-			skipped := len(items) - attempted
-			partial := failed > 0 && len(results) > 0
-			if jsonlOutput {
-				sequence++
-				if err := WriteJSONLEvent(state.stdout, JSONLEvent{Event: "completed", Sequence: sequence, AccountID: accountID, Timestamp: time.Now().UTC(), Payload: map[string]any{"mode": mode, "requested": len(items), "attempted": attempted, "count": len(results), "failed": failed, "skipped": skipped, "partial": partial}}); err != nil {
-					return err
-				}
-			} else if jsonOutput {
-				if len(items) == 1 && failed == 0 {
-					return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: results[0], Meta: EnvelopeMeta{RequestID: state.requestID}})
-				}
-				if failed == 0 {
-					return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: mailFlagBulkData{Mode: mode, Results: results, Requested: len(items), Attempted: attempted, Count: len(results), Failed: failed, Skipped: skipped, Partial: partial, SchemaVersion: schemaVersion}, Meta: EnvelopeMeta{RequestID: state.requestID}})
-				}
-			} else if bulkInvocation {
-				if err := renderer.Summary("mail-state-bulk", Field("mode", mode), Field("requested", len(items)), Field("attempted", attempted), Field("updated", len(results)), Field("failed", failed), Field("skipped", skipped), Field("partial", partial)); err != nil {
-					return err
-				}
-			}
-			if failed > 0 {
-				if !bulkInvocation && !jsonlOutput {
-					return firstFailure
-				}
-				return bulkMutationFailure(firstFailure, mode, len(items), len(results), failed, partial)
-			}
-			return nil
+			return executeFlagMutationItems(cmd, state, mutation, items, mode, jsonOutput, jsonlOutput, len(items) > 1 || strings.TrimSpace(inputJSONL) != "", nil)
 		},
 	}
 	command.Flags().StringVar(&folderSelector, "folder", "", "Select one exact folder ID, name, wire name, or kind for every positional/JSON item")
@@ -199,6 +123,158 @@ func newMailFlagMutationCommand(state *executionState, name, short string, mutat
 	command.Flags().BoolVar(&jsonlOutput, "jsonl", false, "Emit typed per-item and completed JSONL events")
 	bindJSONInput(command, &input)
 	return command
+}
+
+func executeFlagMutationItems(cmd *cobra.Command, state *executionState, mutation maildomain.FlagMutation, items []flagMutationItem, mode string, jsonOutput, jsonlOutput, bulkInvocation bool, threadMeta *threadMutationMeta) error {
+	results := make([]mailFlagMutationData, 0, len(items))
+	failed := 0
+	var firstFailure *AppError
+	var accountID string
+	var schemaVersion int64
+	sequence := uint64(0)
+	renderer := NewCompactTextRenderer(state.stdout)
+	for index, item := range items {
+		accountValue, folderValue, message, location, version, err := state.mail.MailUpdateFlag(
+			cmd.Context(), state.global.Home, state.global.Account, item.MessageID, item.Folder, mutation,
+		)
+		sequence++
+		if err != nil {
+			failed++
+			normalized := NormalizeError(err)
+			if firstFailure == nil {
+				firstFailure = normalized
+			}
+			if jsonlOutput {
+				payload := map[string]any{"index": index, "message_id": item.MessageID, "action": mutation, "status": "error", "mode": mode}
+				addThreadMutationPayload(payload, threadMeta)
+				if writeErr := WriteJSONLEvent(state.stdout, JSONLEvent{Event: "item", Sequence: sequence, AccountID: accountID, Timestamp: time.Now().UTC(), Payload: payload, Error: normalized}); writeErr != nil {
+					return writeErr
+				}
+			} else if !jsonOutput && bulkInvocation {
+				if writeErr := renderer.Record("mail-state-error", item.MessageID, Field("action", mutation), Field("code", normalized.Code), Field("retryable", normalized.Retryable)); writeErr != nil {
+					return writeErr
+				}
+			}
+			if mode == "atomic" {
+				break
+			}
+			continue
+		}
+		accountID, schemaVersion = accountValue.ID, version
+		data := mailFlagMutationData{
+			Outcome: "updated", Action: mutation, AccountID: accountValue.ID,
+			MessageID: message.ID, LocationID: location.ID, FolderID: folderValue.ID,
+			UIDValidity: location.UIDValidity, UID: location.UID, Flags: location.Flags,
+			ModSequence: location.ModSequence, FlagsCheckedAt: location.FlagsCheckedAt,
+			Unread: message.Unread, Flagged: message.Flagged,
+			SchemaVersion: schemaVersion,
+		}
+		results = append(results, data)
+		if jsonlOutput {
+			payload := map[string]any{"index": index, "status": "updated", "mode": mode, "result": data}
+			addThreadMutationPayload(payload, threadMeta)
+			if err := WriteJSONLEvent(state.stdout, JSONLEvent{Event: "item", Sequence: sequence, AccountID: accountID, Timestamp: time.Now().UTC(), Payload: payload}); err != nil {
+				return err
+			}
+		} else if !jsonOutput {
+			if err := renderFlagMutation(renderer, data); err != nil {
+				return err
+			}
+		}
+	}
+
+	attempted := len(results) + failed
+	skipped := len(items) - attempted
+	partial := failed > 0 && len(results) > 0
+	if jsonlOutput {
+		sequence++
+		payload := map[string]any{"mode": mode, "requested": len(items), "attempted": attempted, "count": len(results), "failed": failed, "skipped": skipped, "partial": partial}
+		addThreadMutationPayload(payload, threadMeta)
+		if err := WriteJSONLEvent(state.stdout, JSONLEvent{Event: "completed", Sequence: sequence, AccountID: accountID, Timestamp: time.Now().UTC(), Payload: payload}); err != nil {
+			return err
+		}
+	} else if jsonOutput {
+		if len(items) == 1 && failed == 0 && threadMeta == nil {
+			return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: results[0], Meta: EnvelopeMeta{RequestID: state.requestID}})
+		}
+		if failed == 0 {
+			data := mailFlagBulkData{Mode: mode, Results: results, Requested: len(items), Attempted: attempted, Count: len(results), Failed: failed, Skipped: skipped, Partial: partial, SchemaVersion: schemaVersion}
+			applyThreadMutationFlagData(&data, threadMeta)
+			return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: data, Meta: EnvelopeMeta{RequestID: state.requestID}})
+		}
+	} else if bulkInvocation {
+		fields := []CompactField{Field("mode", mode), Field("requested", len(items)), Field("attempted", attempted), Field("updated", len(results)), Field("failed", failed), Field("skipped", skipped), Field("partial", partial)}
+		fields = appendThreadMutationCompactFields(fields, threadMeta)
+		if err := renderer.Summary("mail-state-bulk", fields...); err != nil {
+			return err
+		}
+	}
+	if failed > 0 {
+		if !bulkInvocation && !jsonlOutput {
+			return firstFailure
+		}
+		err := bulkMutationFailure(firstFailure, mode, len(items), len(results), failed, partial)
+		addThreadMutationErrorDetails(err, threadMeta)
+		return err
+	}
+	return nil
+}
+
+func addThreadMutationPayload(payload map[string]any, meta *threadMutationMeta) {
+	if meta == nil {
+		return
+	}
+	payload["thread_id"] = meta.ThreadID
+	payload["thread_message_count"] = meta.MessageCount
+	payload["more"] = meta.More
+	if meta.RedirectedFrom != "" {
+		payload["redirected_from"] = meta.RedirectedFrom
+	}
+	if meta.NextCursor != "" {
+		payload["next_cursor"] = meta.NextCursor
+	}
+}
+
+func applyThreadMutationFlagData(data *mailFlagBulkData, meta *threadMutationMeta) {
+	if data == nil || meta == nil {
+		return
+	}
+	data.ThreadID = meta.ThreadID
+	data.RedirectedFrom = meta.RedirectedFrom
+	data.ThreadMessageCount = meta.MessageCount
+	data.More = meta.More
+	data.NextCursor = meta.NextCursor
+}
+
+func appendThreadMutationCompactFields(fields []CompactField, meta *threadMutationMeta) []CompactField {
+	if meta == nil {
+		return fields
+	}
+	return append(fields,
+		Field("thread", meta.ThreadID),
+		Field("redirected_from", meta.RedirectedFrom),
+		Field("thread_messages", meta.MessageCount),
+		Field("more", meta.More),
+		Field("next_cursor", meta.NextCursor),
+	)
+}
+
+func addThreadMutationErrorDetails(err *AppError, meta *threadMutationMeta) {
+	if err == nil || meta == nil {
+		return
+	}
+	if err.Details == nil {
+		err.Details = map[string]any{}
+	}
+	err.Details["thread_id"] = meta.ThreadID
+	err.Details["thread_message_count"] = meta.MessageCount
+	err.Details["more"] = meta.More
+	if meta.RedirectedFrom != "" {
+		err.Details["redirected_from"] = meta.RedirectedFrom
+	}
+	if meta.NextCursor != "" {
+		err.Details["next_cursor"] = meta.NextCursor
+	}
 }
 
 func flagMutationExample(name string) string {

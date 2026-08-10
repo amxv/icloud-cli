@@ -2,6 +2,8 @@ package cli
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"strings"
@@ -71,17 +73,264 @@ type mailThreadData struct {
 	SchemaVersion int64        `json:"schema_version"`
 }
 
+type threadMutationMeta struct {
+	ThreadID       string
+	RedirectedFrom string
+	MessageCount   int
+	More           bool
+	NextCursor     string
+}
+
 func newMailThreadsCommand(state *executionState) *cobra.Command {
 	command := &cobra.Command{
 		Use:     "threads",
-		Short:   "List and read locally reconstructed conversations",
+		Short:   "List, read, and change locally reconstructed conversations",
 		Args:    cobra.NoArgs,
-		Example: "  icloud mail threads list\n  icloud mail threads show thr_…",
+		Example: "  icloud mail threads list\n  icloud mail threads show thr_…\n  icloud mail threads mark-read thr_… --folder inbox\n  icloud mail threads archive thr_… --from inbox --dry-run",
 		RunE:    func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
 	command.AddCommand(newMailThreadsListCommand(state))
 	command.AddCommand(newMailThreadsShowCommand(state))
+	command.AddCommand(newMailThreadFlagMutationCommand(state, "mark-read", "Mark selected locations for a canonical thread page as read", maildomain.FlagMutationMarkRead))
+	command.AddCommand(newMailThreadFlagMutationCommand(state, "mark-unread", "Mark selected locations for a canonical thread page as unread", maildomain.FlagMutationMarkUnread))
+	command.AddCommand(newMailThreadFlagMutationCommand(state, "flag", "Flag selected locations for a canonical thread page", maildomain.FlagMutationFlag))
+	command.AddCommand(newMailThreadFlagMutationCommand(state, "unflag", "Remove flags from selected locations for a canonical thread page", maildomain.FlagMutationUnflag))
+	for _, action := range []maildomain.LocationMutationAction{
+		maildomain.LocationActionMove,
+		maildomain.LocationActionCopy,
+		maildomain.LocationActionArchive,
+		maildomain.LocationActionUnarchive,
+		maildomain.LocationActionTrash,
+		maildomain.LocationActionRestore,
+		maildomain.LocationActionJunk,
+		maildomain.LocationActionNotJunk,
+		maildomain.LocationActionDelete,
+	} {
+		command.AddCommand(newMailThreadLocationMutationCommand(state, action))
+	}
 	return command
+}
+
+func newMailThreadFlagMutationCommand(state *executionState, name, short string, mutation maildomain.FlagMutation) *cobra.Command {
+	var target, folderSelector, cursor, mode string
+	var limit int
+	var page, jsonOutput, jsonlOutput bool
+	var input jsonInputOptions
+	command := &cobra.Command{
+		Use:     name + " <thread-id|message-id>",
+		Short:   short,
+		Args:    exactArgsOrJSONInput(&input, 1),
+		Example: fmt.Sprintf("  icloud mail threads %s thr_… --folder inbox\n  icloud mail threads %s thr_… --folder inbox --page --jsonl", name, name),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := ValidateOutputOptions(OutputOptions{JSON: jsonOutput, JSONL: jsonlOutput}, OutputSupport{JSON: true, JSONL: true}); err != nil {
+				return err
+			}
+			if len(args) == 1 {
+				target = strings.TrimSpace(args[0])
+			}
+			request := threadFlagMutationJSONRequest{Target: target, Folder: folderSelector, Cursor: cursor, Limit: limit, Page: page, Mode: mode}
+			if used, err := readJSONInput(cmd, state, input, &request, "folder", "cursor", "limit", "page", "mode"); err != nil {
+				return err
+			} else if used {
+				target, folderSelector, cursor, limit, page, mode = request.Target, request.Folder, request.Cursor, request.Limit, request.Page, request.Mode
+			}
+			mode = strings.ToLower(strings.TrimSpace(mode))
+			if mode == "" {
+				mode = "atomic"
+			}
+			if mode != "atomic" && mode != "continue-on-error" {
+				return NewAppError(ErrorUsage, "--mode must be atomic or continue-on-error", false)
+			}
+			if strings.TrimSpace(folderSelector) == "" {
+				return NewAppError(ErrorUsage, "thread state mutation requires --folder to define the exact provider-copy scope", false)
+			}
+			pageValue, meta, err := resolveThreadMutationPage(cmd, state, target, cursor, limit, page, folderSelector, false)
+			if err != nil {
+				return err
+			}
+			if len(pageValue.MessageIDs) == 0 {
+				return renderEmptyThreadMutationPage(state, meta, mode, jsonOutput, jsonlOutput, "state")
+			}
+			items := make([]flagMutationItem, 0, len(pageValue.MessageIDs))
+			for _, messageID := range pageValue.MessageIDs {
+				items = append(items, flagMutationItem{MessageID: messageID, Folder: strings.TrimSpace(folderSelector)})
+			}
+			if err := validateFlagMutationItems(items); err != nil {
+				return err
+			}
+			return executeFlagMutationItems(cmd, state, mutation, items, mode, jsonOutput, jsonlOutput, true, meta)
+		},
+	}
+	command.Flags().StringVar(&folderSelector, "folder", "", "Select one exact folder ID, name, wire name, or kind for every canonical thread member")
+	command.Flags().StringVar(&cursor, "cursor", "", "Continue a previously paged thread mutation from its next_cursor")
+	command.Flags().IntVar(&limit, "limit", MaximumBulkItems, fmt.Sprintf("Maximum chronological thread members to mutate in this page (1-%d)", MaximumBulkItems))
+	command.Flags().BoolVar(&page, "page", false, "Explicitly allow a partial first page when the canonical thread exceeds the bounded limit")
+	command.Flags().StringVar(&mode, "mode", "atomic", "Failure mode for this bounded thread page: fail fast or continue-on-error")
+	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
+	command.Flags().BoolVar(&jsonlOutput, "jsonl", false, "Emit ordered per-message and completed JSONL events")
+	bindJSONInput(command, &input)
+	return command
+}
+
+func newMailThreadLocationMutationCommand(state *executionState, action maildomain.LocationMutationAction) *cobra.Command {
+	var target, cursor, mode string
+	var limit int
+	var page bool
+	var flags locationMutationFlags
+	var input jsonInputOptions
+	name, _, _ := locationMutationCommandMetadata(action)
+	command := &cobra.Command{
+		Use:     name + " <thread-id|message-id>",
+		Short:   threadLocationMutationShort(action),
+		Args:    exactArgsOrJSONInput(&input, 1),
+		Example: threadLocationMutationExample(action),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := ValidateOutputOptions(OutputOptions{JSON: flags.JSON, JSONL: flags.JSONL}, OutputSupport{JSON: true, JSONL: true}); err != nil {
+				return err
+			}
+			if flags.DryRun && flags.Yes {
+				return NewAppError(ErrorUsage, "--dry-run and --yes cannot be combined", false)
+			}
+			if len(args) == 1 {
+				target = strings.TrimSpace(args[0])
+			}
+			request := threadLocationMutationJSONRequest{
+				Target: target, From: flags.From, To: flags.To, IdempotencyKey: flags.IdempotencyKey,
+				Cursor: cursor, Limit: limit, Page: page, Mode: mode,
+			}
+			if used, err := readJSONInput(cmd, state, input, &request, "from", "to", "idempotency-key", "cursor", "limit", "page", "mode"); err != nil {
+				return err
+			} else if used {
+				target, flags.From, flags.To, flags.IdempotencyKey = request.Target, request.From, request.To, request.IdempotencyKey
+				cursor, limit, page, mode = request.Cursor, request.Limit, request.Page, request.Mode
+			}
+			mode = strings.ToLower(strings.TrimSpace(mode))
+			if mode == "" {
+				mode = "atomic"
+			}
+			if mode != "atomic" && mode != "continue-on-error" {
+				return NewAppError(ErrorUsage, "--mode must be atomic or continue-on-error", false)
+			}
+			if strings.TrimSpace(flags.From) == "" {
+				return NewAppError(ErrorUsage, "thread location mutation requires --from to define the exact provider-copy scope", false)
+			}
+			pageValue, meta, err := resolveThreadMutationPage(cmd, state, target, cursor, limit, page, flags.From, action == maildomain.LocationActionDelete)
+			if err != nil {
+				return err
+			}
+			if len(pageValue.MessageIDs) == 0 {
+				return renderEmptyThreadMutationPage(state, meta, mode, flags.JSON, flags.JSONL, "location")
+			}
+			items := make([]locationMutationItem, 0, len(pageValue.MessageIDs))
+			for _, messageID := range pageValue.MessageIDs {
+				items = append(items, locationMutationItem{MessageID: messageID, From: flags.From, To: flags.To})
+			}
+			items = applyThreadLocationMutationDefaults(items, flags.IdempotencyKey, pageValue.ThreadID)
+			if err := validateLocationMutationItems(action, items); err != nil {
+				return err
+			}
+			return executeLocationMutationItems(cmd, state, action, items, flags, mode, true, meta)
+		},
+	}
+	command.Flags().StringVar(&flags.From, "from", "", "Select one exact current source folder for every canonical thread member")
+	command.Flags().StringVar(&flags.To, "to", "", "Select one current destination folder for every canonical thread member")
+	command.Flags().StringVar(&flags.IdempotencyKey, "idempotency-key", "", idempotencyKeyHelp)
+	command.Flags().StringVar(&cursor, "cursor", "", "Continue a previously paged thread mutation from its next_cursor")
+	command.Flags().IntVar(&limit, "limit", MaximumBulkItems, fmt.Sprintf("Maximum chronological thread members to mutate in this page (1-%d)", MaximumBulkItems))
+	command.Flags().BoolVar(&page, "page", false, "Explicitly allow a partial first page when the canonical thread exceeds the bounded limit")
+	command.Flags().StringVar(&mode, "mode", "atomic", "Failure mode for this bounded thread page: fail fast or continue-on-error")
+	command.Flags().BoolVar(&flags.DryRun, "dry-run", false, "Preview every exact per-message location change without creating intents or contacting IMAP")
+	command.Flags().BoolVar(&flags.Yes, "yes", false, "Confirm an intentional non-interactive thread location change")
+	command.Flags().BoolVar(&flags.JSON, "json", false, "Emit one stable JSON success envelope")
+	command.Flags().BoolVar(&flags.JSONL, "jsonl", false, "Emit ordered per-message and completed JSONL events")
+	bindJSONInput(command, &input)
+	return command
+}
+
+func resolveThreadMutationPage(cmd *cobra.Command, state *executionState, target, cursor string, limit int, allowPartialFirstPage bool, sourceFolder string, includeDeleted bool) (maildomain.ThreadMutationTargetPage, *threadMutationMeta, error) {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return maildomain.ThreadMutationTargetPage{}, nil, NewAppError(ErrorUsage, "thread or message target is required", false)
+	}
+	if limit < 1 || limit > MaximumBulkItems {
+		return maildomain.ThreadMutationTargetPage{}, nil, NewAppError(ErrorUsage, fmt.Sprintf("--limit must be between 1 and %d", MaximumBulkItems), false)
+	}
+	_, page, _, err := state.mail.MailThreadMutationTargets(cmd.Context(), state.global.Home, state.global.Account, target, cursor, limit, sourceFolder, includeDeleted)
+	if err != nil {
+		return maildomain.ThreadMutationTargetPage{}, nil, err
+	}
+	meta := &threadMutationMeta{ThreadID: page.ThreadID, RedirectedFrom: page.RedirectedFrom, MessageCount: page.MessageCount, More: page.More, NextCursor: page.NextCursor}
+	if page.More && strings.TrimSpace(cursor) == "" && !allowPartialFirstPage {
+		err := NewAppError(ErrorSafety, fmt.Sprintf("canonical thread has more than %d members; refuse an implicit partial whole-thread mutation", limit), false)
+		err.Details = map[string]any{
+			"thread_id": page.ThreadID, "thread_message_count": page.MessageCount, "page_count": len(page.MessageIDs),
+			"next": "review the thread, then rerun with --page to mutate the first bounded page and follow the returned next_cursor",
+		}
+		return maildomain.ThreadMutationTargetPage{}, nil, err
+	}
+	if len(page.MessageIDs) == 0 && !page.More {
+		err := NewAppError(ErrorNotFound, "canonical thread has no eligible current location in the selected provider-copy scope", false)
+		err.Details = map[string]any{"thread_id": page.ThreadID, "folder": sourceFolder, "thread_message_count": page.MessageCount}
+		return maildomain.ThreadMutationTargetPage{}, nil, err
+	}
+	return page, meta, nil
+}
+
+func renderEmptyThreadMutationPage(state *executionState, meta *threadMutationMeta, mode string, jsonOutput, jsonlOutput bool, kind string) error {
+	if meta == nil {
+		return NewAppError(ErrorInternal, "thread mutation page metadata is unavailable", false)
+	}
+	payload := map[string]any{"mode": mode, "requested": 0, "attempted": 0, "failed": 0, "skipped": 0, "partial": false, "eligible": 0}
+	if kind == "state" {
+		payload["count"] = 0
+	} else {
+		payload["completed"] = 0
+	}
+	addThreadMutationPayload(payload, meta)
+	if jsonlOutput {
+		return WriteJSONLEvent(state.stdout, JSONLEvent{Event: "completed", Sequence: 1, Timestamp: time.Now().UTC(), Payload: payload})
+	}
+	if jsonOutput {
+		return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: payload, Meta: EnvelopeMeta{RequestID: state.requestID}})
+	}
+	fields := []CompactField{
+		Field("mode", mode), Field("eligible", 0), Field("attempted", 0), Field("failed", 0), Field("partial", false),
+	}
+	fields = appendThreadMutationCompactFields(fields, meta)
+	return NewCompactTextRenderer(state.stdout).Summary("mail-thread-page", fields...)
+}
+
+func applyThreadLocationMutationDefaults(items []locationMutationItem, baseIdempotencyKey, canonicalThreadID string) []locationMutationItem {
+	baseIdempotencyKey = strings.TrimSpace(baseIdempotencyKey)
+	canonicalThreadID = strings.TrimSpace(canonicalThreadID)
+	if baseIdempotencyKey == "" {
+		return items
+	}
+	for index := range items {
+		if strings.TrimSpace(items[index].IdempotencyKey) != "" {
+			continue
+		}
+		sum := sha256.Sum256([]byte(baseIdempotencyKey + "\x00" + canonicalThreadID + "\x00" + strings.TrimSpace(items[index].MessageID)))
+		items[index].IdempotencyKey = "thread:" + hex.EncodeToString(sum[:])
+	}
+	return items
+}
+
+func threadLocationMutationShort(action maildomain.LocationMutationAction) string {
+	name, _, _ := locationMutationCommandMetadata(action)
+	return fmt.Sprintf("Apply %s to exact locations for one canonical thread page", name)
+}
+
+func threadLocationMutationExample(action maildomain.LocationMutationAction) string {
+	name, _, _ := locationMutationCommandMetadata(action)
+	switch action {
+	case maildomain.LocationActionMove, maildomain.LocationActionCopy:
+		return fmt.Sprintf("  icloud mail threads %s thr_… --from inbox --to Projects --dry-run\n  icloud mail threads %s thr_… --from inbox --to Projects --idempotency-key thread-%s-01 --yes", name, name, name)
+	case maildomain.LocationActionDelete:
+		return "  icloud mail threads delete thr_… --from trash --dry-run\n  icloud mail threads delete thr_… --from trash --idempotency-key thread-delete-01 --yes"
+	default:
+		return fmt.Sprintf("  icloud mail threads %s thr_… --dry-run\n  icloud mail threads %s thr_… --idempotency-key thread-%s-01 --yes", name, name, name)
+	}
 }
 
 func newMailThreadsListCommand(state *executionState) *cobra.Command {

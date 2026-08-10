@@ -623,7 +623,7 @@ Available Commands:
   status      Compatibility alias for `mail operations … list`
   sync        Fetch and atomically commit bounded pages from enabled mail folders
   thread      Compatibility namespace for `mail threads show`
-  threads     List and read locally reconstructed conversations
+  threads     List, read, and change locally reconstructed conversations
   trash       Move exact current locations to the semantic Trash folder
   unarchive   Move current Archive locations to Inbox
   unflag      Remove the flag from one selected message location
@@ -3103,7 +3103,7 @@ Global Flags:
 ## `icloud mail threads`
 
 ```text
-List and read locally reconstructed conversations
+List, read, and change locally reconstructed conversations
 
 Usage:
   icloud mail threads [flags]
@@ -3112,10 +3112,25 @@ Usage:
 Examples:
   icloud mail threads list
   icloud mail threads show thr_…
+  icloud mail threads mark-read thr_… --folder inbox
+  icloud mail threads archive thr_… --from inbox --dry-run
 
 Available Commands:
+  archive     Apply archive to exact locations for one canonical thread page
+  copy        Apply copy to exact locations for one canonical thread page
+  delete      Apply delete to exact locations for one canonical thread page
+  flag        Flag selected locations for a canonical thread page
+  junk        Apply junk to exact locations for one canonical thread page
   list        List and filter the newest reconstructed conversations
+  mark-read   Mark selected locations for a canonical thread page as read
+  mark-unread Mark selected locations for a canonical thread page as unread
+  move        Apply move to exact locations for one canonical thread page
+  not-junk    Apply not-junk to exact locations for one canonical thread page
+  restore     Apply restore to exact locations for one canonical thread page
   show        Show a bounded chronological page from a reconstructed conversation
+  trash       Apply trash to exact locations for one canonical thread page
+  unarchive   Apply unarchive to exact locations for one canonical thread page
+  unflag      Remove flags from selected locations for a canonical thread page
 
 Flags:
   -h, --help   help for threads
@@ -3128,6 +3143,177 @@ Global Flags:
       --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
 
 Use "icloud mail threads [command] --help" for more information about a command.
+```
+
+## `icloud mail threads archive`
+
+```text
+Apply archive to exact locations for one canonical thread page
+
+Usage:
+  icloud mail threads archive <thread-id|message-id> [flags]
+
+Examples:
+  icloud mail threads archive thr_… --dry-run
+  icloud mail threads archive thr_… --idempotency-key thread-archive-01 --yes
+
+Flags:
+      --cursor string            Continue a previously paged thread mutation from its next_cursor
+      --dry-run                  Preview every exact per-message location change without creating intents or contacting IMAP
+      --from string              Select one exact current source folder for every canonical thread member
+  -h, --help                     help for archive
+      --idempotency-key string   Reuse the original operation when the same normalized request and idempotency key are repeated
+      --input-json string        Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                     Emit one stable JSON success envelope
+      --jsonl                    Emit ordered per-message and completed JSONL events
+      --limit int                Maximum chronological thread members to mutate in this page (1-100) (default 100)
+      --mode string              Failure mode for this bounded thread page: fail fast or continue-on-error (default "atomic")
+      --page                     Explicitly allow a partial first page when the canonical thread exceeds the bounded limit
+      --to string                Select one current destination folder for every canonical thread member
+      --yes                      Confirm an intentional non-interactive thread location change
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail threads copy`
+
+```text
+Apply copy to exact locations for one canonical thread page
+
+Usage:
+  icloud mail threads copy <thread-id|message-id> [flags]
+
+Examples:
+  icloud mail threads copy thr_… --from inbox --to Projects --dry-run
+  icloud mail threads copy thr_… --from inbox --to Projects --idempotency-key thread-copy-01 --yes
+
+Flags:
+      --cursor string            Continue a previously paged thread mutation from its next_cursor
+      --dry-run                  Preview every exact per-message location change without creating intents or contacting IMAP
+      --from string              Select one exact current source folder for every canonical thread member
+  -h, --help                     help for copy
+      --idempotency-key string   Reuse the original operation when the same normalized request and idempotency key are repeated
+      --input-json string        Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                     Emit one stable JSON success envelope
+      --jsonl                    Emit ordered per-message and completed JSONL events
+      --limit int                Maximum chronological thread members to mutate in this page (1-100) (default 100)
+      --mode string              Failure mode for this bounded thread page: fail fast or continue-on-error (default "atomic")
+      --page                     Explicitly allow a partial first page when the canonical thread exceeds the bounded limit
+      --to string                Select one current destination folder for every canonical thread member
+      --yes                      Confirm an intentional non-interactive thread location change
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail threads delete`
+
+```text
+Apply delete to exact locations for one canonical thread page
+
+Usage:
+  icloud mail threads delete <thread-id|message-id> [flags]
+
+Examples:
+  icloud mail threads delete thr_… --from trash --dry-run
+  icloud mail threads delete thr_… --from trash --idempotency-key thread-delete-01 --yes
+
+Flags:
+      --cursor string            Continue a previously paged thread mutation from its next_cursor
+      --dry-run                  Preview every exact per-message location change without creating intents or contacting IMAP
+      --from string              Select one exact current source folder for every canonical thread member
+  -h, --help                     help for delete
+      --idempotency-key string   Reuse the original operation when the same normalized request and idempotency key are repeated
+      --input-json string        Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                     Emit one stable JSON success envelope
+      --jsonl                    Emit ordered per-message and completed JSONL events
+      --limit int                Maximum chronological thread members to mutate in this page (1-100) (default 100)
+      --mode string              Failure mode for this bounded thread page: fail fast or continue-on-error (default "atomic")
+      --page                     Explicitly allow a partial first page when the canonical thread exceeds the bounded limit
+      --to string                Select one current destination folder for every canonical thread member
+      --yes                      Confirm an intentional non-interactive thread location change
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail threads flag`
+
+```text
+Flag selected locations for a canonical thread page
+
+Usage:
+  icloud mail threads flag <thread-id|message-id> [flags]
+
+Examples:
+  icloud mail threads flag thr_… --folder inbox
+  icloud mail threads flag thr_… --folder inbox --page --jsonl
+
+Flags:
+      --cursor string       Continue a previously paged thread mutation from its next_cursor
+      --folder string       Select one exact folder ID, name, wire name, or kind for every canonical thread member
+  -h, --help                help for flag
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+      --jsonl               Emit ordered per-message and completed JSONL events
+      --limit int           Maximum chronological thread members to mutate in this page (1-100) (default 100)
+      --mode string         Failure mode for this bounded thread page: fail fast or continue-on-error (default "atomic")
+      --page                Explicitly allow a partial first page when the canonical thread exceeds the bounded limit
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail threads junk`
+
+```text
+Apply junk to exact locations for one canonical thread page
+
+Usage:
+  icloud mail threads junk <thread-id|message-id> [flags]
+
+Examples:
+  icloud mail threads junk thr_… --dry-run
+  icloud mail threads junk thr_… --idempotency-key thread-junk-01 --yes
+
+Flags:
+      --cursor string            Continue a previously paged thread mutation from its next_cursor
+      --dry-run                  Preview every exact per-message location change without creating intents or contacting IMAP
+      --from string              Select one exact current source folder for every canonical thread member
+  -h, --help                     help for junk
+      --idempotency-key string   Reuse the original operation when the same normalized request and idempotency key are repeated
+      --input-json string        Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                     Emit one stable JSON success envelope
+      --jsonl                    Emit ordered per-message and completed JSONL events
+      --limit int                Maximum chronological thread members to mutate in this page (1-100) (default 100)
+      --mode string              Failure mode for this bounded thread page: fail fast or continue-on-error (default "atomic")
+      --page                     Explicitly allow a partial first page when the canonical thread exceeds the bounded limit
+      --to string                Select one current destination folder for every canonical thread member
+      --yes                      Confirm an intentional non-interactive thread location change
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
 ```
 
 ## `icloud mail threads list`
@@ -3174,6 +3360,173 @@ Global Flags:
       --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
 ```
 
+## `icloud mail threads mark-read`
+
+```text
+Mark selected locations for a canonical thread page as read
+
+Usage:
+  icloud mail threads mark-read <thread-id|message-id> [flags]
+
+Examples:
+  icloud mail threads mark-read thr_… --folder inbox
+  icloud mail threads mark-read thr_… --folder inbox --page --jsonl
+
+Flags:
+      --cursor string       Continue a previously paged thread mutation from its next_cursor
+      --folder string       Select one exact folder ID, name, wire name, or kind for every canonical thread member
+  -h, --help                help for mark-read
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+      --jsonl               Emit ordered per-message and completed JSONL events
+      --limit int           Maximum chronological thread members to mutate in this page (1-100) (default 100)
+      --mode string         Failure mode for this bounded thread page: fail fast or continue-on-error (default "atomic")
+      --page                Explicitly allow a partial first page when the canonical thread exceeds the bounded limit
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail threads mark-unread`
+
+```text
+Mark selected locations for a canonical thread page as unread
+
+Usage:
+  icloud mail threads mark-unread <thread-id|message-id> [flags]
+
+Examples:
+  icloud mail threads mark-unread thr_… --folder inbox
+  icloud mail threads mark-unread thr_… --folder inbox --page --jsonl
+
+Flags:
+      --cursor string       Continue a previously paged thread mutation from its next_cursor
+      --folder string       Select one exact folder ID, name, wire name, or kind for every canonical thread member
+  -h, --help                help for mark-unread
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+      --jsonl               Emit ordered per-message and completed JSONL events
+      --limit int           Maximum chronological thread members to mutate in this page (1-100) (default 100)
+      --mode string         Failure mode for this bounded thread page: fail fast or continue-on-error (default "atomic")
+      --page                Explicitly allow a partial first page when the canonical thread exceeds the bounded limit
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail threads move`
+
+```text
+Apply move to exact locations for one canonical thread page
+
+Usage:
+  icloud mail threads move <thread-id|message-id> [flags]
+
+Examples:
+  icloud mail threads move thr_… --from inbox --to Projects --dry-run
+  icloud mail threads move thr_… --from inbox --to Projects --idempotency-key thread-move-01 --yes
+
+Flags:
+      --cursor string            Continue a previously paged thread mutation from its next_cursor
+      --dry-run                  Preview every exact per-message location change without creating intents or contacting IMAP
+      --from string              Select one exact current source folder for every canonical thread member
+  -h, --help                     help for move
+      --idempotency-key string   Reuse the original operation when the same normalized request and idempotency key are repeated
+      --input-json string        Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                     Emit one stable JSON success envelope
+      --jsonl                    Emit ordered per-message and completed JSONL events
+      --limit int                Maximum chronological thread members to mutate in this page (1-100) (default 100)
+      --mode string              Failure mode for this bounded thread page: fail fast or continue-on-error (default "atomic")
+      --page                     Explicitly allow a partial first page when the canonical thread exceeds the bounded limit
+      --to string                Select one current destination folder for every canonical thread member
+      --yes                      Confirm an intentional non-interactive thread location change
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail threads not-junk`
+
+```text
+Apply not-junk to exact locations for one canonical thread page
+
+Usage:
+  icloud mail threads not-junk <thread-id|message-id> [flags]
+
+Examples:
+  icloud mail threads not-junk thr_… --dry-run
+  icloud mail threads not-junk thr_… --idempotency-key thread-not-junk-01 --yes
+
+Flags:
+      --cursor string            Continue a previously paged thread mutation from its next_cursor
+      --dry-run                  Preview every exact per-message location change without creating intents or contacting IMAP
+      --from string              Select one exact current source folder for every canonical thread member
+  -h, --help                     help for not-junk
+      --idempotency-key string   Reuse the original operation when the same normalized request and idempotency key are repeated
+      --input-json string        Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                     Emit one stable JSON success envelope
+      --jsonl                    Emit ordered per-message and completed JSONL events
+      --limit int                Maximum chronological thread members to mutate in this page (1-100) (default 100)
+      --mode string              Failure mode for this bounded thread page: fail fast or continue-on-error (default "atomic")
+      --page                     Explicitly allow a partial first page when the canonical thread exceeds the bounded limit
+      --to string                Select one current destination folder for every canonical thread member
+      --yes                      Confirm an intentional non-interactive thread location change
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail threads restore`
+
+```text
+Apply restore to exact locations for one canonical thread page
+
+Usage:
+  icloud mail threads restore <thread-id|message-id> [flags]
+
+Examples:
+  icloud mail threads restore thr_… --dry-run
+  icloud mail threads restore thr_… --idempotency-key thread-restore-01 --yes
+
+Flags:
+      --cursor string            Continue a previously paged thread mutation from its next_cursor
+      --dry-run                  Preview every exact per-message location change without creating intents or contacting IMAP
+      --from string              Select one exact current source folder for every canonical thread member
+  -h, --help                     help for restore
+      --idempotency-key string   Reuse the original operation when the same normalized request and idempotency key are repeated
+      --input-json string        Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                     Emit one stable JSON success envelope
+      --jsonl                    Emit ordered per-message and completed JSONL events
+      --limit int                Maximum chronological thread members to mutate in this page (1-100) (default 100)
+      --mode string              Failure mode for this bounded thread page: fail fast or continue-on-error (default "atomic")
+      --page                     Explicitly allow a partial first page when the canonical thread exceeds the bounded limit
+      --to string                Select one current destination folder for every canonical thread member
+      --yes                      Confirm an intentional non-interactive thread location change
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
 ## `icloud mail threads show`
 
 ```text
@@ -3202,6 +3555,107 @@ Flags:
       --limit int           Maximum chronological messages to return (1-100) (default 20)
       --metadata-only       Show thread and message metadata without excerpts or bodies
       --verbose             Include MIME part metadata and RFC graph edge evidence
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail threads trash`
+
+```text
+Apply trash to exact locations for one canonical thread page
+
+Usage:
+  icloud mail threads trash <thread-id|message-id> [flags]
+
+Examples:
+  icloud mail threads trash thr_… --dry-run
+  icloud mail threads trash thr_… --idempotency-key thread-trash-01 --yes
+
+Flags:
+      --cursor string            Continue a previously paged thread mutation from its next_cursor
+      --dry-run                  Preview every exact per-message location change without creating intents or contacting IMAP
+      --from string              Select one exact current source folder for every canonical thread member
+  -h, --help                     help for trash
+      --idempotency-key string   Reuse the original operation when the same normalized request and idempotency key are repeated
+      --input-json string        Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                     Emit one stable JSON success envelope
+      --jsonl                    Emit ordered per-message and completed JSONL events
+      --limit int                Maximum chronological thread members to mutate in this page (1-100) (default 100)
+      --mode string              Failure mode for this bounded thread page: fail fast or continue-on-error (default "atomic")
+      --page                     Explicitly allow a partial first page when the canonical thread exceeds the bounded limit
+      --to string                Select one current destination folder for every canonical thread member
+      --yes                      Confirm an intentional non-interactive thread location change
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail threads unarchive`
+
+```text
+Apply unarchive to exact locations for one canonical thread page
+
+Usage:
+  icloud mail threads unarchive <thread-id|message-id> [flags]
+
+Examples:
+  icloud mail threads unarchive thr_… --dry-run
+  icloud mail threads unarchive thr_… --idempotency-key thread-unarchive-01 --yes
+
+Flags:
+      --cursor string            Continue a previously paged thread mutation from its next_cursor
+      --dry-run                  Preview every exact per-message location change without creating intents or contacting IMAP
+      --from string              Select one exact current source folder for every canonical thread member
+  -h, --help                     help for unarchive
+      --idempotency-key string   Reuse the original operation when the same normalized request and idempotency key are repeated
+      --input-json string        Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                     Emit one stable JSON success envelope
+      --jsonl                    Emit ordered per-message and completed JSONL events
+      --limit int                Maximum chronological thread members to mutate in this page (1-100) (default 100)
+      --mode string              Failure mode for this bounded thread page: fail fast or continue-on-error (default "atomic")
+      --page                     Explicitly allow a partial first page when the canonical thread exceeds the bounded limit
+      --to string                Select one current destination folder for every canonical thread member
+      --yes                      Confirm an intentional non-interactive thread location change
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail threads unflag`
+
+```text
+Remove flags from selected locations for a canonical thread page
+
+Usage:
+  icloud mail threads unflag <thread-id|message-id> [flags]
+
+Examples:
+  icloud mail threads unflag thr_… --folder inbox
+  icloud mail threads unflag thr_… --folder inbox --page --jsonl
+
+Flags:
+      --cursor string       Continue a previously paged thread mutation from its next_cursor
+      --folder string       Select one exact folder ID, name, wire name, or kind for every canonical thread member
+  -h, --help                help for unflag
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+      --jsonl               Emit ordered per-message and completed JSONL events
+      --limit int           Maximum chronological thread members to mutate in this page (1-100) (default 100)
+      --mode string         Failure mode for this bounded thread page: fail fast or continue-on-error (default "atomic")
+      --page                Explicitly allow a partial first page when the canonical thread exceeds the bounded limit
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID

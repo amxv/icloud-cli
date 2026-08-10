@@ -42,23 +42,33 @@ type mailLocationMutationData struct {
 }
 
 type mailLocationBulkData struct {
-	Mode          string                     `json:"mode"`
-	Results       []mailLocationMutationData `json:"results"`
-	Requested     int                        `json:"requested"`
-	Attempted     int                        `json:"attempted"`
-	Completed     int                        `json:"completed"`
-	Failed        int                        `json:"failed"`
-	Skipped       int                        `json:"skipped"`
-	Partial       bool                       `json:"partial"`
-	SchemaVersion int64                      `json:"schema_version,omitempty"`
+	Mode               string                     `json:"mode"`
+	Results            []mailLocationMutationData `json:"results"`
+	Requested          int                        `json:"requested"`
+	Attempted          int                        `json:"attempted"`
+	Completed          int                        `json:"completed"`
+	Failed             int                        `json:"failed"`
+	Skipped            int                        `json:"skipped"`
+	Partial            bool                       `json:"partial"`
+	SchemaVersion      int64                      `json:"schema_version,omitempty"`
+	ThreadID           string                     `json:"thread_id,omitempty"`
+	RedirectedFrom     string                     `json:"redirected_from,omitempty"`
+	ThreadMessageCount int                        `json:"thread_message_count,omitempty"`
+	More               bool                       `json:"more,omitempty"`
+	NextCursor         string                     `json:"next_cursor,omitempty"`
 }
 
 type mailLocationBulkPreviewData struct {
-	Mode          string                            `json:"mode"`
-	Plans         []maildomain.LocationMutationPlan `json:"plans"`
-	Requested     int                               `json:"requested"`
-	Count         int                               `json:"count"`
-	SchemaVersion int64                             `json:"schema_version"`
+	Mode               string                            `json:"mode"`
+	Plans              []maildomain.LocationMutationPlan `json:"plans"`
+	Requested          int                               `json:"requested"`
+	Count              int                               `json:"count"`
+	SchemaVersion      int64                             `json:"schema_version"`
+	ThreadID           string                            `json:"thread_id,omitempty"`
+	RedirectedFrom     string                            `json:"redirected_from,omitempty"`
+	ThreadMessageCount int                               `json:"thread_message_count,omitempty"`
+	More               bool                              `json:"more,omitempty"`
+	NextCursor         string                            `json:"next_cursor,omitempty"`
 }
 
 type locationMutationItem struct {
@@ -137,117 +147,7 @@ func newMailLocationMutationCommand(state *executionState, action maildomain.Loc
 			if err := validateLocationMutationItems(action, items); err != nil {
 				return err
 			}
-			bulkInvocation := len(items) > 1 || strings.TrimSpace(inputJSONL) != ""
-
-			accountID, plans, schemaVersion, err := validateLocationMutationPlans(cmd, state, action, items)
-			if err != nil {
-				return err
-			}
-			if flags.DryRun {
-				return renderLocationMutationPreviews(state, accountID, plans, schemaVersion, mode, flags.JSON, flags.JSONL, bulkInvocation)
-			}
-			interactive := isTerminalReader(state.stdin) && !state.global.NoInput
-			if !flags.Yes && !interactive {
-				return NewAppError(ErrorSafety, "non-interactive mail location mutation requires --yes", false)
-			}
-			if !flags.Yes {
-				if err := renderInteractiveLocationMutationReview(state.stdout, plans, bulkInvocation); err != nil {
-					return err
-				}
-				confirmed, err := confirmMailLocationMutations(state.stdin, state.stderr, action, len(items))
-				if err != nil {
-					return err
-				}
-				if !confirmed {
-					return NewAppError(ErrorSafety, "mail location mutation canceled before contacting IMAP", false)
-				}
-			}
-
-			results := make([]mailLocationMutationData, 0, len(items))
-			failed := 0
-			var firstFailure *AppError
-			sequence := uint64(0)
-			renderer := NewCompactTextRenderer(state.stdout)
-			for index, item := range items {
-				request := locationMutationRequest(action, item)
-				accountValue, _, message, mutation, reused, version, itemErr := state.mail.MailMutateLocation(
-					cmd.Context(), state.global.Home, state.global.Account, request,
-				)
-				sequence++
-				if itemErr != nil {
-					failed++
-					normalized := NormalizeError(itemErr)
-					if firstFailure == nil {
-						firstFailure = normalized
-					}
-					if flags.JSONL {
-						payload := map[string]any{"index": index, "message_id": item.MessageID, "action": action, "status": "error", "mode": mode}
-						if mutation.ID != "" {
-							payload["mutation"] = mutation
-						}
-						if writeErr := WriteJSONLEvent(state.stdout, JSONLEvent{Event: "item", Sequence: sequence, AccountID: accountID, Timestamp: time.Now().UTC(), Payload: payload, Error: normalized}); writeErr != nil {
-							return writeErr
-						}
-					} else if !flags.JSON && bulkInvocation {
-						if writeErr := renderer.Record("mail-location-error", item.MessageID, Field("action", action), Field("code", normalized.Code), Field("retryable", normalized.Retryable)); writeErr != nil {
-							return writeErr
-						}
-					}
-					if !bulkInvocation && !flags.JSONL {
-						return itemErr
-					}
-					if mode == "atomic" {
-						break
-					}
-					continue
-				}
-				accountID, schemaVersion = accountValue.ID, version
-				data := mailLocationMutationData{
-					AccountID: accountValue.ID, MessageID: message.ID,
-					Mutation: mutation, Reused: reused,
-					Unread: message.Unread, Flagged: message.Flagged,
-					SchemaVersion: version,
-				}
-				results = append(results, data)
-				if flags.JSONL {
-					if writeErr := WriteJSONLEvent(state.stdout, JSONLEvent{Event: "item", Sequence: sequence, AccountID: accountID, Timestamp: time.Now().UTC(), Payload: map[string]any{"index": index, "message_id": item.MessageID, "status": "completed", "mode": mode, "result": data}}); writeErr != nil {
-						return writeErr
-					}
-				} else if !flags.JSON {
-					if bulkInvocation {
-						if writeErr := renderLocationMutationBulkItem(renderer, data); writeErr != nil {
-							return writeErr
-						}
-					} else if writeErr := renderLocationMutationOutcome(renderer, mutation, reused, message.Unread, message.Flagged); writeErr != nil {
-						return writeErr
-					}
-				}
-			}
-
-			attempted := len(results) + failed
-			skipped := len(items) - attempted
-			partial := failed > 0 && len(results) > 0
-			if flags.JSONL {
-				sequence++
-				if writeErr := WriteJSONLEvent(state.stdout, JSONLEvent{Event: "completed", Sequence: sequence, AccountID: accountID, Timestamp: time.Now().UTC(), Payload: map[string]any{"mode": mode, "requested": len(items), "attempted": attempted, "completed": len(results), "failed": failed, "skipped": skipped, "partial": partial}}); writeErr != nil {
-					return writeErr
-				}
-			} else if flags.JSON {
-				if len(items) == 1 && failed == 0 {
-					return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: results[0], Meta: EnvelopeMeta{RequestID: state.requestID}})
-				}
-				if failed == 0 {
-					return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: mailLocationBulkData{Mode: mode, Results: results, Requested: len(items), Attempted: attempted, Completed: len(results), Failed: failed, Skipped: skipped, Partial: partial, SchemaVersion: schemaVersion}, Meta: EnvelopeMeta{RequestID: state.requestID}})
-				}
-			} else if bulkInvocation {
-				if writeErr := renderer.Summary("mail-location-bulk", Field("mode", mode), Field("requested", len(items)), Field("attempted", attempted), Field("completed", len(results)), Field("failed", failed), Field("skipped", skipped), Field("partial", partial)); writeErr != nil {
-					return writeErr
-				}
-			}
-			if failed > 0 {
-				return locationBulkMutationFailure(firstFailure, mode, len(items), len(results), failed, partial)
-			}
-			return nil
+			return executeLocationMutationItems(cmd, state, action, items, flags, mode, len(items) > 1 || strings.TrimSpace(inputJSONL) != "", nil)
 		},
 	}
 	command.Flags().StringVar(&flags.From, "from", "", "Select one exact current source folder by ID, name, wire name, or kind")
@@ -261,6 +161,153 @@ func newMailLocationMutationCommand(state *executionState, action maildomain.Loc
 	command.Flags().BoolVar(&flags.JSONL, "jsonl", false, "Emit typed per-item and completed JSONL events")
 	bindJSONInput(command, &input)
 	return command
+}
+
+func executeLocationMutationItems(cmd *cobra.Command, state *executionState, action maildomain.LocationMutationAction, items []locationMutationItem, flags locationMutationFlags, mode string, bulkInvocation bool, threadMeta *threadMutationMeta) error {
+	accountID, plans, schemaVersion, err := validateLocationMutationPlans(cmd, state, action, items)
+	if err != nil {
+		normalized := NormalizeError(err)
+		addThreadMutationErrorDetails(normalized, threadMeta)
+		return normalized
+	}
+	if flags.DryRun {
+		return renderLocationMutationPreviews(state, accountID, plans, schemaVersion, mode, flags.JSON, flags.JSONL, bulkInvocation, threadMeta)
+	}
+	interactive := isTerminalReader(state.stdin) && !state.global.NoInput
+	if !flags.Yes && !interactive {
+		return NewAppError(ErrorSafety, "non-interactive mail location mutation requires --yes", false)
+	}
+	if !flags.Yes {
+		if err := renderInteractiveLocationMutationReview(state.stdout, plans, bulkInvocation, threadMeta); err != nil {
+			return err
+		}
+		confirmed, err := confirmMailLocationMutations(state.stdin, state.stderr, action, len(items))
+		if err != nil {
+			return err
+		}
+		if !confirmed {
+			return NewAppError(ErrorSafety, "mail location mutation canceled before contacting IMAP", false)
+		}
+	}
+
+	results := make([]mailLocationMutationData, 0, len(items))
+	failed := 0
+	var firstFailure *AppError
+	sequence := uint64(0)
+	renderer := NewCompactTextRenderer(state.stdout)
+	for index, item := range items {
+		request := locationMutationRequest(action, item)
+		accountValue, _, message, mutation, reused, version, itemErr := state.mail.MailMutateLocation(
+			cmd.Context(), state.global.Home, state.global.Account, request,
+		)
+		sequence++
+		if itemErr != nil {
+			failed++
+			normalized := NormalizeError(itemErr)
+			if firstFailure == nil {
+				firstFailure = normalized
+			}
+			if flags.JSONL {
+				payload := map[string]any{"index": index, "message_id": item.MessageID, "action": action, "status": "error", "mode": mode}
+				if mutation.ID != "" {
+					payload["mutation"] = mutation
+				}
+				addThreadMutationPayload(payload, threadMeta)
+				if writeErr := WriteJSONLEvent(state.stdout, JSONLEvent{Event: "item", Sequence: sequence, AccountID: accountID, Timestamp: time.Now().UTC(), Payload: payload, Error: normalized}); writeErr != nil {
+					return writeErr
+				}
+			} else if !flags.JSON && bulkInvocation {
+				if writeErr := renderer.Record("mail-location-error", item.MessageID, Field("action", action), Field("code", normalized.Code), Field("retryable", normalized.Retryable)); writeErr != nil {
+					return writeErr
+				}
+			}
+			if !bulkInvocation && !flags.JSONL {
+				return itemErr
+			}
+			if mode == "atomic" {
+				break
+			}
+			continue
+		}
+		accountID, schemaVersion = accountValue.ID, version
+		data := mailLocationMutationData{
+			AccountID: accountValue.ID, MessageID: message.ID,
+			Mutation: mutation, Reused: reused,
+			Unread: message.Unread, Flagged: message.Flagged,
+			SchemaVersion: version,
+		}
+		results = append(results, data)
+		if flags.JSONL {
+			payload := map[string]any{"index": index, "message_id": item.MessageID, "status": "completed", "mode": mode, "result": data}
+			addThreadMutationPayload(payload, threadMeta)
+			if writeErr := WriteJSONLEvent(state.stdout, JSONLEvent{Event: "item", Sequence: sequence, AccountID: accountID, Timestamp: time.Now().UTC(), Payload: payload}); writeErr != nil {
+				return writeErr
+			}
+		} else if !flags.JSON {
+			if bulkInvocation {
+				if writeErr := renderLocationMutationBulkItem(renderer, data); writeErr != nil {
+					return writeErr
+				}
+			} else if writeErr := renderLocationMutationOutcome(renderer, mutation, reused, message.Unread, message.Flagged); writeErr != nil {
+				return writeErr
+			}
+		}
+	}
+
+	attempted := len(results) + failed
+	skipped := len(items) - attempted
+	partial := failed > 0 && len(results) > 0
+	if flags.JSONL {
+		sequence++
+		payload := map[string]any{"mode": mode, "requested": len(items), "attempted": attempted, "completed": len(results), "failed": failed, "skipped": skipped, "partial": partial}
+		addThreadMutationPayload(payload, threadMeta)
+		if writeErr := WriteJSONLEvent(state.stdout, JSONLEvent{Event: "completed", Sequence: sequence, AccountID: accountID, Timestamp: time.Now().UTC(), Payload: payload}); writeErr != nil {
+			return writeErr
+		}
+	} else if flags.JSON {
+		if len(items) == 1 && failed == 0 && threadMeta == nil {
+			return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: results[0], Meta: EnvelopeMeta{RequestID: state.requestID}})
+		}
+		if failed == 0 {
+			data := mailLocationBulkData{Mode: mode, Results: results, Requested: len(items), Attempted: attempted, Completed: len(results), Failed: failed, Skipped: skipped, Partial: partial, SchemaVersion: schemaVersion}
+			applyThreadMutationLocationData(&data, threadMeta)
+			return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: data, Meta: EnvelopeMeta{RequestID: state.requestID}})
+		}
+	} else if bulkInvocation {
+		fields := []CompactField{Field("mode", mode), Field("requested", len(items)), Field("attempted", attempted), Field("completed", len(results)), Field("failed", failed), Field("skipped", skipped), Field("partial", partial)}
+		fields = appendThreadMutationCompactFields(fields, threadMeta)
+		if writeErr := renderer.Summary("mail-location-bulk", fields...); writeErr != nil {
+			return writeErr
+		}
+	}
+	if failed > 0 {
+		err := locationBulkMutationFailure(firstFailure, mode, len(items), len(results), failed, partial)
+		addThreadMutationErrorDetails(err, threadMeta)
+		return err
+	}
+	return nil
+}
+
+func applyThreadMutationLocationData(data *mailLocationBulkData, meta *threadMutationMeta) {
+	if data == nil || meta == nil {
+		return
+	}
+	data.ThreadID = meta.ThreadID
+	data.RedirectedFrom = meta.RedirectedFrom
+	data.ThreadMessageCount = meta.MessageCount
+	data.More = meta.More
+	data.NextCursor = meta.NextCursor
+}
+
+func applyThreadMutationLocationPreviewData(data *mailLocationBulkPreviewData, meta *threadMutationMeta) {
+	if data == nil || meta == nil {
+		return
+	}
+	data.ThreadID = meta.ThreadID
+	data.RedirectedFrom = meta.RedirectedFrom
+	data.ThreadMessageCount = meta.MessageCount
+	data.More = meta.More
+	data.NextCursor = meta.NextCursor
 }
 
 func locationMutationItemsFromJSON(request locationJSONRequest) ([]locationMutationItem, error) {
@@ -392,7 +439,7 @@ func validateLocationMutationPlans(cmd *cobra.Command, state *executionState, ac
 	return accountID, plans, schemaVersion, nil
 }
 
-func renderLocationMutationPreviews(state *executionState, accountID string, plans []maildomain.LocationMutationPlan, schemaVersion int64, mode string, jsonOutput, jsonlOutput, bulkInvocation bool) error {
+func renderLocationMutationPreviews(state *executionState, accountID string, plans []maildomain.LocationMutationPlan, schemaVersion int64, mode string, jsonOutput, jsonlOutput, bulkInvocation bool, threadMeta *threadMutationMeta) error {
 	if len(plans) == 1 && !jsonlOutput && !bulkInvocation {
 		return renderLocationMutationPreview(state, plans[0], schemaVersion, jsonOutput)
 	}
@@ -400,20 +447,26 @@ func renderLocationMutationPreviews(state *executionState, accountID string, pla
 		sequence := uint64(0)
 		for index, plan := range plans {
 			sequence++
-			if err := WriteJSONLEvent(state.stdout, JSONLEvent{Event: "item", Sequence: sequence, AccountID: accountID, Timestamp: time.Now().UTC(), Payload: map[string]any{"index": index, "message_id": plan.MessageID, "status": "preview", "mode": mode, "plan": plan}}); err != nil {
+			payload := map[string]any{"index": index, "message_id": plan.MessageID, "status": "preview", "mode": mode, "plan": plan}
+			addThreadMutationPayload(payload, threadMeta)
+			if err := WriteJSONLEvent(state.stdout, JSONLEvent{Event: "item", Sequence: sequence, AccountID: accountID, Timestamp: time.Now().UTC(), Payload: payload}); err != nil {
 				return err
 			}
 		}
 		sequence++
-		return WriteJSONLEvent(state.stdout, JSONLEvent{Event: "completed", Sequence: sequence, AccountID: accountID, Timestamp: time.Now().UTC(), Payload: map[string]any{"mode": mode, "requested": len(plans), "reviewed": len(plans), "imap_contacted": false, "intent_created": false}})
+		payload := map[string]any{"mode": mode, "requested": len(plans), "reviewed": len(plans), "imap_contacted": false, "intent_created": false}
+		addThreadMutationPayload(payload, threadMeta)
+		return WriteJSONLEvent(state.stdout, JSONLEvent{Event: "completed", Sequence: sequence, AccountID: accountID, Timestamp: time.Now().UTC(), Payload: payload})
 	}
 	if jsonOutput {
-		return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: mailLocationBulkPreviewData{Mode: mode, Plans: plans, Requested: len(plans), Count: len(plans), SchemaVersion: schemaVersion}, Meta: EnvelopeMeta{RequestID: state.requestID}})
+		data := mailLocationBulkPreviewData{Mode: mode, Plans: plans, Requested: len(plans), Count: len(plans), SchemaVersion: schemaVersion}
+		applyThreadMutationLocationPreviewData(&data, threadMeta)
+		return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: data, Meta: EnvelopeMeta{RequestID: state.requestID}})
 	}
-	return renderCompactLocationMutationPreviews(state.stdout, plans)
+	return renderCompactLocationMutationPreviews(state.stdout, plans, threadMeta)
 }
 
-func renderCompactLocationMutationPreviews(writer io.Writer, plans []maildomain.LocationMutationPlan) error {
+func renderCompactLocationMutationPreviews(writer io.Writer, plans []maildomain.LocationMutationPlan, threadMeta *threadMutationMeta) error {
 	renderer := NewCompactTextRenderer(writer)
 	for _, plan := range plans {
 		if err := renderer.Record("mail-location-preview", plan.MessageID,
@@ -426,17 +479,19 @@ func renderCompactLocationMutationPreviews(writer io.Writer, plans []maildomain.
 			return err
 		}
 	}
-	return renderer.Summary("mail-location-safety",
+	fields := []CompactField{
 		Field("dry_run", "true"),
 		Field("requested", len(plans)),
 		Field("imap_contacted", "false"),
 		Field("intent_created", "false"),
 		Field("logical_message_deleted", "false"),
 		Field("next", "review every exact source and destination, then rerun without --dry-run and use --yes when non-interactive"),
-	)
+	}
+	fields = appendThreadMutationCompactFields(fields, threadMeta)
+	return renderer.Summary("mail-location-safety", fields...)
 }
 
-func renderInteractiveLocationMutationReview(writer io.Writer, plans []maildomain.LocationMutationPlan, bulkInvocation bool) error {
+func renderInteractiveLocationMutationReview(writer io.Writer, plans []maildomain.LocationMutationPlan, bulkInvocation bool, threadMeta *threadMutationMeta) error {
 	if len(plans) == 1 && !bulkInvocation {
 		return renderCompactLocationMutationPreview(writer, plans[0])
 	}
@@ -452,14 +507,16 @@ func renderInteractiveLocationMutationReview(writer io.Writer, plans []maildomai
 			return err
 		}
 	}
-	return renderer.Summary("mail-location-safety",
+	fields := []CompactField{
 		Field("review", "true"),
 		Field("requested", len(plans)),
 		Field("imap_contacted", "false"),
 		Field("intent_created", "false"),
 		Field("logical_message_deleted", "false"),
 		Field("next", "confirm the reviewed target set or answer no to cancel before provider contact"),
-	)
+	}
+	fields = appendThreadMutationCompactFields(fields, threadMeta)
+	return renderer.Summary("mail-location-safety", fields...)
 }
 
 func renderLocationMutationBulkItem(renderer *CompactTextRenderer, data mailLocationMutationData) error {
