@@ -9,6 +9,7 @@ import (
 	"github.com/amxv/icloud-cli/internal/cli"
 	"github.com/amxv/icloud-cli/internal/folder"
 	maildomain "github.com/amxv/icloud-cli/internal/mail"
+	"github.com/amxv/icloud-cli/internal/store"
 	"github.com/amxv/icloud-cli/internal/transport"
 )
 
@@ -52,12 +53,18 @@ func (value *fetchedPreparationError) appError() error {
 
 func (commands accountCommands) prepareFetchedMailRecords(
 	ctx context.Context,
+	state *store.Store,
 	accountValue account.Account,
 	folderValue folder.Folder,
 	uidValidity uint32,
 	messages []transport.FetchedMessage,
 	attachmentSet *stagedAttachmentSet,
 ) ([]maildomain.IngestRecord, error) {
+	selfAddresses, err := enabledMailIdentityAddresses(ctx, state, accountValue.ID)
+	if err != nil {
+		return nil, &fetchedPreparationError{code: "identity_state", message: "cannot classify mail direction from enabled identities", err: err}
+	}
+	self := mailIdentityAddressSet(selfAddresses)
 	records := make([]maildomain.IngestRecord, 0, len(messages))
 	for _, fetched := range messages {
 		if fetched.Raw == nil {
@@ -99,7 +106,7 @@ func (commands accountCommands) prepareFetchedMailRecords(
 		)
 		record.Content = &normalized
 		record.ModSequence = fetched.ModSequence
-		record.Direction = messageDirection(accountValue, folderValue, normalized.Preview, maildomain.ParseLocationFlags(fetched.Flags))
+		record.Direction = messageDirection(self, folderValue, normalized.Preview, maildomain.ParseLocationFlags(fetched.Flags))
 		record.ContentFingerprint = maildomain.BuildContentFingerprint(
 			accountValue.ID, normalized.Preview, fetched.InternalDate, normalized.Attachments,
 		)

@@ -51,6 +51,9 @@
           },
           "type": "array"
         },
+        "from": {
+          "type": "string"
+        },
         "headers": {
           "items": {
             "type": "string"

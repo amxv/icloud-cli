@@ -41,6 +41,10 @@ type mailIdentitySelectorJSONRequest struct {
 	Identity string `json:"identity"`
 }
 
+type mailIdentityReclassifyJSONRequest struct {
+	Limit int `json:"limit,omitempty"`
+}
+
 type credentialReplaceJSONRequest struct {
 	Selector       string `json:"selector"`
 	PasswordStdin  bool   `json:"password_stdin,omitempty"`
@@ -146,6 +150,7 @@ type composeJSONRequest struct {
 }
 
 type replyComposeJSONRequest struct {
+	From           string                `json:"from,omitempty"`
 	To             []string              `json:"to,omitempty"`
 	CC             []string              `json:"cc,omitempty"`
 	BCC            []string              `json:"bcc,omitempty"`
@@ -168,6 +173,7 @@ type replyJSONRequest struct {
 }
 
 type forwardComposeJSONRequest struct {
+	From           string                `json:"from,omitempty"`
 	To             []string              `json:"to,omitempty"`
 	CC             []string              `json:"cc,omitempty"`
 	BCC            []string              `json:"bcc,omitempty"`
@@ -266,7 +272,8 @@ func (request composeJSONRequest) sendFlags() sendFlags {
 
 func (request replyComposeJSONRequest) sendFlags() sendFlags {
 	return composeJSONRequest{
-		To: request.To, CC: request.CC, BCC: request.BCC,
+		From: request.From,
+		To:   request.To, CC: request.CC, BCC: request.BCC,
 		Body: request.Body, BodyFile: request.BodyFile, HTMLBody: request.HTMLBody, HTMLBodyFile: request.HTMLBodyFile,
 		Headers: request.Headers, Attachments: request.Attachments,
 		IdempotencyKey: request.IdempotencyKey, RetryOf: request.RetryOf, RetryUnknown: request.RetryUnknown,
@@ -275,7 +282,8 @@ func (request replyComposeJSONRequest) sendFlags() sendFlags {
 
 func (request forwardComposeJSONRequest) sendFlags() sendFlags {
 	return composeJSONRequest{
-		To: request.To, CC: request.CC, BCC: request.BCC, ReplyTo: request.ReplyTo,
+		From: request.From,
+		To:   request.To, CC: request.CC, BCC: request.BCC, ReplyTo: request.ReplyTo,
 		Body: request.Body, BodyFile: request.BodyFile, HTMLBody: request.HTMLBody, HTMLBodyFile: request.HTMLBodyFile,
 		Headers: request.Headers, Attachments: request.Attachments,
 		IdempotencyKey: request.IdempotencyKey, RetryOf: request.RetryOf, RetryUnknown: request.RetryUnknown,

@@ -118,6 +118,11 @@ func (r *MailIdentityRepository) Create(ctx context.Context, record account.Mail
 	if err := insertMailIdentity(ctx, tx, record); err != nil {
 		return account.MailIdentity{}, err
 	}
+	if record.Enabled && record.Provenance == account.MailIdentityUserConfigured {
+		if err := queueDirectionReclassification(ctx, tx, record.AccountID, record.Now); err != nil {
+			return account.MailIdentity{}, err
+		}
+	}
 	value, err := mailIdentityByID(ctx, tx, record.AccountID, record.IdentityID)
 	if err != nil {
 		return account.MailIdentity{}, err
@@ -169,6 +174,11 @@ WHERE account_id = ? AND identity_id = ?`,
 	if err != nil {
 		return account.MailIdentity{}, classifyMailIdentityWrite("update mail identity", err)
 	}
+	if value.Enabled && !strings.EqualFold(address, value.Address) {
+		if err := queueDirectionReclassification(ctx, tx, accountID, now); err != nil {
+			return account.MailIdentity{}, err
+		}
+	}
 	value, err = mailIdentityByID(ctx, tx, accountID, value.ID)
 	if err != nil {
 		return account.MailIdentity{}, err
@@ -214,6 +224,11 @@ func (r *MailIdentityRepository) SetEnabled(ctx context.Context, accountID, sele
 	if _, err := tx.ExecContext(ctx, `UPDATE mail_identities SET enabled = ?, verification = ?, updated_at = ? WHERE account_id = ? AND identity_id = ?`, boolInt(enabled), verification, now.UTC().Format(time.RFC3339Nano), accountID, value.ID); err != nil {
 		return account.MailIdentity{}, fmt.Errorf("update mail identity enabled state: %w", err)
 	}
+	if enabled {
+		if err := queueDirectionReclassification(ctx, tx, accountID, now); err != nil {
+			return account.MailIdentity{}, err
+		}
+	}
 	if err := ensureMailIdentityInvariant(ctx, tx, accountID); err != nil {
 		return account.MailIdentity{}, err
 	}
@@ -244,6 +259,136 @@ func (r *MailIdentityRepository) SetVerification(ctx context.Context, accountID,
 		return account.MailIdentity{}, fmt.Errorf("update mail identity verification: %w", err)
 	}
 	return r.Resolve(ctx, accountID, value.ID)
+}
+
+func (r *MailIdentityRepository) ReclassifyDirectionPage(ctx context.Context, accountID string, limit int, now time.Time) (account.DirectionReclassificationSummary, error) {
+	accountID = strings.TrimSpace(accountID)
+	if accountID == "" || limit < 1 {
+		return account.DirectionReclassificationSummary{}, account.ErrInvalidInput
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return account.DirectionReclassificationSummary{}, fmt.Errorf("begin direction reclassification: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := accountByID(ctx, tx, accountID); err != nil {
+		return account.DirectionReclassificationSummary{}, err
+	}
+	var after string
+	var pending int
+	err = tx.QueryRowContext(ctx, `
+SELECT after_message_id, pending
+FROM mail_direction_reclassifications
+WHERE account_id = ?`, accountID).Scan(&after, &pending)
+	if errors.Is(err, sql.ErrNoRows) {
+		return account.DirectionReclassificationSummary{AccountID: accountID}, nil
+	}
+	if err != nil {
+		return account.DirectionReclassificationSummary{}, fmt.Errorf("read direction reclassification frontier: %w", err)
+	}
+	if pending != 1 {
+		return account.DirectionReclassificationSummary{AccountID: accountID}, nil
+	}
+	rows, err := tx.QueryContext(ctx, `
+SELECT message_id, from_email
+FROM messages
+WHERE account_id = ?
+  AND direction = 'inbound'
+  AND message_id > ?
+ORDER BY message_id
+LIMIT ?`, accountID, after, limit+1)
+	if err != nil {
+		return account.DirectionReclassificationSummary{}, fmt.Errorf("select direction reclassification page: %w", err)
+	}
+	type directionCandidate struct {
+		messageID string
+		fromEmail string
+	}
+	candidates := make([]directionCandidate, 0, limit+1)
+	for rows.Next() {
+		var candidate directionCandidate
+		if err := rows.Scan(&candidate.messageID, &candidate.fromEmail); err != nil {
+			rows.Close()
+			return account.DirectionReclassificationSummary{}, fmt.Errorf("read direction reclassification page: %w", err)
+		}
+		candidates = append(candidates, candidate)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return account.DirectionReclassificationSummary{}, fmt.Errorf("iterate direction reclassification page: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return account.DirectionReclassificationSummary{}, fmt.Errorf("close direction reclassification page: %w", err)
+	}
+	more := len(candidates) > limit
+	if more {
+		candidates = candidates[:limit]
+	}
+	selfRows, err := tx.QueryContext(ctx, `
+SELECT email_address
+FROM mail_identities
+WHERE account_id = ? AND enabled = 1`, accountID)
+	if err != nil {
+		return account.DirectionReclassificationSummary{}, fmt.Errorf("list enabled identities for direction reclassification: %w", err)
+	}
+	selfAddresses := make(map[string]struct{})
+	for selfRows.Next() {
+		var address string
+		if err := selfRows.Scan(&address); err != nil {
+			selfRows.Close()
+			return account.DirectionReclassificationSummary{}, fmt.Errorf("read enabled identity for direction reclassification: %w", err)
+		}
+		if address = strings.ToLower(strings.TrimSpace(address)); address != "" {
+			selfAddresses[address] = struct{}{}
+		}
+	}
+	if err := selfRows.Err(); err != nil {
+		selfRows.Close()
+		return account.DirectionReclassificationSummary{}, fmt.Errorf("iterate enabled identities for direction reclassification: %w", err)
+	}
+	if err := selfRows.Close(); err != nil {
+		return account.DirectionReclassificationSummary{}, fmt.Errorf("close enabled identities for direction reclassification: %w", err)
+	}
+	timestamp := now.UTC().Format(time.RFC3339Nano)
+	promoted := 0
+	for _, candidate := range candidates {
+		if _, isSelf := selfAddresses[strings.ToLower(strings.TrimSpace(candidate.fromEmail))]; !isSelf {
+			continue
+		}
+		result, err := tx.ExecContext(ctx, `
+UPDATE messages
+SET direction = 'outbound', updated_at = ?
+WHERE account_id = ? AND message_id = ? AND direction = 'inbound'`, timestamp, accountID, candidate.messageID)
+		if err != nil {
+			return account.DirectionReclassificationSummary{}, fmt.Errorf("promote historical message direction: %w", err)
+		}
+		if changed, err := result.RowsAffected(); err != nil {
+			return account.DirectionReclassificationSummary{}, fmt.Errorf("count historical direction promotions: %w", err)
+		} else {
+			promoted += int(changed)
+		}
+	}
+	nextAfter := ""
+	frontierPending := 0
+	var completedAt any
+	if more {
+		nextAfter = candidates[len(candidates)-1].messageID
+		frontierPending = 1
+	} else {
+		completedAt = timestamp
+	}
+	if _, err := tx.ExecContext(ctx, `
+UPDATE mail_direction_reclassifications
+SET after_message_id = ?, pending = ?, updated_at = ?, last_completed_at = COALESCE(?, last_completed_at)
+WHERE account_id = ?`, nextAfter, frontierPending, timestamp, completedAt, accountID); err != nil {
+		return account.DirectionReclassificationSummary{}, fmt.Errorf("advance direction reclassification frontier: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return account.DirectionReclassificationSummary{}, fmt.Errorf("commit direction reclassification: %w", err)
+	}
+	return account.DirectionReclassificationSummary{
+		AccountID: accountID, Selected: len(candidates), Promoted: promoted, More: more, Pending: more,
+	}, nil
 }
 
 func (r *MailIdentityRepository) SetDefault(ctx context.Context, accountID, selector string, now time.Time) (account.MailIdentity, error) {
@@ -333,6 +478,22 @@ INSERT INTO mail_identities (
 		record.Provenance, record.Verification, boolInt(record.Enabled), boolInt(record.MakeDefault), timestamp, timestamp,
 	); err != nil {
 		return classifyMailIdentityWrite("create mail identity", err)
+	}
+	return nil
+}
+
+func queueDirectionReclassification(ctx context.Context, execer mailIdentityExecer, accountID string, now time.Time) error {
+	timestamp := now.UTC().Format(time.RFC3339Nano)
+	if _, err := execer.ExecContext(ctx, `
+INSERT INTO mail_direction_reclassifications (
+    account_id, after_message_id, pending, requested_at, updated_at, last_completed_at
+) VALUES (?, '', 1, ?, ?, NULL)
+ON CONFLICT(account_id) DO UPDATE SET
+    after_message_id = '',
+    pending = 1,
+    requested_at = excluded.requested_at,
+    updated_at = excluded.updated_at`, accountID, timestamp, timestamp); err != nil {
+		return fmt.Errorf("queue direction reclassification: %w", err)
 	}
 	return nil
 }

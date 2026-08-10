@@ -36,7 +36,7 @@ func newMailReplyCommand(state *executionState, replyAll bool) *cobra.Command {
 		Short: short,
 		Args:  exactArgsOrJSONInput(&input, 1),
 		Example: "  icloud mail " + name + " msg_… --body-file reply.txt --dry-run\n" +
-			"  icloud mail " + name + " msg_… --body 'Thanks' --idempotency-key reply-01 --yes",
+			"  icloud mail " + name + " msg_… --from mid_… --body 'Thanks' --idempotency-key reply-01 --yes",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			parentID := ""
 			if len(args) == 1 {
@@ -44,7 +44,7 @@ func newMailReplyCommand(state *executionState, replyAll bool) *cobra.Command {
 			}
 			var jsonRequest replyJSONRequest
 			if used, err := readJSONInput(cmd, state, input, &jsonRequest,
-				"to", "cc", "bcc", "replace-to", "replace-cc", "body", "body-file", "html-body", "html-body-file",
+				"from", "to", "cc", "bcc", "replace-to", "replace-cc", "body", "body-file", "html-body", "html-body-file",
 				"header", "attach", "attach-name", "attach-type", "idempotency-key", "retry-of", "retry-unknown"); err != nil {
 				return err
 			} else if used {
@@ -118,6 +118,7 @@ func newMailReplyCommand(state *executionState, replyAll bool) *cobra.Command {
 }
 
 func bindReplyFlags(command *cobra.Command, flags *replyFlags) {
+	command.Flags().StringVar(&flags.From, "from", "", "Sender identity by stable mid_… ID or configured address (defaults to the account's local default identity)")
 	command.Flags().StringArrayVar(&flags.To, "to", nil, "Add a To recipient; repeat or provide a comma-separated address list")
 	command.Flags().StringArrayVar(&flags.CC, "cc", nil, "Add a Cc recipient; repeat as needed")
 	command.Flags().StringArrayVar(&flags.BCC, "bcc", nil, "Add a new Bcc envelope recipient; prior Bcc recipients are never inferred")
@@ -151,7 +152,7 @@ func replyRequestFromFlags(state *executionState, parentID string, replyAll bool
 		return maildomain.ReplyRequest{}, false, NewAppError(ErrorUsage, "--replace-to requires at least one --to address", false)
 	}
 	return maildomain.ReplyRequest{
-		ParentMessageID: parentID, ReplyAll: replyAll,
+		ParentMessageID: parentID, SenderIdentityID: parsed.SenderIdentityID, ReplyAll: replyAll,
 		To: parsed.To, CC: parsed.CC, BCC: parsed.BCC,
 		ReplaceTo: flags.ReplaceTo, ReplaceCC: flags.ReplaceCC,
 		TextBody: parsed.TextBody, HTMLBody: parsed.HTMLBody,
@@ -198,6 +199,8 @@ func renderCompactReplyPreview(writer io.Writer, preview maildomain.ReplyPreview
 		Field("thread_id", preview.ThreadID),
 		Field("parent_rfc_message_id", preview.ParentRFCID),
 		Field("threading", fmt.Sprintf("%t", preview.Threading)),
+		Field("sender_identity", preview.Send.SenderIdentityID),
+		Field("from", formatAddress(preview.Send.From)),
 		Field("derived_to", formatAddresses(preview.DerivedTo)),
 		Field("derived_cc", formatAddresses(preview.DerivedCC)),
 		Field("added_to", formatAddresses(preview.AddedTo)),
@@ -243,6 +246,7 @@ func renderCompactReplyPreview(writer io.Writer, preview maildomain.ReplyPreview
 func renderReplyOutcome(renderer *CompactTextRenderer, attempt maildomain.OutboundAttempt, reused bool) error {
 	return renderer.Record("mail-reply", attempt.ID,
 		Field("kind", attempt.Kind),
+		Field("sender_identity", attempt.SenderIdentityID),
 		Field("parent_message_id", attempt.ParentMessageID),
 		Field("status", attempt.Status),
 		Field("message_id", attempt.MessageID),

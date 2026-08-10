@@ -293,7 +293,7 @@ func (commands accountCommands) syncMailbox(
 	}
 	defer abortInboxPage(page)
 
-	records, prepareErr := commands.prepareFetchedMailRecords(ctx, accountValue, folderValue, page.UIDValidity, page.Messages, attachmentSet)
+	records, prepareErr := commands.prepareFetchedMailRecords(ctx, state, accountValue, folderValue, page.UIDValidity, page.Messages, attachmentSet)
 	if prepareErr != nil {
 		failureCode := "message_prepare"
 		var preparation *fetchedPreparationError
@@ -362,8 +362,9 @@ func (commands accountCommands) syncMailbox(
 	return summary, usedUsername, nil
 }
 
-func messageDirection(accountValue account.Account, folderValue folder.Folder, parsed maildomain.ParsedMessage, flags maildomain.LocationFlags) maildomain.Direction {
-	if folderValue.Kind == folder.KindSent || folderValue.Kind == folder.KindDrafts || flags.Draft || strings.EqualFold(strings.TrimSpace(parsed.From.Email), strings.TrimSpace(accountValue.Email)) {
+func messageDirection(selfAddresses map[string]struct{}, folderValue folder.Folder, parsed maildomain.ParsedMessage, flags maildomain.LocationFlags) maildomain.Direction {
+	_, fromSelf := selfAddresses[strings.ToLower(strings.TrimSpace(parsed.From.Email))]
+	if folderValue.Kind == folder.KindSent || folderValue.Kind == folder.KindDrafts || flags.Draft || fromSelf {
 		return maildomain.DirectionOutbound
 	}
 	return maildomain.DirectionInbound

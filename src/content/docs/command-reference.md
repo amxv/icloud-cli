@@ -1480,7 +1480,7 @@ Usage:
 
 Examples:
   icloud mail forward msg_… --to teammate@example.com --body 'For context' --dry-run
-  icloud mail forward msg_… --to teammate@example.com --original eml --include-attachment att_… --idempotency-key forward-01 --yes
+  icloud mail forward msg_… --from mid_… --to teammate@example.com --original eml --include-attachment att_… --idempotency-key forward-01 --yes
 
 Flags:
       --attach stringArray               New regular file path to attach; repeat as needed
@@ -1492,6 +1492,7 @@ Flags:
       --cc stringArray                   Cc recipient address; repeat as needed
       --dry-run                          Preview the resolved forward without creating an attempt or contacting SMTP
       --format string                    With --dry-run, output text, html, or raw preview content
+      --from string                      Sender identity by stable mid_… ID or configured address (defaults to the account's local default identity)
       --header stringArray               Safe custom header as Name: Value; repeat as needed
       --headers                          With --dry-run, print normalized headers; forward reply headers remain absent
   -h, --help                             help for forward
@@ -1537,6 +1538,7 @@ Available Commands:
   disable     Disable one non-primary local sender identity
   enable      Enable one local sender identity
   list        List bounded local sender identities without contacting iCloud
+  reclassify  Advance bounded local historical direction repair for newly recognized self addresses
   remove      Remove one non-primary local sender identity
   show        Show one local sender identity for the selected account
   update      Update local address, display-name, or kind metadata
@@ -1674,6 +1676,32 @@ Flags:
       --input-json string   Read one strict JSON read request from a file, or - for stdin; cannot be mixed with equivalent read flags or positional read arguments
       --json                Emit one stable JSON success envelope
       --limit int           Maximum identities to return (1-100) (default 20)
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail identities reclassify`
+
+```text
+Advance bounded local historical direction repair for newly recognized self addresses
+
+Usage:
+  icloud mail identities reclassify [flags]
+
+Examples:
+  icloud mail identities reclassify
+  icloud mail identities reclassify --limit 100 --json
+
+Flags:
+  -h, --help                help for reclassify
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+      --limit int           Maximum historical messages to promote in this pass (1-100) (default 20)
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID
@@ -2329,7 +2357,7 @@ Usage:
 
 Examples:
   icloud mail reply msg_… --body-file reply.txt --dry-run
-  icloud mail reply msg_… --body 'Thanks' --idempotency-key reply-01 --yes
+  icloud mail reply msg_… --from mid_… --body 'Thanks' --idempotency-key reply-01 --yes
 
 Flags:
       --attach stringArray        Regular file path to attach; repeat as needed
@@ -2341,6 +2369,7 @@ Flags:
       --cc stringArray            Add a Cc recipient; repeat as needed
       --dry-run                   Preview the resolved reply without creating an attempt or contacting SMTP
       --format string             With --dry-run, output text, html, or raw preview content
+      --from string               Sender identity by stable mid_… ID or configured address (defaults to the account's local default identity)
       --header stringArray        Safe custom header as Name: Value; repeat as needed
       --headers                   With --dry-run, print normalized headers including RFC threading fields
   -h, --help                      help for reply
@@ -2375,7 +2404,7 @@ Usage:
 
 Examples:
   icloud mail reply-all msg_… --body-file reply.txt --dry-run
-  icloud mail reply-all msg_… --body 'Thanks' --idempotency-key reply-01 --yes
+  icloud mail reply-all msg_… --from mid_… --body 'Thanks' --idempotency-key reply-01 --yes
 
 Flags:
       --attach stringArray        Regular file path to attach; repeat as needed
@@ -2387,6 +2416,7 @@ Flags:
       --cc stringArray            Add a Cc recipient; repeat as needed
       --dry-run                   Preview the resolved reply without creating an attempt or contacting SMTP
       --format string             With --dry-run, output text, html, or raw preview content
+      --from string               Sender identity by stable mid_… ID or configured address (defaults to the account's local default identity)
       --header stringArray        Safe custom header as Name: Value; repeat as needed
       --headers                   With --dry-run, print normalized headers including RFC threading fields
   -h, --help                      help for reply-all

@@ -30,6 +30,11 @@ type mailIdentityMutationData struct {
 	SchemaVersion int64                `json:"schema_version"`
 }
 
+type mailIdentityReclassifyData struct {
+	Summary       account.DirectionReclassificationSummary `json:"summary"`
+	SchemaVersion int64                                    `json:"schema_version"`
+}
+
 func newMailIdentitiesCommand(state *executionState) *cobra.Command {
 	command := &cobra.Command{
 		Use:     "identities",
@@ -46,6 +51,47 @@ func newMailIdentitiesCommand(state *executionState) *cobra.Command {
 	command.AddCommand(newMailIdentityEnabledCommand(state, false))
 	command.AddCommand(newMailIdentityDefaultCommand(state))
 	command.AddCommand(newMailIdentityRemoveCommand(state))
+	command.AddCommand(newMailIdentityReclassifyCommand(state))
+	return command
+}
+
+func newMailIdentityReclassifyCommand(state *executionState) *cobra.Command {
+	var limit int
+	var jsonOutput bool
+	var input jsonInputOptions
+	command := &cobra.Command{
+		Use:     "reclassify",
+		Short:   "Advance bounded local historical direction repair for newly recognized self addresses",
+		Args:    cobra.NoArgs,
+		Example: "  icloud mail identities reclassify\n  icloud mail identities reclassify --limit 100 --json",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			request := mailIdentityReclassifyJSONRequest{Limit: DefaultPageSize}
+			if used, err := readJSONInput(cmd, state, input, &request, "limit"); err != nil {
+				return err
+			} else if used {
+				limit = request.Limit
+			}
+			if limit < 1 || limit > MaximumPageSize {
+				return NewAppError(ErrorUsage, fmt.Sprintf("--limit must be between 1 and %d", MaximumPageSize), false)
+			}
+			_, summary, schemaVersion, err := state.accounts.IdentityReclassify(cmd.Context(), state.global.Home, state.global.Account, limit)
+			if err != nil {
+				return err
+			}
+			if jsonOutput {
+				return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: mailIdentityReclassifyData{Summary: summary, SchemaVersion: schemaVersion}, Meta: EnvelopeMeta{RequestID: state.requestID}})
+			}
+			return NewCompactTextRenderer(state.stdout).Record("identity-reclassification", summary.AccountID,
+				Field("selected", summary.Selected),
+				Field("promoted", summary.Promoted),
+				Field("more", summary.More),
+				Field("pending", summary.Pending),
+			)
+		},
+	}
+	command.Flags().IntVar(&limit, "limit", DefaultPageSize, fmt.Sprintf("Maximum historical messages to promote in this pass (1-%d)", MaximumPageSize))
+	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
+	bindJSONInput(command, &input)
 	return command
 }
 

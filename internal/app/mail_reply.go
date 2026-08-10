@@ -83,9 +83,9 @@ func resolveReplyPlan(
 		}
 		return account.Account{}, maildomain.ReplyPlan{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot resolve the reply parent thread", false, err)
 	}
-	self := []string{accountValue.Email}
-	if strings.Contains(accountValue.IMAPUsername, "@") {
-		self = append(self, accountValue.IMAPUsername)
+	self, err := enabledMailIdentityAddresses(ctx, state, accountValue.ID)
+	if err != nil {
+		return account.Account{}, maildomain.ReplyPlan{}, state.SchemaVersion(), err
 	}
 	plan, err := maildomain.BuildReplyPlan(parent, threadPage.Thread.ID, self, request)
 	if err != nil {

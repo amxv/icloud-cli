@@ -50,21 +50,27 @@ func (commands accountCommands) resolveForwardPlan(
 	home, accountSelector string,
 	request maildomain.ForwardRequest,
 ) (account.Account, maildomain.ForwardPlan, int64, error) {
-	accountValue, sourceMessage, contentSource, schemaVersion, err := commands.MailMessage(
-		ctx, home, accountSelector, strings.TrimSpace(request.SourceMessageID),
-	)
-	if err != nil {
-		return account.Account{}, maildomain.ForwardPlan{}, schemaVersion, mapForwardSourceError(err)
-	}
 	paths, err := config.ResolveAppPaths(home)
 	if err != nil {
-		return account.Account{}, maildomain.ForwardPlan{}, schemaVersion, cli.WrapAppError(cli.ErrorConfiguration, "cannot resolve local forward content", false, err)
+		return account.Account{}, maildomain.ForwardPlan{}, 0, cli.WrapAppError(cli.ErrorConfiguration, "cannot resolve local forward content", false, err)
 	}
 	state, err := openState(ctx, home)
 	if err != nil {
-		return account.Account{}, maildomain.ForwardPlan{}, schemaVersion, err
+		return account.Account{}, maildomain.ForwardPlan{}, 0, err
 	}
 	defer state.Close()
+
+	accountValue, err := state.Accounts().ResolveSelected(ctx, accountSelector)
+	if err != nil {
+		return account.Account{}, maildomain.ForwardPlan{}, state.SchemaVersion(), mapAccountError(err)
+	}
+	sourceMessage, err := state.Mail().Message(ctx, accountValue.ID, strings.TrimSpace(request.SourceMessageID))
+	if err != nil {
+		if errors.Is(err, maildomain.ErrMessageNotFound) {
+			return account.Account{}, maildomain.ForwardPlan{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorNotFound, "forward source message not found", false, err)
+		}
+		return account.Account{}, maildomain.ForwardPlan{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot read the forward source message", false, err)
+	}
 
 	threadPage, err := state.Threads().Show(ctx, accountValue.ID, sourceMessage.ID, "", 1)
 	if err != nil {
@@ -76,6 +82,13 @@ func (commands accountCommands) resolveForwardPlan(
 	}
 	var originalText string
 	if mode == maildomain.ForwardOriginalQuoted {
+		var contentSource maildomain.ContentSource
+		sourceMessage, contentSource, err = commands.threadMessageSource(ctx, state, paths, accountValue.ID, sourceMessage, maildomain.ThreadReadOptions{
+			RequireSource: true, HydrateContent: true,
+		})
+		if err != nil {
+			return account.Account{}, maildomain.ForwardPlan{}, state.SchemaVersion(), mapForwardContentError(err)
+		}
 		originalText, err = readForwardText(ctx, contentSource)
 		if err != nil {
 			return account.Account{}, maildomain.ForwardPlan{}, state.SchemaVersion(), mapForwardContentError(err)

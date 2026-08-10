@@ -17,6 +17,7 @@ var ErrInvalidReplyRequest = errors.New("invalid reply request")
 
 type ReplyRequest struct {
 	ParentMessageID       string
+	SenderIdentityID      string
 	ReplyAll              bool
 	To                    []Address
 	CC                    []Address
@@ -139,7 +140,7 @@ func BuildReplyPlan(parent Message, threadID string, selfAddresses []string, inp
 		kind = OutboundKindReplyAll
 	}
 	send := SendRequest{
-		Kind: kind, ParentMessageID: parentID,
+		Kind: kind, ParentMessageID: parentID, SenderIdentityID: strings.TrimSpace(input.SenderIdentityID),
 		To: finalTo, CC: finalCC, BCC: addedBCC,
 		Subject: ReplySubject(parent.Subject), TextBody: input.TextBody, HTMLBody: input.HTMLBody,
 		Headers: input.Headers, InReplyTo: inReplyTo, References: references,

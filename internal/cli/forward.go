@@ -32,7 +32,7 @@ func newMailForwardCommand(state *executionState) *cobra.Command {
 		Short: "Forward one explicitly selected local message as a new conversation",
 		Args:  exactArgsOrJSONInput(&input, 1),
 		Example: "  icloud mail forward msg_… --to teammate@example.com --body 'For context' --dry-run\n" +
-			"  icloud mail forward msg_… --to teammate@example.com --original eml --include-attachment att_… --idempotency-key forward-01 --yes",
+			"  icloud mail forward msg_… --from mid_… --to teammate@example.com --original eml --include-attachment att_… --idempotency-key forward-01 --yes",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			sourceID := ""
 			if len(args) == 1 {
@@ -40,7 +40,7 @@ func newMailForwardCommand(state *executionState) *cobra.Command {
 			}
 			var jsonRequest forwardJSONRequest
 			if used, err := readJSONInput(cmd, state, input, &jsonRequest,
-				"to", "cc", "bcc", "reply-to", "body", "body-file", "html-body", "html-body-file",
+				"from", "to", "cc", "bcc", "reply-to", "body", "body-file", "html-body", "html-body-file",
 				"header", "attach", "attach-name", "attach-type", "original", "include-attachment", "idempotency-key", "retry-of", "retry-unknown"); err != nil {
 				return err
 			} else if used {
@@ -116,6 +116,7 @@ func newMailForwardCommand(state *executionState) *cobra.Command {
 }
 
 func bindForwardFlags(command *cobra.Command, flags *forwardFlags) {
+	command.Flags().StringVar(&flags.From, "from", "", "Sender identity by stable mid_… ID or configured address (defaults to the account's local default identity)")
 	command.Flags().StringArrayVar(&flags.To, "to", nil, "Recipient address; repeat or provide a comma-separated address list")
 	command.Flags().StringArrayVar(&flags.CC, "cc", nil, "Cc recipient address; repeat as needed")
 	command.Flags().StringArrayVar(&flags.BCC, "bcc", nil, "Bcc envelope recipient; omitted from message headers")
@@ -151,7 +152,7 @@ func forwardRequestFromFlags(state *executionState, sourceID string, flags forwa
 		return maildomain.ForwardRequest{}, false, NewAppError(ErrorUsage, "--original must be quoted, eml, or none", false)
 	}
 	return maildomain.ForwardRequest{
-		SourceMessageID: sourceID, OriginalMode: mode,
+		SourceMessageID: sourceID, SenderIdentityID: parsed.SenderIdentityID, OriginalMode: mode,
 		OriginalAttachmentIDs: append([]string(nil), flags.OriginalAttachments...),
 		To:                    parsed.To, CC: parsed.CC, BCC: parsed.BCC, ReplyTo: parsed.ReplyTo,
 		TextBody: parsed.TextBody, HTMLBody: parsed.HTMLBody,
@@ -197,6 +198,8 @@ func renderCompactForwardPreview(writer io.Writer, preview maildomain.ForwardPre
 	if err := renderer.Record("forward-preview", preview.SourceMessageID,
 		Field("kind", maildomain.OutboundKindForward),
 		Field("source_thread_id", preview.SourceThreadID),
+		Field("sender_identity", preview.Send.SenderIdentityID),
+		Field("from", formatAddress(preview.Send.From)),
 		Field("original", preview.OriginalMode),
 		Field("attached_eml", fmt.Sprintf("%t", preview.AttachedOriginalEML)),
 		Field("original_eml_bytes", preview.OriginalEMLByteSize),
@@ -245,6 +248,7 @@ func renderCompactForwardPreview(writer io.Writer, preview maildomain.ForwardPre
 func renderForwardOutcome(renderer *CompactTextRenderer, attempt maildomain.OutboundAttempt, reused bool) error {
 	return renderer.Record("mail-forward", attempt.ID,
 		Field("kind", attempt.Kind),
+		Field("sender_identity", attempt.SenderIdentityID),
 		Field("source_message_id", attempt.SourceMessageID),
 		Field("status", attempt.Status),
 		Field("message_id", attempt.MessageID),

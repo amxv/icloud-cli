@@ -128,14 +128,15 @@ func TestCapabilitiesPublishesVersionedAutomationAndSchemaContracts(t *testing.T
 		t.Fatal("capabilities did not advertise local mail identities")
 	}
 	for command, schema := range map[string]string{
-		"mail identities list":    "mail-identity-list-read-input",
-		"mail identities show":    "mail-identity-show-read-input",
-		"mail identities add":     "mail-identity-add-input",
-		"mail identities update":  "mail-identity-update-input",
-		"mail identities enable":  "mail-identity-selector-input",
-		"mail identities disable": "mail-identity-selector-input",
-		"mail identities default": "mail-identity-selector-input",
-		"mail identities remove":  "mail-identity-selector-input",
+		"mail identities list":       "mail-identity-list-read-input",
+		"mail identities show":       "mail-identity-show-read-input",
+		"mail identities add":        "mail-identity-add-input",
+		"mail identities update":     "mail-identity-update-input",
+		"mail identities enable":     "mail-identity-selector-input",
+		"mail identities disable":    "mail-identity-selector-input",
+		"mail identities default":    "mail-identity-selector-input",
+		"mail identities remove":     "mail-identity-selector-input",
+		"mail identities reclassify": "mail-identity-reclassify-input",
 	} {
 		if got := contracts[command].InputSchema; got != SchemaBaseID+schema+".schema.json" {
 			t.Fatalf("identity contract %s=%q", command, got)
@@ -243,11 +244,12 @@ func TestPhase4MailIdentityRequestSchemasAreStrictAndSecretFree(t *testing.T) {
 	display := "Updated"
 	kind := "custom_domain"
 	values := map[string]any{
-		"mail-identity-list-read-input": mailIdentityListReadJSONRequest{Limit: 20, Cursor: "icur_test"},
-		"mail-identity-show-read-input": mailIdentityShowReadJSONRequest{Identity: "mid_test"},
-		"mail-identity-add-input":       mailIdentityAddJSONRequest{Address: "alias@example.test", DisplayName: "Alias", Kind: "icloud_alias", Default: true},
-		"mail-identity-update-input":    mailIdentityUpdateJSONRequest{Identity: "mid_test", Address: &address, DisplayName: &display, Kind: &kind},
-		"mail-identity-selector-input":  mailIdentitySelectorJSONRequest{Identity: "mid_test"},
+		"mail-identity-list-read-input":  mailIdentityListReadJSONRequest{Limit: 20, Cursor: "icur_test"},
+		"mail-identity-show-read-input":  mailIdentityShowReadJSONRequest{Identity: "mid_test"},
+		"mail-identity-add-input":        mailIdentityAddJSONRequest{Address: "alias@example.test", DisplayName: "Alias", Kind: "icloud_alias", Default: true},
+		"mail-identity-update-input":     mailIdentityUpdateJSONRequest{Identity: "mid_test", Address: &address, DisplayName: &display, Kind: &kind},
+		"mail-identity-selector-input":   mailIdentitySelectorJSONRequest{Identity: "mid_test"},
+		"mail-identity-reclassify-input": mailIdentityReclassifyJSONRequest{Limit: 20},
 	}
 	var combined bytes.Buffer
 	for name, typed := range values {

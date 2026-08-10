@@ -199,6 +199,17 @@ INSERT INTO outbound_attempts (
 						t.Fatal(err)
 					}
 				}
+				if version == 21 {
+					if _, err := database.Exec(`
+INSERT INTO mail_identities (
+    identity_id, account_id, email_address, display_name, kind, provenance,
+    verification, enabled, is_default_send, created_at, updated_at
+) VALUES ('mid_019fda7b-3ba1-7000-8000-000000000121', ?, 'legacy-alias@example.test', 'Legacy Alias',
+          'icloud_alias', 'user_configured', 'unverified', 1, 0, ?, ?)`, accountID, stamp, stamp); err != nil {
+						database.Close()
+						t.Fatal(err)
+					}
+				}
 			}
 			if err := database.Close(); err != nil {
 				t.Fatal(err)
@@ -238,6 +249,12 @@ INSERT INTO outbound_attempts (
 				draft, err := state.Drafts().Draft(context.Background(), accountID, "drf_019fda7b-3ba1-7000-8000-000000000020")
 				if err != nil || draft.SenderIdentityID != identity.ID {
 					t.Fatalf("schema-20 draft sender provenance=%+v err=%v", draft, err)
+				}
+			}
+			if version == 21 {
+				var pending int
+				if err := state.db.QueryRowContext(context.Background(), `SELECT pending FROM mail_direction_reclassifications WHERE account_id = ?`, accountID).Scan(&pending); err != nil || pending != 1 {
+					t.Fatalf("schema-21 alternate identity did not queue direction reclassification: pending=%d err=%v", pending, err)
 				}
 			}
 			var integrity string

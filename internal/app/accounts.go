@@ -434,6 +434,24 @@ func (commands accountCommands) IdentityRemove(ctx context.Context, home, accoun
 	return value, identity, state.SchemaVersion(), nil
 }
 
+func (commands accountCommands) IdentityReclassify(ctx context.Context, home, accountSelector string, limit int) (account.Account, account.DirectionReclassificationSummary, int64, error) {
+	state, _, unlock, err := commands.openWriteState(ctx, home)
+	if err != nil {
+		return account.Account{}, account.DirectionReclassificationSummary{}, 0, err
+	}
+	defer state.Close()
+	defer unlock()
+	value, err := state.Accounts().ResolveSelected(ctx, accountSelector)
+	if err != nil {
+		return account.Account{}, account.DirectionReclassificationSummary{}, state.SchemaVersion(), mapAccountError(err)
+	}
+	summary, err := state.Identities().ReclassifyDirectionPage(ctx, value.ID, limit, commands.timeNow())
+	if err != nil {
+		return account.Account{}, account.DirectionReclassificationSummary{}, state.SchemaVersion(), mapMailIdentityError(err)
+	}
+	return value, summary, state.SchemaVersion(), nil
+}
+
 func (commands accountCommands) Add(ctx context.Context, home string, input account.AddInput) (account.Account, int64, error) {
 	name, email, imapUsername, err := normalizeAccountInput(input)
 	if err != nil {

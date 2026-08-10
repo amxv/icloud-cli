@@ -85,6 +85,14 @@ type MailIdentityUpdateInput struct {
 	Kind        *MailIdentityKind
 }
 
+type DirectionReclassificationSummary struct {
+	AccountID string `json:"account_id"`
+	Selected  int    `json:"selected"`
+	Promoted  int    `json:"promoted"`
+	More      bool   `json:"more"`
+	Pending   bool   `json:"pending"`
+}
+
 func NormalizeMailIdentityKind(value MailIdentityKind) (MailIdentityKind, error) {
 	value = MailIdentityKind(strings.ToLower(strings.TrimSpace(string(value))))
 	switch value {

@@ -247,7 +247,7 @@ func (commands accountCommands) hydrateItem(
 	}
 	fetched := result.Message
 	defer fetched.Raw.Abort()
-	records, prepareErr := commands.prepareFetchedMailRecords(ctx, accountValue, folderValue, result.UIDValidity, []transport.FetchedMessage{fetched}, attachmentSet)
+	records, prepareErr := commands.prepareFetchedMailRecords(ctx, state, accountValue, folderValue, result.UIDValidity, []transport.FetchedMessage{fetched}, attachmentSet)
 	if prepareErr != nil {
 		attachmentSet.Abort()
 		var preparation *fetchedPreparationError

@@ -109,7 +109,7 @@ func TestMailReplyUsesExactParentDerivesRecipientsAndKeepsExistingThread(t *test
 	) {
 		t.Fatalf("reply outcome = %q", stdout)
 	}
-	if lines, size := strings.Count(stdout, "\n"), len(stdout); lines > 8 || size > 420 {
+	if lines, size := strings.Count(stdout, "\n"), len(stdout); lines > 9 || size > 470 {
 		t.Fatalf("reply outcome budget lines=%d bytes=%d output=%q", lines, size, stdout)
 	}
 	if len(sender.messages) != 1 {

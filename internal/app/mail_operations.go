@@ -119,7 +119,7 @@ func (commands accountCommands) MailBackfill(ctx context.Context, home, accountS
 	}
 	attachmentSet := newStagedAttachmentSet(commands.attachmentBlobStore(paths))
 	defer attachmentSet.Abort()
-	records, err := commands.prepareFetchedMailRecords(ctx, accountValue, folderValue, page.UIDValidity, page.Messages, attachmentSet)
+	records, err := commands.prepareFetchedMailRecords(ctx, state, accountValue, folderValue, page.UIDValidity, page.Messages, attachmentSet)
 	if err != nil {
 		_ = state.Mail().RecordBackfillFailure(ctx, frontierID, accountValue.ID, folderValue.ID, after, before, page.UIDValidity, page.BeforeUID, "message_prepare", attemptedAt)
 		var preparation *fetchedPreparationError

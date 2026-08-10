@@ -50,6 +50,10 @@ Reply to all visible participants of one explicitly selected local message
 	With --dry-run, output text, html, or raw preview content
 
 .PP
+\fB--from\fP=""
+	Sender identity by stable mid_… ID or configured address (defaults to the account's local default identity)
+
+.PP
 \fB--header\fP=[]
 	Safe custom header as Name: Value; repeat as needed
 
@@ -134,7 +138,7 @@ Reply to all visible participants of one explicitly selected local message
 .SH EXAMPLE
 .EX
   icloud mail reply-all msg_… --body-file reply.txt --dry-run
-  icloud mail reply-all msg_… --body 'Thanks' --idempotency-key reply-01 --yes
+  icloud mail reply-all msg_… --from mid_… --body 'Thanks' --idempotency-key reply-01 --yes
 .EE
 
 

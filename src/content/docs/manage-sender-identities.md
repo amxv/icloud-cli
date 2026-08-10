@@ -81,6 +81,14 @@ icloud mail identities enable mid_…
 
 If the disabled identity was the default, the CLI reassigns the default to another enabled identity, preferring the protected primary identity. A disabled identity cannot become the default until it is enabled again.
 
+Enabled identities are also the account's canonical self-address set for reply-all and message direction. Enabling or adding an address queues a bounded local historical direction repair; it does not scan the mailbox synchronously. Advance that work explicitly:
+
+```bash
+icloud mail identities reclassify --limit 100
+```
+
+When `more=true`, run the same command again. The persisted frontier resumes after interruption or process restart. Only cached messages still classified `inbound` whose `From` matches a currently enabled identity are promoted to `outbound`; direction is monotonic, so disabling or removing an identity never demotes previously proven outbound mail. Stable message/thread IDs and search membership are preserved.
+
 Removing local identity configuration is explicit:
 
 ```bash

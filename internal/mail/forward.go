@@ -20,6 +20,7 @@ var ErrInvalidForwardRequest = errors.New("invalid forward request")
 
 type ForwardRequest struct {
 	SourceMessageID       string
+	SenderIdentityID      string
 	OriginalMode          ForwardOriginalMode
 	OriginalAttachmentIDs []string
 	To                    []Address
@@ -166,7 +167,7 @@ func BuildForwardPlan(
 	}
 
 	send := SendRequest{
-		Kind: OutboundKindForward, SourceMessageID: sourceID,
+		Kind: OutboundKindForward, SourceMessageID: sourceID, SenderIdentityID: strings.TrimSpace(input.SenderIdentityID),
 		To: to, CC: cc, BCC: bcc, ReplyTo: input.ReplyTo,
 		Subject: ForwardSubject(source.Subject), TextBody: textBody, HTMLBody: htmlBody,
 		Headers: input.Headers, Attachments: attachments,

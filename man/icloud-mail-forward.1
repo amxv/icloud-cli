@@ -50,6 +50,10 @@ Forward one explicitly selected local message as a new conversation
 	With --dry-run, output text, html, or raw preview content
 
 .PP
+\fB--from\fP=""
+	Sender identity by stable mid_… ID or configured address (defaults to the account's local default identity)
+
+.PP
 \fB--header\fP=[]
 	Safe custom header as Name: Value; repeat as needed
 
@@ -138,7 +142,7 @@ Forward one explicitly selected local message as a new conversation
 .SH EXAMPLE
 .EX
   icloud mail forward msg_… --to teammate@example.com --body 'For context' --dry-run
-  icloud mail forward msg_… --to teammate@example.com --original eml --include-attachment att_… --idempotency-key forward-01 --yes
+  icloud mail forward msg_… --from mid_… --to teammate@example.com --original eml --include-attachment att_… --idempotency-key forward-01 --yes
 .EE
 
 

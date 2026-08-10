@@ -116,6 +116,8 @@ more=false
 
 The default is bounded and preview-only. It never prints BCC, private blob paths, complete bodies, HTML, raw MIME, or decoded attachments.
 
+`direction` is canonical cached message state, not a folder-name guess. Any newly ingested message whose `From` matches an enabled `MailIdentity` is classified `outbound`, even when that copy is outside Sent. When a new self address is configured later, `mail identities reclassify` can promote older cached inbound rows in bounded resumable passes. Promotion does not change stable `msg_…`/`thr_…` IDs, and disabling an identity does not demote previously proven outbound history.
+
 When a page ends with `more=true`, continue from the returned cursor instead of rereading earlier messages:
 
 ```bash

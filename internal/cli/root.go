@@ -54,6 +54,7 @@ type AccountService interface {
 	IdentitySetEnabled(context.Context, string, string, string, bool) (account.Account, account.MailIdentity, int64, error)
 	IdentitySetDefault(context.Context, string, string, string) (account.Account, account.MailIdentity, int64, error)
 	IdentityRemove(context.Context, string, string, string) (account.Account, account.MailIdentity, int64, error)
+	IdentityReclassify(context.Context, string, string, int) (account.Account, account.DirectionReclassificationSummary, int64, error)
 	Add(context.Context, string, account.AddInput) (account.Account, int64, error)
 	Rename(context.Context, string, string, string) (account.Account, int64, error)
 	SetDefault(context.Context, string, string) (account.Account, int64, error)
@@ -628,6 +629,10 @@ func (unavailableAccountService) IdentitySetDefault(context.Context, string, str
 
 func (unavailableAccountService) IdentityRemove(context.Context, string, string, string) (account.Account, account.MailIdentity, int64, error) {
 	return account.Account{}, account.MailIdentity{}, 0, NewAppError(ErrorConfiguration, "local mail identity state is unavailable", false)
+}
+
+func (unavailableAccountService) IdentityReclassify(context.Context, string, string, int) (account.Account, account.DirectionReclassificationSummary, int64, error) {
+	return account.Account{}, account.DirectionReclassificationSummary{}, 0, NewAppError(ErrorConfiguration, "local mail identity direction repair is unavailable", false)
 }
 
 func (unavailableAccountService) Add(context.Context, string, account.AddInput) (account.Account, int64, error) {

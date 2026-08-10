@@ -17,7 +17,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const SchemaVersion int64 = 21
+const SchemaVersion int64 = 22
 
 var ErrMigrationLock = errors.New("migration lock unavailable")
 

@@ -147,11 +147,12 @@ Replies always start from a stable local `msg_…` ID. The CLI never guesses tha
 
 ```bash
 icloud mail reply msg_… \
+  --from alias@icloud.com \
   --body-file reply.txt \
   --dry-run --headers
 ```
 
-The preview identifies the exact parent and reconstructed thread, then separates recipients derived from the parent from addresses you added. A normal reply prefers the parent's `Reply-To` address and otherwise uses `From`. It normalizes the subject to one `Re:` prefix and adds RFC `In-Reply-To` and `References` headers when the parent has a usable Message-ID.
+The preview identifies the exact parent and reconstructed thread, shows the resolved sender identity, then separates recipients derived from the parent from addresses you added. A normal reply prefers the parent's `Reply-To` address and otherwise uses `From`. It normalizes the subject to one `Re:` prefix and adds RFC `In-Reply-To` and `References` headers when the parent has a usable Message-ID. `--from` accepts the same enabled `mid_…`/address selector as `mail send`; omission uses the account's current local default identity.
 
 After review, send with the same safety controls as a new message:
 
@@ -168,11 +169,12 @@ Use `reply-all` only after inspecting the resolved participant lists:
 
 ```bash
 icloud mail reply-all msg_… \
+  --from mid_… \
   --body 'Thanks, everyone.' \
   --dry-run
 ```
 
-Reply-all starts with the parent's visible `To` and `Cc` participants, removes the selected account identity, deduplicates addresses, and keeps the primary reply address in `To`. It never resurrects BCC recipients from the parent. A new `--bcc` address is included only because you supplied it for this reply, and it remains envelope-only on the wire.
+Reply-all starts with the parent's visible `To` and `Cc` participants, removes **every enabled identity address for the selected account** case-insensitively, deduplicates addresses, and keeps the primary reply address in `To`. This includes enabled aliases and custom-domain identities, not only the login/primary address. It never resurrects BCC recipients from the parent. A new `--bcc` address is included only because you supplied it for this reply, and it remains envelope-only on the wire.
 
 `--to` and `--cc` add recipients to the derived lists. Use `--replace-to` or `--replace-cc` when you deliberately want the supplied list to replace the corresponding derived list:
 
@@ -192,12 +194,13 @@ Forwarding starts from one stable local `msg_…` ID, but unlike reply it always
 
 ```bash
 icloud mail forward msg_… \
+  --from alias@icloud.com \
   --to teammate@example.com \
   --body 'For context:' \
   --dry-run --headers
 ```
 
-The default `--original quoted` representation adds a bounded decoded-text copy below a safe forwarded-message header containing From, Date, Subject, To, and Cc. It never quotes the source BCC list. Repeated `Fwd:` or `Fw:` prefixes collapse to one normalized `Fwd:` subject.
+The default `--original quoted` representation adds a bounded decoded-text copy below a safe forwarded-message header containing From, Date, Subject, To, and Cc. It never quotes the source BCC list. Repeated `Fwd:` or `Fw:` prefixes collapse to one normalized `Fwd:` subject. Forward accepts the same `--from <mid_…|address>` selector as send/reply, but source-thread identity remains provenance only: changing the sender does not mutate or merge the source conversation.
 
 Use an exact attached RFC message only when the recipient needs the original wire representation:
 
@@ -208,7 +211,7 @@ icloud mail forward msg_… \
   --dry-run
 ```
 
-`--original eml` attaches the verified source bytes as `forwarded-message.eml`. Because exact raw mail can contain sensitive headers that are intentionally absent from ordinary previews, EML forwarding is never implicit. `--original none` omits the original content and requires your own text or HTML body.
+`--original eml` attaches the verified source bytes as `forwarded-message.eml`. Because exact raw mail can contain sensitive headers that are intentionally absent from ordinary previews, EML forwarding is never implicit. `--original none` omits the original content, requires your own text or HTML body, and does not require opening the source raw MIME at all.
 
 Original attachments are also explicit. List the source message first, then include only the stable attachment IDs you intend to resend:
 
