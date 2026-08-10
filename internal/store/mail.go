@@ -417,6 +417,67 @@ LIMIT ?`, accountID, accountID, folderID, limit+1)
 	return values, more, nil
 }
 
+func (repository *MailRepository) MailboxExportPage(ctx context.Context, accountID, folderID string, limit int, cursor *maildomain.MailboxExportCursor) (maildomain.MailboxExportPage, error) {
+	accountID = strings.TrimSpace(accountID)
+	folderID = strings.TrimSpace(folderID)
+	if accountID == "" || folderID == "" || limit < 1 || limit > 1000 {
+		return maildomain.MailboxExportPage{}, maildomain.ErrInvalidMailboxExport
+	}
+	where := `
+WHERE l.account_id = ? AND l.folder_id = ? AND l.present = 1`
+	arguments := []any{accountID, folderID}
+	if cursor != nil {
+		if cursor.UIDValidity == 0 || cursor.UID == 0 || strings.TrimSpace(cursor.LocationID) == "" {
+			return maildomain.MailboxExportPage{}, maildomain.ErrInvalidMailboxExport
+		}
+		where += ` AND (l.uid_validity > ? OR (l.uid_validity = ? AND l.uid < ?))`
+		arguments = append(arguments, cursor.UIDValidity, cursor.UIDValidity, cursor.UID)
+	}
+	arguments = append(arguments, limit+1)
+	rows, err := repository.db.QueryContext(ctx, `
+SELECT m.message_id, l.location_id, l.uid_validity, l.uid,
+       m.from_email, COALESCE(l.internal_date, m.header_date, m.created_at),
+       l.raw_content_hash, l.raw_storage_key, l.raw_byte_size
+FROM message_locations AS l
+JOIN messages AS m ON m.message_id = l.message_id AND m.account_id = l.account_id
+`+where+`
+ORDER BY l.uid_validity ASC, l.uid DESC
+LIMIT ?`, arguments...)
+	if err != nil {
+		return maildomain.MailboxExportPage{}, fmt.Errorf("list mailbox export records: %w", err)
+	}
+	defer rows.Close()
+	values := make([]maildomain.MailboxExportRecord, 0, limit+1)
+	for rows.Next() {
+		var value maildomain.MailboxExportRecord
+		var envelopeDate string
+		if err := rows.Scan(
+			&value.MessageID, &value.LocationID, &value.UIDValidity, &value.UID,
+			&value.EnvelopeSender, &envelopeDate, &value.RawContentHash, &value.RawStorageKey, &value.RawByteSize,
+		); err != nil {
+			return maildomain.MailboxExportPage{}, fmt.Errorf("read mailbox export record: %w", err)
+		}
+		value.EnvelopeDate, err = time.Parse(time.RFC3339Nano, envelopeDate)
+		if err != nil {
+			return maildomain.MailboxExportPage{}, fmt.Errorf("parse mailbox export envelope date: %w", err)
+		}
+		values = append(values, value)
+	}
+	if err := rows.Err(); err != nil {
+		return maildomain.MailboxExportPage{}, fmt.Errorf("list mailbox export records: %w", err)
+	}
+	more := len(values) > limit
+	if more {
+		values = values[:limit]
+	}
+	var next *maildomain.MailboxExportCursor
+	if more && len(values) > 0 {
+		last := values[len(values)-1]
+		next = &maildomain.MailboxExportCursor{UIDValidity: last.UIDValidity, UID: last.UID, LocationID: last.LocationID}
+	}
+	return maildomain.MailboxExportPage{Records: values, More: more, NextCursor: next}, nil
+}
+
 func (repository *MailRepository) Inbox(ctx context.Context, accountID, folderID string, limit int) ([]maildomain.Message, bool, error) {
 	return repository.MessagesInFolder(ctx, accountID, folderID, limit)
 }

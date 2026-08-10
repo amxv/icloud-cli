@@ -433,6 +433,15 @@ icloud mail message import message.eml \
 
 Import stages and parses one regular file under the configured raw-message limit before any provider contact. The confirmed operation APPENDs those exact reviewed bytes, proves the provider UID, and then sends that provider copy through the same canonical message, MIME, attachment, search, identity, and thread ingestion path as synchronized mail. iCloud may store one additional terminal CRLF after an APPEND literal; the result reports `provider_raw_variant=terminal_crlf` only when the fetched provider bytes are cryptographically proven to be exactly `source + "\r\n"`. `provider_raw_variant=exact` means no byte changed. Any other provider rewrite is rejected. Repeating the same normalized request with the same idempotency key resumes or returns the same import instead of uploading another copy.
 
+Export a whole synchronized mailbox locally when you need an interoperable archive:
+
+```bash
+icloud mail mailbox export inbox --format mboxrd --output inbox.mbox
+icloud mail mailbox export Archive --output - > archive.mbox
+```
+
+Mailbox export never refreshes or synchronizes iCloud implicitly. It walks only provider copies already present in the selected local mailbox, in deterministic provider order, verifies every raw content address before writing that record, and streams the exact canonical RFC bytes through reversible mboxrd framing. File output is private (`0600`), no-clobber by default, and installed atomically only after the complete archive succeeds.
+
 ## Save attachments explicitly
 
 List metadata first, then save by stable attachment ID:

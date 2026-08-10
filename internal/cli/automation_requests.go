@@ -135,6 +135,13 @@ type messageImportJSONRequest struct {
 	IdempotencyKey string     `json:"idempotency_key,omitempty"`
 }
 
+type mailboxExportJSONRequest struct {
+	Folder string `json:"folder"`
+	Format string `json:"format,omitempty"`
+	Output string `json:"output"`
+	Force  bool   `json:"force,omitempty"`
+}
+
 type attachmentSaveJSONRequest struct {
 	AttachmentID string `json:"attachment_id"`
 	Output       string `json:"output"`

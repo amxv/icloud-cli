@@ -704,6 +704,14 @@ icloud mail message export msg_… --output message.eml --force
 
 `--force` is required to replace an existing regular file. Directories and special files are rejected. The command writes a private temporary file first and does not echo the destination path in normal output.
 
+The same no-clobber rule applies to `mail mailbox export`. A mailbox archive is installed only after the complete local mboxrd stream succeeds, so a missing/corrupt canonical raw blob does not replace an existing `--force` target or leave a new archive path behind. The error details identify the stable message/location and provider UID that could not be exported. Run the bounded repair check instead of forcing a reconstructed archive:
+
+```bash
+icloud mail sync repair --check --verbose
+```
+
+Mailbox export is intentionally local-only. If the archive is missing newer provider mail, synchronize that folder explicitly first and then rerun the export; the export command itself never contacts iCloud to make the local cache look current.
+
 ## EML import is unresolved
 
 An unresolved import means the provider may have accepted the APPEND but the CLI does not yet have exactly one safe provider identity to commit. Do **not** change the file, destination, flags, internal date, or idempotency key and then retry as though it were a new upload.

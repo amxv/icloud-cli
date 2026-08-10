@@ -609,6 +609,7 @@ Available Commands:
   inbox       Compatibility alias for `mail messages list`
   junk        Move exact current message locations to the semantic Junk folder
   latest      Compatibility alias for `mail threads list`
+  mailbox     Export synchronized local mailbox copies
   mark-read   Mark one selected message location as read
   mark-unread Mark one selected message location as unread
   message     Read, export, or deliberately import complete RFC messages
@@ -2181,6 +2182,59 @@ Flags:
       --subject string           Restrict subject text
       --unflagged                Include only messages without a flagged eligible location
       --unread                   Include only messages with an unread eligible location
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail mailbox`
+
+```text
+Export synchronized local mailbox copies
+
+Usage:
+  icloud mail mailbox [command]
+
+Available Commands:
+  export      Stream one synchronized mailbox as mboxrd without contacting iCloud
+
+Flags:
+  -h, --help   help for mailbox
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+
+Use "icloud mail mailbox [command] --help" for more information about a command.
+```
+
+## `icloud mail mailbox export`
+
+```text
+Stream one synchronized mailbox as mboxrd without contacting iCloud
+
+Usage:
+  icloud mail mailbox export <folder> [flags]
+
+Examples:
+  icloud mail mailbox export inbox --format mboxrd --output inbox.mbox
+  icloud mail mailbox export Archive --output - > archive.mbox
+  icloud mail mailbox export --input-json request.json --json
+
+Flags:
+      --force               Replace an existing regular archive file
+      --format string       Mailbox archive format; currently mboxrd (default "mboxrd")
+  -h, --help                help for export
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON summary when output is a file
+      --output string       Archive destination path, or - for native stdout
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID

@@ -348,6 +348,23 @@ icloud mail message export msg_… --output - > message.eml
 
 Raw output is byte-for-byte the synchronized RFC822 message. The CLI verifies its stored size and SHA-256 content address before streaming. File export uses a private temporary file, mode `0600`, and refuses an existing regular file unless `--force` is supplied.
 
+## Export one synchronized mailbox as mboxrd
+
+Export the provider copies already present in a cached mailbox without contacting iCloud:
+
+```bash
+icloud mail mailbox export inbox --format mboxrd --output inbox.mbox
+icloud mail mailbox export 'Archive' --output - > archive.mbox
+```
+
+This is a mailbox-copy export, not a logical-message deduplication pass. Every `present=true` provider location in that cached folder is emitted once. Records are traversed with bounded keyset pages in deterministic `(UIDVALIDITY ascending, UID descending)` order, so a logical message that genuinely has two provider copies in one or more mailboxes is represented according to the selected mailbox's stored copies rather than silently collapsed.
+
+Each record uses that exact provider location's verified raw content. The exporter does not rebuild MIME from normalized fields, so Bcc and transport/authentication headers are included when they exist in the canonical raw source. The mbox envelope separator is archive framing derived from stored sender/time metadata; it is separate from the RFC message. For mboxrd reversibility, every body/header line already matching zero or more `>` characters followed by `From ` receives one additional leading `>` in the archive. Other RFC bytes, including existing CRLF or LF line endings, pass through unchanged; a raw message that lacks its own final newline necessarily receives archive framing before the next separator.
+
+File output is written to a private `0600` temporary file in the destination directory, flushed, and installed only after every record succeeds. Existing regular files require `--force`; symlinks and special files are rejected. If any canonical raw blob is missing or fails its size/SHA-256 verification, the whole file export fails and a new target is not installed or an existing forced target is left untouched.
+
+`--output -` writes only native mboxrd bytes to stdout and sends the compact completion summary to stderr. `--json` is intentionally incompatible with stdout archives; write to a file when automation needs the structured summary. The summary reports exported record count, archive byte count, `complete=true`, and the final provider cursor. A downstream stdout write failure can naturally leave the caller with a partial stream, whereas file output retains the atomic install guarantee.
+
 ## Import one exact EML message
 
 Use import when you already have one RFC822/EML file and want one deliberate provider copy in a current selectable mailbox. Review is local-only:
