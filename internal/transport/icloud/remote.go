@@ -89,7 +89,7 @@ func (client *Client) FetchRemoteMessage(ctx context.Context, auth transport.Aut
 	}
 	if len(messages) != 1 || messages[0].UID != request.UID {
 		abortFetched(messages)
-		return transport.RemoteFetchResult{}, transport.NewFailure(transport.StageIMAPFetch, transport.FailureUnavailable, false, errors.New("remote message is no longer available"))
+		return transport.RemoteFetchResult{}, transport.NewFailure(transport.StageIMAPFetch, transport.FailureUnavailable, false, transport.ErrRemoteMessageUnavailable)
 	}
 	if err := runWithDeadline(ctx, session.conn, client.config.StageTimeout, func() error {
 		return session.client.Logout().Wait()
@@ -117,7 +117,7 @@ func (client *Client) FetchRemoteSummary(ctx context.Context, auth transport.Aut
 		return transport.RemoteSummaryResult{}, err
 	}
 	if len(summaries) != 1 || summaries[0].UID != request.UID {
-		return transport.RemoteSummaryResult{}, transport.NewFailure(transport.StageIMAPFetch, transport.FailureUnavailable, false, errors.New("remote message is no longer available"))
+		return transport.RemoteSummaryResult{}, transport.NewFailure(transport.StageIMAPFetch, transport.FailureUnavailable, false, transport.ErrRemoteMessageUnavailable)
 	}
 	if err := runWithDeadline(ctx, session.conn, client.config.StageTimeout, func() error {
 		return session.client.Logout().Wait()

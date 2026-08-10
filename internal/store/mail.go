@@ -511,6 +511,58 @@ WHERE account_id = ? AND location_id = ?`, strings.TrimSpace(accountID), strings
 	return value, nil
 }
 
+func (repository *MailRepository) LocationsByRawHash(ctx context.Context, accountID, messageID, folderID, rawHash string, limit int) ([]maildomain.Location, error) {
+	if limit < 1 {
+		return nil, errors.New("list locations by raw hash: limit must be positive")
+	}
+	rows, err := repository.db.QueryContext(ctx, locationColumns+`
+WHERE account_id = ? AND message_id = ? AND folder_id = ? AND lower(raw_content_hash) = lower(?) AND present = 1
+ORDER BY uid_validity DESC, uid DESC, location_id DESC
+LIMIT ?`, strings.TrimSpace(accountID), strings.TrimSpace(messageID), strings.TrimSpace(folderID), strings.TrimSpace(rawHash), limit)
+	if err != nil {
+		return nil, fmt.Errorf("list locations by raw hash: %w", err)
+	}
+	defer rows.Close()
+	values := make([]maildomain.Location, 0, limit)
+	for rows.Next() {
+		value, scanErr := scanLocation(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		values = append(values, value)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list locations by raw hash: %w", err)
+	}
+	return values, nil
+}
+
+func (repository *MailRepository) LocationsByRawHashInFolder(ctx context.Context, accountID, folderID, rawHash string, limit int) ([]maildomain.Location, error) {
+	if limit < 1 {
+		return nil, errors.New("list folder locations by raw hash: limit must be positive")
+	}
+	rows, err := repository.db.QueryContext(ctx, locationColumns+`
+WHERE account_id = ? AND folder_id = ? AND lower(raw_content_hash) = lower(?) AND present = 1
+ORDER BY uid_validity DESC, uid DESC, location_id DESC
+LIMIT ?`, strings.TrimSpace(accountID), strings.TrimSpace(folderID), strings.TrimSpace(rawHash), limit)
+	if err != nil {
+		return nil, fmt.Errorf("list folder locations by raw hash: %w", err)
+	}
+	defer rows.Close()
+	values := make([]maildomain.Location, 0, limit)
+	for rows.Next() {
+		value, scanErr := scanLocation(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		values = append(values, value)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list folder locations by raw hash: %w", err)
+	}
+	return values, nil
+}
+
 func (repository *MailRepository) UpdateLocationState(
 	ctx context.Context,
 	accountID, locationID string,

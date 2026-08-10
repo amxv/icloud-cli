@@ -1,0 +1,29 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/attachment-remove-input.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "attachment_ids": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "folder": {
+      "type": "string"
+    },
+    "idempotency_key": {
+      "type": "string"
+    },
+    "message_id": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "attachment_ids",
+    "message_id"
+  ],
+  "title": "attachment removal JSON input",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

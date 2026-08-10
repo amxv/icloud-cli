@@ -428,9 +428,10 @@ List metadata first, then save by stable attachment ID:
 icloud mail attachments list msg_…
 icloud mail attachments save att_… --output document.pdf
 icloud mail attachments save-all msg_… --dir ./message-attachments
+icloud mail attachments remove msg_… --attachment att_… --dry-run
 ```
 
-Attachment filenames are treated as untrusted metadata. Existing files are not replaced without `--force`, binary stdout requires `--binary`, and a batch is prepared before installation so failures do not leave an intentional partial set.
+Attachment filenames are treated as untrusted metadata. Existing files are not replaced without `--force`, binary stdout requires `--binary`, and a batch is prepared before installation so failures do not leave an intentional partial set. Provider attachment removal starts with a local dry-run and then requires an idempotency key plus explicit confirmation; it appends a proven rewritten copy before exact-deleting the selected old provider UID.
 
 ## Change read or flag state deliberately
 

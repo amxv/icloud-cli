@@ -290,9 +290,10 @@ icloud mail message show msg_… --metadata-only
 icloud mail attachments list msg_…
 icloud mail attachments save att_… --output document.pdf
 icloud mail attachments save-all msg_… --dir ./message-attachments
+icloud mail attachments remove msg_… --attachment att_… --dry-run
 ```
 
-Attachment listing is bounded and metadata-only. Saving verifies locally stored bytes, refuses accidental overwrites, sanitizes untrusted filenames, and prepares a complete batch before installing it.
+Attachment listing is bounded and metadata-only. Saving verifies locally stored bytes, refuses accidental overwrites, sanitizes untrusted filenames, and prepares a complete batch before installing it. Removal is deliberately different: it rewrites one exact provider copy through append-before-delete recovery, requires a reviewed attachment ID selection, and never changes only the local cache.
 
 Binary stdout is available only with an explicit acknowledgement:
 
@@ -300,7 +301,7 @@ Binary stdout is available only with an explicit acknowledgement:
 icloud mail attachments save att_… --output - --binary > document.pdf
 ```
 
-See [Save mail attachments](/docs/save-mail-attachments) for collisions, inline files, unnamed attachments, JSON, and recovery.
+See [Save mail attachments](/docs/save-mail-attachments) for collisions, inline files, unnamed attachments, provider attachment removal, JSON, and recovery.
 
 ## Change one exact location
 

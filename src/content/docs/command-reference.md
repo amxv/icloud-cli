@@ -693,6 +693,7 @@ Examples:
 
 Available Commands:
   list        List bounded attachment metadata without printing bytes
+  remove      Replace one exact provider copy after removing reviewed MIME attachments
   save        Verify and stream one decoded attachment
   save-all    Export a bounded attachment set with safe deterministic names
 
@@ -728,6 +729,37 @@ Flags:
       --input-json string   Read one strict JSON read request from a file, or - for stdin; cannot be mixed with equivalent read flags or positional read arguments
       --json                Emit one stable JSON success envelope
       --limit int           Maximum attachments to list (1-100) (default 20)
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail attachments remove`
+
+```text
+Replace one exact provider copy after removing reviewed MIME attachments
+
+Usage:
+  icloud mail attachments remove <message-id> [flags]
+
+Examples:
+  icloud mail attachments remove msg_… --attachment att_… --dry-run
+  icloud mail attachments remove msg_… --attachment att_… --idempotency-key rewrite-01 --yes
+  icloud mail attachments remove --input-json request.json --dry-run --json
+
+Flags:
+      --attachment stringArray   Stable att_… attachment ID to remove; repeat as needed
+      --dry-run                  Reconstruct and review the replacement locally without creating rewrite intent or contacting IMAP
+      --folder string            Select the exact current provider source folder when the message has more than one eligible copy
+  -h, --help                     help for remove
+      --idempotency-key string   Reuse the original operation when the same normalized request and idempotency key are repeated
+      --input-json string        Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                     Emit one stable JSON success envelope
+      --yes                      Confirm an intentional non-interactive provider content replacement
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID

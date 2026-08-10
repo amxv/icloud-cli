@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -53,6 +54,20 @@ type mailAttachmentSaveData struct {
 	SchemaVersion int64            `json:"schema_version"`
 }
 
+type mailAttachmentRemovePreviewData struct {
+	AccountID     string                        `json:"account_id"`
+	Plan          maildomain.MessageRewritePlan `json:"plan"`
+	SchemaVersion int64                         `json:"schema_version"`
+}
+
+type mailAttachmentRemoveData struct {
+	AccountID       string                    `json:"account_id"`
+	MessageID       string                    `json:"message_id"`
+	Rewrite         maildomain.MessageRewrite `json:"rewrite"`
+	AttachmentCount int                       `json:"attachment_count"`
+	SchemaVersion   int64                     `json:"schema_version"`
+}
+
 const maximumAttachmentSetSize = 2048
 
 func newMailAttachmentsCommand(state *executionState) *cobra.Command {
@@ -68,7 +83,117 @@ func newMailAttachmentsCommand(state *executionState) *cobra.Command {
 	command.AddCommand(newMailAttachmentsListCommand(state))
 	command.AddCommand(newMailAttachmentSaveCommand(state))
 	command.AddCommand(newMailAttachmentsSaveAllCommand(state))
+	command.AddCommand(newMailAttachmentsRemoveCommand(state))
 	return command
+}
+
+func newMailAttachmentsRemoveCommand(state *executionState) *cobra.Command {
+	var attachments []string
+	var folderSelector, idempotencyKey string
+	var dryRun, yes, jsonOutput bool
+	var input jsonInputOptions
+	command := &cobra.Command{
+		Use:     "remove <message-id>",
+		Short:   "Replace one exact provider copy after removing reviewed MIME attachments",
+		Args:    exactArgsOrJSONInput(&input, 1),
+		Example: "  icloud mail attachments remove msg_… --attachment att_… --dry-run\n  icloud mail attachments remove msg_… --attachment att_… --idempotency-key rewrite-01 --yes\n  icloud mail attachments remove --input-json request.json --dry-run --json",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if dryRun && yes {
+				return NewAppError(ErrorUsage, "--dry-run and --yes cannot be combined", false)
+			}
+			messageID := ""
+			if len(args) == 1 {
+				messageID = args[0]
+			}
+			var jsonRequest attachmentRemoveJSONRequest
+			if used, err := readJSONInput(cmd, state, input, &jsonRequest, "attachment", "folder", "idempotency-key"); err != nil {
+				return err
+			} else if used {
+				messageID, attachments, folderSelector, idempotencyKey = jsonRequest.MessageID, append([]string(nil), jsonRequest.AttachmentIDs...), jsonRequest.Folder, jsonRequest.IdempotencyKey
+			}
+			request := maildomain.AttachmentRemoveRequest{MessageID: messageID, AttachmentIDs: attachments, Folder: folderSelector, IdempotencyKey: idempotencyKey}
+			if dryRun {
+				accountValue, _, plan, schemaVersion, err := state.mail.MailAttachmentRemovePreview(cmd.Context(), state.global.Home, state.global.Account, request)
+				if err != nil {
+					return err
+				}
+				if jsonOutput {
+					return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: mailAttachmentRemovePreviewData{AccountID: accountValue.ID, Plan: plan, SchemaVersion: schemaVersion}, Meta: EnvelopeMeta{RequestID: state.requestID}})
+				}
+				return renderAttachmentRemovePreview(state.stdout, plan, true)
+			}
+			interactive := isTerminalReader(state.stdin) && !state.global.NoInput
+			if !yes && !interactive {
+				return NewAppError(ErrorSafety, "non-interactive attachment removal requires --yes", false)
+			}
+			if !yes {
+				_, _, plan, _, err := state.mail.MailAttachmentRemovePreview(cmd.Context(), state.global.Home, state.global.Account, request)
+				if err != nil {
+					return err
+				}
+				if err := renderAttachmentRemovePreview(state.stdout, plan, false); err != nil {
+					return err
+				}
+				confirmed, err := confirmAttachmentRemove(state.stdin, state.stderr, len(plan.RemovedAttachments))
+				if err != nil {
+					return err
+				}
+				if !confirmed {
+					return NewAppError(ErrorSafety, "attachment removal canceled before contacting IMAP", false)
+				}
+			}
+			accountValue, _, _, rewrite, message, schemaVersion, err := state.mail.MailAttachmentRemove(cmd.Context(), state.global.Home, state.global.Account, request)
+			if err != nil {
+				return err
+			}
+			if jsonOutput {
+				return WriteJSON(state.stdout, OutputEnvelope{OK: true, Data: mailAttachmentRemoveData{AccountID: accountValue.ID, MessageID: message.ID, Rewrite: rewrite, AttachmentCount: message.AttachmentCount, SchemaVersion: schemaVersion}, Meta: EnvelopeMeta{RequestID: state.requestID}})
+			}
+			return NewCompactTextRenderer(state.stdout).Record("message-rewrite", rewrite.ID,
+				Field("message", message.ID), Field("status", rewrite.Status), Field("provider_method", rewrite.ProviderMethod),
+				Field("source_present", rewrite.SourcePresent), Field("replacement_location", rewrite.NewLocationID),
+				Field("attachments", message.AttachmentCount), Field("reconciliation_required", rewrite.ReconciliationRequired),
+			)
+		},
+	}
+	command.Flags().StringArrayVar(&attachments, "attachment", nil, "Stable att_… attachment ID to remove; repeat as needed")
+	command.Flags().StringVar(&folderSelector, "folder", "", "Select the exact current provider source folder when the message has more than one eligible copy")
+	command.Flags().StringVar(&idempotencyKey, "idempotency-key", "", idempotencyKeyHelp)
+	command.Flags().BoolVar(&dryRun, "dry-run", false, "Reconstruct and review the replacement locally without creating rewrite intent or contacting IMAP")
+	command.Flags().BoolVar(&yes, "yes", false, "Confirm an intentional non-interactive provider content replacement")
+	command.Flags().BoolVar(&jsonOutput, "json", false, "Emit one stable JSON success envelope")
+	bindJSONInput(command, &input)
+	return command
+}
+
+func renderAttachmentRemovePreview(writer io.Writer, plan maildomain.MessageRewritePlan, dryRun bool) error {
+	renderer := NewCompactTextRenderer(writer)
+	for _, attachment := range plan.RemovedAttachments {
+		if err := renderer.Record("remove-attachment", attachment.ID,
+			Field("filename", Excerpt(attachment.Filename, DefaultExcerptRunes)), Field("type", attachment.MediaType),
+			Field("bytes", attachment.ByteSize), Field("inline", attachment.Inline), Field("content_id", Excerpt(attachment.ContentID, DefaultExcerptRunes)),
+		); err != nil {
+			return err
+		}
+	}
+	return renderer.Summary("attachment-rewrite-review",
+		Field("message", plan.MessageID), Field("source_folder", plan.SourceFolderName), Field("source_location", plan.SourceLocation.ID),
+		Field("before_attachments", fmt.Sprintf("%d", plan.BeforeAttachmentCount)), Field("after_attachments", fmt.Sprintf("%d", plan.AfterAttachmentCount)),
+		Field("before_bytes", fmt.Sprintf("%d", plan.BeforeRawBytes)), Field("after_bytes", fmt.Sprintf("%d", plan.AfterRawBytes)), Field("request_hash", plan.RequestHash),
+		Field("dry_run", dryRun), Field("imap_contacted", "false"), Field("intent_created", "false"),
+	)
+}
+
+func confirmAttachmentRemove(reader io.Reader, stderr io.Writer, count int) (bool, error) {
+	if _, err := fmt.Fprintf(stderr, "Replace the reviewed provider message after removing %d attachment(s)? [y/N]: ", count); err != nil {
+		return false, WrapAppError(ErrorInternal, "cannot write the attachment removal confirmation prompt", false, err)
+	}
+	line, err := bufio.NewReader(io.LimitReader(reader, 64)).ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return false, WrapAppError(ErrorConfiguration, "cannot read attachment removal confirmation", false, err)
+	}
+	answer := strings.ToLower(strings.TrimSpace(line))
+	return answer == "y" || answer == "yes", nil
 }
 
 func newMailAttachmentsListCommand(state *executionState) *cobra.Command {

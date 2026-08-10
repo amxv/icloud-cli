@@ -133,6 +133,13 @@ type attachmentSaveJSONRequest struct {
 	Binary       bool   `json:"binary,omitempty"`
 }
 
+type attachmentRemoveJSONRequest struct {
+	MessageID      string   `json:"message_id"`
+	AttachmentIDs  []string `json:"attachment_ids"`
+	Folder         string   `json:"folder,omitempty"`
+	IdempotencyKey string   `json:"idempotency_key,omitempty"`
+}
+
 type attachmentsSaveAllJSONRequest struct {
 	TargetID  string `json:"target_id,omitempty"`
 	MessageID string `json:"message_id,omitempty"`

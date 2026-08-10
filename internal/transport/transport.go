@@ -11,6 +11,8 @@ import (
 	"github.com/amxv/icloud-cli/internal/blob"
 )
 
+var ErrRemoteMessageUnavailable = errors.New("remote message is no longer available")
+
 type Stage string
 
 const (

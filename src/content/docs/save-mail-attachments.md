@@ -1,9 +1,9 @@
 ---
 title: Save mail attachments
-description: List attachments from a synchronized message or thread, save one file or a complete set safely, and recover from missing, corrupt, or conflicting local content.
+description: List attachments from a synchronized message or thread, save verified files, or remove selected provider attachments through a recoverable message rewrite.
 order: 7
 category: Guides
-summary: Offline attachment inspection, verified streaming, safe filenames, no-clobber exports, batch saves, and recovery.
+summary: Offline attachment inspection, verified streaming, safe exports, and append-before-delete provider attachment removal.
 ---
 
 ## Start with a synchronized message or thread
@@ -93,6 +93,49 @@ icloud mail attachments save-all msg_… --dir ./message-attachments --json
 List JSON includes the stable `target` (`message` or `thread`), stable attachment and MIME-part IDs, decoded size, content hash, media parameters, inline state, and availability. It omits private storage coordinates. When `more=true`, continue with the returned `next_cursor`; that cursor is bound to the selected account and exact message or reconstructed thread, so it cannot be reused for another target. The final page omits `next_cursor`.
 
 `save-all` keeps its separate bounded export contract: it reviews the complete target attachment set up to its documented safety ceiling rather than inheriting the metadata list page size. Save JSON reports the verified outcome without returning the destination path; batch JSON returns only safe output basenames. Automation should use `target_id` for `save-all`; the older `message_id` request property remains accepted for message-target compatibility.
+
+## Remove selected attachments from one provider copy
+
+Attachment removal is a provider content replacement, not a local metadata edit. Review the exact rewrite first:
+
+```bash
+icloud mail attachments remove msg_… --attachment att_… --dry-run
+```
+
+The dry-run reads and verifies the synchronized raw message locally, reconstructs the prospective RFC message, and reports the selected stable attachment IDs, exact source folder/location, before/after attachment counts, and before/after raw sizes. It creates no rewrite intent and does not contact IMAP.
+
+Then perform the reviewed replacement with a stable idempotency key:
+
+```bash
+icloud mail attachments remove msg_… \
+  --attachment att_… \
+  --idempotency-key remove-old-report-01 \
+  --yes
+```
+
+Repeat `--attachment` to remove several exact MIME parts in one rewrite. Duplicate filenames or identical decoded bytes do not broaden the selection: the command removes only the selected `att_…` parts. Nested `message/rfc822` content and inline CID parts are handled by their exact indexed MIME paths.
+
+If the logical message has several eligible provider copies, choose the one to replace:
+
+```bash
+icloud mail attachments remove msg_… \
+  --folder INBOX \
+  --attachment att_… \
+  --idempotency-key remove-old-report-02 \
+  --yes
+```
+
+Other provider locations are left untouched. The stable logical `msg_…` and thread identity remain the same; after success, canonical content represents the proven replacement revision.
+
+### Understand the replacement boundary
+
+The CLI stages and reparses the new raw message before provider mutation, persists a `MessageRewrite` recovery record, APPENDs the replacement first, proves the new provider identity, and only then exact-deletes the reviewed old UID. Canonical local content does not switch while the old-provider deletion is unresolved.
+
+Recomposition preserves semantic routing/thread headers such as From, To, Cc, Reply-To, Subject, Date, Message-ID, In-Reply-To, and References, plus unselected body/MIME content. It does not promise byte-identical RFC output: MIME boundaries and transfer encodings may be regenerated, and transport-added headers such as Received, Return-Path, Delivered-To, Authentication-Results, DKIM, and ARC fields are not copied into the newly appended message.
+
+Cryptographically protected MIME is fenced rather than silently damaged: `multipart/signed`, `multipart/encrypted`, and PKCS#7/S/MIME containers are rejected by attachment removal until the CLI can preserve or re-establish their protection explicitly.
+
+If APPEND or exact deletion disconnects after the provider may have acted, the rewrite remains explicitly unresolved. Re-run the **same normalized request with the same idempotency key** so the CLI reconciles the durable evidence instead of blindly APPENDing or deleting again. A definite pre-APPEND failure is marked failed; after fixing that cause, make a new deliberate request with a new key.
 
 ## Recover from common failures
 

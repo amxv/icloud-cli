@@ -48,6 +48,8 @@ type MailService interface {
 	MailAttachments(context.Context, string, string, string, int) (account.Account, maildomain.AttachmentTarget, []maildomain.Attachment, bool, int64, error)
 	MailAttachmentsPage(context.Context, string, string, string, string, int) (account.Account, maildomain.AttachmentTarget, []maildomain.Attachment, bool, string, int64, error)
 	MailAttachment(context.Context, string, string, string) (account.Account, maildomain.Attachment, maildomain.AttachmentSource, int64, error)
+	MailAttachmentRemovePreview(context.Context, string, string, maildomain.AttachmentRemoveRequest) (account.Account, folder.Folder, maildomain.MessageRewritePlan, int64, error)
+	MailAttachmentRemove(context.Context, string, string, maildomain.AttachmentRemoveRequest) (account.Account, folder.Folder, maildomain.MessageRewritePlan, maildomain.MessageRewrite, maildomain.Message, int64, error)
 	MailUpdateFlag(context.Context, string, string, string, string, maildomain.FlagMutation) (account.Account, folder.Folder, maildomain.Message, maildomain.Location, int64, error)
 	MailUpdateFlagSnapshot(context.Context, string, string, string, string, maildomain.MailSelectionItem, maildomain.FlagMutation) (account.Account, folder.Folder, maildomain.Message, maildomain.Location, int64, error)
 	MailSearch(context.Context, string, string, string, maildomain.SearchOptions) (account.Account, folder.Folder, maildomain.SearchPage, int64, error)
@@ -1405,6 +1407,12 @@ func (unavailableMailService) MailAttachmentsPage(context.Context, string, strin
 }
 func (unavailableMailService) MailAttachment(context.Context, string, string, string) (account.Account, maildomain.Attachment, maildomain.AttachmentSource, int64, error) {
 	return account.Account{}, maildomain.Attachment{}, nil, 0, NewAppError(ErrorConfiguration, "local attachment content is unavailable", false)
+}
+func (unavailableMailService) MailAttachmentRemovePreview(context.Context, string, string, maildomain.AttachmentRemoveRequest) (account.Account, folder.Folder, maildomain.MessageRewritePlan, int64, error) {
+	return account.Account{}, folder.Folder{}, maildomain.MessageRewritePlan{}, 0, NewAppError(ErrorConfiguration, "attachment removal is unavailable", false)
+}
+func (unavailableMailService) MailAttachmentRemove(context.Context, string, string, maildomain.AttachmentRemoveRequest) (account.Account, folder.Folder, maildomain.MessageRewritePlan, maildomain.MessageRewrite, maildomain.Message, int64, error) {
+	return account.Account{}, folder.Folder{}, maildomain.MessageRewritePlan{}, maildomain.MessageRewrite{}, maildomain.Message{}, 0, NewAppError(ErrorConfiguration, "attachment removal is unavailable", false)
 }
 func (unavailableMailService) MailUpdateFlag(context.Context, string, string, string, string, maildomain.FlagMutation) (account.Account, folder.Folder, maildomain.Message, maildomain.Location, int64, error) {
 	return account.Account{}, folder.Folder{}, maildomain.Message{}, maildomain.Location{}, 0, NewAppError(ErrorConfiguration, "message-state mutation is unavailable", false)
