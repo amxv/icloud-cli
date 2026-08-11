@@ -192,6 +192,7 @@ type attachmentJSONInput struct {
 type composeJSONRequest struct {
 	From           string                `json:"from,omitempty"`
 	Signature      string                `json:"signature,omitempty"`
+	SMIME          string                `json:"smime,omitempty"`
 	To             []string              `json:"to,omitempty"`
 	CC             []string              `json:"cc,omitempty"`
 	BCC            []string              `json:"bcc,omitempty"`
@@ -211,6 +212,7 @@ type composeJSONRequest struct {
 type replyComposeJSONRequest struct {
 	From           string                `json:"from,omitempty"`
 	Signature      string                `json:"signature,omitempty"`
+	SMIME          string                `json:"smime,omitempty"`
 	To             []string              `json:"to,omitempty"`
 	CC             []string              `json:"cc,omitempty"`
 	BCC            []string              `json:"bcc,omitempty"`
@@ -236,6 +238,7 @@ type replyJSONRequest struct {
 type forwardComposeJSONRequest struct {
 	From           string                `json:"from,omitempty"`
 	Signature      string                `json:"signature,omitempty"`
+	SMIME          string                `json:"smime,omitempty"`
 	To             []string              `json:"to,omitempty"`
 	CC             []string              `json:"cc,omitempty"`
 	BCC            []string              `json:"bcc,omitempty"`
@@ -261,6 +264,7 @@ type forwardJSONRequest struct {
 type draftComposeJSONRequest struct {
 	From         string                `json:"from,omitempty"`
 	Signature    string                `json:"signature,omitempty"`
+	SMIME        string                `json:"smime,omitempty"`
 	To           []string              `json:"to,omitempty"`
 	CC           []string              `json:"cc,omitempty"`
 	BCC          []string              `json:"bcc,omitempty"`
@@ -380,7 +384,7 @@ type flagBulkJSONLItem struct {
 
 func (request composeJSONRequest) sendFlags() sendFlags {
 	flags := sendFlags{
-		From: request.From, Signature: request.Signature,
+		From: request.From, Signature: request.Signature, SMIME: request.SMIME,
 		To: request.To, CC: request.CC, BCC: request.BCC, ReplyTo: request.ReplyTo,
 		Subject: request.Subject, Body: request.Body, BodyFile: request.BodyFile,
 		HTMLBody: request.HTMLBody, HTMLBodyFile: request.HTMLBodyFile,
@@ -408,7 +412,7 @@ func (request composeJSONRequest) sendFlags() sendFlags {
 
 func (request replyComposeJSONRequest) sendFlags() sendFlags {
 	return composeJSONRequest{
-		From: request.From, Signature: request.Signature,
+		From: request.From, Signature: request.Signature, SMIME: request.SMIME,
 		To: request.To, CC: request.CC, BCC: request.BCC,
 		Body: request.Body, BodyFile: request.BodyFile, HTMLBody: request.HTMLBody, HTMLBodyFile: request.HTMLBodyFile,
 		Headers: request.Headers, Attachments: request.Attachments,
@@ -418,7 +422,7 @@ func (request replyComposeJSONRequest) sendFlags() sendFlags {
 
 func (request forwardComposeJSONRequest) sendFlags() sendFlags {
 	return composeJSONRequest{
-		From: request.From, Signature: request.Signature,
+		From: request.From, Signature: request.Signature, SMIME: request.SMIME,
 		To: request.To, CC: request.CC, BCC: request.BCC, ReplyTo: request.ReplyTo,
 		Body: request.Body, BodyFile: request.BodyFile, HTMLBody: request.HTMLBody, HTMLBodyFile: request.HTMLBodyFile,
 		Headers: request.Headers, Attachments: request.Attachments,
@@ -428,7 +432,7 @@ func (request forwardComposeJSONRequest) sendFlags() sendFlags {
 
 func (request draftComposeJSONRequest) sendFlags() sendFlags {
 	return composeJSONRequest{
-		From: request.From, Signature: request.Signature,
+		From: request.From, Signature: request.Signature, SMIME: request.SMIME,
 		To: request.To, CC: request.CC, BCC: request.BCC, ReplyTo: request.ReplyTo, Subject: request.Subject,
 		Body: request.Body, BodyFile: request.BodyFile, HTMLBody: request.HTMLBody, HTMLBodyFile: request.HTMLBodyFile,
 		Headers: request.Headers, Attachments: request.Attachments,

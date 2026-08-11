@@ -55,7 +55,7 @@ func TestPhase32PublicSMIMECertificateLifecycleAndSettingsTruth(t *testing.T) {
 
 	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home,
 		"mail", "settings", "show")
-	if code != 0 || stderr != "" || !strings.Contains(stdout, "smime_inspection=supported") || !strings.Contains(stdout, "smime=unsupported") {
+	if code != 0 || stderr != "" || !strings.Contains(stdout, "smime_inspection=supported") || !strings.Contains(stdout, "smime=supported") {
 		t.Fatalf("settings code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 

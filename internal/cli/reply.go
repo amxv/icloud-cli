@@ -45,7 +45,7 @@ func newMailReplyCommand(state *executionState, replyAll bool) *cobra.Command {
 			}
 			var jsonRequest replyJSONRequest
 			if used, err := readJSONInput(cmd, state, input, &jsonRequest,
-				"folder", "from", "signature", "to", "cc", "bcc", "replace-to", "replace-cc", "body", "body-file", "html-body", "html-body-file",
+				"folder", "from", "signature", "smime", "to", "cc", "bcc", "replace-to", "replace-cc", "body", "body-file", "html-body", "html-body-file",
 				"header", "attach", "attach-name", "attach-type", "attach-disposition", "attach-cid", "idempotency-key", "retry-of", "retry-unknown"); err != nil {
 				return err
 			} else if used {
@@ -100,6 +100,8 @@ func newMailReplyCommand(state *executionState, replyAll bool) *cobra.Command {
 					return NewAppError(ErrorSafety, "mail reply canceled before contacting SMTP", false)
 				}
 				request.Attachments = preview.Send.Attachments
+				request.SMIMEMode = smimePreviewModeValue(preview.Send.SMIME)
+				request.SMIMEPlan = preview.Send.SMIME
 			}
 			accountValue, attempt, reused, schemaVersion, err := state.mail.MailReply(cmd.Context(), state.global.Home, state.global.Account, request)
 			if err != nil {
@@ -122,6 +124,7 @@ func bindReplyFlags(command *cobra.Command, flags *replyFlags) {
 	command.Flags().StringVar(&flags.Folder, "folder", "", "Select the exact current provider parent location when the message has multiple locations")
 	command.Flags().StringVar(&flags.From, "from", "", "Sender identity by stable mid_… ID or configured address (defaults to the account's local default identity)")
 	command.Flags().StringVar(&flags.Signature, "signature", "", "Override the configured reply signature with one sig_… ID or none")
+	command.Flags().StringVar(&flags.SMIME, "smime", "", "S/MIME protection: none, sign, encrypt, or sign-encrypt")
 	command.Flags().StringArrayVar(&flags.To, "to", nil, "Add a To recipient; repeat or provide a comma-separated address list")
 	command.Flags().StringArrayVar(&flags.CC, "cc", nil, "Add a Cc recipient; repeat as needed")
 	command.Flags().StringArrayVar(&flags.BCC, "bcc", nil, "Add a new Bcc envelope recipient; prior Bcc recipients are never inferred")
@@ -157,7 +160,7 @@ func replyRequestFromFlags(state *executionState, parentID string, replyAll bool
 		return maildomain.ReplyRequest{}, false, NewAppError(ErrorUsage, "--replace-to requires at least one --to address", false)
 	}
 	return maildomain.ReplyRequest{
-		ParentMessageID: parentID, ParentFolder: flags.Folder, SenderIdentityID: parsed.SenderIdentityID, SignatureSelector: parsed.SignatureSelector, ReplyAll: replyAll,
+		ParentMessageID: parentID, ParentFolder: flags.Folder, SenderIdentityID: parsed.SenderIdentityID, SignatureSelector: parsed.SignatureSelector, SMIMEMode: parsed.SMIMEMode, ReplyAll: replyAll,
 		To: parsed.To, CC: parsed.CC, BCC: parsed.BCC,
 		ReplaceTo: flags.ReplaceTo, ReplaceCC: flags.ReplaceCC,
 		TextBody: parsed.TextBody, HTMLBody: parsed.HTMLBody,
@@ -187,6 +190,9 @@ func renderReplyPreview(ctx context.Context, state *executionState, preview mail
 		_, err := io.WriteString(state.stdout, preview.Send.HTMLBody)
 		return err
 	case "raw":
+		if preview.Send.SMIME != nil && preview.Send.SMIME.Mode != maildomain.SMIMEComposeNone {
+			return NewAppError(ErrorSafety, "raw dry-run output is unavailable for an S/MIME reply; use compact or JSON preview for certificate coverage", false)
+		}
 		messageID, err := maildomain.GenerateOutboundMessageID(preview.Send.From.Email)
 		if err != nil {
 			return WrapAppError(ErrorInternal, "cannot allocate a reply preview Message-ID", false, err)
@@ -199,7 +205,7 @@ func renderReplyPreview(ctx context.Context, state *executionState, preview mail
 
 func renderCompactReplyPreview(writer io.Writer, preview maildomain.ReplyPreview, showHeaders, verbose bool) error {
 	renderer := NewCompactTextRenderer(writer)
-	if err := renderer.Record("reply-preview", preview.ParentMessageID,
+	fields := []CompactField{
 		Field("kind", preview.Kind),
 		Field("thread_id", preview.ThreadID),
 		Field("parent_location_id", preview.ParentLocationID),
@@ -223,7 +229,11 @@ func renderCompactReplyPreview(writer io.Writer, preview maildomain.ReplyPreview
 		Field("attachments", preview.Send.AttachmentCount),
 		Field("request_hash", preview.Send.RequestHash),
 		Field("html_bytes", verboseValue(verbose, len(preview.Send.HTMLBody))),
-	); err != nil {
+	}
+	if preview.Send.SMIME != nil && preview.Send.SMIME.Mode != maildomain.SMIMEComposeNone {
+		fields = append(fields, Field("smime", string(preview.Send.SMIME.Mode)))
+	}
+	if err := renderer.Record("reply-preview", preview.ParentMessageID, fields...); err != nil {
 		return err
 	}
 	if showHeaders {

@@ -22,20 +22,21 @@ const (
 )
 
 type Draft struct {
-	ID                 string         `json:"id"`
-	AccountID          string         `json:"account_id"`
-	SenderIdentityID   string         `json:"sender_identity_id,omitempty"`
-	MessageID          string         `json:"message_id"`
-	Revision           int            `json:"revision"`
-	SyncState          DraftSyncState `json:"sync_state"`
-	RemoteLocationID   string         `json:"remote_location_id,omitempty"`
-	PreviousLocationID string         `json:"previous_location_id,omitempty"`
-	OutboundAttemptID  string         `json:"outbound_attempt_id,omitempty"`
-	CustomHeaders      []CustomHeader `json:"custom_headers,omitempty"`
-	LastErrorCode      string         `json:"last_error_code,omitempty"`
-	CreatedAt          time.Time      `json:"created_at"`
-	UpdatedAt          time.Time      `json:"updated_at"`
-	Message            Message        `json:"message"`
+	ID                 string           `json:"id"`
+	AccountID          string           `json:"account_id"`
+	SenderIdentityID   string           `json:"sender_identity_id,omitempty"`
+	SMIMEMode          SMIMEComposeMode `json:"smime_mode,omitempty"`
+	MessageID          string           `json:"message_id"`
+	Revision           int              `json:"revision"`
+	SyncState          DraftSyncState   `json:"sync_state"`
+	RemoteLocationID   string           `json:"remote_location_id,omitempty"`
+	PreviousLocationID string           `json:"previous_location_id,omitempty"`
+	OutboundAttemptID  string           `json:"outbound_attempt_id,omitempty"`
+	CustomHeaders      []CustomHeader   `json:"custom_headers,omitempty"`
+	LastErrorCode      string           `json:"last_error_code,omitempty"`
+	CreatedAt          time.Time        `json:"created_at"`
+	UpdatedAt          time.Time        `json:"updated_at"`
+	Message            Message          `json:"message"`
 }
 
 type DraftSave struct {

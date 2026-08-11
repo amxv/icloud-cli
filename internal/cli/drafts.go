@@ -13,20 +13,21 @@ import (
 )
 
 type publicDraft struct {
-	ID                 string                    `json:"id"`
-	AccountID          string                    `json:"account_id"`
-	SenderIdentityID   string                    `json:"sender_identity_id,omitempty"`
-	MessageID          string                    `json:"message_id"`
-	Revision           int                       `json:"revision"`
-	SyncState          maildomain.DraftSyncState `json:"sync_state"`
-	RemoteLocationID   string                    `json:"remote_location_id,omitempty"`
-	PreviousLocationID string                    `json:"previous_location_id,omitempty"`
-	OutboundAttemptID  string                    `json:"outbound_attempt_id,omitempty"`
-	LastErrorCode      string                    `json:"last_error_code,omitempty"`
-	BCCCount           int                       `json:"bcc_count,omitempty"`
-	CreatedAt          time.Time                 `json:"created_at"`
-	UpdatedAt          time.Time                 `json:"updated_at"`
-	Message            publicMessage             `json:"message"`
+	ID                 string                      `json:"id"`
+	AccountID          string                      `json:"account_id"`
+	SenderIdentityID   string                      `json:"sender_identity_id,omitempty"`
+	SMIMEMode          maildomain.SMIMEComposeMode `json:"smime_mode,omitempty"`
+	MessageID          string                      `json:"message_id"`
+	Revision           int                         `json:"revision"`
+	SyncState          maildomain.DraftSyncState   `json:"sync_state"`
+	RemoteLocationID   string                      `json:"remote_location_id,omitempty"`
+	PreviousLocationID string                      `json:"previous_location_id,omitempty"`
+	OutboundAttemptID  string                      `json:"outbound_attempt_id,omitempty"`
+	LastErrorCode      string                      `json:"last_error_code,omitempty"`
+	BCCCount           int                         `json:"bcc_count,omitempty"`
+	CreatedAt          time.Time                   `json:"created_at"`
+	UpdatedAt          time.Time                   `json:"updated_at"`
+	Message            publicMessage               `json:"message"`
 }
 
 type draftData struct {
@@ -107,7 +108,7 @@ func newDraftSaveCommand(state *executionState, update bool) *cobra.Command {
 			}
 			var jsonRequest draftSaveJSONRequest
 			if used, inputErr := readJSONInput(cmd, state, input, &jsonRequest,
-				"from", "signature", "to", "cc", "bcc", "reply-to", "subject", "body", "body-file", "html-body", "html-body-file", "header", "attach", "attach-name", "attach-type", "attach-disposition", "attach-cid"); inputErr != nil {
+				"from", "signature", "smime", "to", "cc", "bcc", "reply-to", "subject", "body", "body-file", "html-body", "html-body-file", "header", "attach", "attach-name", "attach-type", "attach-disposition", "attach-cid"); inputErr != nil {
 				return inputErr
 			} else if used {
 				if !update && strings.TrimSpace(jsonRequest.DraftID) != "" {
@@ -153,6 +154,7 @@ func newDraftSaveCommand(state *executionState, update bool) *cobra.Command {
 func bindDraftComposeFlags(command *cobra.Command, flags *sendFlags) {
 	command.Flags().StringVar(&flags.From, "from", "", "Sender identity by stable mid_… ID or configured address (defaults to the account's local default identity)")
 	command.Flags().StringVar(&flags.Signature, "signature", "", "Override the configured new-message signature with one sig_… ID or none")
+	command.Flags().StringVar(&flags.SMIME, "smime", "", "S/MIME protection to apply when this draft is sent: none, sign, encrypt, or sign-encrypt")
 	command.Flags().StringArrayVar(&flags.To, "to", nil, "Recipient address; repeat or provide a comma-separated address list")
 	command.Flags().StringArrayVar(&flags.CC, "cc", nil, "Cc recipient address; repeat as needed")
 	command.Flags().StringArrayVar(&flags.BCC, "bcc", nil, "Bcc recipient preserved in the saved draft; hidden from default output")
@@ -473,13 +475,16 @@ func newDraftDeleteCommand(state *executionState) *cobra.Command {
 }
 
 func sanitizeDraft(value maildomain.Draft) publicDraft {
-	return publicDraft{ID: value.ID, AccountID: value.AccountID, SenderIdentityID: value.SenderIdentityID, MessageID: value.MessageID, Revision: value.Revision, SyncState: value.SyncState,
+	return publicDraft{ID: value.ID, AccountID: value.AccountID, SenderIdentityID: value.SenderIdentityID, SMIMEMode: value.SMIMEMode, MessageID: value.MessageID, Revision: value.Revision, SyncState: value.SyncState,
 		RemoteLocationID: value.RemoteLocationID, PreviousLocationID: value.PreviousLocationID, OutboundAttemptID: value.OutboundAttemptID,
 		LastErrorCode: value.LastErrorCode, BCCCount: len(value.Message.BCC), CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt, Message: sanitizeMessage(value.Message)}
 }
 
 func renderDraft(renderer *CompactTextRenderer, value maildomain.Draft, verbose bool) error {
 	fields := []CompactField{Field("sender_identity", value.SenderIdentityID), Field("message", value.MessageID), Field("revision", value.Revision), Field("state", value.SyncState), Field("to", formatAddresses(value.Message.To)), Field("cc", formatAddresses(value.Message.CC)), Field("bcc", len(value.Message.BCC)), Field("subject", value.Message.Subject), Field("attachments", value.Message.AttachmentCount), Field("excerpt", Excerpt(value.Message.Snippet, DefaultExcerptRunes))}
+	if value.SMIMEMode != maildomain.SMIMEComposeNone {
+		fields = append(fields, Field("smime", string(value.SMIMEMode)))
+	}
 	if verbose {
 		fields = append(fields, Field("remote_location", value.RemoteLocationID), Field("previous_location", value.PreviousLocationID), Field("outbound_attempt", value.OutboundAttemptID), Field("last_error", value.LastErrorCode), Field("updated", value.UpdatedAt))
 	}

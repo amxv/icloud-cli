@@ -18,7 +18,7 @@ type DraftRepository struct{ db *sql.DB }
 const draftColumns = `
 SELECT draft_id, account_id, sender_identity_id, message_id, revision, sync_state,
        remote_location_id, previous_location_id, outbound_attempt_id,
-       custom_headers_json, last_error_code, created_at, updated_at
+       custom_headers_json, smime_mode, last_error_code, created_at, updated_at
 FROM mail_drafts`
 
 func (repository *DraftRepository) Save(ctx context.Context, input maildomain.DraftSave) (maildomain.Draft, error) {
@@ -103,8 +103,8 @@ ON CONFLICT(message_id) DO UPDATE SET
 INSERT INTO mail_drafts (
     draft_id, account_id, sender_identity_id, message_id, revision, sync_state,
     remote_location_id, previous_location_id, outbound_attempt_id,
-    custom_headers_json, last_error_code, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, 'local', '', '', '', ?, '', ?, ?)
+    custom_headers_json, smime_mode, last_error_code, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, 'local', '', '', '', ?, ?, '', ?, ?)
 ON CONFLICT(draft_id) DO UPDATE SET
     sender_identity_id = excluded.sender_identity_id,
     revision = excluded.revision,
@@ -116,9 +116,10 @@ ON CONFLICT(draft_id) DO UPDATE SET
     remote_location_id = '',
     outbound_attempt_id = '',
     custom_headers_json = excluded.custom_headers_json,
+    smime_mode = excluded.smime_mode,
     last_error_code = '',
     updated_at = excluded.updated_at`,
-		input.DraftID, input.AccountID, strings.TrimSpace(request.SenderIdentityID), input.MessageID, input.Revision, string(headersJSON), timestamp, timestamp); err != nil {
+		input.DraftID, input.AccountID, strings.TrimSpace(request.SenderIdentityID), input.MessageID, input.Revision, string(headersJSON), string(request.SMIMEMode), timestamp, timestamp); err != nil {
 		return maildomain.Draft{}, fmt.Errorf("persist draft lifecycle: %w", err)
 	}
 	value, err := scanDraft(tx.QueryRowContext(ctx, draftColumns+` WHERE draft_id = ?`, input.DraftID))
@@ -426,19 +427,24 @@ func scanDraft(row rowScanner) (maildomain.Draft, error) {
 	var value maildomain.Draft
 	var state string
 	var headersJSON, createdAt, updatedAt string
+	var smimeMode string
 	if err := row.Scan(&value.ID, &value.AccountID, &value.SenderIdentityID, &value.MessageID, &value.Revision, &state,
 		&value.RemoteLocationID, &value.PreviousLocationID, &value.OutboundAttemptID,
-		&headersJSON, &value.LastErrorCode, &createdAt, &updatedAt); err != nil {
+		&headersJSON, &smimeMode, &value.LastErrorCode, &createdAt, &updatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return maildomain.Draft{}, maildomain.ErrDraftNotFound
 		}
 		return maildomain.Draft{}, fmt.Errorf("scan draft: %w", err)
 	}
 	value.SyncState = maildomain.DraftSyncState(state)
+	var err error
+	value.SMIMEMode, err = maildomain.NormalizeSMIMEComposeMode(maildomain.SMIMEComposeMode(smimeMode))
+	if err != nil {
+		return maildomain.Draft{}, fmt.Errorf("decode draft S/MIME mode: %w", err)
+	}
 	if err := json.Unmarshal([]byte(headersJSON), &value.CustomHeaders); err != nil {
 		return maildomain.Draft{}, fmt.Errorf("decode draft headers: %w", err)
 	}
-	var err error
 	value.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAt)
 	if err != nil {
 		return maildomain.Draft{}, err

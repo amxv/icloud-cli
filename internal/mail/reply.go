@@ -20,6 +20,8 @@ type ReplyRequest struct {
 	ParentFolder          string
 	SenderIdentityID      string
 	SignatureSelector     string
+	SMIMEMode             SMIMEComposeMode
+	SMIMEPlan             *SMIMEOutboundPlan
 	ReplyAll              bool
 	To                    []Address
 	CC                    []Address
@@ -146,7 +148,7 @@ func BuildReplyPlan(parent Message, threadID string, selfAddresses []string, inp
 		kind = OutboundKindReplyAll
 	}
 	send := SendRequest{
-		Kind: kind, ParentMessageID: parentID, SenderIdentityID: strings.TrimSpace(input.SenderIdentityID), SignatureSelector: strings.TrimSpace(input.SignatureSelector),
+		Kind: kind, ParentMessageID: parentID, SenderIdentityID: strings.TrimSpace(input.SenderIdentityID), SignatureSelector: strings.TrimSpace(input.SignatureSelector), SMIMEMode: input.SMIMEMode, SMIMEPlan: input.SMIMEPlan,
 		To: finalTo, CC: finalCC, BCC: addedBCC,
 		Subject: ReplySubject(parent.Subject), TextBody: input.TextBody, HTMLBody: input.HTMLBody,
 		Headers: input.Headers, InReplyTo: inReplyTo, References: references,

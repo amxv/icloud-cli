@@ -178,7 +178,7 @@ func mailSettingsCompatibility(identities []account.MailIdentity, verbose bool) 
 		HideMyEmailOutbound: capability(hme, "Configure only a pre-existing HME identity; outbound use requires durable accepted-SMTP evidence for that exact address."),
 		SMIMEInspection:     capability(maildomain.SettingsSupported, "Inbound S/MIME signature inspection and public certificate trust are available locally."),
 		SMIMEDecryption:     capability(maildomain.SettingsSupported, "Configure an S/MIME identity with an external private-key reference, then use message show --decrypt."),
-		SMIME:               capability(maildomain.SettingsUnsupported, "Outbound S/MIME signing and encryption are not yet available."),
+		SMIME:               capability(maildomain.SettingsSupported, "Outbound send/reply/forward and draft-send support explicit S/MIME sign, encrypt, and sign-then-encrypt modes using configured identities and trusted recipient certificates."),
 	}
 }
 

@@ -77,6 +77,7 @@ type SMIMEStatus struct {
 }
 
 type SMIMECertificateMaterial struct {
+	ID          string
 	Email       string
 	Trusted     bool
 	Certificate *x509.Certificate

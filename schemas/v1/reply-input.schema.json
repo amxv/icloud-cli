@@ -81,6 +81,9 @@
         "signature": {
           "type": "string"
         },
+        "smime": {
+          "type": "string"
+        },
         "to": {
           "items": {
             "type": "string"

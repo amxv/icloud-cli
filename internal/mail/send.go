@@ -116,6 +116,8 @@ type SendRequest struct {
 	InReplyTo             string               `json:"in_reply_to,omitempty"`
 	References            []string             `json:"references,omitempty"`
 	Attachments           []OutboundAttachment `json:"attachments,omitempty"`
+	SMIMEMode             SMIMEComposeMode     `json:"smime_mode,omitempty"`
+	SMIMEPlan             *SMIMEOutboundPlan   `json:"smime_plan,omitempty"`
 	IdempotencyKey        string               `json:"-"`
 	RetryOfAttemptID      string               `json:"-"`
 	AuthorizeUnknownRetry bool                 `json:"-"`
@@ -144,6 +146,7 @@ type SendPreview struct {
 	InReplyTo        string               `json:"in_reply_to,omitempty"`
 	References       []string             `json:"references,omitempty"`
 	Attachments      []OutboundAttachment `json:"attachments,omitempty"`
+	SMIME            *SMIMEOutboundPlan   `json:"smime,omitempty"`
 	BodyParts        int                  `json:"body_parts"`
 	AttachmentCount  int                  `json:"attachment_count"`
 	AttachmentBytes  int64                `json:"attachment_bytes"`
@@ -308,6 +311,19 @@ func normalizeMessageRequest(value SendRequest, requireTo, requireSubject, requi
 	value.Attachments, err = normalizeOutboundAttachments(value.Attachments)
 	if err != nil {
 		return SendRequest{}, err
+	}
+	value.SMIMEMode, err = NormalizeSMIMEComposeMode(value.SMIMEMode)
+	if err != nil {
+		return SendRequest{}, fmt.Errorf("%w: %v", ErrInvalidSendRequest, err)
+	}
+	if value.SMIMEMode == SMIMEComposeNone {
+		value.SMIMEPlan = nil
+	} else if value.SMIMEPlan != nil {
+		plan, planErr := NormalizeSMIMEOutboundPlan(*value.SMIMEPlan, value.SMIMEMode)
+		if planErr != nil {
+			return SendRequest{}, fmt.Errorf("%w: %v", ErrInvalidSendRequest, planErr)
+		}
+		value.SMIMEPlan = &plan
 	}
 	value.IdempotencyKey = strings.TrimSpace(value.IdempotencyKey)
 	if len(value.IdempotencyKey) > 256 || strings.ContainsFunc(value.IdempotencyKey, unicode.IsControl) {

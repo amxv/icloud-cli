@@ -572,6 +572,9 @@
     "sender_identity_id": {
       "type": "string"
     },
+    "smime_mode": {
+      "type": "string"
+    },
     "sync_state": {
       "type": "string"
     },

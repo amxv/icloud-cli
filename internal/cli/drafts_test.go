@@ -151,7 +151,7 @@ func TestDraftCommandHelpExposesLifecycleAndSafetyControls(t *testing.T) {
 		want []string
 	}{
 		{[]string{"mail", "draft", "--help"}, []string{"create", "update", "list", "show", "sync", "send", "delete"}},
-		{[]string{"mail", "draft", "create", "--help"}, []string{"--from", "--to", "--bcc", "--attach", "may be empty"}},
+		{[]string{"mail", "draft", "create", "--help"}, []string{"--from", "--smime", "--to", "--bcc", "--attach", "may be empty"}},
 		{[]string{"mail", "draft", "show", "--help"}, []string{"--format", "raw", "--body-only", "--headers"}},
 		{[]string{"mail", "draft", "sync", "--help"}, []string{"--folder", "--limit", "provider Drafts"}},
 		{[]string{"mail", "draft", "send", "--help"}, []string{"--from", "--dry-run", "--yes", "idempotent"}},
@@ -172,13 +172,13 @@ func TestDraftCommandHelpExposesLifecycleAndSafetyControls(t *testing.T) {
 func TestPhase5DraftSenderFlagsAndJSONReachTheNormalServicePath(t *testing.T) {
 	service := &draftTestMailService{show: privateDraftFixture()}
 	result, stdout, stderr := executeDraftCLITest(t, service, "", "mail", "draft", "create",
-		"--from", "mid_alias", "--to", "recipient@example.test", "--subject", "Flag sender", "--body", "hello")
-	if result.ExitCode != 0 || stderr != "" || service.createRequest.SenderIdentityID != "mid_alias" {
+		"--from", "mid_alias", "--smime", "sign-encrypt", "--to", "recipient@example.test", "--subject", "Flag sender", "--body", "hello")
+	if result.ExitCode != 0 || stderr != "" || service.createRequest.SenderIdentityID != "mid_alias" || service.createRequest.SMIMEMode != maildomain.SMIMEComposeSignEncrypt {
 		t.Fatalf("create result=%+v request=%+v stdout=%q stderr=%q", result, service.createRequest, stdout, stderr)
 	}
-	input := `{"draft_id":"drf_test","message":{"from":"alias@example.test","to":["recipient@example.test"],"subject":"JSON sender","body":"hello"}}`
+	input := `{"draft_id":"drf_test","message":{"from":"alias@example.test","smime":"encrypt","to":["recipient@example.test"],"subject":"JSON sender","body":"hello"}}`
 	result, stdout, stderr = executeDraftCLITest(t, service, input, "mail", "draft", "update", "--input-json", "-")
-	if result.ExitCode != 0 || stderr != "" || service.updateRequest.SenderIdentityID != "alias@example.test" {
+	if result.ExitCode != 0 || stderr != "" || service.updateRequest.SenderIdentityID != "alias@example.test" || service.updateRequest.SMIMEMode != maildomain.SMIMEComposeEncrypt {
 		t.Fatalf("update result=%+v request=%+v stdout=%q stderr=%q", result, service.updateRequest, stdout, stderr)
 	}
 	result, stdout, stderr = executeDraftCLITest(t, service, `{"draft_id":"drf_test","from":"mid_send"}`,

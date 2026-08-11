@@ -124,6 +124,31 @@ reused=false
 
 The submitted subject, body, recipients, BCC list, and custom headers are not echoed after a real send. The accepted message is immediately readable and searchable through its local `msg_…` and `thr_…` IDs.
 
+## Sign or encrypt outbound mail with S/MIME
+
+S/MIME protection is an explicit per-compose choice. Configure the selected sender's S/MIME certificate/private-key reference first, then import and trust a public certificate for every external recipient that should receive encrypted mail. Private-key bytes remain outside SQLite and never become compose arguments or public output.
+
+Review certificate coverage before sending:
+
+```bash
+icloud mail send \
+  --to client@example.com \
+  --cc copy@example.com \
+  --bcc hidden@example.com \
+  --subject 'Protected update' \
+  --body-file message.txt \
+  --smime sign-encrypt \
+  --dry-run
+```
+
+`--smime` accepts `sign`, `encrypt`, or `sign-encrypt`; omitting it keeps the ordinary compose path unchanged. Signing uses the S/MIME identity linked to the selected `--from` identity. Encryption resolves trusted, currently usable account-scoped certificates for **every** To, Cc, and Bcc recipient before an outbound attempt or SMTP connection is created. Missing or untrusted coverage fails closed—there is no plaintext downgrade or partially encrypted send. The selected sender certificate is also included as an encryption recipient so the sender can decrypt the protected Sent copy with the configured key.
+
+The compact/JSON dry run reports the selected S/MIME identity, sender certificate, and per-recipient certificate IDs/fingerprints without exposing private-key references or bytes. Bcc addresses are visible only because dry-run is an explicit private review mode; the final RFC message still contains no `Bcc` header or Bcc address. `--dry-run --format raw` is intentionally unavailable for S/MIME because the actual cryptographic MIME is generated only at the real staged send; use the certificate-coverage preview instead.
+
+The ordinary text/HTML/signature/inline-CID/attachment MIME is composed first. `sign-encrypt` then signs that complete MIME entity and encrypts the signed entity. RFC envelope headers needed for identity and reconciliation—including From, To, Cc, Subject, Date, Message-ID, and reply-threading headers—remain outside the protected MIME entity, while bodies and attachments are protected. The **final** signed/encrypted bytes are the durable raw blob sent to SMTP and copied to Sent; their hash/size bind the outbound attempt. The 20 MiB composed-message ceiling therefore applies after CMS/base64 expansion, not only to the ordinary pre-S/MIME message.
+
+S/MIME uses the same idempotency and unknown-outcome rules as ordinary mail. Repeating the same accepted/unknown request with the same idempotency key reuses the durable attempt and final raw bytes; it does not sign, encrypt, or submit a second message. Changing protection mode or resolved certificate coverage changes the reviewed request identity and cannot silently reuse a prior key. Reply, reply-all, and forward expose the same `--smime` control.
+
 ## Keep an unfinished message as a recoverable draft
 
 Draft creation is local-only, so you can assemble recipients, text/HTML, safe custom headers, ordinary attachments, and inline CID resources without opening IMAP or SMTP:
@@ -172,6 +197,8 @@ icloud mail draft send drf_… --from alias@icloud.com --yes
 ```
 
 Draft create/update persist the stable `mid_…` identity used to compose that revision. Draft send also accepts `--from`; if omitted, it resolves the account's current enabled default sender before the outbound request is hashed. A proven send removes known `\Draft` provider copies before removing the local draft. If SMTP acceptance is unknown, the draft and provider copy stay in place. If the message is proven sent but cleanup is incomplete, do not resend; run `icloud mail draft sync drf_…` (adding the explicit `--folder` selector when needed) so cleanup can resume from the saved attempt state.
+
+A draft may also store `--smime sign`, `encrypt`, or `sign-encrypt` as **send-time protection intent**. The saved/local/provider draft remains ordinary editable MIME; certificate/key resolution and cryptographic wrapping happen only when `draft send` is previewed/sent. This avoids persisting an encrypted draft that the CLI can no longer edit while still making missing or changed certificate coverage fail before SMTP. `draft show`/`draft list` report the saved protection mode, and `draft send --dry-run` reports the then-current certificate coverage.
 
 Signature expansion is part of the saved draft revision. `draft create` and every explicit `draft update` apply the signature/default selected at that moment before storing the revision. Editing or replacing that signature later does **not** mutate an already-saved draft or change a later `draft send` implicitly. To apply the current signature to changed draft content, perform an explicit `draft update`; that creates a new revision whose expanded body can be previewed before sending.
 

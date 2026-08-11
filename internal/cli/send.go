@@ -19,6 +19,7 @@ import (
 type sendFlags struct {
 	From                   string
 	Signature              string
+	SMIME                  string
 	To                     []string
 	CC                     []string
 	BCC                    []string
@@ -96,7 +97,7 @@ func newMailSendCommand(state *executionState) *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			var jsonRequest composeJSONRequest
 			if used, err := readJSONInput(cmd, state, input, &jsonRequest,
-				"from", "signature", "to", "cc", "bcc", "reply-to", "subject", "body", "body-file", "html-body", "html-body-file",
+				"from", "signature", "smime", "to", "cc", "bcc", "reply-to", "subject", "body", "body-file", "html-body", "html-body-file",
 				"header", "attach", "attach-name", "attach-type", "attach-disposition", "attach-cid", "idempotency-key", "retry-of", "retry-unknown"); err != nil {
 				return err
 			} else if used {
@@ -171,6 +172,7 @@ func newMailSendCommand(state *executionState) *cobra.Command {
 	command.Flags().StringArrayVar(&flags.To, "to", nil, "Recipient address; repeat or provide a comma-separated address list")
 	command.Flags().StringVar(&flags.From, "from", "", "Sender identity by stable mid_… ID or configured address (defaults to the account's local default identity)")
 	command.Flags().StringVar(&flags.Signature, "signature", "", "Override the configured signature with one sig_… ID or none")
+	command.Flags().StringVar(&flags.SMIME, "smime", "", "S/MIME protection: none, sign, encrypt, or sign-encrypt")
 	command.Flags().StringArrayVar(&flags.CC, "cc", nil, "Cc recipient address; repeat as needed")
 	command.Flags().StringArrayVar(&flags.BCC, "bcc", nil, "Bcc envelope recipient; omitted from message headers")
 	command.Flags().StringVar(&flags.ReplyTo, "reply-to", "", "Optional Reply-To address")
@@ -243,7 +245,7 @@ func sendRequestFromFlags(state *executionState, flags sendFlags) (maildomain.Se
 		return maildomain.SendRequest{}, false, err
 	}
 	return maildomain.SendRequest{
-		SenderIdentityID: flags.From, SignatureSelector: flags.Signature,
+		SenderIdentityID: flags.From, SignatureSelector: flags.Signature, SMIMEMode: maildomain.SMIMEComposeMode(flags.SMIME),
 		To: to, CC: cc, BCC: bcc, ReplyTo: replyTo,
 		Subject: flags.Subject, TextBody: text, HTMLBody: html,
 		Headers: headers, Attachments: attachments, IdempotencyKey: flags.IdempotencyKey,
@@ -403,6 +405,9 @@ func renderSendPreview(ctx context.Context, state *executionState, preview maild
 		_, err := io.WriteString(state.stdout, preview.HTMLBody)
 		return err
 	case "raw":
+		if preview.SMIME != nil && preview.SMIME.Mode != maildomain.SMIMEComposeNone {
+			return NewAppError(ErrorSafety, "raw dry-run output is unavailable for S/MIME because final cryptographic bytes are created only on the real staged send; use compact or JSON preview for certificate coverage", false)
+		}
 		messageID, err := maildomain.GenerateOutboundMessageID(preview.From.Email)
 		if err != nil {
 			return WrapAppError(ErrorInternal, "cannot allocate a dry-run Message-ID", false, err)
@@ -415,7 +420,7 @@ func renderSendPreview(ctx context.Context, state *executionState, preview maild
 
 func renderCompactSendPreview(writer io.Writer, preview maildomain.SendPreview, showHeaders, verbose bool) error {
 	renderer := NewCompactTextRenderer(writer)
-	if err := renderer.Record("send-preview", preview.AccountID,
+	fields := []CompactField{
 		Field("sender_identity", preview.SenderIdentityID),
 		Field("signature", preview.SignatureID),
 		Field("from", formatAddress(preview.From)),
@@ -428,7 +433,11 @@ func renderCompactSendPreview(writer io.Writer, preview maildomain.SendPreview, 
 		Field("attachments", fmt.Sprintf("%d", preview.AttachmentCount)),
 		Field("request_hash", preview.RequestHash),
 		Field("html_bytes", verboseValue(verbose, len(preview.HTMLBody))),
-	); err != nil {
+	}
+	if preview.SMIME != nil && preview.SMIME.Mode != maildomain.SMIMEComposeNone {
+		fields = append(fields, Field("smime", string(preview.SMIME.Mode)))
+	}
+	if err := renderer.Record("send-preview", preview.AccountID, fields...); err != nil {
 		return err
 	}
 	if showHeaders {
@@ -448,6 +457,23 @@ func renderCompactSendPreview(writer io.Writer, preview maildomain.SendPreview, 
 			Field("sha256", attachment.ContentHash),
 		); err != nil {
 			return err
+		}
+	}
+	if preview.SMIME != nil {
+		if err := renderer.Record("smime", string(preview.SMIME.Mode),
+			Field("identity", preview.SMIME.SMIMEIdentityID),
+			Field("sender_certificate", preview.SMIME.SenderCertificateID),
+			Field("recipient_certificates", len(preview.SMIME.RecipientCertificates)),
+		); err != nil {
+			return err
+		}
+		for _, certificate := range preview.SMIME.RecipientCertificates {
+			if err := renderer.Record("smime-recipient", certificate.Email,
+				Field("certificate", certificate.CertificateID),
+				Field("sha256", certificate.FingerprintSHA256),
+			); err != nil {
+				return err
+			}
 		}
 	}
 	if preview.TextBody != "" {
@@ -539,7 +565,22 @@ func previewToRequest(preview maildomain.SendPreview) maildomain.SendRequest {
 		TextBody: preview.TextBody, HTMLBody: preview.HTMLBody, Headers: preview.Headers,
 		InReplyTo: preview.InReplyTo, References: preview.References,
 		Attachments: preview.Attachments,
+		SMIMEMode:   smimePreviewModeValue(preview.SMIME), SMIMEPlan: preview.SMIME,
 	}
+}
+
+func smimePreviewMode(value *maildomain.SMIMEOutboundPlan) string {
+	if value == nil || value.Mode == maildomain.SMIMEComposeNone {
+		return "none"
+	}
+	return string(value.Mode)
+}
+
+func smimePreviewModeValue(value *maildomain.SMIMEOutboundPlan) maildomain.SMIMEComposeMode {
+	if value == nil {
+		return maildomain.SMIMEComposeNone
+	}
+	return value.Mode
 }
 
 func optionalAddress(value *maildomain.Address) string {

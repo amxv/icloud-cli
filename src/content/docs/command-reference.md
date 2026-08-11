@@ -965,6 +965,7 @@ Flags:
       --json                             Emit one stable JSON success envelope
       --reply-to string                  Optional Reply-To address
       --signature string                 Override the configured new-message signature with one sig_… ID or none
+      --smime string                     S/MIME protection to apply when this draft is sent: none, sign, encrypt, or sign-encrypt
       --subject string                   Draft subject; may be empty
       --to stringArray                   Recipient address; repeat or provide a comma-separated address list
 
@@ -1151,6 +1152,7 @@ Flags:
       --json                             Emit one stable JSON success envelope
       --reply-to string                  Optional Reply-To address
       --signature string                 Override the configured new-message signature with one sig_… ID or none
+      --smime string                     S/MIME protection to apply when this draft is sent: none, sign, encrypt, or sign-encrypt
       --subject string                   Draft subject; may be empty
       --to stringArray                   Recipient address; repeat or provide a comma-separated address list
 
@@ -1799,6 +1801,7 @@ Flags:
       --retry-of string                  Link an explicit retry to one failed or unknown send_… attempt
       --retry-unknown                    Authorize one duplicate-risk retry of an unknown attempt; requires --retry-of and --yes
       --signature string                 Override the configured forward signature with one sig_… ID or none
+      --smime string                     S/MIME protection: none, sign, encrypt, or sign-encrypt
       --to stringArray                   Recipient address; repeat or provide a comma-separated address list
       --verbose                          With --dry-run, include custom-header detail and HTML byte count
       --yes                              Confirm an intentional non-interactive forward
@@ -3044,6 +3047,7 @@ Flags:
       --retry-of string                  Link an explicit retry to one failed or unknown send_… attempt
       --retry-unknown                    Authorize one duplicate-risk retry of an unknown attempt; requires --retry-of and --yes
       --signature string                 Override the configured reply signature with one sig_… ID or none
+      --smime string                     S/MIME protection: none, sign, encrypt, or sign-encrypt
       --to stringArray                   Add a To recipient; repeat or provide a comma-separated address list
       --verbose                          With --dry-run, include custom-header detail and HTML byte count
       --yes                              Confirm an intentional non-interactive reply
@@ -3095,6 +3099,7 @@ Flags:
       --retry-of string                  Link an explicit retry to one failed or unknown send_… attempt
       --retry-unknown                    Authorize one duplicate-risk retry of an unknown attempt; requires --retry-of and --yes
       --signature string                 Override the configured reply signature with one sig_… ID or none
+      --smime string                     S/MIME protection: none, sign, encrypt, or sign-encrypt
       --to stringArray                   Add a To recipient; repeat or provide a comma-separated address list
       --verbose                          With --dry-run, include custom-header detail and HTML byte count
       --yes                              Confirm an intentional non-interactive reply
@@ -3426,6 +3431,7 @@ Flags:
       --retry-of string                  Link an explicit retry to one failed or unknown send_… attempt
       --retry-unknown                    Authorize one duplicate-risk retry of an unknown attempt; requires --retry-of and --yes
       --signature string                 Override the configured signature with one sig_… ID or none
+      --smime string                     S/MIME protection: none, sign, encrypt, or sign-encrypt
       --subject string                   Message subject
       --to stringArray                   Recipient address; repeat or provide a comma-separated address list
       --verbose                          With --dry-run, include normalized custom-header detail and HTML byte count

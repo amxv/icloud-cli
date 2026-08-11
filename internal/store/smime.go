@@ -213,7 +213,7 @@ func (repository *SMIMECertificateRepository) Materials(ctx context.Context, acc
 		if err != nil {
 			return nil, fmt.Errorf("parse stored S/MIME certificate %s: %w", value.ID, err)
 		}
-		materials = append(materials, maildomain.SMIMECertificateMaterial{Email: value.Email, Trusted: value.Trusted, Certificate: cert})
+		materials = append(materials, maildomain.SMIMECertificateMaterial{ID: value.ID, Email: value.Email, Trusted: value.Trusted, Certificate: cert})
 	}
 	return materials, nil
 }

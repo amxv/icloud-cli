@@ -40,7 +40,7 @@ func newMailForwardCommand(state *executionState) *cobra.Command {
 			}
 			var jsonRequest forwardJSONRequest
 			if used, err := readJSONInput(cmd, state, input, &jsonRequest,
-				"from", "signature", "to", "cc", "bcc", "reply-to", "body", "body-file", "html-body", "html-body-file",
+				"from", "signature", "smime", "to", "cc", "bcc", "reply-to", "body", "body-file", "html-body", "html-body-file",
 				"header", "attach", "attach-name", "attach-type", "attach-disposition", "attach-cid", "original", "include-attachment", "idempotency-key", "retry-of", "retry-unknown"); err != nil {
 				return err
 			} else if used {
@@ -97,6 +97,8 @@ func newMailForwardCommand(state *executionState) *cobra.Command {
 				if preview.NewAttachmentCount > 0 {
 					request.Attachments = append([]maildomain.OutboundAttachment(nil), preview.Send.Attachments[:preview.NewAttachmentCount]...)
 				}
+				request.SMIMEMode = smimePreviewModeValue(preview.Send.SMIME)
+				request.SMIMEPlan = preview.Send.SMIME
 			}
 			accountValue, attempt, reused, schemaVersion, err := state.mail.MailForward(cmd.Context(), state.global.Home, state.global.Account, request)
 			if err != nil {
@@ -118,6 +120,7 @@ func newMailForwardCommand(state *executionState) *cobra.Command {
 func bindForwardFlags(command *cobra.Command, flags *forwardFlags) {
 	command.Flags().StringVar(&flags.From, "from", "", "Sender identity by stable mid_… ID or configured address (defaults to the account's local default identity)")
 	command.Flags().StringVar(&flags.Signature, "signature", "", "Override the configured forward signature with one sig_… ID or none")
+	command.Flags().StringVar(&flags.SMIME, "smime", "", "S/MIME protection: none, sign, encrypt, or sign-encrypt")
 	command.Flags().StringArrayVar(&flags.To, "to", nil, "Recipient address; repeat or provide a comma-separated address list")
 	command.Flags().StringArrayVar(&flags.CC, "cc", nil, "Cc recipient address; repeat as needed")
 	command.Flags().StringArrayVar(&flags.BCC, "bcc", nil, "Bcc envelope recipient; omitted from message headers")
@@ -155,7 +158,7 @@ func forwardRequestFromFlags(state *executionState, sourceID string, flags forwa
 		return maildomain.ForwardRequest{}, false, NewAppError(ErrorUsage, "--original must be quoted, eml, or none", false)
 	}
 	return maildomain.ForwardRequest{
-		SourceMessageID: sourceID, SenderIdentityID: parsed.SenderIdentityID, SignatureSelector: parsed.SignatureSelector, OriginalMode: mode,
+		SourceMessageID: sourceID, SenderIdentityID: parsed.SenderIdentityID, SignatureSelector: parsed.SignatureSelector, SMIMEMode: parsed.SMIMEMode, OriginalMode: mode,
 		OriginalAttachmentIDs: append([]string(nil), flags.OriginalAttachments...),
 		To:                    parsed.To, CC: parsed.CC, BCC: parsed.BCC, ReplyTo: parsed.ReplyTo,
 		TextBody: parsed.TextBody, HTMLBody: parsed.HTMLBody,
@@ -185,6 +188,9 @@ func renderForwardPreview(ctx context.Context, state *executionState, preview ma
 		_, err := io.WriteString(state.stdout, preview.Send.HTMLBody)
 		return err
 	case "raw":
+		if preview.Send.SMIME != nil && preview.Send.SMIME.Mode != maildomain.SMIMEComposeNone {
+			return NewAppError(ErrorSafety, "raw dry-run output is unavailable for an S/MIME forward; use compact or JSON preview for certificate coverage", false)
+		}
 		messageID, err := maildomain.GenerateOutboundMessageID(preview.Send.From.Email)
 		if err != nil {
 			return WrapAppError(ErrorInternal, "cannot allocate a forward preview Message-ID", false, err)
@@ -198,7 +204,7 @@ func renderForwardPreview(ctx context.Context, state *executionState, preview ma
 func renderCompactForwardPreview(writer io.Writer, preview maildomain.ForwardPreview, showHeaders, verbose bool) error {
 	renderer := NewCompactTextRenderer(writer)
 	bodyExcerpt := Excerpt(preview.Send.TextBody, DefaultExcerptRunes)
-	if err := renderer.Record("forward-preview", preview.SourceMessageID,
+	fields := []CompactField{
 		Field("kind", maildomain.OutboundKindForward),
 		Field("source_thread_id", preview.SourceThreadID),
 		Field("sender_identity", preview.Send.SenderIdentityID),
@@ -219,7 +225,11 @@ func renderCompactForwardPreview(writer io.Writer, preview maildomain.ForwardPre
 		Field("text_truncated", len([]rune(preview.Send.TextBody)) > DefaultExcerptRunes),
 		Field("request_hash", preview.Send.RequestHash),
 		Field("html_bytes", verboseValue(verbose, len(preview.Send.HTMLBody))),
-	); err != nil {
+	}
+	if preview.Send.SMIME != nil && preview.Send.SMIME.Mode != maildomain.SMIMEComposeNone {
+		fields = append(fields, Field("smime", string(preview.Send.SMIME.Mode)))
+	}
+	if err := renderer.Record("forward-preview", preview.SourceMessageID, fields...); err != nil {
 		return err
 	}
 	for _, attachment := range preview.OriginalAttachments {

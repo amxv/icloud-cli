@@ -564,7 +564,7 @@ func (unavailableMailboxAppender) AppendMailbox(context.Context, transport.AuthR
 func draftSendRequest(ctx context.Context, paths config.AppPaths, value maildomain.Draft, senderSelector string) (maildomain.SendRequest, error) {
 	message := value.Message
 	request := maildomain.SendRequest{
-		SenderIdentityID: strings.TrimSpace(senderSelector), SignatureExpanded: true,
+		SenderIdentityID: strings.TrimSpace(senderSelector), SignatureExpanded: true, SMIMEMode: value.SMIMEMode,
 		From: message.From,
 		To:   append([]maildomain.Address(nil), message.To...), CC: append([]maildomain.Address(nil), message.CC...), BCC: append([]maildomain.Address(nil), message.BCC...),
 		Subject: message.Subject, InReplyTo: message.InReplyTo, References: append([]string(nil), message.References...), Headers: append([]maildomain.CustomHeader(nil), value.CustomHeaders...),

@@ -92,8 +92,8 @@ func TestCapabilitiesPublishesVersionedAutomationAndSchemaContracts(t *testing.T
 	if !envelope.Data.MailOutbox {
 		t.Fatal("capabilities did not advertise the safe-retry Outbox")
 	}
-	if !envelope.Data.MailSMIMEInspection || !envelope.Data.MailSMIMECertificates || !envelope.Data.MailSMIMEIdentities || !envelope.Data.MailSMIMEDecryption {
-		t.Fatalf("capabilities did not advertise S/MIME surfaces: inspection=%v certificates=%v identities=%v decryption=%v", envelope.Data.MailSMIMEInspection, envelope.Data.MailSMIMECertificates, envelope.Data.MailSMIMEIdentities, envelope.Data.MailSMIMEDecryption)
+	if !envelope.Data.MailSMIMEInspection || !envelope.Data.MailSMIMECertificates || !envelope.Data.MailSMIMEIdentities || !envelope.Data.MailSMIMEDecryption || !envelope.Data.MailSMIMEOutbound {
+		t.Fatalf("capabilities did not advertise S/MIME surfaces: inspection=%v certificates=%v identities=%v decryption=%v outbound=%v", envelope.Data.MailSMIMEInspection, envelope.Data.MailSMIMECertificates, envelope.Data.MailSMIMEIdentities, envelope.Data.MailSMIMEDecryption, envelope.Data.MailSMIMEOutbound)
 	}
 	for _, target := range []string{"account", "mail-identity", "folder", "message", "thread", "selection", "purge", "attachment", "checkpoint", "attempt", "outbox", "smime-certificate", "smime-identity", "draft", "event", "error"} {
 		if got := envelope.Data.Schemas[target]; got != SchemaBaseID+target+".schema.json" {

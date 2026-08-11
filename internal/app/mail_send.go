@@ -56,9 +56,17 @@ func (commands accountCommands) MailSendPreview(
 	if err != nil {
 		return account.Account{}, maildomain.SendPreview{}, state.SchemaVersion(), mapOutboundAttachmentError(err)
 	}
-	normalized, hash, err := normalizeAccountSendRequest(sender, request)
+	normalized, _, err := normalizeAccountSendRequest(sender, request)
 	if err != nil {
 		return account.Account{}, maildomain.SendPreview{}, state.SchemaVersion(), mapSendRequestError(err)
+	}
+	normalized, err = commands.resolveOutboundSMIMEPlan(ctx, state, accountValue.ID, sender, normalized)
+	if err != nil {
+		return account.Account{}, maildomain.SendPreview{}, state.SchemaVersion(), err
+	}
+	hash, err := maildomain.SendRequestHash(normalized)
+	if err != nil {
+		return account.Account{}, maildomain.SendPreview{}, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot hash the normalized outbound request", false, err)
 	}
 	preview := maildomain.SendPreview{
 		Kind: normalized.Kind, ParentMessageID: normalized.ParentMessageID,
@@ -70,7 +78,7 @@ func (commands accountCommands) MailSendPreview(
 		ReplyTo: normalized.ReplyTo, Subject: normalized.Subject,
 		TextBody: normalized.TextBody, HTMLBody: normalized.HTMLBody, SignatureID: normalized.AppliedSignatureID,
 		Headers: normalized.Headers, InReplyTo: normalized.InReplyTo,
-		References: normalized.References, Attachments: normalized.Attachments,
+		References: normalized.References, Attachments: normalized.Attachments, SMIME: normalized.SMIMEPlan,
 		BodyParts: normalized.BodyPartCount(), AttachmentCount: len(normalized.Attachments),
 		AttachmentBytes: normalized.AttachmentByteSize(), RequestHash: hash,
 	}
@@ -109,9 +117,17 @@ func (commands accountCommands) MailSend(
 		return account.Account{}, maildomain.OutboundAttempt{}, false, state.SchemaVersion(), mapOutboundAttachmentError(err)
 	}
 	defer stagedFiles.Abort()
-	normalized, requestHash, err := normalizeAccountSendRequest(sender, request)
+	normalized, _, err := normalizeAccountSendRequest(sender, request)
 	if err != nil {
 		return account.Account{}, maildomain.OutboundAttempt{}, false, state.SchemaVersion(), mapSendRequestError(err)
+	}
+	normalized, err = commands.resolveOutboundSMIMEPlan(ctx, state, accountValue.ID, sender, normalized)
+	if err != nil {
+		return account.Account{}, maildomain.OutboundAttempt{}, false, state.SchemaVersion(), err
+	}
+	requestHash, err := maildomain.SendRequestHash(normalized)
+	if err != nil {
+		return account.Account{}, maildomain.OutboundAttempt{}, false, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot hash the normalized outbound request", false, err)
 	}
 	if err := validateOutboundRetry(ctx, state.Outbound(), accountValue.ID, normalized, requestHash); err != nil {
 		return account.Account{}, maildomain.OutboundAttempt{}, false, state.SchemaVersion(), err
@@ -120,6 +136,10 @@ func (commands accountCommands) MailSend(
 		return account.Account{}, maildomain.OutboundAttempt{}, false, state.SchemaVersion(), mapIdempotencyError(resolveErr)
 	} else if found {
 		return accountValue, existing, true, state.SchemaVersion(), nil
+	}
+	smimeMaterial, err := commands.resolveOutboundSMIMEMaterial(ctx, state, accountValue.ID, normalized)
+	if err != nil {
+		return account.Account{}, maildomain.OutboundAttempt{}, false, state.SchemaVersion(), err
 	}
 	attemptID, err := commands.generateID("send")
 	if err != nil {
@@ -134,12 +154,15 @@ func (commands accountCommands) MailSend(
 		return account.Account{}, maildomain.OutboundAttempt{}, false, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot allocate an RFC Message-ID", false, err)
 	}
 	composedAt := commands.timeNow()
-	staged, err := stageOutboundMessage(ctx, commands.outboundBlobStager(paths), normalized, rfcMessageID, composedAt)
+	staged, verificationStaged, err := stageOutboundMessage(ctx, commands.outboundBlobStager(paths), normalized, rfcMessageID, composedAt, smimeMaterial)
 	if err != nil {
 		return account.Account{}, maildomain.OutboundAttempt{}, false, state.SchemaVersion(), mapOutboundPreparationError(err)
 	}
 	defer staged.Abort()
-	reader, err := staged.Open()
+	if verificationStaged != staged {
+		defer verificationStaged.Abort()
+	}
+	reader, err := verificationStaged.Open()
 	if err != nil {
 		return account.Account{}, maildomain.OutboundAttempt{}, false, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "cannot reopen the composed message", false, err)
 	}
@@ -437,9 +460,9 @@ func isPermanentSenderRejection(err error) bool {
 	return errors.As(err, &typed) && typed.Failure != nil && typed.Failure.Stage == transport.StageSMTPMail && !typed.Failure.Retryable
 }
 
-func stageOutboundMessage(ctx context.Context, stager blob.Stager, request maildomain.SendRequest, messageID string, sentAt time.Time) (*blob.Staged, error) {
+func stageOutboundMessage(ctx context.Context, stager blob.Stager, request maildomain.SendRequest, messageID string, sentAt time.Time, smime maildomain.SMIMEOutboundMaterial) (*blob.Staged, *blob.Staged, error) {
 	if stager == nil {
-		return nil, errors.New("outbound blob stager is unavailable")
+		return nil, nil, errors.New("outbound blob stager is unavailable")
 	}
 	reader, writer := io.Pipe()
 	done := make(chan error, 1)
@@ -455,13 +478,59 @@ func stageOutboundMessage(ctx context.Context, stager blob.Stager, request maild
 		if staged != nil {
 			_ = staged.Abort()
 		}
-		return nil, stageErr
+		return nil, nil, stageErr
 	}
 	if composeErr != nil {
 		_ = staged.Abort()
-		return nil, composeErr
+		return nil, nil, composeErr
 	}
-	return staged, nil
+	if request.SMIMEMode == maildomain.SMIMEComposeNone {
+		return staged, staged, nil
+	}
+	ordinaryReader, err := staged.Open()
+	if err != nil {
+		_ = staged.Abort()
+		return nil, nil, err
+	}
+	ordinary, readErr := io.ReadAll(io.LimitReader(&appContextReader{ctx: ctx, reader: ordinaryReader}, maildomain.MaxSendMessageBytes+1))
+	closeErr := ordinaryReader.Close()
+	if readErr == nil {
+		readErr = closeErr
+	}
+	if readErr != nil {
+		zeroBytes(ordinary)
+		_ = staged.Abort()
+		return nil, nil, readErr
+	}
+	if len(ordinary) > maildomain.MaxSendMessageBytes {
+		zeroBytes(ordinary)
+		_ = staged.Abort()
+		return nil, nil, blob.ErrTooLarge
+	}
+	wrappedReader, wrappedWriter := io.Pipe()
+	wrappedDone := make(chan error, 1)
+	go func() {
+		wrapErr := maildomain.WrapOutboundSMIME(wrappedWriter, ordinary, smime)
+		zeroBytes(ordinary)
+		_ = wrappedWriter.CloseWithError(wrapErr)
+		wrappedDone <- wrapErr
+	}()
+	final, finalStageErr := stager.Stage(ctx, wrappedReader, -1)
+	_ = wrappedReader.Close()
+	wrapErr := <-wrappedDone
+	if finalStageErr != nil {
+		if final != nil {
+			_ = final.Abort()
+		}
+		_ = staged.Abort()
+		return nil, nil, finalStageErr
+	}
+	if wrapErr != nil {
+		_ = final.Abort()
+		_ = staged.Abort()
+		return nil, nil, wrapErr
+	}
+	return final, staged, nil
 }
 
 func (commands accountCommands) outboundBlobStager(paths config.AppPaths) blob.Stager {
@@ -540,6 +609,9 @@ func mapIdempotencyError(err error) error {
 }
 
 func mapOutboundPreparationError(err error) error {
+	if errors.Is(err, maildomain.ErrSMIMEOutboundInvalid) || errors.Is(err, maildomain.ErrSMIMEOutboundKeyUnavailable) || errors.Is(err, maildomain.ErrSMIMEOutboundUnsupported) || errors.Is(err, maildomain.ErrSMIMERecipientCertificateMissing) || errors.Is(err, maildomain.ErrSMIMERecipientCertificateUntrusted) {
+		return mapSMIMEOutboundError(err)
+	}
 	if errors.Is(err, blob.ErrTooLarge) {
 		return cli.WrapAppError(cli.ErrorSafety, "composed message exceeds iCloud Mail's 20 MiB message limit", false, err)
 	}

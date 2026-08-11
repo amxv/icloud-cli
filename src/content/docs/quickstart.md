@@ -191,6 +191,19 @@ icloud mail signatures default new sig_…
 
 Dry-run previews include the expanded signature before size/idempotency checks. Use `--signature none` on an individual send/reply/forward/draft update when you deliberately want no configured signature.
 
+If you have configured an S/MIME identity and trusted recipient certificates, protection is also explicit per compose:
+
+```bash
+icloud mail send \
+  --to client@example.com \
+  --subject 'Protected update' \
+  --body-file message.txt \
+  --smime sign-encrypt \
+  --dry-run
+```
+
+The preview resolves certificate coverage for every To/Cc/Bcc encryption recipient without contacting SMTP. A real encrypted send refuses missing/untrusted coverage rather than falling back to plaintext, and the final 20 MiB limit applies after S/MIME wrapping. See [Send mail safely](/docs/send-mail-safely) for setup, draft behavior, BCC privacy, and retry semantics.
+
 ## Save work as a draft before sending
 
 Create a draft locally first when the message is not ready to leave the machine:
@@ -199,10 +212,11 @@ Create a draft locally first when the message is not ready to leave the machine:
 icloud mail draft create \
   --to client@example.com \
   --subject 'Project update' \
-  --body-file message.txt
+  --body-file message.txt \
+  --smime sign-encrypt
 ```
 
-`draft create` and `draft update` do not contact iCloud. Upload the current revision only when you want it available in iCloud Mail:
+`draft create` and `draft update` do not contact iCloud. An S/MIME mode is saved as send-time intent; the draft itself remains ordinary editable MIME and is protected only when sent. Upload the current revision only when you want it available in iCloud Mail:
 
 ```bash
 icloud mail draft sync drf_…

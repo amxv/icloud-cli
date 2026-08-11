@@ -167,6 +167,7 @@ type capabilitiesData struct {
 	MailSMIMECertificates  bool                 `json:"mail_smime_certificates"`
 	MailSMIMEIdentities    bool                 `json:"mail_smime_identities"`
 	MailSMIMEDecryption    bool                 `json:"mail_smime_decryption"`
+	MailSMIMEOutbound      bool                 `json:"mail_smime_outbound"`
 	InboundLimits          config.InboundLimits `json:"inbound_limits"`
 	Output                 capabilityOutput     `json:"output"`
 	Automation             capabilityAutomation `json:"automation"`
@@ -438,6 +439,7 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				MailSMIMECertificates:  true,
 				MailSMIMEIdentities:    true,
 				MailSMIMEDecryption:    true,
+				MailSMIMEOutbound:      true,
 				InboundLimits:          limits,
 				Output: capabilityOutput{
 					Default: "compact",

@@ -22,6 +22,8 @@ type ForwardRequest struct {
 	SourceMessageID       string
 	SenderIdentityID      string
 	SignatureSelector     string
+	SMIMEMode             SMIMEComposeMode
+	SMIMEPlan             *SMIMEOutboundPlan
 	OriginalMode          ForwardOriginalMode
 	OriginalAttachmentIDs []string
 	To                    []Address
@@ -170,7 +172,7 @@ func BuildForwardPlan(
 	}
 
 	send := SendRequest{
-		Kind: OutboundKindForward, SourceMessageID: sourceID, SenderIdentityID: strings.TrimSpace(input.SenderIdentityID), SignatureSelector: strings.TrimSpace(input.SignatureSelector),
+		Kind: OutboundKindForward, SourceMessageID: sourceID, SenderIdentityID: strings.TrimSpace(input.SenderIdentityID), SignatureSelector: strings.TrimSpace(input.SignatureSelector), SMIMEMode: input.SMIMEMode, SMIMEPlan: input.SMIMEPlan,
 		To: to, CC: cc, BCC: bcc, ReplyTo: input.ReplyTo,
 		Subject: ForwardSubject(source.Subject), TextBody: textBody, HTMLBody: htmlBody,
 		Headers: input.Headers, Attachments: attachments,
