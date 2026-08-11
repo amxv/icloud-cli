@@ -1,95 +1,112 @@
 # icloud
 
-`icloud` is a local-first command-line client for **iCloud Mail**. Compact plain text is the universal default for humans and agents; JSON, JSONL streams, complete bodies, HTML, headers, raw MIME, and verbose diagnostics are explicit expansions.
+`icloud` is a command-line interface for Apple's iCloud ecosystem. **iCloud Mail is the comprehensive service today**: read, search, synchronize, draft, send, reply, organize, import, export, secure, and automate your mailbox from one predictable command tree.
 
-It supports secure multi-account setup, IMAP/SMTP validation, folder discovery and policy, bounded forward sync and historical backfill, foreground IDLE watch, local and explicit remote search, reconstructed RFC conversations, complete message and attachment access, drafts, send/reply/reply-all/forward, read/flag state, exact-location move/copy/archive/trash/restore/delete, repair/rebaseline/reconciliation workflows, strict JSON write input, bounded JSONL bulk state changes, versioned schemas, local-only completion, and generated man pages.
+The project is designed to grow beyond Mail over time. Contacts, Reminders, Calendar, and other iCloud services can live under the same `icloud` command as they become implemented and reliable.
 
-The scope is iCloud Mail only. Contacts, Calendar, Drive, Notes, Photos, Find My, and operating a hosted mail service are intentionally outside this CLI.
-
-## Install or update
+## Install
 
 ```bash
 npm install --global @amxv/icloud-cli@latest
 icloud version
-icloud capabilities
 ```
 
-The npm installer downloads the native `icloud_<os>_<arch>[.exe]` asset for that exact package version and verifies it against the release checksum before installation. If the release asset is unavailable and Go is installed, the package can build the same version from its packaged source as a fallback.
+## Get started
 
-To update later, run the same `npm install --global @amxv/icloud-cli@latest` command and confirm the result with `icloud version`.
-
-Build from source instead:
+Use an Apple **app-specific password**, not your normal Apple Account password:
 
 ```bash
-make check
-make build
-./dist/icloud version
-```
-
-## First account
-
-Use an Apple **app-specific password**, never the primary Apple Account password. Interactive setup stores the secret in the operating-system keyring by default:
-
-```bash
-icloud account add --name Personal --email owner@icloud.com
+icloud account add --name Personal --email you@icloud.com
 icloud account test Personal
-icloud mail folders status
+icloud mail folders refresh
 icloud mail sync
-icloud mail inbox
+icloud mail messages list
 ```
 
-For non-interactive setup, use `--password-stdin`, `--credential-env`, or `--credential-file`; there is no plaintext password argv flag. `account test` validates direct-TLS IMAP and mandatory-STARTTLS SMTP without sending mail.
-
-## Safe outbound mail
-
-Review a request before allowing a provider write:
+Search locally:
 
 ```bash
-icloud mail send \
-  --to client@example.com \
-  --subject 'Project update' \
-  --body-file message.txt \
-  --dry-run
+icloud mail search invoice
+```
 
-icloud mail send \
-  --to client@example.com \
-  --subject 'Project update' \
-  --body-file message.txt \
-  --idempotency-key project-update-01 \
+Read one selected message:
+
+```bash
+icloud mail message show msg_… --full
+```
+
+Preview a reply before sending it:
+
+```bash
+icloud mail reply msg_… --body-file reply.txt --dry-run
+```
+
+Then send the reviewed reply with a stable idempotency key:
+
+```bash
+icloud mail reply msg_… \
+  --body-file reply.txt \
+  --idempotency-key reply-01 \
   --yes
 ```
 
-The same confirmation, idempotency, BCC/privacy, and unknown-outcome rules apply to replies, forwards, draft sends, folder administration, and location-changing operations. Non-TTY writes that require authorization never infer consent.
+The [Quickstart](https://icloud.ashray.xyz/docs/quickstart) walks through the full first-use flow.
 
-## Automation
+## Mail today
 
-Redirected execution keeps compact text unless you explicitly request a structured mode. Discover the installed automation contract and schema IDs with:
+The current CLI includes:
+
+- multiple iCloud Mail accounts and safe credential sources;
+- folder discovery, current sync, foreground watch, and historical backfill;
+- local search plus explicit fresh provider search;
+- messages, conversations, attachments, and exact EML access;
+- drafts, send, reply, reply-all, forward, aliases, and signatures;
+- read/flag state, move/copy, archive, trash, junk, restore, and delete;
+- reviewed bulk actions and bounded empty-folder workflows;
+- mailbox and EML import/export;
+- mailing-list unsubscribe and local VIP/blocked sender preferences;
+- S/MIME inspection, decryption, signing, and encryption;
+- outbound operation history and safe-retry Outbox recovery;
+- compact text, JSON, JSONL, strict request schemas, completion, and man pages.
+
+Check the exact feature set of the binary you installed with:
 
 ```bash
+icloud capabilities
 icloud capabilities --json
 ```
 
-Commands in that published write contract accept one strict `--input-json <path|->` request instead of equivalent write flags. Read/flag state commands also accept bounded JSONL input and can emit typed `--jsonl` item/completion events. Generated JSON Schemas ship in `schemas/v1/`.
+## Built for agents too
 
-Use content-expansion flags deliberately. `mail message show` and thread/draft reads keep complete text, HTML, decoded headers, body-only streams, verbose evidence, and raw MIME behind explicit flags; attachment bytes require an explicit output destination.
-
-## Completion, man pages, and reference
-
-The installed command tree can generate completion for Bash, Zsh, Fish, and PowerShell and a complete man-page tree:
+Normal output is compact so an agent can explore without pulling full message bodies into context. Stable IDs such as `msg_…`, `thr_…`, `att_…`, and `drf_…` make multi-step workflows easy to compose.
 
 ```bash
-icloud completion bash > icloud.bash
-icloud man --output-dir ./man
-man ./man/icloud.1
+icloud mail search invoice
+icloud mail message show msg_… --full
+icloud mail attachments list msg_…
+icloud mail reply msg_… --body-file reply.txt --dry-run
 ```
 
-The npm package also contains deterministic `completions/`, `man/`, and `schemas/v1/` assets generated from the same command/schema sources as the executable. The exhaustive [command reference](https://icloud.ashray.xyz/docs/command-reference) is generated from Cobra; the narrative guides stay task-focused.
+Use `--json` when you need structured parsing, `--jsonl` for event streams or per-item results, and `--no-input` to prevent implicit prompts in automation.
+
+See the [Agent guide](https://icloud.ashray.xyz/docs/agent-guide) and [Automation recipes](https://icloud.ashray.xyz/docs/automation-recipes).
 
 ## Documentation
 
-Start with the [Quickstart](https://icloud.ashray.xyz/docs/quickstart). The hosted docs also cover credentials, validation and doctor, folder policy, synchronization/backfill/watch/repair, search, conversations, attachment export, sending and drafts, location changes, local-state backup/removal, compact and structured output, schemas, installation/update, and troubleshooting.
+The documentation is organized around user tasks rather than implementation details:
+
+- [What is icloud?](https://icloud.ashray.xyz/docs/overview)
+- [Quickstart](https://icloud.ashray.xyz/docs/quickstart)
+- [Mail guides](https://icloud.ashray.xyz/docs)
+- [Supported features](https://icloud.ashray.xyz/docs/supported-features)
+- [Command reference](https://icloud.ashray.xyz/docs/command-reference)
+- [Troubleshooting](https://icloud.ashray.xyz/docs/troubleshooting)
 
 Raw Markdown is available from `/docs.md` and each guide's `.md` route for agent-friendly retrieval.
+
+## Project direction
+
+Mail is the first complete command family, not the intended limit of the project. The top-level `icloud` command leaves room for additional iCloud services without pretending they already exist. The installed command tree and `icloud capabilities` remain the source of truth for what is available in a particular release.
 
 ## Development
 
@@ -103,7 +120,7 @@ make docs-check
 make docs-build
 ```
 
-`make references` regenerates the versioned schemas, exhaustive command reference, man pages, and shell-completion assets. `make check` and `make docs-check` fail when generated references drift from the current command/schema sources.
+`make references` regenerates schemas, the exhaustive command reference, man pages, and shell completion from the current CLI sources.
 
 ## License
 

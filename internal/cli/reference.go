@@ -60,7 +60,7 @@ func renderCommandReference(root *cobra.Command) ([]byte, error) {
 	output.WriteString("---\n")
 	output.WriteString("title: Command reference\n")
 	output.WriteString("description: Generated usage, examples, flags, and subcommands for the complete icloud command tree.\n")
-	output.WriteString("order: 11\n")
+	output.WriteString("order: 90\n")
 	output.WriteString("category: Reference\n")
 	output.WriteString("summary: Exhaustive syntax generated from the same Cobra tree as the installed icloud executable.\n")
 	output.WriteString("---\n\n")

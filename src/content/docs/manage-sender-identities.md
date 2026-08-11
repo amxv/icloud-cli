@@ -1,168 +1,100 @@
 ---
-title: Manage sender identities
-description: Record the primary iCloud address, aliases, custom-domain addresses, and other Send From identities locally without duplicating account credentials or claiming provider acceptance.
-order: 5
-category: Guides
-summary: Account-scoped sender identities, stable IDs, local defaults, enabled state, provider-verification boundaries, pagination, and safe removal rules.
+title: "Sender identities"
+description: "Send from iCloud aliases, custom-domain addresses, or other addresses already available to the selected account."
+order: 17
+category: Mail
+summary: "Configure the addresses that `--from` can use and choose the default sender for an account."
 ---
 
-## Inspect the account's primary identity
+A sender identity is an address the CLI may use in the `From` field for the selected Mail account.
 
-Every configured account has one protected primary identity matching the account email address:
+Every account starts with its primary email address. Add aliases or other addresses you already control when you want to compose from them.
+
+## List identities
 
 ```bash
 icloud mail identities list
 ```
 
-The compact record shows the stable `mid_…` ID, normalized address, local display name, kind, provenance, provider-verification state, enabled state, and whether it is the local default sender. Identity reads use local SQLite state only; they do not authenticate or contact iCloud.
-
-Use `--account` when more than one account is configured:
-
-```bash
-icloud --account Personal mail identities list
-icloud --account Work mail identities show mid_…
-```
-
-Identity IDs and addresses are account-scoped. A stable identity ID from one account cannot be opened or changed through another account.
-
-## Add an alternate address locally
-
-Record an address you already control or intend to test as a sender:
+## Add an alias
 
 ```bash
 icloud mail identities add \
   --address alias@icloud.com \
-  --display-name 'Ashray' \
   --kind icloud_alias
 ```
 
-Supported kinds are `icloud_alias`, `custom_domain`, `hide_my_email`, and `other`. The protected `primary` kind is created only from the account itself.
+You can also add a display name or label; check `icloud mail identities add --help` for the available fields.
 
-User-entered aliases and provider-specific address types are recorded with `provenance=user_configured` and `verification=unverified`. That is deliberate: storing an address locally does not prove that iCloud SMTP accepts it, that Hide My Email can send from it, or that Apple has synchronized the setting. Account authentication remains owned by the existing account credential and IMAP username.
+Adding an identity tells the CLI about an address. It does not create the alias in your Apple Account.
 
-`mail send` and draft create/update/send accept `--from <mid_…|address>`. For ordinary aliases and custom-domain identities, when SMTP accepts that envelope sender, the CLI records `verification=verified`. If iCloud permanently rejects an ordinary alternate at `MAIL FROM`, the CLI records `verification=rejected`, disables that identity, and does not retry with the primary address. Re-enabling it resets verification to `unverified` for another deliberate test after provider-side configuration changes.
-
-## Record a pre-existing Hide My Email address safely
-
-Hide My Email is deliberately narrower. Record only an address that already exists in your Apple account:
+## Choose the default sender
 
 ```bash
-icloud mail identities add \
-  --address random-address@icloud.com \
-  --kind hide_my_email \
-  --label 'Shopping receipts'
+icloud mail identities default alias@icloud.com
 ```
 
-`--label` is optional local CLI metadata. It does not read, update, or claim to synchronize the label stored by Apple. The identity record has no forwarding-destination field, and ordinary output never exposes an Apple forwarding address. This CLI also does not create, deactivate, delete, or enumerate Hide My Email addresses through Apple Account web surfaces.
-
-If you omit `--display-name` for a Hide My Email identity, the CLI leaves the RFC From display name empty instead of inheriting the account name. This avoids accidentally pairing a privacy address with a real-name local default. Set `--display-name` only when you deliberately want that text to accompany future outbound mail.
-
-Hide My Email outbound use is gated more strictly than ordinary aliases. An HME identity may become the default or be used for an actual SMTP send only after this local identity already has `verification=verified`, meaning the CLI has durable evidence that iCloud accepted that exact sender. `unverified` and `rejected` HME identities remain useful self/delivery identities but actual outbound use is refused before SMTP. A provider rejection records `verification=rejected` without disabling the HME identity, so reply-all self exclusion and delivery recognition remain intact.
-
-Inspect the account-scoped compatibility result with:
-
-```bash
-icloud --account Personal capabilities --json
-```
-
-`hide_my_email_outbound` is `unavailable` when the selected account has no usable evidence, `unverified` when it has a configured but unproven HME address, and `supported` only when at least one HME identity has accepted-SMTP verification. Without `--account`, the value is `account_scoped` rather than a provider claim about an unknown mailbox.
-
-`icloud mail settings show` is the broader account-local view. It reports alternate-From and HME evidence beside the CLI's local default identity while keeping Apple's own Default Send Address explicitly separate. Changing the CLI default with `mail identities default` does not claim to change the default configured in Mail settings on iCloud.com.
-
-Replies are privacy-safe by default. When an inbound message was delivered to exactly one enabled, verified HME identity, reply/reply-all automatically prefer that identity. If the delivered HME identity is unverified/rejected, or multiple HME identities appear in the recipient headers, the reply fails with a safety error instead of silently falling back to the primary address. Use an explicit `--from` identity only when you intentionally choose a different sender.
-
-Local compose signatures may optionally bind to one stable identity ID. Use `mail signatures create --identity mid_…` when an alias or custom-domain address needs its own signature, then choose operation-specific defaults with `mail signatures default`. Identity-specific defaults override account-wide signature defaults; explicit `none` prevents fallback. Removing an identity also removes signatures/default rows owned by that identity, while unbound account-wide signatures remain. These are local CLI preferences and do not claim synchronization with Apple Mail signature settings.
-
-Addresses are normalized and unique case-insensitively within one account. The same address may exist under another configured account because each mailbox profile owns its own identity set.
-
-## Choose the local default identity
-
-An account always has one enabled local default sender. Select another enabled identity with:
+You can also use the stable `mid_…` ID:
 
 ```bash
 icloud mail identities default mid_…
 ```
 
-You can also make an identity the default when adding it:
+## Use a sender for one message
 
 ```bash
-icloud mail identities add \
-  --address me@example.com \
-  --kind custom_domain \
-  --default
+icloud mail send \
+  --from alias@icloud.com \
+  --to client@example.com \
+  --subject Hello \
+  --body 'Hi there' \
+  --dry-run
 ```
 
-The primary identity remains enabled and protected even when another address is the local default. This keeps the account from entering a state with no usable sender identity.
+The same `--from` option is available on replies, forwards, and drafts.
 
-An unverified or rejected `hide_my_email` identity cannot become the default. If an older local database had such an HME identity as the default before this compatibility boundary existed, schema migration restores the protected primary identity as default while preserving the HME record for recognition.
-
-## Enable, disable, update, or remove an identity
-
-Update local metadata without changing the stable identity ID:
+## Enable or disable an identity
 
 ```bash
-icloud mail identities update mid_… --display-name 'Work Ashray'
-icloud mail identities update mid_… --kind custom_domain
+icloud mail identities disable alias@icloud.com
+icloud mail identities enable alias@icloud.com
 ```
 
-Enable or disable a non-primary identity explicitly:
+Disabled identities cannot be selected for new outbound mail.
+
+## Update metadata
 
 ```bash
-icloud mail identities disable mid_…
-icloud mail identities enable mid_…
+icloud mail identities update alias@icloud.com \
+  --display-name 'Ashray'
 ```
 
-If the disabled identity was the default, the CLI reassigns the default to another enabled identity, preferring the protected primary identity. A disabled identity cannot become the default until it is enabled again.
-
-Enabled identities are also the account's canonical self-address set for reply-all and message direction. Enabling or adding an address queues a bounded local historical direction repair; it does not scan the mailbox synchronously. Advance that work explicitly:
+For all editable fields:
 
 ```bash
-icloud mail identities reclassify --limit 100
+icloud mail identities update --help
 ```
 
-When `more=true`, run the same command again. The persisted frontier resumes after interruption or process restart. Only cached messages still classified `inbound` whose `From` matches a currently enabled identity are promoted to `outbound`; direction is monotonic, so disabling or removing an identity never demotes previously proven outbound mail. Stable message/thread IDs and search membership are preserved.
-
-Removing local identity configuration is explicit:
+## Remove an identity
 
 ```bash
-icloud mail identities remove mid_… --yes
+icloud mail identities remove alias@icloud.com
 ```
 
-The primary identity cannot be disabled, removed, or changed away from the account's primary address. Removing an alternate identity never deletes the account, credential, messages, folders, or attachments.
+The account's protected primary identity cannot be removed as though it were an optional alias.
 
-## Continue large identity lists
+## Existing mail after adding a new self address
 
-Identity listing is bounded like other local inventories:
+If you add an address that already appears in older synchronized mail, the CLI can update historical direction classification in bounded passes:
 
 ```bash
-icloud mail identities list --limit 20
-icloud mail identities list --cursor icur_…
+icloud mail identities reclassify
 ```
 
-When `more=true`, the result also includes `next_cursor`. The cursor is opaque and bound to the selected account; reusing it with another account returns a usage error.
+This is useful when older messages sent from the newly configured alias should be recognized as your outbound mail.
 
-## Use strict JSON requests in automation
+## Signatures and S/MIME
 
-Read and write request schemas are published by:
+Signatures can be tied to a particular sender identity. See [Signatures](/docs/signatures).
 
-```bash
-icloud capabilities --json
-```
-
-For example:
-
-```json
-{
-  "address": "alias@icloud.com",
-  "display_name": "Ashray",
-  "kind": "icloud_alias"
-}
-```
-
-```bash
-icloud mail identities add --input-json identity.json --json
-```
-
-Unknown JSON fields and mixed equivalent flags are rejected. Credential references, passwords, BCC data, message bodies, and private blob coordinates are not part of identity request schemas.
-
-Identity configuration remains local account metadata, while provider acceptance is learned only from SMTP evidence produced by a deliberate send. The CLI never treats the `kind` label alone as proof of an Apple capability. `verified` therefore means this CLI observed the provider accept that envelope sender; it does not mean Apple synchronized the identity to every client or exposed an identity-management API.
+S/MIME signing/decryption identities are configured separately on top of Mail identities. See [S/MIME](/docs/smime).

@@ -1,278 +1,144 @@
 ---
-title: Manage folders and sync policy
-description: Discover, create, rename, subscribe, delete, and synchronize iCloud Mail folders without guessing provider roles or crawling mailbox history.
-order: 5
-category: Guides
-summary: Safe folder administration, Unicode and nested names, protected system roles, interrupted-rename recovery, and explicit bounded synchronization.
+title: "Folders"
+description: "Discover iCloud Mail folders, choose which ones sync routinely, and create, rename, subscribe to, or delete custom folders."
+order: 19
+category: Mail
+summary: "Manage the mailbox tree without needing to think about provider protocol details."
 ---
 
-## Start with a fresh mailbox tree
-
-Run a live, read-only refresh after the account passes validation:
+## Refresh the folder list
 
 ```bash
 icloud mail folders refresh
 ```
 
-The command lists every mailbox iCloud currently exposes and reads counts for selectable folders. It does not download messages or change mail. Run it before administration so names, hierarchy, roles, and counts come from current provider evidence.
+This is the normal first step after adding an account and whenever the mailbox structure has changed elsewhere.
 
-`icloud mail folders status` remains a compatibility alias for this same network-backed refresh. New scripts and interactive use should prefer `mail folders refresh`; `mail folders list` and `show` remain offline reads of the saved inventory.
-
-Use the global account selector when several profiles exist:
-
-```bash
-icloud --account Personal mail folders refresh
-```
-
-Compact output is bounded to 20 records by default:
-
-```text
-folder
-fld_… name=INBOX
-kind=inbox
-selectable=yes
-subscription=unknown
-present=yes
-sync=enabled
-messages=15
-unseen=2
-
-folder
-fld_… name=Projects/Alpha
-kind=other
-parent=Projects
-selectable=yes
-subscription=unknown
-present=yes
-sync=disabled
-messages=1
-
-folder-status
-account=acct_…
-count=8
-present=8
-stale=0
-enabled=2
-```
-
-Increase the display bound without changing what gets discovered:
-
-```bash
-icloud mail folders refresh --limit 50
-```
-
-Large folder inventories use keyset continuation rather than a hidden 1,000-folder ceiling. When either `folders refresh` or `folders list` reports `more=yes`, pass its opaque `next_cursor` back unchanged:
-
-```bash
-icloud mail folders refresh --limit 100 --cursor 'fcur_…'
-icloud mail folders list --limit 100 --cursor 'fcur_…'
-```
-
-The cursor is bound to the selected account and inventory mode. The final page omits `next_cursor`.
-
-## Read the saved inventory offline
+Read the saved list later with:
 
 ```bash
 icloud mail folders list
-icloud mail folders show INBOX
-icloud mail folders show 'Unicode-日本語'
 ```
 
-These commands use local state only. A selector may be a stable folder ID, decoded name, exact provider wire name, or an unambiguous role such as `inbox`. Ambiguous matches fail instead of guessing.
-
-Use `--verbose` only when troubleshooting provider identity:
+Inspect one folder:
 
 ```bash
-icloud mail folders show 'Unicode-日本語' --verbose
+icloud mail folders show Receipts
 ```
 
-It adds details such as the wire name, delimiter, provider attributes, UID metadata, and discovery timestamps.
+A folder can also be selected by its stable `fld_…` ID.
 
-## Create nested or Unicode folders deliberately
+## Choose what normal sync includes
 
-Preview first:
+Inbox and Sent are the normal starting set. Enable a custom folder when you want routine `icloud mail sync` and `icloud mail watch` workflows to include it:
 
 ```bash
-icloud mail folders create 'Projects/Client-日本語' --dry-run
+icloud mail folders enable Receipts
 ```
 
-The preview is local and reports that IMAP was not contacted. Apply the reviewed change explicitly:
+Disable it later:
 
 ```bash
-icloud mail folders create 'Projects/Client-日本語' --yes
-icloud mail folders refresh
+icloud mail folders disable Receipts
 ```
 
-New custom folders begin with local synchronization disabled. Enable one only when you want it included in normal future sync:
+Disabling routine sync does not delete the folder or already synchronized mail.
+
+## Create a folder
+
+Review:
 
 ```bash
-icloud mail folders enable 'Projects/Client-日本語'
-icloud mail sync --folder 'Projects/Client-日本語'
+icloud mail folders create 'Projects/Client' --dry-run
 ```
 
-Use decoded names in ordinary commands. The CLI respects iCloud's discovered hierarchy delimiter and namespace, while the IMAP transport handles the provider wire encoding exactly once.
+Then create it:
 
-```text
-name=Unicode-日本語
-name=Projects/Alpha parent=Projects
+```bash
+icloud mail folders create 'Projects/Client' --yes
 ```
 
-The provider wire form shown by `--verbose` is identity metadata, not a local path and not the form you need to type for Unicode mailboxes.
+Nested and Unicode names are supported when the provider accepts them.
 
-## Rename without losing the folder identity
+## Rename a custom folder
 
 ```bash
 icloud mail folders rename Receipts 'Projects/Receipts' --dry-run
 icloud mail folders rename Receipts 'Projects/Receipts' --yes
 ```
 
-A successful rename keeps the same stable `fld_…` identity, local sync choice, message locations, and synchronization checkpoint. The CLI refuses to rename a protected system folder or a folder that still has current child mailboxes; change the children first so a provider hierarchy cascade cannot silently broaden the operation.
+After an interrupted rename, run `icloud mail folders refresh` before trying another change so the CLI can observe the current mailbox tree.
 
-If a rename times out, **do not immediately repeat it**. iCloud may have accepted the command even when the final response was lost. Refresh instead:
+## Subscribe or unsubscribe
 
-```bash
-icloud mail folders refresh
-```
-
-The CLI records enough recovery information before the rename to reconnect the provider's new name to the original stable folder even when the next LIST response omits rename metadata. If the old name is still present, the interrupted attempt is closed as not applied; if the new name is present and the old one is gone, the original folder identity is repaired.
-
-## Keep provider subscription separate from sync policy
+Provider subscription and the CLI's routine-sync preference are separate controls:
 
 ```bash
-icloud mail folders subscribe Receipts --dry-run
-icloud mail folders subscribe Receipts --yes
-icloud mail folders unsubscribe Receipts --yes
+icloud mail folders subscribe Receipts
+icloud mail folders unsubscribe Receipts
 ```
 
-Subscription changes iCloud's mailbox subscription state. `folders enable` / `disable` changes only the CLI's local synchronization policy. They are intentionally separate decisions: an unsubscribed folder can still be explicitly selected, and an unknown provider subscription does not mean unsubscribed.
+Use `folders enable` / `disable` for whether the CLI normally synchronizes a folder. Use `subscribe` / `unsubscribe` for the provider subscription itself.
 
-## Delete a custom folder with current provider evidence
+## Delete a custom folder
 
-Preview the exact target first:
+Always preview first:
 
 ```bash
-icloud mail folders delete fld_… --dry-run
+icloud mail folders delete Receipts --dry-run
 ```
 
-Inbox and provider-discovered system or special-use folders are protected. Non-selectable hierarchy containers and folders with current children are also refused rather than deleted recursively.
-
-For an empty custom folder:
+Then:
 
 ```bash
-icloud mail folders delete fld_… --yes
+icloud mail folders delete Receipts --yes
 ```
 
-The provider count is checked again immediately before deletion. If the folder contains messages, deletion stops unless you deliberately add both safeguards:
+If the folder contains messages, deletion requires an additional deliberate opt-in:
 
 ```bash
-icloud mail folders delete fld_… --allow-non-empty --yes
+icloud mail folders delete Receipts --allow-non-empty --yes
 ```
 
-That flag means the provider folder and its contents may be removed. It is not a shortcut for moving mail to Trash. After a confirmed deletion, the historical local folder identity remains inspectable as `present=no stale=true`, while locations that existed only in that folder become absent.
+System folders and unsafe hierarchy changes are protected rather than treated like ordinary custom folders.
 
-## Bind semantic roles without rewriting provider metadata
+## Archive, Trash, Junk, Drafts, and Sent roles
 
-`INBOX` is always recognized. Other system roles are taken from provider metadata when available, including Sent, Drafts, Archive, Trash, and Junk.
-
-When iCloud exposes no Sent role, the CLI can use a conservative compatibility fallback for common Sent names. It does not guess Archive, Drafts, Trash, or Junk merely from an English display name. A folder without trustworthy role metadata remains `kind=other`.
-
-If you know that one current selectable folder should serve one of those semantic roles, bind the **stable `fld_…` ID** locally:
+Most accounts advertise their special folders clearly. If one does not, you can inspect local role bindings:
 
 ```bash
 icloud mail folders role list
+```
+
+Bind a discovered folder to a semantic role when you have reviewed that it is the intended folder:
+
+```bash
 icloud mail folders role set archive fld_… --dry-run
 icloud mail folders role set archive fld_…
 ```
 
-Bindings are account-owned local intent. They do not contact iCloud and never change the folder's provider-derived `kind` or `kind_source`. A binding therefore survives a provider rename as long as the stable folder identity survives. One folder can serve only one bound role at a time.
+Available roles are `sent`, `drafts`, `archive`, `trash`, and `junk`.
 
-The same resolver is used by existing shortcuts: Sent append/reconciliation, Drafts synchronization, archive/unarchive, and trash/restore. Resolution order is an explicit valid binding first, trustworthy current provider role second, and the narrow historical Sent-name fallback last. For example, a custom `kind=other` folder can become the Archive target after an explicit binding without being reclassified as a provider Archive folder.
-
-Junk and Not Junk use this same resolver. Binding a custom `kind=other` folder as Junk only chooses the provider location used by those explicit commands; it does not classify incoming mail, assign spam scores, or rewrite the folder's provider-derived kind.
-
-Remove user intent to return to provider discovery:
+Clear a local binding with:
 
 ```bash
-icloud mail folders role clear archive --dry-run
 icloud mail folders role clear archive
 ```
 
-If a bound folder is deleted, missing, stale, or non-selectable, role-based operations stop and ask you to clear or rebind the role. They do not silently guess another folder by display name or fall through to provider metadata while the explicit binding is invalid.
+These bindings help commands such as `mail archive`, `mail trash`, and draft synchronization find the intended folder. They do not rename the folder in iCloud.
 
-Trash and Junk also show `retention_risk=provider_auto_delete_possible`, while Drafts shows `retention_risk=provider_mutable_draft`. These warnings stay attached to the provider-derived semantic kind so an explicit all-folder sync does not make a risky mailbox look like ordinary long-term storage.
+## Sync a folder immediately
 
-## Subscription may be unknown
-
-```text
-subscription=unknown
-```
-
-This means iCloud did not provide subscription metadata in the accepted folder response. It does not mean unsubscribed and does not prevent the folder from being used.
-
-## Choose synchronization eligibility
-
-Inbox and Sent start enabled. Other folders start disabled:
+A folder enabled for routine sync can be selected directly:
 
 ```bash
-icloud mail folders enable Receipts
-icloud mail folders disable Receipts
-```
-
-These commands change local policy only. They do not immediately fetch, move, or modify mail. Non-selectable container folders cannot be enabled.
-
-The sync command processes every enabled, current, selectable folder:
-
-```bash
-icloud mail sync
-```
-
-Folder scheduling itself is paged internally, so an account with more than 1,000 enabled folders is not silently truncated. `--all-folders` applies the same rule to every current selectable folder, including folders whose normal sync policy is disabled.
-
-```bash
-icloud mail sync
-```
-
-Select one folder when you want a narrower run:
-
-```bash
-icloud mail sync --folder sent
 icloud mail sync --folder Receipts
-icloud mail sync --folder fld_…
 ```
 
-When you intentionally want every current selectable folder once, including folders that are locally disabled, opt in explicitly:
+To make one deliberate bounded pass across every selectable folder regardless of routine policy:
 
 ```bash
-icloud mail sync --all-folders --limit 20
+icloud mail sync --all-folders
 ```
 
-This is still bounded synchronization, not an all-history crawl. A previously unsynchronized custom folder starts from its newest bounded page; later runs move only forward from the saved UID frontier. Missing, stale, and non-selectable folders are excluded. `--all-folders` cannot be combined with `--folder`, targeted hydration, or outbound reconciliation.
-
-Inbox starts with its newest bounded page. Sent starts differently: the first run records the current tail without downloading old Sent history, then later runs ingest only new Sent copies. Other enabled folders start from their newest bounded page. See [Sync and read mail](/docs/sync-and-read-inbox) for the complete workflow.
-
-## Missing folders remain visible
-
-If a previously known mailbox disappears from a successful refresh, the CLI retains it as missing rather than silently deleting its identity and policy:
-
-```text
-present=no stale=true
-```
-
-Normal local lists hide missing entries. Inspect them explicitly with:
-
-```bash
-icloud mail folders list --include-missing
-```
-
-When the same folder returns and can be matched safely, its stable ID and sync choice are restored.
-
-## Request JSON
-
-```bash
-icloud --request-id folders-01 mail folders refresh --json
-icloud mail folders list --include-missing --json
-```
-
-JSON includes the complete folder record and local schema version. Credential references and values remain private.
-
-Continue with [Sync and read mail](/docs/sync-and-read-inbox) after discovery, or use the [command reference](/docs/command-reference) for exact flags.
+See [Sync mail](/docs/sync-and-read-inbox) for current mail, historical backfill, and watch.

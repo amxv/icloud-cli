@@ -12,54 +12,103 @@ function read(name) {
   return fs.readFileSync(path.join(docsDir, name), "utf8");
 }
 
-test("every completed Mail workflow has a discoverable task-focused guide", () => {
+function narrativeFiles() {
+  return fs.readdirSync(docsDir)
+    .filter((name) => name.endsWith(".md") && name !== "command-reference.md")
+    .sort();
+}
+
+test("documentation is organized around discoverable user and agent tasks", () => {
   const coverage = new Map([
-    ["account lifecycle", ["account-setup-and-credentials.md", ["account add", "credential replace", "account remove"]]],
-    ["validation and doctor", ["account-validation-and-doctor.md", ["account test", "--live"]]],
-    ["sender identities", ["manage-sender-identities.md", ["mail identities", "verification=unverified", "--default"]]],
-    ["folders", ["folder-discovery-and-sync-policy.md", ["folders status", "folders create", "folders rename", "folders delete"]]],
-    ["sync operations", ["sync-and-read-inbox.md", ["mail sync", "mail watch", "sync backfill", "sync rebaseline", "sync repair"]]],
-    ["search and hydration", ["search-synchronized-mail.md", ["mail search", "--remote", "--cache"]]],
-    ["conversation reads", ["read-reconstructed-conversations.md", ["mail latest", "thread show", "--full"]]],
+    ["orientation", ["overview.md", ["What is icloud?", "Mail is the comprehensive"]]],
+    ["broader iCloud direction", ["icloud-ecosystem.md", ["Available today: Mail", "icloud contacts", "icloud reminders"]]],
+    ["quickstart", ["quickstart.md", ["account add", "mail sync", "messages list", "mail send"]]],
+    ["Mail overview", ["mail.md", ["Pick a task", "mail sync", "--dry-run"]]],
+    ["accounts", ["account-setup-and-credentials.md", ["app-specific password", "credential replace", "account default"]]],
+    ["reading", ["read-mail.md", ["messages list", "message show", "--full"]]],
+    ["search", ["search-synchronized-mail.md", ["mail search", "--remote", "--cache"]]],
+    ["conversations", ["read-reconstructed-conversations.md", ["threads list", "threads show", "threads mute"]]],
     ["attachments", ["save-mail-attachments.md", ["attachments list", "attachments save", "save-all"]]],
-    ["draft and outbound", ["send-mail-safely.md", ["draft create", "draft send", "mail send", "mail reply", "mail forward"]]],
-    ["location changes", ["manage-mail-locations.md", ["mail move", "mail copy", "mail archive", "mail trash", "mail delete"]]],
-    ["automation", ["output-and-automation.md", ["--input-json", "--jsonl", "capabilities --json"]]],
-    ["installation and update", ["installation.md", ["@latest", "checksum", "completion", "man/icloud.1"]]],
-    ["local backup and removal", ["local-state-and-accounts.md", ["Back up", "restore", "Removing an account"]]]
+    ["compose", ["send-mail-safely.md", ["mail send", "mail reply", "mail forward", "--dry-run"]]],
+    ["drafts", ["drafts.md", ["draft create", "draft sync", "draft send"]]],
+    ["identities", ["manage-sender-identities.md", ["identities add", "identities default", "--from"]]],
+    ["signatures", ["signatures.md", ["signatures create", "signatures default", "--signature"]]],
+    ["folders", ["folder-discovery-and-sync-policy.md", ["folders refresh", "folders enable", "folders create"]]],
+    ["organization", ["manage-mail-locations.md", ["mail move", "mail archive", "mail trash", "mail delete"]]],
+    ["reviewed bulk actions", ["review-and-apply-mail-selections.md", ["selection create", "selection apply", "request_hash"]]],
+    ["permanent deletion", ["empty-trash-junk-and-custom-folders.md", ["empty trash", "purge_id", "request_hash"]]],
+    ["import and export", ["mail-import-export.md", ["message export", "message import", "mailbox export", "mailbox import"]]],
+    ["mailing lists and senders", ["mailing-lists-and-senders.md", ["mail unsubscribe", "senders vip", "senders block"]]],
+    ["S/MIME", ["smime.md", ["smime certificates", "--decrypt", "sign-encrypt"]]],
+    ["outbound recovery", ["outbox-and-recovery.md", ["operations outbound", "outbox retry", "reconcile-outbound"]]],
+    ["agent guidance", ["agent-guide.md", ["capabilities --json", "--no-input", "idempotency"]]],
+    ["automation recipes", ["automation-recipes.md", ["mail watch --jsonl", "selection create", "--request-id"]]],
+    ["automation reference", ["output-and-automation.md", ["--input-json", "--jsonl", "Exit classes"]]],
+    ["feature coverage", ["supported-features.md", ["iCloud Mail", "Broader iCloud services", "not implemented"]]],
+    ["diagnostics", ["account-validation-and-doctor.md", ["account test", "icloud doctor", "--live"]]],
+    ["local data", ["local-state-and-accounts.md", ["ICLOUD_HOME", "Back up", "mail sync repair --check"]]],
+    ["troubleshooting", ["troubleshooting.md", ["Authentication fails", "Inbox looks stale", "send failed"]]]
   ]);
+
   for (const [label, [file, needles]] of coverage) {
     const source = read(file);
     for (const needle of needles) {
-      assert.ok(source.includes(needle), `${label} guide ${file} is missing ${needle}`);
+      assert.ok(source.toLowerCase().includes(needle.toLowerCase()), `${label} page ${file} is missing ${needle}`);
     }
   }
 });
 
-test("narrative docs explain every retained output expansion without implementation diary copy", () => {
-  const narrativeFiles = fs.readdirSync(docsDir)
-    .filter((name) => name.endsWith(".md") && name !== "command-reference.md");
-  const narrative = narrativeFiles.map(read).join("\n");
-  for (const needle of [
-    "compact", "--json", "--jsonl", "--full", "--format", "HTML", "raw MIME",
-    "--headers", "--body-only", "--verbose", "--cursor", "--limit"
-  ]) {
-    assert.ok(narrative.includes(needle), `narrative docs are missing output expansion ${needle}`);
+test("narrative docs stay small, user-facing, and internally linked", () => {
+  const names = narrativeFiles();
+  const knownSlugs = new Set([
+    ...names.map((name) => name.replace(/\.md$/, "")),
+    "command-reference"
+  ]);
+
+  for (const name of names) {
+    const source = read(name);
+    const lines = source.split("\n").length;
+    assert.ok(lines <= 400, `${name} grew to ${lines} lines; split user tasks into smaller pages`);
+
+    for (const forbidden of [
+      /\bPhase \d+\b/i,
+      /go test -run/i,
+      /\binternal\//i,
+      /UIDVALIDITY/i,
+      /content-addressed blob/i,
+      /canonical ingestion/i,
+      /RFC graph evidence/i
+    ]) {
+      assert.doesNotMatch(source, forbidden, `${name} exposes implementation-oriented language`);
+    }
+
+    for (const match of source.matchAll(/\]\(\/docs\/([a-z0-9-]+)(?:#[^)]+)?\)/g)) {
+      assert.ok(knownSlugs.has(match[1]), `${name} links to missing docs slug ${match[1]}`);
+    }
   }
-  for (const forbidden of [
-    /iCloud services/i,
-    /\bAMAOS?\b/i,
-    /\bPhase \d+\b/i,
-    /go test -run/i,
-    /internal\//i
-  ]) {
-    assert.doesNotMatch(narrative, forbidden);
+});
+
+test("project positioning says Mail is available today without presenting future iCloud services as implemented", () => {
+  const overview = read("overview.md");
+  const ecosystem = read("icloud-ecosystem.md");
+  const supported = read("supported-features.md");
+  const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
+  const siteData = fs.readFileSync(path.join(root, "src", "data", "docs.ts"), "utf8");
+
+  for (const source of [overview, ecosystem, supported, readme, siteData]) {
+    assert.match(source, /Mail/i);
   }
+  assert.match(ecosystem, /Available today: Mail/i);
+  assert.match(ecosystem, /icloud contacts \.\.\./i);
+  assert.match(ecosystem, /icloud reminders \.\.\./i);
+  assert.match(supported, /not implemented in the current CLI/i);
+  assert.doesNotMatch(readme, /scope is iCloud Mail only/i);
 });
 
 test("generated command reference and docs deployment boundary stay explicit", () => {
   const reference = read("command-reference.md");
   assert.match(reference, /generated from the same command tree as `icloud --help`/);
+  assert.match(reference, /order: 90/);
   for (const command of [
     "icloud account add",
     "icloud mail sync repair",

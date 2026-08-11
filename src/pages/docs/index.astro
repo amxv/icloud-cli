@@ -4,27 +4,35 @@ import BaseLayout from "zuedocs/layouts/BaseLayout.astro";
 import { docCategories, primaryNav, siteConfig } from "../../data/docs";
 
 const entries = (await getCollection("docs")).sort((a, b) => a.data.order - b.data.order);
+const descriptions = {
+  "Start": "Understand the project, install the CLI, connect an account, and get useful Mail workflows running quickly.",
+  "Mail": "Small task guides for reading, searching, composing, organizing, importing, exporting, securing, and recovering mail.",
+  "Agents & automation": "Conventions and copyable patterns for using icloud predictably from an agent, script, or long-running process.",
+  "Reference": "Current feature coverage, diagnostics, local data, troubleshooting, release notes, and exhaustive command syntax."
+};
 const grouped = docCategories.map((category) => ({
   category,
+  description: descriptions[category],
   entries: entries.filter((entry) => entry.data.category === category)
 }));
 ---
 
 <BaseLayout
   title={`${siteConfig.name} Docs`}
-  description="Install icloud, configure credentials safely, validate iCloud Mail without sending, synchronize enabled folders, browse locally reconstructed RFC conversations, read complete messages explicitly, inspect health, and troubleshoot failures."
+  description="Learn icloud from user-focused task guides. Mail is comprehensive today, with a command structure designed to grow across the iCloud ecosystem over time."
   siteConfig={siteConfig}
   primaryNav={primaryNav}
 >
   <section class="shell docs-index-hero">
     <p class="section-label">Documentation</p>
-    <h1>Use <code>icloud</code> safely from a terminal, script, or agent.</h1>
+    <h1>iCloud from a terminal, script, or agent.</h1>
     <p>
-      Begin with installation and the quickstart, then choose the credential, validation, folder,
-      sync/backfill/watch/repair, search, conversation, attachment, outbound/draft, location, local-state, automation, or generated command reference that fits the task.
+      Start with the quickstart or jump directly to the thing you want to do. The guides focus on
+      commands, examples, and user-visible behavior rather than the machinery underneath the CLI.
     </p>
     <p>
-      This product is intentionally scoped to iCloud Mail; it does not manage Contacts, Calendar, Drive, Notes, Photos, Find My, or a hosted mail service.
+      <strong>Mail is the comprehensive service today.</strong> The project is designed to grow into
+      a broader iCloud CLI as additional services become implemented and reliable.
     </p>
   </section>
   <section class="shell docs-index">
@@ -32,13 +40,14 @@ const grouped = docCategories.map((category) => ({
       <section class="docs-index__group">
         <div class="docs-index__group-head">
           <p class="section-label">{group.category}</p>
+          <p>{group.description}</p>
         </div>
         <div class="docs-index__cards">
           {group.entries.map((entry) => (
             <a class="docs-index__card" href={`/docs/${entry.id}`}>
               <h2>{entry.data.title}</h2>
-              <p>{entry.data.description}</p>
-              <span>Open guide</span>
+              <p>{entry.data.summary ?? entry.data.description}</p>
+              <span>Open page</span>
             </a>
           ))}
         </div>

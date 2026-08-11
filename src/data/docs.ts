@@ -2,7 +2,7 @@ export const siteConfig = {
   name: "icloud",
   strapline: "iCloud from the command line",
   description:
-    "Install and use icloud, a local-first iCloud Mail CLI designed for compact human and agent workflows.",
+    "A friendly command-line interface for iCloud, starting with a comprehensive iCloud Mail experience for people, scripts, and agents.",
   repoUrl: "https://github.com/amxv/icloud-cli",
   accentColor: "#0369a1",
   accentColorDark: "#38bdf8",
@@ -10,12 +10,12 @@ export const siteConfig = {
     {
       title: "icloud",
       text:
-        "A local-first iCloud Mail command-line client with compact output by default."
+        "A command-line interface for iCloud. Mail is available today; more of the iCloud ecosystem can fit under the same CLI over time."
     },
     {
-      title: "Current command set",
+      title: "Mail today",
       text:
-        "Account and credential lifecycle, IMAP/SMTP validation, folders, bounded sync/backfill/watch/repair, local and remote search, message/thread/attachment reads, drafts, idempotent send/reply/forward, exact-location state changes, JSON/JSONL automation, schemas, completions, and man pages."
+        "Read, search, sync, send, reply, draft, organize, export, automate, and recover iCloud Mail from one command."
     },
     {
       title: "Repository",
@@ -26,7 +26,7 @@ export const siteConfig = {
   ]
 } as const;
 
-export const docCategories = ["Start", "Guides", "Reference"] as const;
+export const docCategories = ["Start", "Mail", "Agents & automation", "Reference"] as const;
 
 export const primaryNav = [
   { href: "/docs", label: "Docs" },

@@ -1,201 +1,139 @@
 ---
-title: Account setup and credentials
-description: Add multiple iCloud Mail profiles safely, choose keyring, environment, or file credentials, select a default account, and rotate or remove credentials.
-order: 3
-category: Guides
-summary: Offline account setup, app-specific-password handling, credential references, defaults, rotation, and removal.
+title: "Accounts and credentials"
+description: "Add one or more iCloud Mail accounts, choose a default, and manage app-specific passwords without putting secrets on the command line."
+order: 4
+category: Start
+summary: "Configure accounts safely with the system keyring, stdin, environment variables, or protected files."
 ---
 
-## Before you add an account
+## Add your first account
 
-Use an **app-specific password**, not the primary password for your Apple Account. Account setup is deliberately offline: it records the profile and credential source, marks the account `pending_validation`, and makes no IMAP or SMTP connection. Run `account test` explicitly when the external credential is available and you are ready for live read-only validation.
+Use an Apple **app-specific password**, not your normal Apple Account password.
 
-For experiments or agent-owned runs, choose an isolated state root first:
+The interactive command is:
 
 ```bash
-export ICLOUD_HOME="$PWD/icloud-state"
+icloud account add --name Personal --email you@icloud.com
 ```
 
-## Store an app-specific password in the native keyring
+When the system keyring is available, this is the simplest setup.
 
-The native operating-system keyring is the default for interactive setup. Run the command in a terminal and omit credential-source flags:
+## Headless and agent-friendly credential sources
 
-```bash
-icloud account add --name Personal --email owner@icloud.com
-```
+For non-interactive use, choose one explicit source.
 
-The prompt does not echo the password. The value is written to the native keyring; the local database stores only a keyring reference.
-
-For a script, password manager, or agent, send the value through stdin explicitly:
+### Read the password from stdin
 
 ```bash
-read -rsp "App-specific password: " ICLOUD_APP_PASSWORD
-printf '\n'
-printf '%s\n' "$ICLOUD_APP_PASSWORD" |
+printf '%s\n' "$ICLOUD_APP_PASSWORD" | \
   icloud account add \
     --name Personal \
-    --email owner@icloud.com \
+    --email you@icloud.com \
     --password-stdin
-unset ICLOUD_APP_PASSWORD
 ```
 
-`--password-stdin` never prints the value and no `--password` argument exists. Avoid putting a password directly in a command line, shell history, JSON request, or environment exported to unrelated processes.
-
-The configured `--name` is also the display name used in the `From` header for new outbound mail. Choose the sender name recipients should see; `account rename` changes it for future sends without changing the email address or stable account ID.
-
-On a headless Linux session without a Secret Service keyring, use an environment or file reference instead.
-
-## Persist an environment reference
+### Reference an environment variable
 
 ```bash
-icloud account add \
-  --name Agent \
-  --email agent@icloud.com \
-  --credential-env ICLOUD_AGENT_APP_PASSWORD
-```
-
-The CLI stores the variable name, not its value. It does not require the variable to be set during offline setup. Export it only in the process environment that will run a future network command:
-
-```bash
-read -rsp "App-specific password: " ICLOUD_AGENT_APP_PASSWORD
-printf '\n'
-export ICLOUD_AGENT_APP_PASSWORD
-```
-
-Account and credential output never reveals the stored variable name.
-
-## Persist a file reference
-
-Create a private file owned by the current user:
-
-```bash
-install -m 600 /dev/null "$HOME/.config/icloud-cli/personal-password"
-read -rsp "App-specific password: " ICLOUD_FILE_PASSWORD
-printf '\n'
-printf '%s\n' "$ICLOUD_FILE_PASSWORD" > "$HOME/.config/icloud-cli/personal-password"
-unset ICLOUD_FILE_PASSWORD
-
 icloud account add \
   --name Personal \
-  --email owner@icloud.com \
-  --credential-file "$HOME/.config/icloud-cli/personal-password"
+  --email you@icloud.com \
+  --credential-env ICLOUD_APP_PASSWORD
 ```
 
-The CLI records an absolute path. It does not copy, print, or delete the external file. Keep the file outside repositories, shared directories, backups that expose plaintext, and the CLI state root.
+The CLI remembers the reference; the environment variable must exist when a network operation needs the credential.
 
-## Add more than one account
-
-The first account becomes the default automatically. Add another profile with a different friendly name and email:
+### Reference a protected file
 
 ```bash
 icloud account add \
-  --name Work \
-  --email work@icloud.com \
-  --credential-env ICLOUD_WORK_APP_PASSWORD
+  --name Personal \
+  --email you@icloud.com \
+  --credential-file ~/.config/icloud-cli/personal-password
 ```
 
-Use a non-email IMAP username only when you already know it is required:
+Use filesystem permissions appropriate for a secret.
 
-```bash
-icloud account add \
-  --name Legacy \
-  --email legacy@icloud.com \
-  --imap-username legacy \
-  --credential-env ICLOUD_LEGACY_APP_PASSWORD
-```
+There is intentionally no plaintext `--password ...` flag.
 
-Without `--imap-username`, the email address is stored initially. `account test` tries the configured value, the full email, and the short local part as needed after authentication rejection, then persists the exact form that succeeds.
+## Validate the account
 
-## Inspect and select accounts
-
-```bash
-icloud account list
-icloud account show Personal
-icloud --account work@icloud.com account show
-icloud account show
-```
-
-`account show` without a selector uses the configured default. When no default exists, a sole account is selected; multiple accounts without a default return a conflict rather than guessing.
-
-Set or change the default explicitly:
-
-```bash
-icloud account default Work
-```
-
-Rename a friendly selector without changing the stable account ID:
-
-```bash
-icloud account rename Work Client-Mail
-```
-
-## Inspect credential metadata
-
-```bash
-icloud account credential show Personal
-icloud account credential show Personal --json
-```
-
-The result contains the account ID, credential scheme, configured state, and update time. It never includes a keyring key, environment-variable name, file path, or credential value. Showing metadata does not resolve the credential or contact iCloud.
-
-## Rotate or change the credential source
-
-Replace a keyring value through stdin:
-
-```bash
-printf '%s\n' "$NEW_APP_PASSWORD" |
-  icloud account credential replace Personal --password-stdin
-```
-
-Switch to an environment reference:
-
-```bash
-icloud account credential replace Personal \
-  --credential-env ICLOUD_PERSONAL_APP_PASSWORD
-```
-
-Switch to a file reference:
-
-```bash
-icloud account credential replace Personal \
-  --credential-file "$HOME/.config/icloud-cli/personal-password"
-```
-
-A replacement returns the account to `pending_validation`. When changing away from keyring storage, the old native keyring entry is removed. If the local update fails, the CLI attempts to restore the prior keyring value before returning an error.
-
-## Delete a credential or account
-
-Credential deletion requires explicit authorization and leaves the account profile in place:
-
-```bash
-icloud account credential delete Personal --yes
-```
-
-Remove an account profile and its credential reference:
-
-```bash
-icloud account remove Personal --yes
-```
-
-A native keyring entry is removed with the account. An environment variable or external credential file is left untouched. When several accounts exist, the current default cannot be removed until another account is selected:
-
-```bash
-icloud account default Work
-icloud account remove Personal --yes
-```
-
-Both destructive commands return a safety error without `--yes`; they never prompt implicitly in redirected or agent execution.
-
-## Validate after setup
-
-Every account added or changed remains `pending_validation` until both protocols pass:
+After setup:
 
 ```bash
 icloud account test Personal
 ```
 
-The test is read-only: IMAP performs capability, login, list, and `INBOX` status commands; SMTP requires STARTTLS, authenticates, sends `NOOP`, and quits. It does not prove delivery and cannot send or mutate mail.
+This checks Mail connectivity without sending a message.
 
-Do not interpret `account add` alone as proof that the email, IMAP username, app-specific password, or external reference is valid. Continue with [Account validation and doctor](/docs/account-validation-and-doctor) for health and troubleshooting, then [Folder discovery and sync policy](/docs/folder-discovery-and-sync-policy) for the complete mailbox tree.
+## Add multiple accounts
 
-Continue with [Local state and account inspection](/docs/local-state-and-accounts) for data paths and locking, or [Output and automation](/docs/output-and-automation) for JSON and exit contracts.
+```bash
+icloud account add --name Personal --email you@icloud.com
+icloud account add --name Work --email you@company.example
+```
+
+List them:
+
+```bash
+icloud account list
+```
+
+Choose a default:
+
+```bash
+icloud account default Personal
+```
+
+Or select one for a single command:
+
+```bash
+icloud --account Work mail messages list
+```
+
+Selectors can use the account's friendly name, email address, or stable `acct_…` ID.
+
+## Rename an account
+
+```bash
+icloud account rename Personal Home
+```
+
+The friendly name changes; your Mail data stays associated with the same account.
+
+## Inspect credential metadata
+
+```bash
+icloud account credential show Personal
+```
+
+This describes how the credential is sourced without printing the password itself.
+
+## Replace a credential
+
+For example, to rotate into a new keyring value:
+
+```bash
+printf '%s\n' "$NEW_ICLOUD_APP_PASSWORD" | \
+  icloud account credential replace Personal --password-stdin
+```
+
+Then re-check the account:
+
+```bash
+icloud account test Personal
+```
+
+## Remove an account
+
+Review your local data first if you may want to keep it. Then:
+
+```bash
+icloud account remove Personal --yes
+```
+
+Removing an account is different from uninstalling the CLI. See [Local data and backups](/docs/local-state-and-accounts) if you want to preserve or delete synchronized mail deliberately.
+
+## Troubleshooting
+
+If a credential works in the Apple website but `account test` fails, make sure it is an **app-specific password** and not the primary Apple Account password. For connection diagnostics, continue with [Account checks and doctor](/docs/account-validation-and-doctor).

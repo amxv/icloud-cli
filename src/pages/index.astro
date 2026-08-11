@@ -5,19 +5,19 @@ import { primaryNav, siteConfig } from "../data/docs";
 
 const docs = (await getCollection("docs")).sort((a, b) => a.data.order - b.data.order);
 const featuredDocs = [
+  "overview",
   "quickstart",
-  "installation",
-  "sync-and-read-inbox",
-  "search-synchronized-mail",
+  "read-mail",
   "send-mail-safely",
-  "output-and-automation"
+  "agent-guide",
+  "supported-features"
 ].map((id) => docs.find((entry) => entry.id === id)).filter(Boolean);
 
 const capabilities = [
-  ["Read", "Sync, search, threads, full messages, attachments"],
-  ["Write", "Draft, send, reply, forward, move, archive, delete"],
-  ["Automate", "Stable text, JSON, JSONL, schemas, request IDs"],
-  ["Protect", "Native keyring, dry runs, idempotency, local state"]
+  ["Read Mail", "Sync, search, conversations, complete messages, attachments"],
+  ["Compose", "Draft, send, reply, forward, aliases, signatures, S/MIME"],
+  ["Organize", "Folders, archive, move, trash, junk, bulk reviewed actions"],
+  ["Automate", "Compact output, JSON, JSONL, schemas, stable IDs, dry runs"]
 ];
 ---
 
@@ -30,11 +30,11 @@ const capabilities = [
   <div class="icloud-home">
     <section class="icloud-hero shell">
       <div class="icloud-hero__intro">
-        <p class="icloud-kicker">iCloud Mail, from the command line</p>
-        <h1>Your inbox.<br /><em>In your shell.</em></h1>
+        <p class="icloud-kicker">iCloud, from the command line</p>
+        <h1>Your iCloud.<br /><em>In your shell.</em></h1>
         <p class="icloud-hero__lede">
-          A local-first CLI for reading, searching, synchronizing, drafting, and sending iCloud Mail —
-          designed to feel equally natural in your terminal and inside an agent.
+          One command-line home for the iCloud ecosystem. Mail is comprehensive today — read, search,
+          draft, send, organize, automate, and recover it from your terminal or an agent.
         </p>
         <div class="icloud-hero__actions">
           <a class="icloud-button icloud-button--primary" href="/docs/quickstart">Get started</a>
@@ -57,7 +57,7 @@ const capabilities = [
             <span>local-first</span>
           </div>
           <div class="icloud-terminal__body">
-            <div class="icloud-terminal__line"><b>~</b><span>icloud mail latest</span></div>
+            <div class="icloud-terminal__line"><b>~</b><span>icloud mail threads list</span></div>
             <div class="icloud-terminal__output">
               <span class="dim">thread</span>
               <span><strong>thr_…</strong> subject="Project update"</span>
@@ -89,11 +89,11 @@ const capabilities = [
     <section class="icloud-manifesto shell">
       <p class="icloud-section-index">01 / Philosophy</p>
       <div class="icloud-manifesto__copy">
-        <h2>Mail automation without turning your mailbox into a cloud service.</h2>
+        <h2>A clean interface to iCloud, not a lesson in how it works.</h2>
         <p>
-          <code>icloud</code> talks directly to iCloud, keeps synchronized mail on your machine,
-          and stays quiet by default. Routine commands return compact text; complete content and
-          structured formats are explicit choices.
+          <code>icloud</code> turns everyday tasks into predictable commands. Mail is the first
+          complete service family; future iCloud capabilities can join the same CLI without making
+          users learn a different tool for each one.
         </p>
       </div>
     </section>
@@ -101,7 +101,7 @@ const capabilities = [
     <section class="icloud-capabilities shell">
       <div class="icloud-capabilities__head">
         <p class="icloud-section-index">02 / Surface</p>
-        <h2>One small command.<br />A complete mail workflow.</h2>
+        <h2>Mail is here today.<br />More iCloud can fit tomorrow.</h2>
       </div>
       <div class="icloud-capabilities__list">
         {capabilities.map(([label, description], index) => (
@@ -119,10 +119,10 @@ const capabilities = [
         <p class="icloud-section-index">03 / Built for agents</p>
         <h2>Predictable enough to automate. Careful enough for your inbox.</h2>
         <p>
-          Stable exit classes, bounded output, explicit JSON/JSONL, dry-run previews, idempotency,
-          and deliberate authorization make destructive or outbound actions inspectable before they happen.
+          Compact output, explicit JSON/JSONL, stable IDs, dry-run previews, and idempotency make
+          the CLI easy for agents to explore without making writes opaque or accidental.
         </p>
-        <a href="/docs/output-and-automation">Explore the automation contract <span aria-hidden="true">→</span></a>
+        <a href="/docs/agent-guide">Read the agent guide <span aria-hidden="true">→</span></a>
       </div>
       <div class="icloud-code-note" aria-label="Automation example">
         <div class="icloud-code-note__top"><span>request.json</span><span>v1</span></div>
@@ -159,8 +159,8 @@ const capabilities = [
     </section>
 
     <section class="icloud-closing shell">
-      <p>Local by default.</p>
-      <h2>Put iCloud Mail<br />on the command line.</h2>
+      <p>Mail today. A broader iCloud CLI over time.</p>
+      <h2>Put iCloud<br />on the command line.</h2>
       <div>
         <a class="icloud-button icloud-button--primary" href="/docs/quickstart">Install icloud</a>
         <a class="icloud-closing__github" href="https://github.com/amxv/icloud-cli">GitHub ↗</a>

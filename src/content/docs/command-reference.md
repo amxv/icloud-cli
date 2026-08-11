@@ -1,7 +1,7 @@
 ---
 title: Command reference
 description: Generated usage, examples, flags, and subcommands for the complete icloud command tree.
-order: 11
+order: 90
 category: Reference
 summary: Exhaustive syntax generated from the same Cobra tree as the installed icloud executable.
 ---

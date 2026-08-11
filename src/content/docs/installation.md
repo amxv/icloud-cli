@@ -1,129 +1,101 @@
 ---
-title: Installation
-description: Install or update icloud through npm or build it from source, verify the native binary and release checksum path, and enable reference assets.
+title: "Installation"
+description: "Install or update the icloud CLI, verify it works, and optionally enable shell completion and man pages."
 order: 2
 category: Start
-summary: npm install/update, verified native release assets, source fallback, version checks, completions, and man pages.
+summary: "Install with npm, update later with the same command, or build from source."
 ---
 
-## Prerequisites
+## Install with npm
 
-Choose one installation path:
-
-- npm installation: Node.js 18 or newer;
-- source build: Go 1.26.5 or newer;
-- documentation development: Bun 1 or newer in addition to the source-build tools.
-
-No credential is required to install the binary, inspect capabilities, run local doctor diagnostics, or create an empty state. Account setup uses an app-specific password or an environment/file reference; it never requires the primary password for your Apple Account. Live contact occurs only when you explicitly run `account test` or `doctor --live`.
-
-## Install through npm
+The easiest installation is:
 
 ```bash
-npm install --global @amxv/icloud-cli
+npm install --global @amxv/icloud-cli@latest
+```
+
+Then verify the command is available:
+
+```bash
 icloud version
-```
-
-The npm executable is named `icloud`. The package installer selects a release asset with this shape:
-
-```text
-icloud_<operating-system>_<architecture>[.exe]
-```
-
-On macOS and Linux, the installed native binary lives beside the JavaScript shim as `icloud-bin`. On Windows it is `icloud.exe`. Before replacing that binary, the installer downloads `checksums.txt` from the same tagged GitHub release and verifies the asset's SHA-256 digest. A missing or mismatched checksum is treated exactly like an unavailable release asset; an unverified download is never installed.
-
-Each release also publishes `release-metadata.json`, a machine-readable list of the six supported native assets, target operating system/architecture, byte size, and SHA-256 digest.
-
-If downloading the release asset fails, the installer checks for Go and the packaged `cmd/icloud` source, then performs a local fallback build. A failure in both paths stops installation rather than leaving a non-working command.
-
-## Build from source
-
-From the repository root:
-
-```bash
-make check
-make build
-./dist/icloud version
-```
-
-Install that build into `~/.local/bin`:
-
-```bash
-make install-local
 icloud --help
 ```
 
-The Makefile injects the package version into the same build-time version field used by release binaries.
+The package installs the `icloud` command. You do not run `icloud-cli`.
 
-## Update an npm installation
+## Update
 
-Install the current tagged npm release and then ask the binary what actually runs:
+Use the same install command whenever you want the latest published release:
 
 ```bash
 npm install --global @amxv/icloud-cli@latest
 icloud version
 ```
 
-The npm package version selects the GitHub release tag and native asset version. Do not infer the running CLI version from a package-manager cache or directory name; `icloud version` is the authoritative check for the executable that is on `PATH`.
+## Build from source
 
-## Enable completion and man pages
-
-The CLI can always generate completion from its installed command tree:
+If you are working from a repository checkout:
 
 ```bash
-icloud completion bash > icloud.bash
-icloud completion zsh > _icloud
-icloud completion fish > icloud.fish
-icloud completion powershell > icloud.ps1
+make build
+./dist/icloud version
 ```
 
-The npm tarball contains the same four deterministic files under `completions/`. Install or source the file using your shell's normal completion location.
+For a full development verification:
 
-The npm package declares the generated root `man/icloud.1` page and contains the complete subcommand man tree. You can also generate a fresh tree from the running executable:
+```bash
+make check
+make docs-check
+```
+
+## Shell completion
+
+The CLI can generate completion for Bash, Zsh, Fish, and PowerShell.
+
+For example:
+
+```bash
+icloud completion zsh > /tmp/_icloud
+icloud completion bash > /tmp/icloud.bash
+```
+
+Where you install that file depends on your shell configuration. You can always regenerate it from the installed version.
+
+## Man pages
+
+Generate the main man page to stdout:
+
+```bash
+icloud man > icloud.1
+man ./icloud.1
+```
+
+Or generate the complete tree:
 
 ```bash
 icloud man --output-dir ./man
-man ./man/icloud.1
+man ./man/icloud-mail-search.1
 ```
 
-## Verify identity and capabilities
+## Verify the installed feature set
+
+`capabilities` is useful when a script or agent needs to know what this build supports:
 
 ```bash
-icloud version
 icloud capabilities
+icloud capabilities --json
 ```
 
-Both commands use one compact line by default. `capabilities` includes the installed local-state schema version. Use `--json` only when a consumer needs structured fields.
-
-## Verify local state
-
-Choose an isolated directory for a first read:
-
-```bash
-ICLOUD_HOME=./icloud-state icloud account list
-```
-
-A new installation prints `accounts count=0` and creates the state root. Omitting both `--home` and `ICLOUD_HOME` uses the platform data directory described in [Local state and account inspection](/docs/local-state-and-accounts).
-
-## Verify account setup
-
-For a safe first profile, read [Account setup and credentials](/docs/account-setup-and-credentials), then choose native keyring, environment, or file-backed setup. A successful add returns `pending_validation`; follow it with the read-only workflow in [Account validation and doctor](/docs/account-validation-and-doctor).
-
-## Repair an npm installation
-
-When the JavaScript shim exists but its native binary does not:
-
-```bash
-npm rebuild --global @amxv/icloud-cli
-```
-
-If that still fails, check that the installed package version has a matching GitHub release asset **and** checksum entry, or that Go is available for the fallback build. A checksum mismatch should be treated as a failed native download, not bypassed.
+The output is tied to the installed binary, so it is a better source than assuming a particular release has a feature.
 
 ## Uninstall
 
-For a global npm installation:
+If you installed with npm:
 
 ```bash
 npm uninstall --global @amxv/icloud-cli
 ```
 
-Package removal does not delete local application state, native keyring entries, environment variables, or external credential files. Remove accounts through `icloud account remove <selector> --yes` before uninstalling when you want keyring cleanup. Confirm the selected root and preserve anything needed before deleting it manually. `version`, `capabilities`, completion, man, and help do not create state.
+Uninstalling the package does **not** automatically remove the CLI's local account and mail data. See [Local data and backups](/docs/local-state-and-accounts) before deleting that state.
+
+Next: [Quickstart](/docs/quickstart).

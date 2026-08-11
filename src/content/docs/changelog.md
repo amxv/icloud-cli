@@ -1,36 +1,20 @@
 ---
-title: Changelog
-description: Release notes and unreleased user-visible changes for icloud.
+title: "Changelog"
+description: "User-visible release notes for icloud."
 order: 99
 category: Reference
-summary: Public Mail workflows, output contracts, installation, and documentation changes.
+summary: "What changed for people and agents using the CLI."
 ---
 
 ## Unreleased
 
-- Completed the standalone iCloud Mail workflow: multi-account credentials and validation; folder discovery/administration; bounded forward sync, historical backfill, foreground IDLE watch, rebaseline and repair; local and bounded remote search; complete message/thread/attachment reads; drafts; send/reply/reply-all/forward; and exact-location read/flag/move/copy/archive/trash/restore/delete operations.
-- Added local-only streaming mboxrd mailbox export over verified canonical provider copies, with bounded deterministic paging, reversible `From ` quoting, native stdout streaming, and atomic private file output that fails closed on missing or corrupt raw mail.
-- Added bounded resumable mboxrd mailbox import with an immutable source fingerprint, exact byte/message frontier, per-record recovery evidence, single-message APPEND reconciliation reuse, source-change refusal, and explicit fail-fast or continue-on-error partial-work reporting.
-- Added standards-based mailing-list unsubscribe with token-redacted message capability, strict RFC 8058 DKIM-covered one-click HTTPS POST, explicit multi-alternative selection, and durable idempotent mailto fallback through the normal send journal.
-- Added account-local exact-address VIP and blocked sender preferences, bounded sender inventory commands, indexed local message/thread search filters, and triage context on message/thread reads without provider, Contacts, filtering-rule, move, or delete side effects.
-- Added anchored account-local thread mute/unmute preferences that follow canonical aliases and late merges, remain only with their anchor component after stronger-evidence splits, and suppress only confidently classified default watch attention after synchronization while preserving verbose/JSONL sync truth and ordinary search/read access.
-- Added account-local per-identity text/HTML signatures, operation-family defaults for new/reply/reply-all/forward with explicit none, compose-time overrides, metadata-only broad listing, and pre-preview/pre-idempotency expansion so saved drafts and outbound request identity track the exact expanded content.
-- Added an explicit colored-flag compatibility outcome: generic provider `\Flagged` remains supported, opaque provider flags remain preserved, and capabilities report `colored_flags=unsupported` rather than guessing undocumented Apple/iCloud color keywords.
-- Tightened Hide My Email identity handling: optional local labels without forwarding-destination storage, privacy-safe empty display names by default, account-scoped outbound capability evidence, verified-only actual SMTP/default use, HME-aware reply sender preference, and safety failures instead of silent primary-address fallback when HME delivery is ambiguous or unverified.
-- Added `mail settings show`, a credential-free local settings aggregate covering default identity, effective signature defaults, semantic folder roles, preference counts, provider-compatibility evidence, and explicit `unsupported_current_auth` states for Apple-managed forwarding, auto-reply, rules, provisioning, Hide My Email management, categories, and provider default-Send-Address settings.
-- Added a private, manual safe-retry Outbox for transport-proven pre-DATA failures only. `mail outbox list|show|retry|cancel` keeps ordinary output payload-free, replays the exact reviewed raw MIME plus original private SMTP envelope including BCC, creates linked attempts, fails closed on restart ambiguity, and never queues unknown/post-DATA/accepted outcomes or runs a background resend scheduler.
-- Added inbound S/MIME signature inspection for detached PKCS#7 `multipart/signed` and opaque signed-data, with exact signed-byte verification and separate cryptographic-validity, certificate-time/key-usage, mailbox-identity, and chain-trust results. Added account/email-scoped public certificate import/list/remove with trust opt-in; public output omits DER/private keys, trust changes invalidate cached verdicts, and S/MIME control parts are not exposed as ordinary attachments.
-- Added explicit local S/MIME enveloped-data decryption. `mail smime identities` binds one `MailIdentity` to an end-entity certificate plus a native-keyring/environment/private-file key reference without storing private-key bytes in SQLite; `mail message show --decrypt` resolves exactly one CMS recipient, decrypts and parses plaintext in memory under normal content bounds, verifies nested signatures, and leaves canonical encrypted provider raw unchanged.
-- Added explicit outbound S/MIME on send/reply/reply-all/forward and draft-send. Compose can sign, encrypt, or sign-then-encrypt using the selected sender identity; encryption resolves trusted certificate coverage for every To/Cc/Bcc recipient before SMTP with no plaintext downgrade, keeps Bcc envelope-only, protects inline/attachment MIME, binds the outbound attempt to the final cryptographic raw bytes, and applies the 20 MiB limit after CMS/base64 wrapping. Saved drafts retain ordinary editable MIME plus send-time protection intent.
-- Kept compact plain text as the universal default. Complete decoded text, HTML, headers, body-only streams, raw MIME, verbose diagnostics, JSON envelopes, and JSONL streams remain explicit expansions with bounded defaults and privacy-aware output.
-- Added strict `--input-json <path|->` requests for the published automation write contract and bounded JSONL bulk read/flag updates with explicit fail-fast or continue-on-error behavior. `capabilities --json` reports the automation contract, write-command schemas, bulk bounds, and cached provider capabilities when available locally.
-- Added versioned generated JSON Schemas for public resources, errors/events, output envelopes, and every JSON write request. Schemas ship with the npm package and are served from the docs site.
-- Added local-only account and folder completion. Completion suggestions never authenticate, resolve a credential, or contact iCloud.
-- Added deterministic generated command-reference, man-page, and Bash/Zsh/Fish/PowerShell completion assets derived from the same Cobra tree as the executable. Docs and repository checks fail when generated references drift.
-- Hardened npm installation so a downloaded native release binary is verified against the tagged release's SHA-256 checksums before installation. Releases also publish machine-readable metadata for all six supported OS/architecture assets; source fallback remains available when Go is installed.
-- Hardened deadline and retry behavior so a send or draft-send that reaches a provider outcome remains durably idempotent even if the caller's deadline expires, while indeterminate sends still require explicit reconciliation instead of automatic retry.
-- Consolidated the docs around task-focused journeys for installation/update, app-specific-password safety, account health, folders, synchronization/backfill/watch/repair, search, conversations, attachments, drafts/outbound mail, location changes, local-state backup/removal, automation, and troubleshooting. Exhaustive syntax now belongs to the generated command reference instead of being maintained by hand.
+- Expanded iCloud Mail into a comprehensive command family covering sync and history, local and remote search, conversations, attachments, drafts, send/reply/forward, sender identities, signatures, folder management, message organization, imports/exports, mailing-list unsubscribe, S/MIME, and recovery tools.
+- Added reviewed bulk selections and paged permanent-deletion workflows so agents and scripts can freeze the exact mail they intend to change before applying an action.
+- Added local VIP, blocked-sender, and conversation-mute preferences for lightweight triage.
+- Added a safe-retry Outbox for the send failures the CLI can prove are safe to replay, plus reconciliation tools for uncertain outbound results.
+- Added compact text by default, explicit JSON/JSONL, strict JSON request schemas, request IDs, stable exit classes, shell completion, and generated man pages for automation.
+- Reorganized the documentation around user tasks and agents, with smaller Mail guides and a clear project direction toward a broader iCloud CLI.
 
 ## 0.1.0 — 2026-08-05
 
-- Published the initial repository scaffold, npm wrapper, release workflow, and documentation site before the standalone Mail implementation was completed.
+- Published the initial `icloud` package, native CLI wrapper, release workflow, and documentation site.
