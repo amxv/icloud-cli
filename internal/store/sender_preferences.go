@@ -21,6 +21,22 @@ type senderPreferenceCursor struct {
 	Email     string `json:"email"`
 }
 
+func (repository *SenderPreferenceRepository) Counts(ctx context.Context, accountID string) (total, vip, blocked int, err error) {
+	accountID = strings.TrimSpace(accountID)
+	if accountID == "" {
+		return 0, 0, 0, maildomain.ErrInvalidSenderPreference
+	}
+	if err := repository.db.QueryRowContext(ctx, `
+SELECT count(*),
+       COALESCE(sum(CASE WHEN vip = 1 THEN 1 ELSE 0 END), 0),
+       COALESCE(sum(CASE WHEN blocked = 1 THEN 1 ELSE 0 END), 0)
+FROM sender_preferences
+WHERE account_id = ?`, accountID).Scan(&total, &vip, &blocked); err != nil {
+		return 0, 0, 0, fmt.Errorf("count sender preferences: %w", err)
+	}
+	return total, vip, blocked, nil
+}
+
 func (repository *SenderPreferenceRepository) Get(ctx context.Context, accountID, email string) (maildomain.SenderPreference, error) {
 	accountID = strings.TrimSpace(accountID)
 	normalized, err := maildomain.NormalizeSenderEmail(email)

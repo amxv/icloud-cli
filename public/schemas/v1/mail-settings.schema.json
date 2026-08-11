@@ -1,0 +1,402 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/mail-settings.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "account_id": {
+      "type": "string"
+    },
+    "compatibility": {
+      "additionalProperties": false,
+      "properties": {
+        "alternate_from": {
+          "additionalProperties": false,
+          "properties": {
+            "next_action": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "type": "object"
+        },
+        "colored_flags": {
+          "additionalProperties": false,
+          "properties": {
+            "next_action": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "type": "object"
+        },
+        "forwarded_state": {
+          "additionalProperties": false,
+          "properties": {
+            "next_action": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "type": "object"
+        },
+        "hide_my_email_outbound": {
+          "additionalProperties": false,
+          "properties": {
+            "next_action": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "type": "object"
+        },
+        "reply_answered": {
+          "additionalProperties": false,
+          "properties": {
+            "next_action": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "type": "object"
+        },
+        "smime": {
+          "additionalProperties": false,
+          "properties": {
+            "next_action": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "alternate_from",
+        "colored_flags",
+        "forwarded_state",
+        "hide_my_email_outbound",
+        "reply_answered",
+        "smime"
+      ],
+      "type": "object"
+    },
+    "local": {
+      "additionalProperties": false,
+      "properties": {
+        "default_identity": {
+          "additionalProperties": false,
+          "properties": {
+            "address": {
+              "type": "string"
+            },
+            "display_name": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "verification": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "address",
+            "id",
+            "kind",
+            "verification"
+          ],
+          "type": "object"
+        },
+        "enabled_identities": {
+          "type": "integer"
+        },
+        "folder_roles": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "configured": {
+                "type": "boolean"
+              },
+              "folder_id": {
+                "type": "string"
+              },
+              "folder_name": {
+                "type": "string"
+              },
+              "resolved": {
+                "type": "boolean"
+              },
+              "role": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "configured",
+              "resolved",
+              "role"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "identity_count": {
+          "type": "integer"
+        },
+        "preferences": {
+          "additionalProperties": false,
+          "properties": {
+            "blocked_senders": {
+              "type": "integer"
+            },
+            "muted_threads": {
+              "type": "integer"
+            },
+            "sender_records": {
+              "type": "integer"
+            },
+            "thread_records": {
+              "type": "integer"
+            },
+            "vip_senders": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "blocked_senders",
+            "muted_threads",
+            "sender_records",
+            "thread_records",
+            "vip_senders"
+          ],
+          "type": "object"
+        },
+        "signature_count": {
+          "type": "integer"
+        },
+        "signature_defaults": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "identity_id": {
+                "type": "string"
+              },
+              "none": {
+                "type": "boolean"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "signature_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "none",
+              "operation"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "default_identity",
+        "enabled_identities",
+        "folder_roles",
+        "identity_count",
+        "preferences",
+        "signature_count",
+        "signature_defaults"
+      ],
+      "type": "object"
+    },
+    "local_only_read": {
+      "type": "boolean"
+    },
+    "provider_settings": {
+      "additionalProperties": false,
+      "properties": {
+        "alias_provisioning": {
+          "additionalProperties": false,
+          "properties": {
+            "next_action": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "type": "object"
+        },
+        "automatic_forwarding": {
+          "additionalProperties": false,
+          "properties": {
+            "next_action": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "type": "object"
+        },
+        "automatic_reply": {
+          "additionalProperties": false,
+          "properties": {
+            "next_action": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "type": "object"
+        },
+        "category_views": {
+          "additionalProperties": false,
+          "properties": {
+            "next_action": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "type": "object"
+        },
+        "custom_domain_provisioning": {
+          "additionalProperties": false,
+          "properties": {
+            "next_action": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "type": "object"
+        },
+        "hide_my_email_management": {
+          "additionalProperties": false,
+          "properties": {
+            "next_action": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "type": "object"
+        },
+        "provider_default_send_address": {
+          "additionalProperties": false,
+          "properties": {
+            "next_action": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "type": "object"
+        },
+        "server_rules": {
+          "additionalProperties": false,
+          "properties": {
+            "next_action": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "alias_provisioning",
+        "automatic_forwarding",
+        "automatic_reply",
+        "category_views",
+        "custom_domain_provisioning",
+        "hide_my_email_management",
+        "provider_default_send_address",
+        "server_rules"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "account_id",
+    "compatibility",
+    "local",
+    "local_only_read",
+    "provider_settings"
+  ],
+  "title": "iCloud CLI local mail settings and provider compatibility",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

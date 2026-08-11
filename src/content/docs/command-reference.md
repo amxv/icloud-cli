@@ -624,6 +624,7 @@ Available Commands:
   selection   Create and apply short-lived immutable reviewed mail target sets
   send        Preview or send text, HTML, and attachments safely and idempotently
   senders     Manage local VIP and blocked sender preferences
+  settings    Inspect local Mail settings and truthful provider compatibility
   signatures  Manage local per-identity compose signatures
   status      Compatibility alias for `mail operations … list`
   sync        Fetch and atomically commit bounded pages from enabled mail folders
@@ -3467,6 +3468,58 @@ Flags:
   -h, --help                help for vip
       --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
       --json                Emit one stable JSON success envelope
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail settings`
+
+```text
+Inspect local Mail settings and truthful provider compatibility
+
+Usage:
+  icloud mail settings [flags]
+  icloud mail settings [command]
+
+Available Commands:
+  show        Show local defaults, bindings, preferences, and provider compatibility without network access
+
+Flags:
+  -h, --help   help for settings
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+
+Use "icloud mail settings [command] --help" for more information about a command.
+```
+
+## `icloud mail settings show`
+
+```text
+Show local defaults, bindings, preferences, and provider compatibility without network access
+
+Usage:
+  icloud mail settings show [flags]
+
+Examples:
+  icloud mail settings show
+  icloud --account Personal mail settings show --verbose
+  icloud mail settings show --json
+
+Flags:
+  -h, --help                help for show
+      --input-json string   Read one strict JSON read request from a file, or - for stdin; cannot be mixed with equivalent read flags or positional read arguments
+      --json                Emit one stable JSON success envelope
+      --verbose             Include short next actions for unsupported or unverified provider features
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID

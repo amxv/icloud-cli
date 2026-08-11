@@ -11,6 +11,20 @@ import (
 	maildomain "github.com/amxv/icloud-cli/internal/mail"
 )
 
+func (repository *ThreadRepository) PreferenceCounts(ctx context.Context, accountID string) (total, muted int, err error) {
+	accountID = strings.TrimSpace(accountID)
+	if accountID == "" {
+		return 0, 0, maildomain.ErrThreadNotFound
+	}
+	if err := repository.db.QueryRowContext(ctx, `
+SELECT count(*), COALESCE(sum(CASE WHEN muted = 1 THEN 1 ELSE 0 END), 0)
+FROM thread_preferences
+WHERE account_id = ?`, accountID).Scan(&total, &muted); err != nil {
+		return 0, 0, fmt.Errorf("count thread preferences: %w", err)
+	}
+	return total, muted, nil
+}
+
 // SetMuted updates local thread presentation state at the same repository
 // boundary that resolves canonical thread IDs. Preferences are anchored to
 // stable logical messages rather than derived thread rows: current

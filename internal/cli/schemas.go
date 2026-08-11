@@ -28,6 +28,7 @@ func GeneratedSchemas() (map[string][]byte, error) {
 	specs := []schemaSpec{
 		{"account.schema.json", "iCloud CLI account", reflect.TypeOf(account.Account{})},
 		{"mail-identity.schema.json", "iCloud CLI mail identity", reflect.TypeOf(account.MailIdentity{})},
+		{"mail-settings.schema.json", "iCloud CLI local mail settings and provider compatibility", reflect.TypeOf(maildomain.MailSettings{})},
 		{"signature.schema.json", "iCloud CLI local mail signature", reflect.TypeOf(maildomain.Signature{})},
 		{"folder.schema.json", "iCloud CLI folder", reflect.TypeOf(folder.Folder{})},
 		{"message.schema.json", "iCloud CLI message", reflect.TypeOf(publicMessage{})},
@@ -42,6 +43,7 @@ func GeneratedSchemas() (map[string][]byte, error) {
 		{"account-list-read-input.schema.json", "account list JSON read request", reflect.TypeOf(accountListReadJSONRequest{})},
 		{"mail-identity-list-read-input.schema.json", "mail identity list JSON read request", reflect.TypeOf(mailIdentityListReadJSONRequest{})},
 		{"mail-identity-show-read-input.schema.json", "mail identity show JSON read request", reflect.TypeOf(mailIdentityShowReadJSONRequest{})},
+		{"mail-settings-show-read-input.schema.json", "mail settings show JSON read request", reflect.TypeOf(mailSettingsShowReadJSONRequest{})},
 		{"folder-list-read-input.schema.json", "folder list JSON read request", reflect.TypeOf(folderListReadJSONRequest{})},
 		{"folder-show-read-input.schema.json", "folder show JSON read request", reflect.TypeOf(folderShowReadJSONRequest{})},
 		{"folder-refresh-read-input.schema.json", "folder refresh JSON read request", reflect.TypeOf(folderRefreshReadJSONRequest{})},
@@ -257,6 +259,7 @@ func automationCommandContracts() []capabilityCommandContract {
 		{"account list", "account-list-read-input", false},
 		{"mail identities list", "mail-identity-list-read-input", false},
 		{"mail identities show", "mail-identity-show-read-input", false},
+		{"mail settings show", "mail-settings-show-read-input", false},
 		{"mail folders list", "folder-list-read-input", false},
 		{"mail folders show", "folder-show-read-input", false},
 		{"mail folders refresh", "folder-refresh-read-input", false},

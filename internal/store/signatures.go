@@ -19,6 +19,18 @@ type signatureCursor struct {
 	ID        string `json:"id"`
 }
 
+func (repository *SignatureRepository) Count(ctx context.Context, accountID string) (int, error) {
+	accountID = strings.TrimSpace(accountID)
+	if accountID == "" {
+		return 0, maildomain.ErrSignatureInvalid
+	}
+	var count int
+	if err := repository.db.QueryRowContext(ctx, `SELECT count(*) FROM mail_signatures WHERE account_id = ?`, accountID).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count mail signatures: %w", err)
+	}
+	return count, nil
+}
+
 func (repository *SignatureRepository) Create(ctx context.Context, accountID, signatureID string, input maildomain.SignatureInput, now time.Time) (maildomain.Signature, error) {
 	accountID, signatureID = strings.TrimSpace(accountID), strings.TrimSpace(signatureID)
 	input, err := maildomain.NormalizeSignatureInput(input)

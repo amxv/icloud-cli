@@ -18,6 +18,10 @@ type mailIdentityShowReadJSONRequest struct {
 	Identity string `json:"identity"`
 }
 
+type mailSettingsShowReadJSONRequest struct {
+	Verbose bool `json:"verbose,omitempty"`
+}
+
 type folderListReadJSONRequest struct {
 	Limit          int    `json:"limit,omitempty"`
 	Cursor         string `json:"cursor,omitempty"`
