@@ -17,7 +17,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const SchemaVersion int64 = 36
+const SchemaVersion int64 = 38
 
 var ErrMigrationLock = errors.New("migration lock unavailable")
 
@@ -169,6 +169,10 @@ func (s *Store) Identities() *MailIdentityRepository {
 
 func (s *Store) Signatures() *SignatureRepository {
 	return &SignatureRepository{db: s.db}
+}
+
+func (s *Store) SMIMECertificates() *SMIMECertificateRepository {
+	return &SMIMECertificateRepository{db: s.db}
 }
 
 func (s *Store) Folders() *FolderRepository {

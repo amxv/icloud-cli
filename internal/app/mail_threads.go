@@ -161,14 +161,19 @@ func (commands accountCommands) threadMessageSource(ctx context.Context, state *
 		return maildomain.Message{}, nil, cli.NewAppError(cli.ErrorUnavailable, "raw message content is not available locally", false)
 	}
 	blobStore := commands.inboundBlobStore(paths)
-	if options.HydrateContent && (message.Content == nil || !message.Content.AttachmentsIndexed) {
+	if options.HydrateContent && (message.Content == nil || !message.Content.AttachmentsIndexed || message.Content.SMIME == nil) {
 		reader, openErr := blobStore.OpenVerifiedContext(ctx, rawSource.StorageKey, rawSource.ContentHash, rawSource.ByteSize)
 		if openErr != nil {
 			return maildomain.Message{}, nil, mapBlobReadError(openErr)
 		}
 		attachmentSet := newStagedAttachmentSet(commands.attachmentBlobStore(paths))
 		defer attachmentSet.Abort()
-		normalized, parseErr := maildomain.ParseNormalizedWithAttachmentsContext(ctx, reader, attachmentSet.Sink)
+		smimePolicy, policyErr := commands.inboundSMIMEPolicy(ctx, state, accountID)
+		if policyErr != nil {
+			_ = reader.Close()
+			return maildomain.Message{}, nil, cli.WrapAppError(cli.ErrorInternal, "cannot read local S/MIME trust state", false, policyErr)
+		}
+		normalized, parseErr := maildomain.ParseNormalizedWithAttachmentsAndSMIMEContext(ctx, reader, attachmentSet.Sink, smimePolicy)
 		closeErr := reader.Close()
 		if parseErr == nil {
 			parseErr = closeErr

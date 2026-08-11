@@ -711,6 +711,7 @@ func renderThreadMessage(renderer *CompactTextRenderer, message maildomain.Messa
 		Field("vip", message.SenderPreference != nil && message.SenderPreference.VIP),
 		Field("blocked", message.SenderPreference != nil && message.SenderPreference.Blocked),
 		Field("attachments", message.AttachmentCount),
+		Field("smime", messageSMIMEStatus(message)),
 	}
 	if !metadataOnly {
 		fields = append(fields, Field("excerpt", Excerpt(message.Snippet, DefaultExcerptRunes)))

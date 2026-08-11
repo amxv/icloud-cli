@@ -208,6 +208,96 @@
               "raw_base64": {
                 "type": "string"
               },
+              "smime": {
+                "additionalProperties": false,
+                "properties": {
+                  "container": {
+                    "type": "string"
+                  },
+                  "encrypted": {
+                    "type": "boolean"
+                  },
+                  "identity_matched": {
+                    "type": "boolean"
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "signature_valid": {
+                    "type": "boolean"
+                  },
+                  "signed": {
+                    "type": "boolean"
+                  },
+                  "signer": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "emails": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "extended_key_usage": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "fingerprint_sha256": {
+                        "type": "string"
+                      },
+                      "issuer": {
+                        "type": "string"
+                      },
+                      "key_usage": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "not_after": {
+                        "format": "date-time",
+                        "type": "string"
+                      },
+                      "not_before": {
+                        "format": "date-time",
+                        "type": "string"
+                      },
+                      "signing_time": {
+                        "format": "date-time",
+                        "type": "string"
+                      },
+                      "subject": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "fingerprint_sha256",
+                      "not_after",
+                      "not_before"
+                    ],
+                    "type": "object"
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "trust": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "encrypted",
+                  "signature_valid",
+                  "signed",
+                  "status",
+                  "trust"
+                ],
+                "type": "object"
+              },
               "text_available": {
                 "type": "boolean"
               },
@@ -540,6 +630,96 @@
                   "email",
                   "explicit",
                   "vip"
+                ],
+                "type": "object"
+              },
+              "smime": {
+                "additionalProperties": false,
+                "properties": {
+                  "container": {
+                    "type": "string"
+                  },
+                  "encrypted": {
+                    "type": "boolean"
+                  },
+                  "identity_matched": {
+                    "type": "boolean"
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "signature_valid": {
+                    "type": "boolean"
+                  },
+                  "signed": {
+                    "type": "boolean"
+                  },
+                  "signer": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "emails": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "extended_key_usage": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "fingerprint_sha256": {
+                        "type": "string"
+                      },
+                      "issuer": {
+                        "type": "string"
+                      },
+                      "key_usage": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "not_after": {
+                        "format": "date-time",
+                        "type": "string"
+                      },
+                      "not_before": {
+                        "format": "date-time",
+                        "type": "string"
+                      },
+                      "signing_time": {
+                        "format": "date-time",
+                        "type": "string"
+                      },
+                      "subject": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "fingerprint_sha256",
+                      "not_after",
+                      "not_before"
+                    ],
+                    "type": "object"
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "trust": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "encrypted",
+                  "signature_valid",
+                  "signed",
+                  "status",
+                  "trust"
                 ],
                 "type": "object"
               },

@@ -1,6 +1,7 @@
 package mail
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -107,6 +108,7 @@ type NormalizedContent struct {
 	Attachments         []Attachment      `json:"attachments,omitempty"`
 	AttachmentsIndexed  bool              `json:"attachments_indexed"`
 	Diagnostics         []ParseDiagnostic `json:"diagnostics,omitempty"`
+	SMIME               *SMIMEStatus      `json:"smime,omitempty"`
 	TextPaths           []string          `json:"text_paths,omitempty"`
 	HTMLPaths           []string          `json:"html_paths,omitempty"`
 	SearchText          string            `json:"-"`
@@ -142,6 +144,19 @@ func ParseNormalizedContext(ctx context.Context, reader io.Reader) (NormalizedCo
 }
 
 func ParseNormalizedWithAttachmentsContext(ctx context.Context, reader io.Reader, sink AttachmentSink) (NormalizedContent, error) {
+	return parseNormalizedWithOptions(ctx, reader, sink, nil)
+}
+
+// ParseNormalizedWithAttachmentsAndSMIMEContext preserves the ordinary MIME
+// normalization contract while additionally inspecting recognized S/MIME
+// control containers. Only S/MIME entities are captured, and capture is
+// bounded; an inspection failure never makes otherwise-readable MIME content
+// disappear.
+func ParseNormalizedWithAttachmentsAndSMIMEContext(ctx context.Context, reader io.Reader, sink AttachmentSink, policy *SMIMEPolicy) (NormalizedContent, error) {
+	return parseNormalizedWithOptions(ctx, reader, sink, policy)
+}
+
+func parseNormalizedWithOptions(ctx context.Context, reader io.Reader, sink AttachmentSink, policy *SMIMEPolicy) (NormalizedContent, error) {
 	if reader == nil {
 		return NormalizedContent{}, fmt.Errorf("%w: raw message is missing", ErrInvalidMessage)
 	}
@@ -164,6 +179,10 @@ func ParseNormalizedWithAttachmentsContext(ctx context.Context, reader io.Reader
 	header := gomail.Header{Header: entity.Header}
 	result.Headers = canonicalHeaders(&header, &result.Diagnostics)
 	result.Preview = previewFromHeader(&header)
+	var inspector *smimeWalkInspector
+	if policy != nil {
+		inspector = newSMIMEWalkInspector(result.Preview.From.Email, policy)
+	}
 
 	var textPreview, htmlPreview string
 	partCount := 0
@@ -275,7 +294,7 @@ func ParseNormalizedWithAttachmentsContext(ctx context.Context, reader io.Reader
 		}
 	}
 
-	err := walkMIMEEntity(entity, "0", "", false, rootErr, handleLeaf, handleEmbedded)
+	err := walkMIMEEntityWithOptions(entity, "0", "", false, false, rootErr, handleLeaf, handleEmbedded, mimeWalkOptions{smime: inspector})
 	if err != nil {
 		if ctx.Err() != nil {
 			return NormalizedContent{}, ctx.Err()
@@ -285,6 +304,10 @@ func ParseNormalizedWithAttachmentsContext(ctx context.Context, reader io.Reader
 			return NormalizedContent{}, sinkErr
 		}
 		appendDiagnostic(&result.Diagnostics, ParseDiagnostic{Path: "0", Code: "mime_structure"})
+	}
+	if inspector != nil {
+		status := inspector.Status()
+		result.SMIME = &status
 	}
 	preview := textPreview
 	if strings.TrimSpace(preview) == "" {
@@ -402,7 +425,32 @@ type mimeLeafHandler func(MIMEPart, io.Reader) error
 type mimeEmbeddedHandler func(MIMEPart, io.Reader) (io.ReadCloser, error)
 
 func walkMIMEEntity(entity *message.Entity, path, parentPath string, embedded bool, entityErr error, handle mimeLeafHandler, handleEmbedded mimeEmbeddedHandler) error {
-	part := describePart(entity, path, parentPath, embedded, entityErr)
+	return walkMIMEEntityWithOptions(entity, path, parentPath, embedded, false, entityErr, handle, handleEmbedded, mimeWalkOptions{})
+}
+
+type mimeWalkOptions struct {
+	smime *smimeWalkInspector
+}
+
+func walkMIMEEntityWithOptions(entity *message.Entity, path, parentPath string, embedded, control bool, entityErr error, handle mimeLeafHandler, handleEmbedded mimeEmbeddedHandler, options mimeWalkOptions) error {
+	mediaType, mediaParams, _ := entity.Header.ContentType()
+	mediaType = strings.ToLower(strings.TrimSpace(mediaType))
+	multipartSigned := options.smime != nil && isSMIMEMultipartSigned(mediaType, mediaParams)
+	var capture *boundedSMIMECapture
+	if multipartSigned {
+		capture = newBoundedSMIMECapture(maxSMIMEContainerBytes)
+		entity.Body = io.TeeReader(entity.Body, capture)
+	}
+	opaqueKind := SMIMEContainerKind("")
+	if options.smime != nil {
+		opaqueKind = smimeOpaqueContainerKind(mediaType, mediaParams)
+		if opaqueKind != "" {
+			control = true
+			capture = newBoundedSMIMECapture(maxSMIMEContainerBytes)
+			entity.Body = io.TeeReader(entity.Body, capture)
+		}
+	}
+	part := describePart(entity, path, parentPath, embedded, control, entityErr)
 	if multipartReader := entity.MultipartReader(); multipartReader != nil {
 		if err := handle(part, nil); err != nil {
 			return err
@@ -419,9 +467,13 @@ func walkMIMEEntity(entity *message.Entity, path, parentPath string, embedded bo
 			if path == "0" {
 				childPath = fmt.Sprintf("%d", index)
 			}
-			if walkErr := walkMIMEEntity(child, childPath, path, embedded, err, handle, handleEmbedded); walkErr != nil {
+			childControl := multipartSigned && index == 2
+			if walkErr := walkMIMEEntityWithOptions(child, childPath, path, embedded, childControl, err, handle, handleEmbedded, options); walkErr != nil {
 				return walkErr
 			}
+		}
+		if multipartSigned {
+			options.smime.InspectMultipartSigned(path, strings.TrimSpace(mediaParams["boundary"]), capture)
 		}
 		return nil
 	}
@@ -436,7 +488,7 @@ func walkMIMEEntity(entity *message.Entity, path, parentPath string, embedded bo
 			if nested == nil {
 				return fmt.Errorf("read embedded message: %w", readErr)
 			}
-			return walkMIMEEntity(nested, path+".1", path, true, readErr, handle, handleEmbedded)
+			return walkMIMEEntityWithOptions(nested, path+".1", path, true, false, readErr, handle, handleEmbedded, options)
 		}
 		if err := handle(part, nil); err != nil {
 			return err
@@ -445,12 +497,24 @@ func walkMIMEEntity(entity *message.Entity, path, parentPath string, embedded bo
 		if nested == nil {
 			return fmt.Errorf("read embedded message: %w", err)
 		}
-		return walkMIMEEntity(nested, path+".1", path, true, err, handle, handleEmbedded)
+		return walkMIMEEntityWithOptions(nested, path+".1", path, true, false, err, handle, handleEmbedded, options)
 	}
-	return handle(part, entity.Body)
+	if err := handle(part, entity.Body); err != nil {
+		return err
+	}
+	if opaqueKind != "" {
+		encapsulated := options.smime.InspectOpaque(path, opaqueKind, capture)
+		if opaqueKind == SMIMEContainerOpaqueSigned && len(encapsulated) > 0 {
+			nested, readErr := message.ReadWithOptions(bytes.NewReader(encapsulated), &message.ReadOptions{MaxHeaderBytes: 1 << 20})
+			if nested != nil {
+				return walkMIMEEntityWithOptions(nested, path+".1", path, embedded, false, readErr, handle, handleEmbedded, options)
+			}
+		}
+	}
+	return nil
 }
 
-func describePart(entity *message.Entity, path, parentPath string, embedded bool, entityErr error) MIMEPart {
+func describePart(entity *message.Entity, path, parentPath string, embedded, control bool, entityErr error) MIMEPart {
 	mediaType, params, _ := entity.Header.ContentType()
 	mediaType = strings.ToLower(strings.TrimSpace(mediaType))
 	disposition, dispositionParams, _ := entity.Header.ContentDisposition()
@@ -463,6 +527,9 @@ func describePart(entity *message.Entity, path, parentPath string, embedded bool
 	embeddedMessage := mediaType == "message/rfc822"
 	attachment := filename != "" || disposition == "attachment" || embeddedMessage ||
 		(mediaType != "" && !strings.HasPrefix(mediaType, "text/") && !strings.HasPrefix(mediaType, "multipart/"))
+	if control {
+		attachment = false
+	}
 	part := MIMEPart{
 		Path:             path,
 		ParentPath:       parentPath,
@@ -473,7 +540,7 @@ func describePart(entity *message.Entity, path, parentPath string, embedded bool
 		Disposition:      disposition,
 		Filename:         cleanHeaderText(filename),
 		ContentID:        cleanHeaderText(contentID),
-		Inline:           disposition == "inline" || (contentID != "" && disposition != "attachment"),
+		Inline:           !control && (disposition == "inline" || (contentID != "" && disposition != "attachment")),
 		Attachment:       attachment,
 		EmbeddedMessage:  embeddedMessage || embedded,
 	}

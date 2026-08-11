@@ -31,6 +31,7 @@ type messageContentData struct {
 	PartCount        int                          `json:"part_count"`
 	ParsedComplete   bool                         `json:"parsed_complete"`
 	Diagnostics      []maildomain.ParseDiagnostic `json:"diagnostics,omitempty"`
+	SMIME            *maildomain.SMIMEStatus      `json:"smime,omitempty"`
 	Headers          []maildomain.HeaderField     `json:"headers,omitempty"`
 	Parts            []maildomain.MIMEPart        `json:"parts,omitempty"`
 	TextBody         *string                      `json:"text_body,omitempty"`
@@ -323,6 +324,11 @@ func newMailMessageShowCommand(state *executionState) *cobra.Command {
 						if err := renderMIMEPart(renderer, part); err != nil {
 							return err
 						}
+						if message.Content.SMIME != nil {
+							if err := renderSMIMEStatus(renderer, *message.Content.SMIME); err != nil {
+								return err
+							}
+						}
 					}
 				}
 				wroteMetadata = true
@@ -487,6 +493,10 @@ func renderMessageShow(renderer *CompactTextRenderer, accountID string, message 
 	contentKinds := make([]string, 0, 2)
 	partCount := 0
 	diagnostics := 0
+	smimeStatus := maildomain.SMIMEStatusAbsent
+	smimeTrust := maildomain.SMIMETrustNotEvaluated
+	smimeSigned := false
+	smimeEncrypted := false
 	unsubscribe := ""
 	senderPreferenceExplicit := false
 	senderVIP := false
@@ -502,6 +512,12 @@ func renderMessageShow(renderer *CompactTextRenderer, accountID string, message 
 		}
 		partCount = len(message.Content.Parts)
 		diagnostics = len(message.Content.Diagnostics)
+		if message.Content.SMIME != nil {
+			smimeStatus = message.Content.SMIME.Status
+			smimeTrust = message.Content.SMIME.Trust
+			smimeSigned = message.Content.SMIME.Signed
+			smimeEncrypted = message.Content.SMIME.Encrypted
+		}
 	}
 	if message.Unsubscribe != nil && message.Unsubscribe.Available {
 		parts := make([]string, 0, len(message.Unsubscribe.Methods))
@@ -536,6 +552,10 @@ func renderMessageShow(renderer *CompactTextRenderer, accountID string, message 
 		Field("raw", true),
 		Field("parts", partCount),
 		Field("diagnostics", diagnostics),
+		Field("smime", smimeStatus),
+		Field("smime_trust", smimeTrust),
+		Field("smime_signed", smimeSigned),
+		Field("smime_encrypted", smimeEncrypted),
 		Field("unsubscribe", unsubscribe),
 		Field("sender_preference_explicit", senderPreferenceExplicit),
 		Field("sender_vip", senderVIP),
@@ -590,6 +610,7 @@ func buildJSONMessageContent(ctx context.Context, message maildomain.Message, so
 		content.PartCount = len(message.Content.Parts)
 		content.ParsedComplete = len(message.Content.Diagnostics) == 0
 		content.Diagnostics = append([]maildomain.ParseDiagnostic(nil), message.Content.Diagnostics...)
+		content.SMIME = publicSMIMEStatus(message)
 		if options.Headers {
 			content.Headers = publicHeaders(message.Content)
 		}
@@ -623,6 +644,21 @@ func buildJSONMessageContent(ctx context.Context, message maildomain.Message, so
 		}
 	}
 	return content, nil
+}
+
+func renderSMIMEStatus(renderer *CompactTextRenderer, value maildomain.SMIMEStatus) error {
+	fields := []CompactField{
+		Field("container", value.Container), Field("status", value.Status), Field("signed", value.Signed), Field("encrypted", value.Encrypted),
+		Field("signature_valid", value.SignatureValid), Field("trust", value.Trust), Field("identity_matched", value.IdentityMatched), Field("reason", value.Reason),
+	}
+	if value.Signer != nil {
+		fields = append(fields,
+			Field("signer_fingerprint_sha256", value.Signer.FingerprintSHA256), Field("signer_subject", value.Signer.Subject), Field("signer_issuer", value.Signer.Issuer),
+			Field("signer_emails", value.Signer.Emails), Field("signer_not_before", value.Signer.NotBefore), Field("signer_not_after", value.Signer.NotAfter),
+			Field("signer_key_usage", value.Signer.KeyUsage), Field("signer_extended_key_usage", value.Signer.ExtendedKeyUsage), Field("signing_time", value.Signer.SigningTime),
+		)
+	}
+	return renderer.Record("smime", value.Path, fields...)
 }
 
 func messageHasRawSource(message maildomain.Message) bool {

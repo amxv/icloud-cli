@@ -235,7 +235,7 @@ This is not a normal folder sync. It verifies the remote account/folder/UID iden
 
 Use `icloud mail message show rem_… --remote --cache --full` when you want to cache and immediately read complete content. See [Search synchronized mail](/docs/search-synchronized-mail) for supported remote filters, `partial`, stale-reference recovery, and privacy behavior.
 
-Each compact record contains a stable message ID, sender, subject, best available date, true unread or flagged state, nonzero attachment count, and a bounded decoded-text preview:
+Each compact record contains a stable message ID, sender, subject, best available date, true unread or flagged state, nonzero attachment count, a bounded decoded-text preview, and the persisted S/MIME signature status when the message has been inspected:
 
 ```text
 message
@@ -244,6 +244,7 @@ subject="Project update"
 at=2026-08-06T08:30:00Z
 unread=true
 attachments=1
+smime=valid-trusted
 snippet="Here is the latest update…"
 
 inbox
@@ -282,7 +283,22 @@ icloud mail message show msg_… --verbose
 icloud mail message show msg_… --metadata-only
 ```
 
-`--verbose` adds ordered MIME-part metadata and parse diagnostics. Use the attachment workflow when you need decoded files rather than message-body output.
+`--verbose` adds ordered MIME-part metadata, parse diagnostics, and bounded S/MIME signer evidence when present: certificate SHA-256 fingerprint, subject/issuer, certificate mailbox identities, validity interval, key usage, signing time, cryptographic-validity result, trust result, and sender-identity match. The CLI reports these axes separately: a mathematically valid signature is `valid-untrusted` until its EmailProtection chain verifies against a trusted system or explicitly imported account/email-scoped root, and a trusted certificate for the wrong sender remains `identity-mismatch` rather than being relabeled trusted mail.
+
+Common detached `multipart/signed` PKCS#7 and opaque signed-data containers are inspected from their exact synchronized bytes. Signature-control `.p7s`/`.p7m` parts are not presented as ordinary user attachments when they are structurally serving as S/MIME controls. A malformed, tampered, expired, wrong-usage, untrusted, or identity-mismatched signature does **not** hide otherwise readable text/HTML/raw content; raw MIME remains the authority.
+
+Manage public certificate material locally and explicitly:
+
+```bash
+icloud mail smime certificates list
+icloud mail smime certificates import signer.pem --email sender@example.com
+icloud mail smime certificates import private-root.pem --email sender@example.com --trust
+icloud mail smime certificates remove smc_…
+```
+
+Import defaults to `trusted=false`. `--trust` is an explicit account-and-mailbox-scoped verification decision; merely importing a recipient/signer certificate never silently grants trust. Certificate input is one bounded regular PEM/DER public certificate (maximum 64 KiB), and list/JSON output contains only public certificate metadata—never private keys or DER bytes. Changing certificate trust invalidates cached S/MIME verdicts so the next hydrated message read re-verifies the exact canonical raw message. This surface is inbound verification and public-key material only; it does not store S/MIME private keys, decrypt mail, sign outbound mail, or encrypt outbound mail.
+
+Use the attachment workflow when you need decoded user files rather than message-body output.
 
 ## Unsubscribe from a mailing list deliberately
 

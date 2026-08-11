@@ -65,6 +65,7 @@ type ProviderCompatibility struct {
 	ForwardedState      SettingsCapability `json:"forwarded_state"`
 	ColoredFlags        SettingsCapability `json:"colored_flags"`
 	HideMyEmailOutbound SettingsCapability `json:"hide_my_email_outbound"`
+	SMIMEInspection     SettingsCapability `json:"smime_inspection"`
 	SMIME               SettingsCapability `json:"smime"`
 }
 

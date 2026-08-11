@@ -252,6 +252,7 @@ func TestMailContentMetadataAndPartIDsPersistAcrossRetry(t *testing.T) {
 	record.Content = &maildomain.NormalizedContent{
 		Preview:   record.Parsed,
 		Headers:   []maildomain.HeaderField{{Key: "Message-Id", Value: "<content-51@example.test>"}, {Key: "Subject", Value: "Fixture message"}},
+		SMIME:     &maildomain.SMIMEStatus{Status: maildomain.SMIMEStatusValidUntrusted, Container: maildomain.SMIMEContainerMultipartSigned, Signed: true, SignatureValid: true, Trust: maildomain.SMIMETrustUntrusted, Signer: &maildomain.SMIMESigner{FingerprintSHA256: strings.Repeat("f", 64), Emails: []string{"sender@example.test"}}},
 		TextPaths: []string{"1"},
 		HTMLPaths: []string{"2"},
 		Parts: []maildomain.MIMEPart{
@@ -271,7 +272,7 @@ func TestMailContentMetadataAndPartIDsPersistAcrossRetry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if message.Content == nil || len(message.Content.Headers) != 2 || len(message.Content.Parts) != 3 ||
+	if message.Content == nil || len(message.Content.Headers) != 2 || len(message.Content.Parts) != 3 || message.Content.SMIME == nil || message.Content.SMIME.Status != maildomain.SMIMEStatusValidUntrusted || message.Content.SMIME.Signer == nil || message.Content.SMIME.Signer.FingerprintSHA256 != strings.Repeat("f", 64) ||
 		strings.Join(message.Content.TextPaths, ",") != "1" || strings.Join(message.Content.HTMLPaths, ",") != "2" ||
 		message.ContentLocationID != record.LocationID {
 		t.Fatalf("content = %+v", message.Content)

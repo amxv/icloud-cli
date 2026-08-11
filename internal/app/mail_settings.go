@@ -176,7 +176,8 @@ func mailSettingsCompatibility(identities []account.MailIdentity, verbose bool) 
 		ForwardedState:      capability(maildomain.SettingsUnsupported, "Use local outbound history; iCloud has not exposed a proven forwarded-state mapping to this client."),
 		ColoredFlags:        capability(maildomain.SettingsUnsupported, "Use portable \\Flagged; manage Apple Mail flag colors in Apple Mail until a provider mapping is proven."),
 		HideMyEmailOutbound: capability(hme, "Configure only a pre-existing HME identity; outbound use requires durable accepted-SMTP evidence for that exact address."),
-		SMIME:               capability(maildomain.SettingsUnsupported, "This build does not yet inspect, decrypt, sign, or encrypt S/MIME content."),
+		SMIMEInspection:     capability(maildomain.SettingsSupported, "Inbound S/MIME signature inspection and public certificate trust are available locally."),
+		SMIME:               capability(maildomain.SettingsUnsupported, "S/MIME decryption and outbound signing/encryption are not yet available."),
 	}
 }
 

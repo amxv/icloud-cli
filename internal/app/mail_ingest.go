@@ -71,6 +71,10 @@ func (commands accountCommands) prepareFetchedMailRecords(
 	}
 	classificationFolder := folderValue
 	classificationFolder.Kind = semanticKind
+	smimePolicy, err := commands.inboundSMIMEPolicy(ctx, state, accountValue.ID)
+	if err != nil {
+		return nil, &fetchedPreparationError{code: "smime_state", message: "cannot read local S/MIME trust state", err: err}
+	}
 	records := make([]maildomain.IngestRecord, 0, len(messages))
 	for _, fetched := range messages {
 		if fetched.Raw == nil {
@@ -80,7 +84,7 @@ func (commands accountCommands) prepareFetchedMailRecords(
 		if err != nil {
 			return nil, &fetchedPreparationError{code: "blob_open", message: "cannot read a staged mail message", err: err}
 		}
-		normalized, parseErr := maildomain.ParseNormalizedWithAttachmentsContext(ctx, reader, attachmentSet.Sink)
+		normalized, parseErr := maildomain.ParseNormalizedWithAttachmentsAndSMIMEContext(ctx, reader, attachmentSet.Sink, smimePolicy)
 		closeErr := reader.Close()
 		if parseErr == nil {
 			parseErr = closeErr

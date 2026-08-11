@@ -93,7 +93,7 @@ Raw Markdown is available from `/docs.md` and each guide's `.md` route for agent
 
 ## Development
 
-Prerequisites: Go 1.26+, Node.js 18+, and Bun 1+ for the docs site.
+Prerequisites: Go 1.26.5+, Node.js 18+, and Bun 1+ for the docs site.
 
 ```bash
 make references

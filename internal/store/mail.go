@@ -1360,24 +1360,36 @@ func upsertMessageContent(ctx context.Context, tx *sql.Tx, messageID, sourceLoca
 	if err != nil {
 		return fmt.Errorf("encode message HTML paths: %w", err)
 	}
+	smimeJSON := ""
+	smimePolicyRevision := int64(0)
+	if content.SMIME != nil {
+		encoded, err := json.Marshal(content.SMIME)
+		if err != nil {
+			return fmt.Errorf("encode message S/MIME status: %w", err)
+		}
+		smimeJSON = string(encoded)
+		smimePolicyRevision = content.SMIME.PolicyRevision
+	}
 	parsedComplete := len(content.Diagnostics) == 0
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO message_content (
     message_id, headers_json, diagnostics_json, text_paths_json,
-    html_paths_json, parsed_complete, attachments_indexed, source_location_id,
+    html_paths_json, smime_json, smime_policy_revision, parsed_complete, attachments_indexed, source_location_id,
     created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(message_id) DO UPDATE SET
     headers_json = excluded.headers_json,
     diagnostics_json = excluded.diagnostics_json,
     text_paths_json = excluded.text_paths_json,
     html_paths_json = excluded.html_paths_json,
+    smime_json = excluded.smime_json,
+    smime_policy_revision = excluded.smime_policy_revision,
     parsed_complete = excluded.parsed_complete,
     attachments_indexed = excluded.attachments_indexed,
     source_location_id = excluded.source_location_id,
     updated_at = excluded.updated_at`,
 		messageID, string(headersJSON), string(diagnosticsJSON), string(textPathsJSON),
-		string(htmlPathsJSON), boolInt(parsedComplete), boolInt(content.AttachmentsIndexed),
+		string(htmlPathsJSON), smimeJSON, smimePolicyRevision, boolInt(parsedComplete), boolInt(content.AttachmentsIndexed),
 		strings.TrimSpace(sourceLocationID), timestamp, timestamp,
 	); err != nil {
 		return fmt.Errorf("persist message content metadata: %w", err)
@@ -2185,16 +2197,23 @@ LIMIT 100`, value.ID, value.ID)
 
 func (repository *MailRepository) loadMessageContent(ctx context.Context, value *maildomain.Message) error {
 	var (
-		headersJSON, diagnosticsJSON       string
-		textPathsJSON, htmlPathsJSON       string
-		sourceLocationID                   string
-		parsedComplete, attachmentsIndexed int
+		headersJSON, diagnosticsJSON               string
+		textPathsJSON, htmlPathsJSON               string
+		smimeJSON                                  string
+		sourceLocationID                           string
+		smimePolicyRevision, currentPolicyRevision int64
+		parsedComplete, attachmentsIndexed         int
 	)
 	err := repository.db.QueryRowContext(ctx, `
-SELECT headers_json, diagnostics_json, text_paths_json, html_paths_json,
-       parsed_complete, attachments_indexed, source_location_id
-FROM message_content WHERE message_id = ?`, value.ID).Scan(
-		&headersJSON, &diagnosticsJSON, &textPathsJSON, &htmlPathsJSON,
+SELECT content.headers_json, content.diagnostics_json, content.text_paths_json, content.html_paths_json, content.smime_json,
+       content.smime_policy_revision, COALESCE(policy.revision, 0),
+       content.parsed_complete, content.attachments_indexed, content.source_location_id
+FROM message_content AS content
+JOIN messages AS message ON message.message_id = content.message_id
+LEFT JOIN smime_policy_state AS policy ON policy.account_id = message.account_id
+WHERE content.message_id = ?`, value.ID).Scan(
+		&headersJSON, &diagnosticsJSON, &textPathsJSON, &htmlPathsJSON, &smimeJSON,
+		&smimePolicyRevision, &currentPolicyRevision,
 		&parsedComplete, &attachmentsIndexed, &sourceLocationID,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -2215,6 +2234,13 @@ FROM message_content WHERE message_id = ?`, value.ID).Scan(
 	}
 	if err := json.Unmarshal([]byte(htmlPathsJSON), &content.HTMLPaths); err != nil {
 		return fmt.Errorf("parse message HTML paths: %w", err)
+	}
+	if strings.TrimSpace(smimeJSON) != "" && smimePolicyRevision == currentPolicyRevision {
+		content.SMIME = &maildomain.SMIMEStatus{}
+		if err := json.Unmarshal([]byte(smimeJSON), content.SMIME); err != nil {
+			return fmt.Errorf("parse message S/MIME status: %w", err)
+		}
+		content.SMIME.PolicyRevision = smimePolicyRevision
 	}
 	partRows, err := repository.db.QueryContext(ctx, `
 SELECT part_id, ordinal, path, parent_path, media_type, media_params_json, charset, transfer_encoding,

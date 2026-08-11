@@ -627,6 +627,7 @@ Available Commands:
   senders     Manage local VIP and blocked sender preferences
   settings    Inspect local Mail settings and truthful provider compatibility
   signatures  Manage local per-identity compose signatures
+  smime       Inspect inbound S/MIME and manage public certificate trust material
   status      Compatibility alias for `mail operations … list`
   sync        Fetch and atomically commit bounded pages from enabled mail folders
   thread      Compatibility namespace for `mail threads show`
@@ -3855,6 +3856,136 @@ Flags:
       --json                Emit one stable JSON success envelope
       --text string         Inline plain-text signature body
       --text-file string    Plain-text signature file path, or - for stdin
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail smime`
+
+```text
+Inspect inbound S/MIME and manage public certificate trust material
+
+Usage:
+  icloud mail smime [command]
+
+Available Commands:
+  certificates Manage bounded account-scoped public S/MIME certificates
+
+Flags:
+  -h, --help   help for smime
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+
+Use "icloud mail smime [command] --help" for more information about a command.
+```
+
+## `icloud mail smime certificates`
+
+```text
+Manage bounded account-scoped public S/MIME certificates
+
+Usage:
+  icloud mail smime certificates [command]
+
+Available Commands:
+  import      Import one public certificate; trust is opt-in
+  list        List public S/MIME certificate metadata without DER
+  remove      Remove one account-scoped public S/MIME certificate
+
+Flags:
+  -h, --help   help for certificates
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+
+Use "icloud mail smime certificates [command] --help" for more information about a command.
+```
+
+## `icloud mail smime certificates import`
+
+```text
+Import one public certificate; trust is opt-in
+
+Usage:
+  icloud mail smime certificates import <certificate-file> [flags]
+
+Examples:
+  icloud mail smime certificates import signer.pem --email sender@example.com
+  icloud mail smime certificates import private-root.pem --email sender@example.com --trust --json
+
+Flags:
+      --email string        Scope this public certificate to one mailbox identity
+  -h, --help                help for import
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+      --trust               Explicitly trust this certificate as an account/email-scoped verification root
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail smime certificates list`
+
+```text
+List public S/MIME certificate metadata without DER
+
+Usage:
+  icloud mail smime certificates list [flags]
+
+Examples:
+  icloud mail smime certificates list
+  icloud mail smime certificates list --email sender@example.com --limit 20 --json
+
+Flags:
+      --cursor string       Continue from a next_cursor for the same account and email filter
+      --email string        Filter by exact scoped mailbox email
+  -h, --help                help for list
+      --input-json string   Read one strict JSON read request from a file, or - for stdin; cannot be mixed with equivalent read flags or positional read arguments
+      --json                Emit one stable JSON success envelope
+      --limit int           Maximum certificates to return (1-100) (default 20)
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail smime certificates remove`
+
+```text
+Remove one account-scoped public S/MIME certificate
+
+Usage:
+  icloud mail smime certificates remove <certificate-id> [flags]
+
+Examples:
+  icloud mail smime certificates remove smc_…
+  icloud mail smime certificates remove --input-json remove-certificate.json --json
+
+Flags:
+  -h, --help                help for remove
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID

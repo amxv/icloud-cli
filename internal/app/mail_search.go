@@ -75,6 +75,10 @@ func (commands accountCommands) repairSearchBodies(ctx context.Context, state *s
 	}
 	summary := maildomain.SearchRepairSummary{AccountID: accountValue.ID, Selected: len(items)}
 	blobStore := commands.inboundBlobStore(paths)
+	smimePolicy, err := commands.inboundSMIMEPolicy(ctx, state, accountValue.ID)
+	if err != nil {
+		return maildomain.SearchRepairSummary{}, cli.WrapAppError(cli.ErrorInternal, "cannot read local S/MIME trust state", false, err)
+	}
 	for _, item := range items {
 		if err := ctx.Err(); err != nil {
 			return maildomain.SearchRepairSummary{}, cli.WrapAppError(cli.ErrorUnavailable, "search repair was canceled", false, err)
@@ -103,7 +107,7 @@ func (commands accountCommands) repairSearchBodies(ctx context.Context, state *s
 			}
 			continue
 		}
-		normalized, parseErr := maildomain.ParseNormalizedContext(ctx, reader)
+		normalized, parseErr := maildomain.ParseNormalizedWithAttachmentsAndSMIMEContext(ctx, reader, nil, smimePolicy)
 		closeErr := reader.Close()
 		if parseErr == nil {
 			parseErr = closeErr

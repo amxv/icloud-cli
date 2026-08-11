@@ -289,7 +289,13 @@ func (commands accountCommands) prepareMessageImport(ctx context.Context, state 
 		prepared.abort()
 		return nil, cli.WrapAppError(cli.ErrorInternal, "cannot reopen staged import source", false, err)
 	}
-	content, parseErr := maildomain.ParseNormalizedContext(ctx, reader)
+	smimePolicy, policyErr := commands.inboundSMIMEPolicy(ctx, state, accountValue.ID)
+	if policyErr != nil {
+		_ = reader.Close()
+		prepared.abort()
+		return nil, cli.WrapAppError(cli.ErrorInternal, "cannot read local S/MIME trust state", false, policyErr)
+	}
+	content, parseErr := maildomain.ParseNormalizedWithAttachmentsAndSMIMEContext(ctx, reader, nil, smimePolicy)
 	closeErr = reader.Close()
 	if parseErr == nil {
 		parseErr = closeErr

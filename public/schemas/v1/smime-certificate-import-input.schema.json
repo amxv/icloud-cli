@@ -1,0 +1,23 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/smime-certificate-import-input.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "certificate_file": {
+      "type": "string"
+    },
+    "email": {
+      "type": "string"
+    },
+    "trust": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "certificate_file",
+    "email"
+  ],
+  "title": "mail S/MIME public certificate import JSON input",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

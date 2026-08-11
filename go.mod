@@ -1,6 +1,6 @@
 module github.com/amxv/icloud-cli
 
-go 1.26
+go 1.26.5
 
 require (
 	github.com/emersion/go-imap/v2 v2.0.0-beta.8
@@ -31,6 +31,7 @@ require (
 	github.com/rogpeppe/go-internal v1.16.0 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/sethvargo/go-retry v0.4.0 // indirect
+	github.com/smallstep/pkcs7 v0.2.3
 	github.com/spf13/pflag v1.0.9 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect

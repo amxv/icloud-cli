@@ -11,7 +11,7 @@ summary: npm install/update, verified native release assets, source fallback, ve
 Choose one installation path:
 
 - npm installation: Node.js 18 or newer;
-- source build: Go 1.26 or newer;
+- source build: Go 1.26.5 or newer;
 - documentation development: Bun 1 or newer in addition to the source-build tools.
 
 No credential is required to install the binary, inspect capabilities, run local doctor diagnostics, or create an empty state. Account setup uses an app-specific password or an environment/file reference; it never requires the primary password for your Apple Account. Live contact occurs only when you explicitly run `account test` or `doctor --live`.

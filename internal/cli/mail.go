@@ -209,6 +209,7 @@ type publicMessage struct {
 	DedupeConflicts   []maildomain.DedupeConflict       `json:"dedupe_conflicts,omitempty"`
 	Unsubscribe       *maildomain.UnsubscribeCapability `json:"unsubscribe,omitempty"`
 	SenderPreference  *maildomain.SenderPreferenceState `json:"sender_preference,omitempty"`
+	SMIME             *maildomain.SMIMEStatus           `json:"smime,omitempty"`
 }
 
 type publicLocation struct {
@@ -1244,8 +1245,16 @@ func renderInboxMessage(renderer *CompactTextRenderer, value maildomain.Message)
 		Field("vip", value.SenderPreference != nil && value.SenderPreference.VIP),
 		Field("blocked", value.SenderPreference != nil && value.SenderPreference.Blocked),
 		Field("attachments", value.AttachmentCount),
+		Field("smime", messageSMIMEStatus(value)),
 		Field("snippet", Excerpt(value.Snippet, DefaultExcerptRunes)),
 	)
+}
+
+func messageSMIMEStatus(value maildomain.Message) maildomain.SMIMEVerificationStatus {
+	if value.Content == nil || value.Content.SMIME == nil {
+		return ""
+	}
+	return value.Content.SMIME.Status
 }
 
 func renderCheckpoint(renderer *CompactTextRenderer, kind, accountID, folderName string, value maildomain.Checkpoint) error {
@@ -1306,7 +1315,23 @@ func sanitizeMessage(value maildomain.Message) publicMessage {
 		DedupeConflicts:   append([]maildomain.DedupeConflict(nil), value.DedupeConflicts...),
 		Unsubscribe:       publicUnsubscribeCapability(value.Unsubscribe),
 		SenderPreference:  publicSenderPreferenceState(value.SenderPreference),
+		SMIME:             publicSMIMEStatus(value),
 	}
+}
+
+func publicSMIMEStatus(value maildomain.Message) *maildomain.SMIMEStatus {
+	if value.Content == nil || value.Content.SMIME == nil {
+		return nil
+	}
+	copy := *value.Content.SMIME
+	if copy.Signer != nil {
+		signer := *copy.Signer
+		signer.Emails = append([]string(nil), copy.Signer.Emails...)
+		signer.KeyUsage = append([]string(nil), copy.Signer.KeyUsage...)
+		signer.ExtendedKeyUsage = append([]string(nil), copy.Signer.ExtendedKeyUsage...)
+		copy.Signer = &signer
+	}
+	return &copy
 }
 
 func publicSenderPreferenceState(value *maildomain.SenderPreferenceState) *maildomain.SenderPreferenceState {

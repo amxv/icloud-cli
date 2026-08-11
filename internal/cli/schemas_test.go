@@ -66,7 +66,7 @@ func TestGeneratedSchemasMatchCommittedArtifacts(t *testing.T) {
 			t.Fatalf("public schema mirror drift for %s; run make schemas", name)
 		}
 	}
-	for _, required := range []string{"account", "mail-identity", "folder", "message", "thread", "selection", "purge", "attachment", "checkpoint", "attempt", "outbox", "draft", "event", "error"} {
+	for _, required := range []string{"account", "mail-identity", "folder", "message", "thread", "selection", "purge", "attachment", "checkpoint", "attempt", "outbox", "smime-certificate", "draft", "event", "error"} {
 		name := required + ".schema.json"
 		if _, ok := generated[name]; !ok {
 			t.Fatalf("required public resource schema missing: %s", name)
@@ -92,7 +92,10 @@ func TestCapabilitiesPublishesVersionedAutomationAndSchemaContracts(t *testing.T
 	if !envelope.Data.MailOutbox {
 		t.Fatal("capabilities did not advertise the safe-retry Outbox")
 	}
-	for _, target := range []string{"account", "mail-identity", "folder", "message", "thread", "selection", "purge", "attachment", "checkpoint", "attempt", "outbox", "draft", "event", "error"} {
+	if !envelope.Data.MailSMIMEInspection || !envelope.Data.MailSMIMECertificates {
+		t.Fatalf("capabilities did not advertise Phase 32 S/MIME surfaces: inspection=%v certificates=%v", envelope.Data.MailSMIMEInspection, envelope.Data.MailSMIMECertificates)
+	}
+	for _, target := range []string{"account", "mail-identity", "folder", "message", "thread", "selection", "purge", "attachment", "checkpoint", "attempt", "outbox", "smime-certificate", "draft", "event", "error"} {
 		if got := envelope.Data.Schemas[target]; got != SchemaBaseID+target+".schema.json" {
 			t.Fatalf("schema %s=%q", target, got)
 		}
@@ -301,7 +304,7 @@ func TestPhase3ReadRequestSchemasAreStrictPublicAndPrivateFieldFree(t *testing.T
 		"account list", "mail folders list", "mail folders show", "mail folders refresh",
 		"mail messages list", "mail search", "mail threads list", "mail threads show",
 		"mail message show", "mail attachments list", "mail operations outbound list",
-		"mail operations mutations list", "mail outbox list", "mail status", "mail sync status", "mail sync checkpoints",
+		"mail operations mutations list", "mail outbox list", "mail smime certificates list", "mail status", "mail sync status", "mail sync checkpoints",
 	} {
 		found := false
 		for _, contract := range automationCommandContracts() {
@@ -407,6 +410,52 @@ func TestPhase31OutboxSchemasAreStrictAndPrivateReplayDataFree(t *testing.T) {
 	for _, forbidden := range []string{`"raw_storage_key"`, `"raw_content_hash"`, `"request_hash"`, `"rfc_message_id"`, `"envelope"`, `"subject"`, `"body"`, `"idempotency_key"`, `"reply_to"`} {
 		if strings.Contains(all, forbidden) {
 			t.Fatalf("Outbox public/request schemas expose private replay field %s", forbidden)
+		}
+	}
+}
+
+func TestPhase32SMIMECertificateSchemasAreStrictAndPrivateKeyFree(t *testing.T) {
+	generated, err := GeneratedSchemas()
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 8, 11, 2, 30, 0, 0, time.UTC)
+	values := map[string]any{
+		"smime-certificate":                 maildomain.SMIMECertificate{ID: "smc_schema", Email: "sender@example.test", FingerprintSHA256: strings.Repeat("a", 64), Subject: "CN=Signer", Issuer: "CN=Root", NotBefore: now.Add(-time.Hour), NotAfter: now.Add(time.Hour), Trusted: false, KeyUsage: []string{"digital-signature"}, ExtendedKeyUsage: []string{"email-protection"}, CreatedAt: now, UpdatedAt: now},
+		"smime-certificate-list-read-input": smimeCertificateListReadJSONRequest{Email: "sender@example.test", Limit: 20},
+		"smime-certificate-import-input":    smimeCertificateImportJSONRequest{Email: "sender@example.test", CertificateFile: "/tmp/public.pem", Trust: false},
+		"smime-certificate-target-input":    smimeCertificateTargetJSONRequest{CertificateID: "smc_schema"},
+	}
+	var combined bytes.Buffer
+	for name, typed := range values {
+		encodedSchema, ok := generated[name+".schema.json"]
+		if !ok {
+			t.Fatalf("missing generated Phase 32 schema %s", name)
+		}
+		combined.Write(encodedSchema)
+		var schema map[string]any
+		if err := json.Unmarshal(encodedSchema, &schema); err != nil {
+			t.Fatal(err)
+		}
+		if additional, ok := schema["additionalProperties"].(bool); !ok || additional {
+			t.Fatalf("Phase 32 schema %s must reject unknown fields", name)
+		}
+		encoded, err := json.Marshal(typed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var value any
+		if err := json.Unmarshal(encoded, &value); err != nil {
+			t.Fatal(err)
+		}
+		if err := validateSchemaValue(schema, value, "$", true); err != nil {
+			t.Fatalf("representative %s does not validate: %v", name, err)
+		}
+	}
+	all := strings.ToLower(combined.String())
+	for _, forbidden := range []string{`"der"`, `"private_key"`, `"private-key"`, `"password"`, `"credential"`, `"pkcs12"`, `"pfx"`} {
+		if strings.Contains(all, forbidden) {
+			t.Fatalf("Phase 32 public/request schemas expose private key/certificate bytes field %s", forbidden)
 		}
 	}
 }

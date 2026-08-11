@@ -1,0 +1,66 @@
+.nh
+.TH "ICLOUD" "1" "Jan 1970" "icloud 0.1.0" "iCloud Mail CLI Manual"
+
+.SH NAME
+icloud-mail-smime-certificates-import - Import one public certificate; trust is opt-in
+
+
+.SH SYNOPSIS
+\fBicloud mail smime certificates import  [flags]\fP
+
+
+.SH DESCRIPTION
+Import one public certificate; trust is opt-in
+
+
+.SH OPTIONS
+\fB--email\fP=""
+	Scope this public certificate to one mailbox identity
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for import
+
+.PP
+\fB--input-json\fP=""
+	Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+
+.PP
+\fB--json\fP[=false]
+	Emit one stable JSON success envelope
+
+.PP
+\fB--trust\fP[=false]
+	Explicitly trust this certificate as an account/email-scoped verification root
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--account\fP=""
+	Select an account by name, email, or stable ID
+
+.PP
+\fB--home\fP=""
+	Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+
+.PP
+\fB--no-input\fP[=false]
+	Never prompt for interactive input
+
+.PP
+\fB--request-id\fP=""
+	Attach a stable request ID to structured output
+
+.PP
+\fB--timeout\fP=30s
+	Maximum normal command duration; watch applies it per provider/sync attempt
+
+
+.SH EXAMPLE
+.EX
+  icloud mail smime certificates import signer.pem --email sender@example.com
+  icloud mail smime certificates import private-root.pem --email sender@example.com --trust --json
+.EE
+
+
+.SH SEE ALSO
+\fBicloud-mail-smime-certificates(1)\fP

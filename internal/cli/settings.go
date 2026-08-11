@@ -106,6 +106,7 @@ func renderMailSettings(renderer *CompactTextRenderer, value maildomain.MailSett
 		Field("forwarded_state", value.Compatibility.ForwardedState.Status),
 		Field("colored_flags", value.Compatibility.ColoredFlags.Status),
 		Field("hide_my_email_outbound", value.Compatibility.HideMyEmailOutbound.Status),
+		Field("smime_inspection", value.Compatibility.SMIMEInspection.Status),
 		Field("smime", value.Compatibility.SMIME.Status),
 		Field("provider_settings", maildomain.SettingsUnsupportedCurrentAuth),
 	); err != nil {
