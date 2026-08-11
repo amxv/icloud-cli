@@ -26,6 +26,7 @@ const (
 	maxUnsubscribeHeaderBytes = 32 << 10
 	maxUnsubscribeMailtoText  = 8 << 10
 	maxUnsubscribeRecipients  = 10
+	maxUnsubscribeMethods     = 10
 )
 
 type UnsubscribeMethodKind string
@@ -193,6 +194,9 @@ func parseListUnsubscribeURIs(value string) []string {
 		raw := strings.TrimSpace(value[open+1 : close])
 		if raw != "" && !strings.ContainsFunc(raw, unicode.IsSpace) && !strings.ContainsFunc(raw, invalidUnsubscribeRune) {
 			result = append(result, raw)
+			if len(result) > maxUnsubscribeMethods {
+				return nil
+			}
 		}
 		index = close + 1
 	}

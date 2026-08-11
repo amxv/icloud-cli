@@ -1,5 +1,6 @@
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
+const childProcess = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -9,6 +10,17 @@ const pkg = require("../package.json");
 const project = require("../project.config.json");
 const { createInstallPlan, parseChecksums } = require("./postinstall");
 const { assetName, writeReleaseMetadata } = require("./release-metadata");
+
+function packedFileNames() {
+  const result = childProcess.spawnSync(
+    "npm",
+    ["pack", "--dry-run", "--ignore-scripts", "--json"],
+    { cwd: path.join(__dirname, ".."), encoding: "utf8" }
+  );
+  assert.equal(result.status, 0, result.stderr || result.error?.message || "npm pack --dry-run failed");
+  const packed = JSON.parse(result.stdout);
+  return packed[0].files.map((file) => file.path);
+}
 
 test("npm exposes one public icloud command", () => {
   assert.deepEqual(pkg.bin, { icloud: "bin/icloud.js" });
@@ -27,6 +39,16 @@ test("npm exposes one public icloud command", () => {
   for (const completion of ["_icloud", "icloud.bash", "icloud.fish", "icloud.ps1"]) {
     assert.ok(fs.existsSync(path.join(__dirname, "..", "completions", completion)));
   }
+});
+
+test("fallback-build package excludes tests and fixture artifacts", () => {
+  const files = packedFileNames();
+  assert.ok(files.includes("cmd/icloud/main.go"));
+  assert.ok(files.includes("internal/app/app.go"));
+  assert.ok(files.includes("internal/mail/content.go"));
+  assert.equal(files.some((file) => /(^|\/)testdata\//.test(file)), false);
+  assert.equal(files.some((file) => /_test\.go$/.test(file)), false);
+  assert.equal(files.some((file) => /\.(?:db|eml|key|p12|pem|pfx|sqlite|sqlite3)$/i.test(file)), false);
 });
 
 test("project identity and fallback source use cmd/icloud", () => {

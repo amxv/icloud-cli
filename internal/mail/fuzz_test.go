@@ -2,6 +2,7 @@ package mail
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"net/mail"
@@ -16,6 +17,9 @@ func FuzzParseNormalizedDeterministicAndBounded(f *testing.F) {
 		[]byte("Message-ID: <plain@example.test>\r\nFrom: Sender <sender@example.test>\r\nTo: Receiver <receiver@example.test>\r\nSubject: Plain\r\n\r\nhello"),
 		[]byte("Content-Type: multipart/mixed; boundary=x\r\nMessage-ID: <mixed@example.test>\r\n\r\n--x\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nbody\r\n--x\r\nContent-Type: application/octet-stream\r\nContent-Disposition: attachment; filename=note.bin\r\nContent-Transfer-Encoding: base64\r\n\r\nAAEC\r\n--x--\r\n"),
 		[]byte("Date: definitely-not-a-date\r\nSubject: malformed\x00header\r\n\r\nbody"),
+		[]byte("Subject: =?UTF-8?Q?broken_=F0=28=8C=28?=\r\nContent-Type: text/plain\r\n\r\nmalformed\xffutf8"),
+		[]byte("Content-Type: multipart/mixed; boundary=x\r\n\r\n--x\r\nContent-Type: application/octet-stream\r\nContent-Disposition: attachment; filename*=UTF-8''caf%C3%A9.txt\r\n\r\npayload\r\n--x--\r\n"),
+		[]byte("List-Unsubscribe: <https://lists.example.test/u/token>, <mailto:leave@example.test?subject=unsubscribe>\r\nList-Unsubscribe-Post: List-Unsubscribe=One-Click\r\nDate: Fri, 07 Aug 2026 10:00:00 +0000\r\n\r\nlist body"),
 		[]byte(""),
 	} {
 		f.Add(seed)
@@ -36,6 +40,74 @@ func FuzzParseNormalizedDeterministicAndBounded(f *testing.F) {
 		}
 		if len(first.Parts) > maxMIMEParts || len(second.Parts) > maxMIMEParts {
 			t.Fatalf("MIME part bound exceeded: first=%d second=%d", len(first.Parts), len(second.Parts))
+		}
+	})
+}
+
+func FuzzUnsubscribeMetadataRejectsUnsafeURLsAndStaysBounded(f *testing.F) {
+	for _, seed := range []string{
+		"<https://lists.example.test/u/token>",
+		"<mailto:leave@example.test?subject=unsubscribe&body=bye>",
+		"<https://user:pass@example.test/u>",
+		"<http://example.test/u>",
+		"<mailto:list@example.test?subject=ok%0d%0aBcc:evil@example.test>",
+		"<https://example.test/\xff>",
+		strings.Repeat("<mailto:a@example.test>,", maxUnsubscribeRecipients+5),
+	} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, value string) {
+		if len(value) > maxUnsubscribeHeaderBytes+1024 {
+			t.Skip()
+		}
+		headers := []HeaderField{
+			{Key: "List-Unsubscribe", Value: value},
+			{Key: "List-Unsubscribe-Post", Value: "List-Unsubscribe=One-Click"},
+		}
+		first := ParseUnsubscribeCapability(headers)
+		second := ParseUnsubscribeCapability(headers)
+		if !reflect.DeepEqual(first, second) {
+			t.Fatalf("unsubscribe parsing is not deterministic: first=%+v second=%+v", first, second)
+		}
+		if len(first.Methods) > maxUnsubscribeMethods {
+			t.Fatalf("unsubscribe method bound exceeded: %d", len(first.Methods))
+		}
+		for _, method := range first.Methods {
+			if method.ID == "" || method.TargetHash == "" {
+				t.Fatalf("accepted unsubscribe method lacks stable public/private identity: %+v", method)
+			}
+			if method.Kind == UnsubscribeMethodOneClick && (!method.DKIMRequired || method.Host == "") {
+				t.Fatalf("unsafe one-click method accepted: %+v", method)
+			}
+		}
+	})
+}
+
+func FuzzSMIMEEnvelopeParserFailsClosedAndDeterministically(f *testing.F) {
+	for _, seed := range [][]byte{
+		[]byte("Content-Type: application/pkcs7-mime; smime-type=enveloped-data\r\nContent-Transfer-Encoding: base64\r\n\r\nnot-cms"),
+		[]byte("Content-Type: application/x-pkcs7-mime\r\n\r\n\x00\x01\x02\xff"),
+		[]byte("Content-Type: multipart/signed; protocol=\"application/pkcs7-signature\"; boundary=x\r\n\r\n--x--\r\n"),
+	} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, raw []byte) {
+		if len(raw) > 256<<10 {
+			t.Skip()
+		}
+		first, firstErr := ParseSMIMEEnvelopeContext(context.Background(), bytes.NewReader(raw))
+		second, secondErr := ParseSMIMEEnvelopeContext(context.Background(), bytes.NewReader(raw))
+		if (firstErr == nil) != (secondErr == nil) {
+			t.Fatalf("S/MIME envelope parse success changed: first=%v second=%v", firstErr, secondErr)
+		}
+		if firstErr == nil {
+			if first == nil || second == nil || first.p7 == nil || second.p7 == nil {
+				t.Fatalf("S/MIME envelope parse changed across identical input: first=%v second=%v", first, second)
+			}
+			return
+		}
+		if first != nil || second != nil {
+			t.Fatalf("failed S/MIME parse returned usable envelope: first=%v second=%v errors=%v/%v", first, second, firstErr, secondErr)
 		}
 	})
 }

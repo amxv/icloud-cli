@@ -2,6 +2,7 @@ package mail
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -52,6 +53,17 @@ func TestParseUnsubscribeCapabilityRejectsUnsafeOrNoncompliantAlternatives(t *te
 		if capability.Available {
 			t.Fatalf("case %d unexpectedly available: %+v", index, capability)
 		}
+	}
+}
+
+func TestPhase35ParseUnsubscribeCapabilityFailsClosedOnTooManyMethods(t *testing.T) {
+	values := make([]string, 0, maxUnsubscribeMethods+1)
+	for index := 0; index < maxUnsubscribeMethods+1; index++ {
+		values = append(values, fmt.Sprintf("<mailto:list-%d@example.test>", index))
+	}
+	capability := ParseUnsubscribeCapability([]HeaderField{{Key: "List-Unsubscribe", Value: strings.Join(values, ", ")}})
+	if capability.Available || len(capability.Methods) != 0 {
+		t.Fatalf("oversized unsubscribe method set was not rejected: %+v", capability)
 	}
 }
 
