@@ -33,8 +33,8 @@ const capabilities = [
         <p class="icloud-kicker">iCloud, from the command line</p>
         <h1>Your iCloud.<br /><em>In your shell.</em></h1>
         <p class="icloud-hero__lede">
-          One command-line home for the iCloud ecosystem. Mail is comprehensive today — read, search,
-          draft, send, organize, automate, and recover it from your terminal or an agent.
+          A clean command-line home for iCloud. Mail is comprehensive today — search, read, draft,
+          send, organize, and automate it from your terminal or an agent.
         </p>
         <div class="icloud-hero__actions">
           <a class="icloud-button icloud-button--primary" href="/docs/quickstart">Get started</a>
@@ -208,9 +208,15 @@ const capabilities = [
 
   .icloud-hero {
     position: relative;
-    min-height: 52rem;
-    padding-top: clamp(6rem, 10vw, 9rem);
-    padding-bottom: 7rem;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(29rem, .92fr);
+    grid-template-areas:
+      "intro terminal"
+      "command terminal";
+    column-gap: clamp(3rem, 6vw, 7rem);
+    align-items: start;
+    padding-top: clamp(6rem, 9vw, 8.5rem);
+    padding-bottom: clamp(6.5rem, 9vw, 9rem);
   }
 
   .icloud-hero::before {
@@ -227,16 +233,17 @@ const capabilities = [
   }
 
   .icloud-hero__intro {
+    grid-area: intro;
     position: relative;
     z-index: 2;
-    width: min(690px, 72%);
+    max-width: 690px;
   }
 
   .icloud-hero h1 {
-    max-width: 760px;
+    max-width: 720px;
     margin-top: 1.8rem;
-    font-size: clamp(4.3rem, 8.5vw, 8.8rem);
-    line-height: 0.79;
+    font-size: clamp(4.35rem, 5.9vw, 6.25rem);
+    line-height: 0.82;
   }
 
   .icloud-hero h1 em {
@@ -245,10 +252,10 @@ const capabilities = [
   }
 
   .icloud-hero__lede {
-    max-width: 610px;
+    max-width: 570px;
     margin-top: 2.8rem;
     color: color-mix(in srgb, var(--icloud-ink) 70%, transparent);
-    font-size: clamp(1.12rem, 1.8vw, 1.38rem);
+    font-size: clamp(1.05rem, 1.55vw, 1.28rem);
     line-height: 1.55;
     letter-spacing: -0.015em;
   }
@@ -285,13 +292,14 @@ const capabilities = [
   }
 
   .icloud-command {
+    grid-area: command;
     display: grid;
     grid-template-columns: auto 1fr auto;
     align-items: center;
     gap: 0.9rem;
-    width: min(650px, 86%);
+    width: min(620px, 100%);
     min-height: 3.6rem;
-    margin-top: 3.2rem;
+    margin-top: 2.6rem;
     padding: 0.65rem 0.75rem 0.65rem 1.1rem;
     border: 1px solid var(--icloud-rule);
     border-radius: 0.9rem;
@@ -305,12 +313,14 @@ const capabilities = [
   .icloud-command__meta { color: var(--muted); font-size: 0.67rem; white-space: nowrap; }
 
   .icloud-terminal-wrap {
-    position: absolute;
+    grid-area: terminal;
+    position: relative;
     z-index: 1;
-    right: -7.5rem;
-    bottom: 1rem;
-    width: min(675px, 61vw);
-    transform: rotate(2.25deg);
+    width: min(100%, 42rem);
+    margin-top: 2.8rem;
+    justify-self: end;
+    transform: rotate(1.15deg);
+    transform-origin: 50% 50%;
   }
 
   .icloud-terminal-shadow {
@@ -352,10 +362,15 @@ const capabilities = [
   .icloud-terminal__lights i:nth-child(3) { background: #5aaa66; }
 
   .icloud-terminal__body {
-    min-height: 28rem;
+    min-height: 27rem;
     padding: 1.45rem 1.55rem 1.8rem;
-    font-size: clamp(0.66rem, 1vw, 0.78rem);
+    font-size: clamp(0.66rem, .9vw, 0.76rem);
     line-height: 1.58;
+  }
+
+  .icloud-terminal__line span,
+  .icloud-terminal__output span {
+    overflow-wrap: anywhere;
   }
 
   .icloud-terminal__line { display: flex; gap: .7rem; margin-top: 1.3rem; color: #f5f5f0; }
@@ -444,11 +459,30 @@ const capabilities = [
   .icloud-closing > div { display: flex; justify-content: center; align-items: center; gap: 1.3rem; }
   .icloud-closing__github { color: var(--muted); font-size: .8rem; }
 
+  @media (max-width: 1180px) {
+    .icloud-hero {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-areas:
+        "intro"
+        "command"
+        "terminal";
+      row-gap: 0;
+      padding-top: clamp(5.5rem, 9vw, 7.5rem);
+      padding-bottom: 6rem;
+    }
+    .icloud-hero__intro { width: min(760px, 100%); max-width: none; }
+    .icloud-hero h1 { max-width: 760px; font-size: clamp(4.8rem, 11vw, 7.8rem); }
+    .icloud-hero__lede { max-width: 650px; }
+    .icloud-terminal-wrap {
+      width: min(760px, 100%);
+      margin-top: 4.5rem;
+      justify-self: end;
+      transform: rotate(.75deg);
+    }
+    .icloud-command { width: min(650px, 100%); }
+  }
+
   @media (max-width: 900px) {
-    .icloud-hero { min-height: auto; padding-bottom: 5rem; }
-    .icloud-hero__intro { width: 100%; }
-    .icloud-terminal-wrap { position: relative; right: auto; bottom: auto; width: 100%; margin-top: 4rem; transform: rotate(1deg); }
-    .icloud-command { width: 100%; }
     .icloud-manifesto, .icloud-capabilities, .icloud-automation { grid-template-columns: 1fr; gap: 3.5rem; }
     .icloud-manifesto { padding-bottom: 6rem; }
     .icloud-capabilities, .icloud-automation, .icloud-docs { padding-bottom: 6rem; }
