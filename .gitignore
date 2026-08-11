@@ -17,6 +17,9 @@ npm-debug.log*
 # Vercel
 .vercel
 
+# Agent working artifacts
+tmp/
+
 # Local iCloud state when an explicit repository-root home is used
 /mail.db
 /mail.db-shm
