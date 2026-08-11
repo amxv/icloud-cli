@@ -129,4 +129,4 @@ for the current account's compatibility notes.
 
 Contacts, Reminders, Calendar, Drive, Notes, Photos, Find My, and other non-Mail iCloud services are **not implemented in the current CLI** unless they appear in your installed `icloud --help` / `icloud capabilities` output.
 
-The project is intentionally structured so more iCloud service families can be added over time. See [The iCloud ecosystem](/docs/icloud-ecosystem).
+The project is intentionally structured so more iCloud service families can be added over time. See [The iCloud ecosystem](/docs/the-icloud-ecosystem).

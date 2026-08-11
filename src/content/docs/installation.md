@@ -96,6 +96,6 @@ If you installed with npm:
 npm uninstall --global @amxv/icloud-cli
 ```
 
-Uninstalling the package does **not** automatically remove the CLI's local account and mail data. See [Local data and backups](/docs/local-state-and-accounts) before deleting that state.
+Uninstalling the package does **not** automatically remove the CLI's local account and mail data. See [Local data and backups](/docs/local-data-and-backups) before deleting that state.
 
 Next: [Quickstart](/docs/quickstart).

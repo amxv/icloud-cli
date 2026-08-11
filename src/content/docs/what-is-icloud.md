@@ -10,7 +10,7 @@ summary: "Understand the project in two minutes: one CLI for iCloud, with a comp
 
 Today, **Mail is the comprehensive part of the CLI**. You can read and search your inbox, synchronize mail for offline use, send and reply, work with drafts and attachments, organize folders, archive or trash messages, import and export mail, use S/MIME, and automate common workflows.
 
-Over time, the same top-level CLI can grow to cover more of the Apple iCloud ecosystem—such as Contacts, Reminders, Calendars, and other useful services. See [The iCloud ecosystem](/docs/icloud-ecosystem) for the project direction and the current support boundary.
+Over time, the same top-level CLI can grow to cover more of the Apple iCloud ecosystem—such as Contacts, Reminders, Calendars, and other useful services. See [The iCloud ecosystem](/docs/the-icloud-ecosystem) for the project direction and the current support boundary.
 
 ## A CLI that reads like the task
 

@@ -116,7 +116,7 @@ icloud mail search --vip
 icloud mail search --blocked
 ```
 
-See [Mailing lists and sender preferences](/docs/mailing-lists-and-senders).
+See [Mailing lists and sender preferences](/docs/mailing-lists-and-sender-preferences).
 
 ## Repair local search
 

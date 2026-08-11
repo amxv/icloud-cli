@@ -5,10 +5,10 @@ import { primaryNav, siteConfig } from "../data/docs";
 
 const docs = (await getCollection("docs")).sort((a, b) => a.data.order - b.data.order);
 const featuredDocs = [
-  "overview",
+  "what-is-icloud",
   "quickstart",
   "read-mail",
-  "send-mail-safely",
+  "send-reply-and-forward",
   "agent-guide",
   "supported-features"
 ].map((id) => docs.find((entry) => entry.id === id)).filter(Boolean);

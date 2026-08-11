@@ -166,4 +166,4 @@ icloud --no-input mail operations outbound show send_… --json
 icloud --no-input mail sync --reconcile-outbound --json
 ```
 
-If the item appears in the safe-retry Outbox, review and retry that exact `out_…` item. If the send is still `unknown`, follow [Outbox and send recovery](/docs/outbox-and-recovery) rather than guessing.
+If the item appears in the safe-retry Outbox, review and retry that exact `out_…` item. If the send is still `unknown`, follow [Outbox and send recovery](/docs/outbox-and-send-recovery) rather than guessing.

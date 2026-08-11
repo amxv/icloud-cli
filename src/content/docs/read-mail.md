@@ -6,7 +6,7 @@ category: Mail
 summary: "List messages, inspect concise previews, read full text or HTML, and export exact message files."
 ---
 
-After [synchronizing mail](/docs/sync-and-read-inbox), your everyday reading workflow is local and fast.
+After [synchronizing mail](/docs/sync-mail), your everyday reading workflow is local and fast.
 
 ## List Inbox messages
 
@@ -108,6 +108,6 @@ Default JSON is still intentionally bounded; full bodies are included only when 
 
 ## Attachments and conversations
 
-For files inside a message, continue with [Attachments](/docs/save-mail-attachments).
+For files inside a message, continue with [Attachments](/docs/attachments).
 
-For a conversation view across related messages, use [Conversations and threads](/docs/read-reconstructed-conversations).
+For a conversation view across related messages, use [Conversations and threads](/docs/conversations-and-threads).

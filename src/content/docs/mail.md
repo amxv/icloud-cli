@@ -12,23 +12,23 @@ Mail is the comprehensive service in `icloud` today. You can use it as an everyd
 
 | I want to… | Start here |
 | --- | --- |
-| Get recent mail onto this machine | [Sync mail](/docs/sync-and-read-inbox) |
+| Get recent mail onto this machine | [Sync mail](/docs/sync-mail) |
 | Browse Inbox or another folder | [Read mail](/docs/read-mail) |
-| Find a message or conversation | [Search mail](/docs/search-synchronized-mail) |
-| Read a whole conversation | [Conversations and threads](/docs/read-reconstructed-conversations) |
-| Save files from mail | [Attachments](/docs/save-mail-attachments) |
-| Send, reply, or forward | [Send, reply, and forward](/docs/send-mail-safely) |
+| Find a message or conversation | [Search mail](/docs/search-mail) |
+| Read a whole conversation | [Conversations and threads](/docs/conversations-and-threads) |
+| Save files from mail | [Attachments](/docs/attachments) |
+| Send, reply, or forward | [Send, reply, and forward](/docs/send-reply-and-forward) |
 | Prepare mail without sending | [Drafts](/docs/drafts) |
-| Send from an alias | [Sender identities](/docs/manage-sender-identities) |
+| Send from an alias | [Sender identities](/docs/sender-identities) |
 | Add reusable signatures | [Signatures](/docs/signatures) |
-| Create or choose folders | [Folders](/docs/folder-discovery-and-sync-policy) |
-| Archive, move, trash, or flag mail | [Organize mail](/docs/manage-mail-locations) |
-| Act on a reviewed search result set | [Reviewed bulk actions](/docs/review-and-apply-mail-selections) |
-| Empty Trash or Junk | [Empty Trash, Junk, or a folder](/docs/empty-trash-junk-and-custom-folders) |
-| Import or export mail | [Import and export mail](/docs/mail-import-export) |
-| Unsubscribe or triage senders | [Mailing lists and sender preferences](/docs/mailing-lists-and-senders) |
-| Sign, encrypt, or decrypt mail | [S/MIME](/docs/smime) |
-| Recover after a send problem | [Outbox and send recovery](/docs/outbox-and-recovery) |
+| Create or choose folders | [Folders](/docs/folders) |
+| Archive, move, trash, or flag mail | [Organize mail](/docs/organize-mail) |
+| Act on a reviewed search result set | [Reviewed bulk actions](/docs/reviewed-bulk-actions) |
+| Empty Trash or Junk | [Empty Trash, Junk, or a folder](/docs/empty-trash-junk-or-a-folder) |
+| Import or export mail | [Import and export mail](/docs/import-and-export-mail) |
+| Unsubscribe or triage senders | [Mailing lists and sender preferences](/docs/mailing-lists-and-sender-preferences) |
+| Sign, encrypt, or decrypt mail | [S/MIME](/docs/s-mime) |
+| Recover after a send problem | [Outbox and send recovery](/docs/outbox-and-send-recovery) |
 
 ## The everyday loop
 

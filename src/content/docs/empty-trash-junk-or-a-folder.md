@@ -60,4 +60,4 @@ For deleting one exact message location instead, use:
 icloud mail delete msg_… --from trash --dry-run
 ```
 
-See [Organize mail](/docs/manage-mail-locations).
+See [Organize mail](/docs/organize-mail).

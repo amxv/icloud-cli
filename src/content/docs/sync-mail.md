@@ -21,7 +21,7 @@ icloud mail folders refresh
 icloud mail sync
 ```
 
-Inbox and Sent are the normal starting folders. Additional folders can be enabled from the [Folders](/docs/folder-discovery-and-sync-policy) guide.
+Inbox and Sent are the normal starting folders. Additional folders can be enabled from the [Folders](/docs/folders) guide.
 
 ## Bring Inbox fully current
 
@@ -161,6 +161,6 @@ Then inspect the attempt:
 icloud mail operations outbound list
 ```
 
-See [Outbox and send recovery](/docs/outbox-and-recovery) before retrying an uncertain send.
+See [Outbox and send recovery](/docs/outbox-and-send-recovery) before retrying an uncertain send.
 
-Next: [Read mail](/docs/read-mail) or [Search mail](/docs/search-synchronized-mail).
+Next: [Read mail](/docs/read-mail) or [Search mail](/docs/search-mail).

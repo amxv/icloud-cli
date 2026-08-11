@@ -95,7 +95,7 @@ See the [Agent guide](https://icloud.ashray.xyz/docs/agent-guide) and [Automatio
 
 The documentation is organized around user tasks rather than implementation details:
 
-- [What is icloud?](https://icloud.ashray.xyz/docs/overview)
+- [What is icloud?](https://icloud.ashray.xyz/docs/what-is-icloud)
 - [Quickstart](https://icloud.ashray.xyz/docs/quickstart)
 - [Mail guides](https://icloud.ashray.xyz/docs)
 - [Supported features](https://icloud.ashray.xyz/docs/supported-features)

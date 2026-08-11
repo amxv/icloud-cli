@@ -97,4 +97,4 @@ This is useful when older messages sent from the newly configured alias should b
 
 Signatures can be tied to a particular sender identity. See [Signatures](/docs/signatures).
 
-S/MIME signing/decryption identities are configured separately on top of Mail identities. See [S/MIME](/docs/smime).
+S/MIME signing/decryption identities are configured separately on top of Mail identities. See [S/MIME](/docs/s-mime).

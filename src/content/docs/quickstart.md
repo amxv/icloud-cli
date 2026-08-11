@@ -37,7 +37,7 @@ printf '%s\n' "$ICLOUD_APP_PASSWORD" | \
     --password-stdin
 ```
 
-See [Accounts and credentials](/docs/account-setup-and-credentials) for environment variables, credential files, multiple accounts, and rotation.
+See [Accounts and credentials](/docs/accounts-and-credentials) for environment variables, credential files, multiple accounts, and rotation.
 
 ## 3. Check the account
 
@@ -47,7 +47,7 @@ icloud account test Personal
 
 This validates that the account can connect to iCloud Mail. It does not send a message.
 
-If it fails, use [Account checks and doctor](/docs/account-validation-and-doctor).
+If it fails, use [Account checks and doctor](/docs/account-checks-and-doctor).
 
 ## 4. Discover your folders
 
@@ -75,7 +75,7 @@ To pull additional recent pages until you are current:
 icloud mail sync --folder inbox --until-current
 ```
 
-Normal sync is designed for current mail. If you later want older history, use [Sync mail](/docs/sync-and-read-inbox) and its backfill workflow.
+Normal sync is designed for current mail. If you later want older history, use [Sync mail](/docs/sync-mail) and its backfill workflow.
 
 ## 6. Read your inbox
 
@@ -116,7 +116,7 @@ If you need to check iCloud directly for something that is not in your local cop
 icloud mail search invoice --remote
 ```
 
-See [Search mail](/docs/search-synchronized-mail) for filters, thread results, and caching selected remote hits.
+See [Search mail](/docs/search-mail) for filters, thread results, and caching selected remote hits.
 
 ## 8. Read conversations
 
@@ -131,7 +131,7 @@ A message ID works too:
 icloud mail threads show msg_…
 ```
 
-See [Conversations and threads](/docs/read-reconstructed-conversations).
+See [Conversations and threads](/docs/conversations-and-threads).
 
 ## 9. Save an attachment
 
@@ -146,7 +146,7 @@ Or save all attachments from a message:
 icloud mail attachments save-all msg_… --dir ./attachments
 ```
 
-See [Attachments](/docs/save-mail-attachments).
+See [Attachments](/docs/attachments).
 
 ## 10. Reply safely
 
@@ -190,7 +190,7 @@ icloud mail send \
   --yes
 ```
 
-See [Send, reply, and forward](/docs/send-mail-safely).
+See [Send, reply, and forward](/docs/send-reply-and-forward).
 
 ## 12. Keep mail fresh while you work
 

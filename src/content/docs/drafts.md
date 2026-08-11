@@ -67,7 +67,7 @@ If your account does not expose a recognizable Drafts role, choose the discovere
 icloud mail draft sync drf_… --folder Drafts
 ```
 
-See [Folders](/docs/folder-discovery-and-sync-policy) if Drafts is not resolved automatically.
+See [Folders](/docs/folders) if Drafts is not resolved automatically.
 
 ## Preview and send
 
@@ -81,7 +81,7 @@ Then:
 icloud mail draft send drf_… --yes
 ```
 
-The send uses the same outbound safeguards as `icloud mail send`. If a send becomes uncertain, keep the draft and follow [Outbox and send recovery](/docs/outbox-and-recovery) rather than assuming it is safe to resend.
+The send uses the same outbound safeguards as `icloud mail send`. If a send becomes uncertain, keep the draft and follow [Outbox and send recovery](/docs/outbox-and-send-recovery) rather than assuming it is safe to resend.
 
 ## Delete a draft without sending
 

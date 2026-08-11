@@ -132,8 +132,8 @@ Review your local data first if you may want to keep it. Then:
 icloud account remove Personal --yes
 ```
 
-Removing an account is different from uninstalling the CLI. See [Local data and backups](/docs/local-state-and-accounts) if you want to preserve or delete synchronized mail deliberately.
+Removing an account is different from uninstalling the CLI. See [Local data and backups](/docs/local-data-and-backups) if you want to preserve or delete synchronized mail deliberately.
 
 ## Troubleshooting
 
-If a credential works in the Apple website but `account test` fails, make sure it is an **app-specific password** and not the primary Apple Account password. For connection diagnostics, continue with [Account checks and doctor](/docs/account-validation-and-doctor).
+If a credential works in the Apple website but `account test` fails, make sure it is an **app-specific password** and not the primary Apple Account password. For connection diagnostics, continue with [Account checks and doctor](/docs/account-checks-and-doctor).

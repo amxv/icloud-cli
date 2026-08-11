@@ -124,7 +124,7 @@ icloud mail send \
   --dry-run
 ```
 
-See [Sender identities](/docs/manage-sender-identities).
+See [Sender identities](/docs/sender-identities).
 
 ## Use a signature
 
@@ -222,7 +222,7 @@ icloud mail send \
   --dry-run
 ```
 
-See [S/MIME](/docs/smime) for certificate and private-key setup.
+See [S/MIME](/docs/s-mime) for certificate and private-key setup.
 
 ## If the send result is uncertain
 
@@ -233,7 +233,7 @@ icloud mail operations outbound show send_…
 icloud mail sync --reconcile-outbound
 ```
 
-A connection failure can occur after iCloud may already have accepted the message. [Outbox and send recovery](/docs/outbox-and-recovery) explains the difference between a safe retry and a duplicate-risk retry.
+A connection failure can occur after iCloud may already have accepted the message. [Outbox and send recovery](/docs/outbox-and-send-recovery) explains the difference between a safe retry and a duplicate-risk retry.
 
 ## Draft first instead
 

@@ -141,4 +141,4 @@ To make one deliberate bounded pass across every selectable folder regardless of
 icloud mail sync --all-folders
 ```
 
-See [Sync mail](/docs/sync-and-read-inbox) for current mail, historical backfill, and watch.
+See [Sync mail](/docs/sync-mail) for current mail, historical backfill, and watch.

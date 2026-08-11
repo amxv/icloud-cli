@@ -138,7 +138,7 @@ Then review and apply exactly `sel_…`:
 icloud mail selection apply sel_… --action archive --dry-run
 ```
 
-Use the returned review hash for the real apply. See [Reviewed bulk actions](/docs/review-and-apply-mail-selections).
+Use the returned review hash for the real apply. See [Reviewed bulk actions](/docs/reviewed-bulk-actions).
 
 ## Avoid accidental prompts
 
@@ -154,7 +154,7 @@ For example:
 icloud --no-input --account Personal mail search invoice
 ```
 
-If setup needs a credential, provide one of the explicit non-interactive sources from [Accounts and credentials](/docs/account-setup-and-credentials).
+If setup needs a credential, provide one of the explicit non-interactive sources from [Accounts and credentials](/docs/accounts-and-credentials).
 
 ## Use request IDs for multi-step jobs
 
@@ -168,7 +168,7 @@ A request ID makes logs easier to correlate without changing the Mail operation 
 
 Structured errors include a code and retryability signal. A retryable connectivity failure can still occur around an outbound operation whose final provider state is uncertain.
 
-For sends, keep the `send_…` ID and follow [Outbox and send recovery](/docs/outbox-and-recovery). For moves/deletes, inspect mutation history and current mail state before repeating a different request.
+For sends, keep the `send_…` ID and follow [Outbox and send recovery](/docs/outbox-and-send-recovery). For moves/deletes, inspect mutation history and current mail state before repeating a different request.
 
 ## Prefer one clear command over shell scraping
 

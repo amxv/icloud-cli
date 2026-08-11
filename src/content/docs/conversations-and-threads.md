@@ -103,4 +103,4 @@ icloud mail threads show thr_… --metadata-only --verbose --json
 
 Old conversation selectors can sometimes redirect to a newer canonical thread after more mail arrives. Existing `msg_…` message IDs remain the safest exact selectors for one-message actions.
 
-For bulk actions over a reviewed set of messages or conversations, see [Reviewed bulk actions](/docs/review-and-apply-mail-selections).
+For bulk actions over a reviewed set of messages or conversations, see [Reviewed bulk actions](/docs/reviewed-bulk-actions).

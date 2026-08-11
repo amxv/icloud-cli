@@ -121,7 +121,7 @@ icloud mail folders role set archive fld_… --dry-run
 icloud mail folders role set archive fld_…
 ```
 
-See [Folders](/docs/folder-discovery-and-sync-policy).
+See [Folders](/docs/folders).
 
 ## Inbox looks stale
 
@@ -259,7 +259,7 @@ icloud mail outbox list
 icloud mail outbox retry out_… --dry-run
 ```
 
-See [Outbox and send recovery](/docs/outbox-and-recovery) for the difference between failed, safe-retry, and unknown sends.
+See [Outbox and send recovery](/docs/outbox-and-send-recovery) for the difference between failed, safe-retry, and unknown sends.
 
 ## A reply was sent but does not look Answered
 
@@ -288,7 +288,7 @@ Local draft creation does not automatically upload the draft. Sync it deliberate
 icloud mail draft sync drf_…
 ```
 
-If Drafts is not recognized, check [Folders](/docs/folder-discovery-and-sync-policy).
+If Drafts is not recognized, check [Folders](/docs/folders).
 
 ## An import stopped partway through
 

@@ -8,6 +8,15 @@ const test = require("node:test");
 const root = path.resolve(__dirname, "..");
 const docsDir = path.join(root, "src", "content", "docs");
 
+function titleSlug(title) {
+  return title
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
 function read(name) {
   return fs.readFileSync(path.join(docsDir, name), "utf8");
 }
@@ -18,35 +27,45 @@ function narrativeFiles() {
     .sort();
 }
 
+test("documentation filenames match their public page titles", () => {
+  for (const name of fs.readdirSync(docsDir).filter((value) => value.endsWith(".md"))) {
+    const source = read(name);
+    const match = source.match(/^title:\s*(.+)$/m);
+    assert.ok(match, `${name} is missing a title`);
+    const title = match[1].trim().replace(/^['"]|['"]$/g, "");
+    assert.equal(path.basename(name, ".md"), titleSlug(title), `${name} should match title ${title}`);
+  }
+});
+
 test("documentation is organized around discoverable user and agent tasks", () => {
   const coverage = new Map([
-    ["orientation", ["overview.md", ["What is icloud?", "Mail is the comprehensive"]]],
-    ["broader iCloud direction", ["icloud-ecosystem.md", ["Available today: Mail", "icloud contacts", "icloud reminders"]]],
+    ["orientation", ["what-is-icloud.md", ["What is icloud?", "Mail is the comprehensive"]]],
+    ["broader iCloud direction", ["the-icloud-ecosystem.md", ["Available today: Mail", "icloud contacts", "icloud reminders"]]],
     ["quickstart", ["quickstart.md", ["account add", "mail sync", "messages list", "mail send"]]],
     ["Mail overview", ["mail.md", ["Pick a task", "mail sync", "--dry-run"]]],
-    ["accounts", ["account-setup-and-credentials.md", ["app-specific password", "credential replace", "account default"]]],
+    ["accounts", ["accounts-and-credentials.md", ["app-specific password", "credential replace", "account default"]]],
     ["reading", ["read-mail.md", ["messages list", "message show", "--full"]]],
-    ["search", ["search-synchronized-mail.md", ["mail search", "--remote", "--cache"]]],
-    ["conversations", ["read-reconstructed-conversations.md", ["threads list", "threads show", "threads mute"]]],
-    ["attachments", ["save-mail-attachments.md", ["attachments list", "attachments save", "save-all"]]],
-    ["compose", ["send-mail-safely.md", ["mail send", "mail reply", "mail forward", "--dry-run"]]],
+    ["search", ["search-mail.md", ["mail search", "--remote", "--cache"]]],
+    ["conversations", ["conversations-and-threads.md", ["threads list", "threads show", "threads mute"]]],
+    ["attachments", ["attachments.md", ["attachments list", "attachments save", "save-all"]]],
+    ["compose", ["send-reply-and-forward.md", ["mail send", "mail reply", "mail forward", "--dry-run"]]],
     ["drafts", ["drafts.md", ["draft create", "draft sync", "draft send"]]],
-    ["identities", ["manage-sender-identities.md", ["identities add", "identities default", "--from"]]],
+    ["identities", ["sender-identities.md", ["identities add", "identities default", "--from"]]],
     ["signatures", ["signatures.md", ["signatures create", "signatures default", "--signature"]]],
-    ["folders", ["folder-discovery-and-sync-policy.md", ["folders refresh", "folders enable", "folders create"]]],
-    ["organization", ["manage-mail-locations.md", ["mail move", "mail archive", "mail trash", "mail delete"]]],
-    ["reviewed bulk actions", ["review-and-apply-mail-selections.md", ["selection create", "selection apply", "request_hash"]]],
-    ["permanent deletion", ["empty-trash-junk-and-custom-folders.md", ["empty trash", "purge_id", "request_hash"]]],
-    ["import and export", ["mail-import-export.md", ["message export", "message import", "mailbox export", "mailbox import"]]],
-    ["mailing lists and senders", ["mailing-lists-and-senders.md", ["mail unsubscribe", "senders vip", "senders block"]]],
-    ["S/MIME", ["smime.md", ["smime certificates", "--decrypt", "sign-encrypt"]]],
-    ["outbound recovery", ["outbox-and-recovery.md", ["operations outbound", "outbox retry", "reconcile-outbound"]]],
+    ["folders", ["folders.md", ["folders refresh", "folders enable", "folders create"]]],
+    ["organization", ["organize-mail.md", ["mail move", "mail archive", "mail trash", "mail delete"]]],
+    ["reviewed bulk actions", ["reviewed-bulk-actions.md", ["selection create", "selection apply", "request_hash"]]],
+    ["permanent deletion", ["empty-trash-junk-or-a-folder.md", ["empty trash", "purge_id", "request_hash"]]],
+    ["import and export", ["import-and-export-mail.md", ["message export", "message import", "mailbox export", "mailbox import"]]],
+    ["mailing lists and senders", ["mailing-lists-and-sender-preferences.md", ["mail unsubscribe", "senders vip", "senders block"]]],
+    ["S/MIME", ["s-mime.md", ["smime certificates", "--decrypt", "sign-encrypt"]]],
+    ["outbound recovery", ["outbox-and-send-recovery.md", ["operations outbound", "outbox retry", "reconcile-outbound"]]],
     ["agent guidance", ["agent-guide.md", ["capabilities --json", "--no-input", "idempotency"]]],
     ["automation recipes", ["automation-recipes.md", ["mail watch --jsonl", "selection create", "--request-id"]]],
     ["automation reference", ["output-and-automation.md", ["--input-json", "--jsonl", "Exit classes"]]],
     ["feature coverage", ["supported-features.md", ["iCloud Mail", "Broader iCloud services", "not implemented"]]],
-    ["diagnostics", ["account-validation-and-doctor.md", ["account test", "icloud doctor", "--live"]]],
-    ["local data", ["local-state-and-accounts.md", ["ICLOUD_HOME", "Back up", "mail sync repair --check"]]],
+    ["diagnostics", ["account-checks-and-doctor.md", ["account test", "icloud doctor", "--live"]]],
+    ["local data", ["local-data-and-backups.md", ["ICLOUD_HOME", "Back up", "mail sync repair --check"]]],
     ["troubleshooting", ["troubleshooting.md", ["Authentication fails", "Inbox looks stale", "send failed"]]]
   ]);
 
@@ -89,8 +108,8 @@ test("narrative docs stay small, user-facing, and internally linked", () => {
 });
 
 test("project positioning says Mail is available today without presenting future iCloud services as implemented", () => {
-  const overview = read("overview.md");
-  const ecosystem = read("icloud-ecosystem.md");
+  const overview = read("what-is-icloud.md");
+  const ecosystem = read("the-icloud-ecosystem.md");
   const supported = read("supported-features.md");
   const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
   const siteData = fs.readFileSync(path.join(root, "src", "data", "docs.ts"), "utf8");

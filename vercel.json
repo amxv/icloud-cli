@@ -4,5 +4,197 @@
   "installCommand": "bun install --ignore-scripts",
   "buildCommand": "bun run docs:build",
   "outputDirectory": "dist",
-  "ignoreCommand": "node scripts/should-build-docs.mjs"
+  "ignoreCommand": "node scripts/should-build-docs.mjs",
+  "redirects": [
+    {
+      "source": "/docs/account-setup-and-credentials",
+      "destination": "/docs/accounts-and-credentials",
+      "permanent": true
+    },
+    {
+      "source": "/docs/account-setup-and-credentials.md",
+      "destination": "/docs/accounts-and-credentials.md",
+      "permanent": true
+    },
+    {
+      "source": "/docs/account-validation-and-doctor",
+      "destination": "/docs/account-checks-and-doctor",
+      "permanent": true
+    },
+    {
+      "source": "/docs/account-validation-and-doctor.md",
+      "destination": "/docs/account-checks-and-doctor.md",
+      "permanent": true
+    },
+    {
+      "source": "/docs/empty-trash-junk-and-custom-folders",
+      "destination": "/docs/empty-trash-junk-or-a-folder",
+      "permanent": true
+    },
+    {
+      "source": "/docs/empty-trash-junk-and-custom-folders.md",
+      "destination": "/docs/empty-trash-junk-or-a-folder.md",
+      "permanent": true
+    },
+    {
+      "source": "/docs/folder-discovery-and-sync-policy",
+      "destination": "/docs/folders",
+      "permanent": true
+    },
+    {
+      "source": "/docs/folder-discovery-and-sync-policy.md",
+      "destination": "/docs/folders.md",
+      "permanent": true
+    },
+    {
+      "source": "/docs/icloud-ecosystem",
+      "destination": "/docs/the-icloud-ecosystem",
+      "permanent": true
+    },
+    {
+      "source": "/docs/icloud-ecosystem.md",
+      "destination": "/docs/the-icloud-ecosystem.md",
+      "permanent": true
+    },
+    {
+      "source": "/docs/local-state-and-accounts",
+      "destination": "/docs/local-data-and-backups",
+      "permanent": true
+    },
+    {
+      "source": "/docs/local-state-and-accounts.md",
+      "destination": "/docs/local-data-and-backups.md",
+      "permanent": true
+    },
+    {
+      "source": "/docs/mail-import-export",
+      "destination": "/docs/import-and-export-mail",
+      "permanent": true
+    },
+    {
+      "source": "/docs/mail-import-export.md",
+      "destination": "/docs/import-and-export-mail.md",
+      "permanent": true
+    },
+    {
+      "source": "/docs/mailing-lists-and-senders",
+      "destination": "/docs/mailing-lists-and-sender-preferences",
+      "permanent": true
+    },
+    {
+      "source": "/docs/mailing-lists-and-senders.md",
+      "destination": "/docs/mailing-lists-and-sender-preferences.md",
+      "permanent": true
+    },
+    {
+      "source": "/docs/manage-mail-locations",
+      "destination": "/docs/organize-mail",
+      "permanent": true
+    },
+    {
+      "source": "/docs/manage-mail-locations.md",
+      "destination": "/docs/organize-mail.md",
+      "permanent": true
+    },
+    {
+      "source": "/docs/manage-sender-identities",
+      "destination": "/docs/sender-identities",
+      "permanent": true
+    },
+    {
+      "source": "/docs/manage-sender-identities.md",
+      "destination": "/docs/sender-identities.md",
+      "permanent": true
+    },
+    {
+      "source": "/docs/outbox-and-recovery",
+      "destination": "/docs/outbox-and-send-recovery",
+      "permanent": true
+    },
+    {
+      "source": "/docs/outbox-and-recovery.md",
+      "destination": "/docs/outbox-and-send-recovery.md",
+      "permanent": true
+    },
+    {
+      "source": "/docs/overview",
+      "destination": "/docs/what-is-icloud",
+      "permanent": true
+    },
+    {
+      "source": "/docs/overview.md",
+      "destination": "/docs/what-is-icloud.md",
+      "permanent": true
+    },
+    {
+      "source": "/docs/read-reconstructed-conversations",
+      "destination": "/docs/conversations-and-threads",
+      "permanent": true
+    },
+    {
+      "source": "/docs/read-reconstructed-conversations.md",
+      "destination": "/docs/conversations-and-threads.md",
+      "permanent": true
+    },
+    {
+      "source": "/docs/review-and-apply-mail-selections",
+      "destination": "/docs/reviewed-bulk-actions",
+      "permanent": true
+    },
+    {
+      "source": "/docs/review-and-apply-mail-selections.md",
+      "destination": "/docs/reviewed-bulk-actions.md",
+      "permanent": true
+    },
+    {
+      "source": "/docs/save-mail-attachments",
+      "destination": "/docs/attachments",
+      "permanent": true
+    },
+    {
+      "source": "/docs/save-mail-attachments.md",
+      "destination": "/docs/attachments.md",
+      "permanent": true
+    },
+    {
+      "source": "/docs/search-synchronized-mail",
+      "destination": "/docs/search-mail",
+      "permanent": true
+    },
+    {
+      "source": "/docs/search-synchronized-mail.md",
+      "destination": "/docs/search-mail.md",
+      "permanent": true
+    },
+    {
+      "source": "/docs/send-mail-safely",
+      "destination": "/docs/send-reply-and-forward",
+      "permanent": true
+    },
+    {
+      "source": "/docs/send-mail-safely.md",
+      "destination": "/docs/send-reply-and-forward.md",
+      "permanent": true
+    },
+    {
+      "source": "/docs/smime",
+      "destination": "/docs/s-mime",
+      "permanent": true
+    },
+    {
+      "source": "/docs/smime.md",
+      "destination": "/docs/s-mime.md",
+      "permanent": true
+    },
+    {
+      "source": "/docs/sync-and-read-inbox",
+      "destination": "/docs/sync-mail",
+      "permanent": true
+    },
+    {
+      "source": "/docs/sync-and-read-inbox.md",
+      "destination": "/docs/sync-mail.md",
+      "permanent": true
+    }
+  ]
 }

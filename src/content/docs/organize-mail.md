@@ -62,7 +62,7 @@ icloud mail archive msg_… \
   --yes
 ```
 
-The Archive destination comes from the account's recognized or configured Archive role. See [Folders](/docs/folder-discovery-and-sync-policy) if that role cannot be resolved.
+The Archive destination comes from the account's recognized or configured Archive role. See [Folders](/docs/folders) if that role cannot be resolved.
 
 ## Trash and restore
 
@@ -104,7 +104,7 @@ icloud mail delete msg_… \
   --yes
 ```
 
-Use [Empty Trash, Junk, or a folder](/docs/empty-trash-junk-and-custom-folders) when you want to permanently delete a reviewed page of messages rather than one exact target.
+Use [Empty Trash, Junk, or a folder](/docs/empty-trash-junk-or-a-folder) when you want to permanently delete a reviewed page of messages rather than one exact target.
 
 ## Change several explicit messages
 
@@ -119,7 +119,7 @@ icloud mail move msg_… msg_… \
   --jsonl
 ```
 
-For a search-derived set that you want to freeze and review before acting, use [Reviewed bulk actions](/docs/review-and-apply-mail-selections).
+For a search-derived set that you want to freeze and review before acting, use [Reviewed bulk actions](/docs/reviewed-bulk-actions).
 
 ## Apply an action to a conversation
 
@@ -130,7 +130,7 @@ icloud mail threads mark-read thr_… --folder inbox
 icloud mail threads archive thr_… --from inbox --dry-run
 ```
 
-See [Conversations and threads](/docs/read-reconstructed-conversations).
+See [Conversations and threads](/docs/conversations-and-threads).
 
 ## If an operation becomes uncertain
 
