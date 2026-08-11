@@ -9,6 +9,10 @@ const { spawnSync } = require("node:child_process");
 const pkg = require("../package.json");
 const repoRoot = path.resolve(__dirname, "..");
 
+function npmExecutable(platform = process.platform) {
+  return platform === "win32" ? "npm.cmd" : "npm";
+}
+
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
     cwd: repoRoot,
@@ -26,11 +30,12 @@ function run(command, args, options = {}) {
 
 function main() {
   const prefix = fs.mkdtempSync(path.join(os.tmpdir(), "icloud-npm-smoke-"));
+  const npm = npmExecutable();
   let tarball = "";
   try {
-    const packed = JSON.parse(run("npm", ["pack", "--ignore-scripts", "--json"]));
+    const packed = JSON.parse(run(npm, ["pack", "--ignore-scripts", "--json"]));
     tarball = path.join(repoRoot, packed[0].filename);
-    run("npm", ["install", "--global", "--prefix", prefix, tarball], {
+    run(npm, ["install", "--global", "--prefix", prefix, tarball], {
       env: { ...process.env, ICLOUD_CLI_FORCE_BUILD: "1" }
     });
 
@@ -47,7 +52,7 @@ function main() {
     const man = run(wrapper, ["man"], spawnOptions);
     assert.match(man, /\.TH "ICLOUD" "1"/);
 
-    const npmRoot = run("npm", ["root", "--global", "--prefix", prefix]).trim();
+    const npmRoot = run(npm, ["root", "--global", "--prefix", prefix]).trim();
     const packageRoot = path.join(npmRoot, "@amxv", "icloud-cli");
     for (const relative of [
       "man/icloud.1",
@@ -65,6 +70,8 @@ function main() {
     fs.rmSync(prefix, { recursive: true, force: true });
   }
 }
+
+module.exports = { npmExecutable };
 
 if (require.main === module) {
   try {

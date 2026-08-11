@@ -9,6 +9,7 @@ const test = require("node:test");
 const pkg = require("../package.json");
 const project = require("../project.config.json");
 const { createInstallPlan, parseChecksums } = require("./postinstall");
+const { npmExecutable } = require("./package-install-smoke");
 const { assetName, writeReleaseMetadata } = require("./release-metadata");
 
 function packedFileNames() {
@@ -65,6 +66,11 @@ test("project identity and fallback source use cmd/icloud", () => {
   const windows = createInstallPlan("win32", "arm64");
   assert.equal(windows.assetName, "icloud_windows_arm64.exe");
   assert.equal(path.basename(windows.destination), "icloud.exe");
+});
+
+test("packaging smoke resolves npm's Windows command shim", () => {
+  assert.equal(npmExecutable("win32"), "npm.cmd");
+  assert.equal(npmExecutable("darwin"), "npm");
 });
 
 test("release workflow preserves every native asset target", () => {
