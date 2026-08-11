@@ -577,6 +577,30 @@ ORDER BY ordinal`, strings.TrimSpace(attemptID))
 	return nil
 }
 
+func (repository *OutboundRepository) AttachmentRecords(ctx context.Context, attemptID string) ([]maildomain.OutboundAttachmentRecord, error) {
+	rows, err := repository.db.QueryContext(ctx, `
+SELECT ordinal, filename, media_type, content_hash, storage_key, byte_size
+FROM outbound_attempt_attachments
+WHERE attempt_id = ?
+ORDER BY ordinal`, strings.TrimSpace(attemptID))
+	if err != nil {
+		return nil, fmt.Errorf("read outbound attempt attachments: %w", err)
+	}
+	defer rows.Close()
+	values := make([]maildomain.OutboundAttachmentRecord, 0, 4)
+	for rows.Next() {
+		var value maildomain.OutboundAttachmentRecord
+		if err := rows.Scan(&value.Ordinal, &value.Filename, &value.MediaType, &value.ContentHash, &value.StorageKey, &value.ByteSize); err != nil {
+			return nil, fmt.Errorf("read outbound attempt attachment: %w", err)
+		}
+		values = append(values, value)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read outbound attempt attachments: %w", err)
+	}
+	return values, nil
+}
+
 func (repository *OutboundRepository) Attempt(ctx context.Context, attemptID string) (maildomain.OutboundAttempt, error) {
 	return scanOutboundAttempt(repository.db.QueryRowContext(ctx, outboundAttemptColumns+` WHERE attempt_id = ?`, strings.TrimSpace(attemptID)))
 }

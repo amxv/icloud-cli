@@ -72,6 +72,10 @@ type MailService interface {
 	MailReconcileReplyAnswer(context.Context, string, string, string) (account.Account, maildomain.OutboundAttempt, int64, error)
 	MailForwardPreview(context.Context, string, string, maildomain.ForwardRequest) (account.Account, maildomain.ForwardPreview, int64, error)
 	MailForward(context.Context, string, string, maildomain.ForwardRequest) (account.Account, maildomain.OutboundAttempt, bool, int64, error)
+	MailOutboxListPage(context.Context, string, string, string, int) (account.Account, []maildomain.OutboxItem, bool, string, int64, error)
+	MailOutboxItem(context.Context, string, string, string) (account.Account, maildomain.OutboxItem, int64, error)
+	MailOutboxRetry(context.Context, string, string, string) (account.Account, maildomain.OutboxItem, maildomain.OutboundAttempt, int64, error)
+	MailOutboxCancel(context.Context, string, string, string) (account.Account, maildomain.OutboxItem, int64, error)
 	MailOutboundStatus(context.Context, string, string, int) (account.Account, []maildomain.OutboundAttempt, bool, int64, error)
 	MailOutboundStatusPage(context.Context, string, string, string, int) (account.Account, []maildomain.OutboundAttempt, bool, string, int64, error)
 	MailOutboundAttempt(context.Context, string, string, string) (account.Account, maildomain.OutboundAttempt, int64, error)
@@ -1516,6 +1520,18 @@ func (unavailableMailService) MailForwardPreview(context.Context, string, string
 }
 func (unavailableMailService) MailForward(context.Context, string, string, maildomain.ForwardRequest) (account.Account, maildomain.OutboundAttempt, bool, int64, error) {
 	return account.Account{}, maildomain.OutboundAttempt{}, false, 0, NewAppError(ErrorConfiguration, "mail forward is unavailable", false)
+}
+func (unavailableMailService) MailOutboxListPage(context.Context, string, string, string, int) (account.Account, []maildomain.OutboxItem, bool, string, int64, error) {
+	return account.Account{}, nil, false, "", 0, NewAppError(ErrorConfiguration, "mail Outbox is unavailable", false)
+}
+func (unavailableMailService) MailOutboxItem(context.Context, string, string, string) (account.Account, maildomain.OutboxItem, int64, error) {
+	return account.Account{}, maildomain.OutboxItem{}, 0, NewAppError(ErrorConfiguration, "mail Outbox is unavailable", false)
+}
+func (unavailableMailService) MailOutboxRetry(context.Context, string, string, string) (account.Account, maildomain.OutboxItem, maildomain.OutboundAttempt, int64, error) {
+	return account.Account{}, maildomain.OutboxItem{}, maildomain.OutboundAttempt{}, 0, NewAppError(ErrorConfiguration, "mail Outbox retry is unavailable", false)
+}
+func (unavailableMailService) MailOutboxCancel(context.Context, string, string, string) (account.Account, maildomain.OutboxItem, int64, error) {
+	return account.Account{}, maildomain.OutboxItem{}, 0, NewAppError(ErrorConfiguration, "mail Outbox cancel is unavailable", false)
 }
 func (unavailableMailService) MailOutboundStatus(context.Context, string, string, int) (account.Account, []maildomain.OutboundAttempt, bool, int64, error) {
 	return account.Account{}, nil, false, 0, NewAppError(ErrorConfiguration, "outbound mail status is unavailable", false)

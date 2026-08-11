@@ -114,6 +114,7 @@ func newMailCommand(state *executionState) *cobra.Command {
 	command.AddCommand(newMailReplyCommand(state, false))
 	command.AddCommand(newMailReplyCommand(state, true))
 	command.AddCommand(newMailForwardCommand(state))
+	command.AddCommand(newMailOutboxCommand(state))
 	command.AddCommand(newMailOperationsCommand(state))
 	command.AddCommand(newMailStatusCommand(state))
 	command.AddCommand(newMailFlagMutationCommand(state, "mark-read", "Mark one selected message location as read", maildomain.FlagMutationMarkRead))

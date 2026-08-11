@@ -162,6 +162,7 @@ type capabilitiesData struct {
 	MailSenderPreferences  bool                 `json:"mail_sender_preferences"`
 	MailThreadPreferences  bool                 `json:"mail_thread_preferences"`
 	MailSignatures         bool                 `json:"mail_signatures"`
+	MailOutbox             bool                 `json:"mail_outbox"`
 	InboundLimits          config.InboundLimits `json:"inbound_limits"`
 	Output                 capabilityOutput     `json:"output"`
 	Automation             capabilityAutomation `json:"automation"`
@@ -428,6 +429,7 @@ func newCapabilitiesCommand(state *executionState) *cobra.Command {
 				MailSenderPreferences:  true,
 				MailThreadPreferences:  true,
 				MailSignatures:         true,
+				MailOutbox:             true,
 				InboundLimits:          limits,
 				Output: capabilityOutput{
 					Default: "compact",

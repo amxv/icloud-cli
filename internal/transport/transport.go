@@ -528,6 +528,11 @@ const (
 type SMTPSendError struct {
 	Outcome SMTPSendOutcome
 	Failure *Failure
+	// OutboxEligible is true only when the transport can prove the failure
+	// happened before SMTP DATA could have started carrying message bytes.
+	// It is intentionally distinct from Failure.Retryable and from the wider
+	// class of explicit failed attempts a caller may choose to retry manually.
+	OutboxEligible bool
 }
 
 func (err *SMTPSendError) Error() string {

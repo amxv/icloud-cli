@@ -186,6 +186,11 @@ type operationListReadJSONRequest struct {
 	Cursor    string `json:"cursor,omitempty"`
 }
 
+type outboxListReadJSONRequest struct {
+	Limit  int    `json:"limit,omitempty"`
+	Cursor string `json:"cursor,omitempty"`
+}
+
 type syncStatusReadJSONRequest struct {
 	Folder string `json:"folder,omitempty"`
 }

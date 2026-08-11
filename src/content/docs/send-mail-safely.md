@@ -420,9 +420,37 @@ Every real send persists a pending attempt before SMTP submission. The final res
 | Status | Meaning | Next action |
 | --- | --- | --- |
 | `sent` | iCloud SMTP returned final acceptance. Normally the local message and attempt commit together and return `msg_…` and `thr_…`. | Use the returned IDs. `reconciliation=pending` means the provider Sent location has not been observed yet; it does not make the send safe to repeat. |
-| `failed` | The CLI proved the message was not accepted, such as authentication failure or an explicit SMTP rejection. | Fix the cause, preserve the original `send_…` ID, then create one linked retry with a new idempotency key. |
+| `failed` | The CLI proved the message was not accepted, such as authentication failure or an explicit SMTP rejection. | If the transport proved the failure happened before SMTP DATA began, the attempt may also have a private `out_…` recovery item. Otherwise fix the cause, preserve the original `send_…` ID, and use an explicit linked retry when appropriate. |
 | `unknown` | The connection failed after message data may have reached iCloud, so acceptance could not be proved either way. | Reconcile Sent and check the recipient. Retry only after explicitly accepting duplicate risk. |
 | `pending` | An earlier process stopped before a final durable outcome was recorded. | Treat it as unresolved; do not create an automatic duplicate. |
+
+### Use the Outbox only for transport-proven pre-DATA failures
+
+The local Outbox is a narrow recovery queue, not Send Later and not a background scheduler. It is created only when the SMTP transport proves that the failed attempt stopped **before DATA could have started carrying the message**. DNS/connect/TLS/authentication/MAIL/RCPT/DATA-command failures can qualify when that boundary is proven. Unknown outcomes, failures after DATA began, accepted sends, and Sent-reconciliation failures never create a retryable Outbox item.
+
+List or inspect recovery metadata without exposing recipients, BCC addresses, body content, Message-ID, request hashes, or private blob coordinates:
+
+```bash
+icloud mail outbox list
+icloud mail outbox show out_…
+```
+
+An Outbox item privately retains the exact reviewed raw MIME identity and the exact SMTP envelope that went with it, including envelope-only BCC recipients. A retry never reconstructs the message from public attempt fields. Review the item first, then explicitly replay those exact bytes and that private envelope:
+
+```bash
+icloud mail outbox retry out_… --dry-run
+icloud mail outbox retry out_… --yes
+```
+
+`--dry-run` shows lifecycle/count metadata only and does not contact SMTP. A redirected or agent-run retry requires `--yes`; an interactive terminal can confirm at the prompt. Every actual replay receives a new linked `send_…` attempt whose `retry_of_attempt_id` points to the previous attempt in the chain.
+
+If that replay again fails before DATA, the same item becomes `retryable` again. If the replay becomes `unknown`, the Outbox becomes `unknown` and cannot be replayed again; use the ordinary Sent/recipient duplicate-risk recovery path. A post-DATA failed replay is also terminal for the Outbox even when SMTP returned an explicit rejection—the Outbox contract intentionally covers only the stricter pre-DATA boundary. Cancel a still-retryable local item without provider contact when you no longer want it sent:
+
+```bash
+icloud mail outbox cancel out_…
+```
+
+There is no daemon, timer, scheduled-send mode, or automatic resend loop. Restart recovery also fails closed: if a process stopped after a linked retry attempt was durably created but before its provider outcome was recorded, that attempt and Outbox item become `unknown` rather than being transmitted again automatically.
 
 Inspect bounded payload-free operation history, then synchronize Sent and reconcile exact generated Message-ID evidence:
 

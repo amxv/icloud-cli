@@ -156,6 +156,10 @@ type unsubscribeJSONRequest struct {
 	Method    string `json:"method,omitempty"`
 }
 
+type outboxTargetJSONRequest struct {
+	OutboxID string `json:"outbox_id"`
+}
+
 type attachmentSaveJSONRequest struct {
 	AttachmentID string `json:"attachment_id"`
 	Output       string `json:"output"`

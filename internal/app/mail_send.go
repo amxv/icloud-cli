@@ -223,7 +223,8 @@ func (commands accountCommands) MailSend(
 	identityEvidenceErr := recordSenderProviderEvidence(ctx, state, sender, sendResult, sendErr, commands.timeNow())
 	if sendErr == nil && !sendResult.Accepted {
 		sendErr = &transport.SMTPSendError{
-			Outcome: transport.SMTPSendUnknown,
+			Outcome:        transport.SMTPSendUnknown,
+			OutboxEligible: false,
 			Failure: transport.NewFailure(
 				transport.StageSMTPAccept,
 				transport.FailureUnavailable,
@@ -249,6 +250,25 @@ func (commands accountCommands) MailSend(
 		}
 		if identityEvidenceErr != nil {
 			mapped = errors.Join(mapped, cli.WrapAppError(cli.ErrorInternal, "mail identity provider-validation state could not be persisted", false, identityEvidenceErr))
+		}
+		if sendFailure != nil && sendFailure.Outcome == transport.SMTPSendFailed && sendFailure.OutboxEligible {
+			outboxID, idErr := commands.generateID("out")
+			if idErr == nil {
+				outcomeCtx, outcomeCancel := durableOutcomeContext(ctx)
+				item, queuedAttempt, queueErr := state.Outbox().EnqueueSafeFailure(outcomeCtx, maildomain.EnqueueOutboxItem{
+					OutboxID: outboxID, AttemptID: attempt.ID,
+					FailureStage: code, FailureCode: code,
+					Envelope: maildomain.OutboxEnvelopeFromRequest(normalized), Now: commands.timeNow(),
+				})
+				outcomeCancel()
+				if queueErr == nil {
+					attempt = queuedAttempt
+					return accountValue, attempt, false, state.SchemaVersion(), withOutboxDetails(withAttemptDetails(mapped, attempt), item)
+				}
+				mapped = errors.Join(mapped, cli.WrapAppError(cli.ErrorInternal, "safe SMTP failure could not be queued in the Outbox", false, queueErr))
+			} else {
+				mapped = errors.Join(mapped, cli.WrapAppError(cli.ErrorInternal, "cannot allocate an Outbox item ID", false, idErr))
+			}
 		}
 		attempt, err = persistOutboundOutcome(ctx, state.Outbound(), attempt, status, code, commands.timeNow(), mapped)
 		if err != nil {
@@ -475,8 +495,9 @@ type unavailableSMTPSender struct{}
 
 func (unavailableSMTPSender) SendSMTP(context.Context, transport.AuthRequest, transport.SMTPSendRequest) (transport.SMTPSendResult, error) {
 	return transport.SMTPSendResult{}, &transport.SMTPSendError{
-		Outcome: transport.SMTPSendFailed,
-		Failure: transport.NewFailure(transport.StageConnect, transport.FailureConfiguration, false, errors.New("SMTP send unavailable")),
+		Outcome:        transport.SMTPSendFailed,
+		Failure:        transport.NewFailure(transport.StageConnect, transport.FailureConfiguration, false, errors.New("SMTP send unavailable")),
+		OutboxEligible: true,
 	}
 }
 
@@ -683,6 +704,18 @@ func withAttemptDetails(err error, attempt maildomain.OutboundAttempt) error {
 		appErr.Details["attempt_id"] = attempt.ID
 		appErr.Details["status"] = attempt.Status
 		return appErr
+	}
+	return err
+}
+
+func withOutboxDetails(err error, item maildomain.OutboxItem) error {
+	var appErr *cli.AppError
+	if errors.As(err, &appErr) {
+		if appErr.Details == nil {
+			appErr.Details = map[string]any{}
+		}
+		appErr.Details["outbox_id"] = item.ID
+		appErr.Details["outbox_status"] = item.Status
 	}
 	return err
 }

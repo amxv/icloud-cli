@@ -1,0 +1,75 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/outbox.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "attachment_bytes": {
+      "type": "integer"
+    },
+    "attachment_count": {
+      "type": "integer"
+    },
+    "bcc_count": {
+      "type": "integer"
+    },
+    "body_part_count": {
+      "type": "integer"
+    },
+    "cc_count": {
+      "type": "integer"
+    },
+    "created_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "failure_code": {
+      "type": "string"
+    },
+    "failure_stage": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string"
+    },
+    "latest_attempt_id": {
+      "type": "string"
+    },
+    "sender_identity_id": {
+      "type": "string"
+    },
+    "source_attempt_id": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    },
+    "to_count": {
+      "type": "integer"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "type": "string"
+    }
+  },
+  "required": [
+    "attachment_bytes",
+    "attachment_count",
+    "bcc_count",
+    "body_part_count",
+    "cc_count",
+    "created_at",
+    "id",
+    "kind",
+    "sender_identity_id",
+    "source_attempt_id",
+    "status",
+    "to_count",
+    "updated_at"
+  ],
+  "title": "iCloud CLI safe-retry Outbox item",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

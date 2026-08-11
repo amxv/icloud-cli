@@ -66,7 +66,7 @@ func TestGeneratedSchemasMatchCommittedArtifacts(t *testing.T) {
 			t.Fatalf("public schema mirror drift for %s; run make schemas", name)
 		}
 	}
-	for _, required := range []string{"account", "mail-identity", "folder", "message", "thread", "selection", "purge", "attachment", "checkpoint", "attempt", "draft", "event", "error"} {
+	for _, required := range []string{"account", "mail-identity", "folder", "message", "thread", "selection", "purge", "attachment", "checkpoint", "attempt", "outbox", "draft", "event", "error"} {
 		name := required + ".schema.json"
 		if _, ok := generated[name]; !ok {
 			t.Fatalf("required public resource schema missing: %s", name)
@@ -89,7 +89,10 @@ func TestCapabilitiesPublishesVersionedAutomationAndSchemaContracts(t *testing.T
 	if envelope.Data.Automation.ContractVersion != AutomationContractVersion || !envelope.Data.Automation.InputJSON || !envelope.Data.Automation.InputJSONL || envelope.Data.Automation.BulkMaximum != MaximumBulkItems {
 		t.Fatalf("automation=%+v", envelope.Data.Automation)
 	}
-	for _, target := range []string{"account", "mail-identity", "folder", "message", "thread", "selection", "purge", "attachment", "checkpoint", "attempt", "draft", "event", "error"} {
+	if !envelope.Data.MailOutbox {
+		t.Fatal("capabilities did not advertise the safe-retry Outbox")
+	}
+	for _, target := range []string{"account", "mail-identity", "folder", "message", "thread", "selection", "purge", "attachment", "checkpoint", "attempt", "outbox", "draft", "event", "error"} {
 		if got := envelope.Data.Schemas[target]; got != SchemaBaseID+target+".schema.json" {
 			t.Fatalf("schema %s=%q", target, got)
 		}
@@ -298,7 +301,7 @@ func TestPhase3ReadRequestSchemasAreStrictPublicAndPrivateFieldFree(t *testing.T
 		"account list", "mail folders list", "mail folders show", "mail folders refresh",
 		"mail messages list", "mail search", "mail threads list", "mail threads show",
 		"mail message show", "mail attachments list", "mail operations outbound list",
-		"mail operations mutations list", "mail status", "mail sync status", "mail sync checkpoints",
+		"mail operations mutations list", "mail outbox list", "mail status", "mail sync status", "mail sync checkpoints",
 	} {
 		found := false
 		for _, contract := range automationCommandContracts() {
@@ -358,6 +361,52 @@ func TestPhase4MailIdentityRequestSchemasAreStrictAndSecretFree(t *testing.T) {
 	for _, forbidden := range []string{"password", "credential", "raw_storage", "raw_content", "bcc", "idempotency"} {
 		if strings.Contains(strings.ToLower(combined.String()), forbidden) {
 			t.Fatalf("identity request schemas expose private field %q", forbidden)
+		}
+	}
+}
+
+func TestPhase31OutboxSchemasAreStrictAndPrivateReplayDataFree(t *testing.T) {
+	generated, err := GeneratedSchemas()
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 8, 11, 1, 30, 0, 0, time.UTC)
+	values := map[string]any{
+		"outbox":                   publicOutboxItem{ID: "out_schema", SourceAttemptID: "send_schema", SenderIdentityID: "mid_schema", Status: maildomain.OutboxRetryable, Kind: maildomain.OutboundKindSend, ToCount: 1, BCCCount: 1, CreatedAt: now, UpdatedAt: now},
+		"outbox-list-read-input":   outboxListReadJSONRequest{Limit: 20, Cursor: "obcur_test"},
+		"outbox-target-read-input": outboxTargetJSONRequest{OutboxID: "out_schema"},
+		"outbox-target-input":      outboxTargetJSONRequest{OutboxID: "out_schema"},
+	}
+	var combined bytes.Buffer
+	for name, typed := range values {
+		encodedSchema, ok := generated[name+".schema.json"]
+		if !ok {
+			t.Fatalf("missing generated Outbox schema %s", name)
+		}
+		combined.Write(encodedSchema)
+		var schema map[string]any
+		if err := json.Unmarshal(encodedSchema, &schema); err != nil {
+			t.Fatal(err)
+		}
+		if additional, ok := schema["additionalProperties"].(bool); !ok || additional {
+			t.Fatalf("Outbox schema %s must reject unknown fields", name)
+		}
+		encoded, err := json.Marshal(typed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var value any
+		if err := json.Unmarshal(encoded, &value); err != nil {
+			t.Fatal(err)
+		}
+		if err := validateSchemaValue(schema, value, "$", true); err != nil {
+			t.Fatalf("representative %s does not validate: %v", name, err)
+		}
+	}
+	all := combined.String()
+	for _, forbidden := range []string{`"raw_storage_key"`, `"raw_content_hash"`, `"request_hash"`, `"rfc_message_id"`, `"envelope"`, `"subject"`, `"body"`, `"idempotency_key"`, `"reply_to"`} {
+		if strings.Contains(all, forbidden) {
+			t.Fatalf("Outbox public/request schemas expose private replay field %s", forbidden)
 		}
 	}
 }

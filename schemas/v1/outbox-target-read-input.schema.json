@@ -1,0 +1,16 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/outbox-target-read-input.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "outbox_id": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "outbox_id"
+  ],
+  "title": "mail Outbox target JSON read request",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

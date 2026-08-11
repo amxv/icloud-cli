@@ -69,6 +69,9 @@ func TestSendSMTPFailsBeforeMutationWithoutSTARTTLS(t *testing.T) {
 	if !errors.As(err, &sendErr) || sendErr.Outcome != transport.SMTPSendFailed || sendErr.Failure.Stage != transport.StageSMTPStartTLS {
 		t.Fatalf("STARTTLS send error = %#v", err)
 	}
+	if !sendErr.OutboxEligible {
+		t.Fatalf("pre-DATA STARTTLS failure was not marked duplicate-safe: %#v", sendErr)
+	}
 	if server.SawAuth() || server.SawMutation() {
 		t.Fatalf("auth=%v mutation=%v", server.SawAuth(), server.SawMutation())
 	}
@@ -101,6 +104,9 @@ func TestSendSMTPRecordsPostDataDisconnectAsUnknownAndFinalRejectionAsFailed(t *
 			if !errors.As(err, &sendErr) || sendErr.Outcome != testCase.want || sendErr.Failure.Stage != transport.StageSMTPAccept {
 				t.Fatalf("send error = %#v", err)
 			}
+			if sendErr.OutboxEligible {
+				t.Fatalf("post-DATA outcome was incorrectly marked duplicate-safe: %#v", sendErr)
+			}
 			if !server.SawSTARTTLS() || !server.SawAuth() || len(server.Message()) == 0 {
 				t.Fatalf("starttls=%v auth=%v message=%q", server.SawSTARTTLS(), server.SawAuth(), server.Message())
 			}
@@ -124,6 +130,9 @@ func TestSendSMTPCancellationBeforeAndDuringDataPreservesOutcomeBoundary(t *test
 		if !errors.As(err, &sendErr) || sendErr.Outcome != transport.SMTPSendFailed {
 			t.Fatalf("pre-DATA cancellation = %#v", err)
 		}
+		if !sendErr.OutboxEligible {
+			t.Fatalf("pre-DATA cancellation was not marked duplicate-safe: %#v", sendErr)
+		}
 		if time.Since(started) > smtpCancellationPromptBudget {
 			t.Fatalf("pre-DATA cancellation was not prompt: %s", time.Since(started))
 		}
@@ -144,6 +153,9 @@ func TestSendSMTPCancellationBeforeAndDuringDataPreservesOutcomeBoundary(t *test
 		var sendErr *transport.SMTPSendError
 		if !errors.As(err, &sendErr) || sendErr.Outcome != transport.SMTPSendUnknown {
 			t.Fatalf("mid-DATA cancellation = %#v", err)
+		}
+		if sendErr.OutboxEligible {
+			t.Fatalf("mid-DATA cancellation was incorrectly marked duplicate-safe: %#v", sendErr)
 		}
 		if time.Since(started) > smtpCancellationPromptBudget {
 			t.Fatalf("mid-DATA cancellation was not prompt: %s", time.Since(started))

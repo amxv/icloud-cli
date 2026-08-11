@@ -617,6 +617,7 @@ Available Commands:
   move        Move exact current message locations
   not-junk    Move current Junk locations back to Inbox
   operations  Inspect local mail operation history by stable ID
+  outbox      Inspect and manually retry sends proven safe before SMTP DATA
   reply       Reply to one explicitly selected local message
   reply-all   Reply to all visible participants of one explicitly selected local message
   restore     Move current Trash locations to deliberate destinations
@@ -2853,6 +2854,146 @@ Examples:
 Flags:
   -h, --help   help for show
       --json   Emit one stable JSON success envelope
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail outbox`
+
+```text
+Inspect and manually retry sends proven safe before SMTP DATA
+
+Usage:
+  icloud mail outbox [flags]
+  icloud mail outbox [command]
+
+Examples:
+  icloud mail outbox list
+  icloud mail outbox show out_…
+  icloud mail outbox retry out_… --dry-run
+  icloud mail outbox retry out_… --yes
+  icloud mail outbox cancel out_…
+
+Available Commands:
+  cancel      Cancel one retryable local Outbox item without contacting SMTP
+  list        List bounded local safe-retry Outbox items without exposing message payloads or recipients
+  retry       Explicitly replay the exact reviewed raw message and private SMTP envelope
+  show        Show one safe-retry Outbox item's lifecycle metadata
+
+Flags:
+  -h, --help   help for outbox
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+
+Use "icloud mail outbox [command] --help" for more information about a command.
+```
+
+## `icloud mail outbox cancel`
+
+```text
+Cancel one retryable local Outbox item without contacting SMTP
+
+Usage:
+  icloud mail outbox cancel <outbox-id> [flags]
+
+Examples:
+  icloud mail outbox cancel out_…
+  icloud mail outbox cancel --input-json request.json --json
+
+Flags:
+  -h, --help                help for cancel
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail outbox list`
+
+```text
+List bounded local safe-retry Outbox items without exposing message payloads or recipients
+
+Usage:
+  icloud mail outbox list [flags]
+
+Examples:
+  icloud mail outbox list
+  icloud mail outbox list --limit 50 --cursor obcur_… --json
+  icloud mail outbox list --input-json request.json --json
+
+Flags:
+      --cursor string       Continue from a next_cursor returned for the same account
+  -h, --help                help for list
+      --input-json string   Read one strict JSON read request from a file, or - for stdin; cannot be mixed with equivalent read flags or positional read arguments
+      --json                Emit one stable JSON success envelope
+      --limit int           Maximum Outbox items to return (1-100) (default 20)
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail outbox retry`
+
+```text
+Explicitly replay the exact reviewed raw message and private SMTP envelope
+
+Usage:
+  icloud mail outbox retry <outbox-id> [flags]
+
+Examples:
+  icloud mail outbox retry out_… --dry-run
+  icloud mail outbox retry out_… --yes --json
+
+Flags:
+      --dry-run             Review retry lifecycle metadata without contacting SMTP
+  -h, --help                help for retry
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+      --yes                 Confirm an intentional non-interactive exact-message replay
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail outbox show`
+
+```text
+Show one safe-retry Outbox item's lifecycle metadata
+
+Usage:
+  icloud mail outbox show <outbox-id> [flags]
+
+Examples:
+  icloud mail outbox show out_…
+  icloud mail outbox show --input-json request.json --json
+
+Flags:
+  -h, --help                help for show
+      --input-json string   Read one strict JSON read request from a file, or - for stdin; cannot be mixed with equivalent read flags or positional read arguments
+      --json                Emit one stable JSON success envelope
 
 Global Flags:
       --account string      Select an account by name, email, or stable ID
