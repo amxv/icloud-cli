@@ -138,6 +138,8 @@ Let the other process finish and retry. Do not remove coordination files to bypa
 
 Treat the selected application root as one unit: it contains the local mail index and the content needed for complete cached messages and attachments. Before a file-level backup, stop `mail watch` and let any sync, repair, draft, outbound, or location-changing command finish. Then copy or snapshot the **entire** root rather than selecting only the database or only the content directory.
 
+S/MIME private keys are deliberately **not** part of that root. An S/MIME identity stores only an external key reference: native keyring, environment variable, or a private file you own. A state-root backup therefore preserves the S/MIME binding/certificate metadata but not the private key itself. Back up externally owned key files using your normal secret-management process, and confirm the referenced file remains private (for example `0600`) after restore. Native-keyring material follows the operating system's keyring backup/restore behavior.
+
 The root does not contain a plaintext app-specific password. A keyring secret remains in the operating-system credential store; environment values and external credential files also remain outside the root. Back those external sources up separately if your recovery plan depends on them.
 
 ## Configure inbound storage limits

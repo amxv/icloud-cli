@@ -9,6 +9,9 @@
     "cache": {
       "type": "boolean"
     },
+    "decrypt": {
+      "type": "boolean"
+    },
     "format": {
       "type": "string"
     },

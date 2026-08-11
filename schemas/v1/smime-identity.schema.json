@@ -1,0 +1,78 @@
+{
+  "$id": "https://icloud.ashray.xyz/schemas/v1/smime-identity.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "account_id": {
+      "type": "string"
+    },
+    "certificate_id": {
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "email": {
+      "type": "string"
+    },
+    "extended_key_usage": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "fingerprint_sha256": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string"
+    },
+    "key_usage": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "mail_identity_id": {
+      "type": "string"
+    },
+    "not_after": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "not_before": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "private_key_configured": {
+      "type": "boolean"
+    },
+    "private_key_scheme": {
+      "type": "string"
+    },
+    "subject": {
+      "type": "string"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "type": "string"
+    }
+  },
+  "required": [
+    "certificate_id",
+    "created_at",
+    "email",
+    "fingerprint_sha256",
+    "id",
+    "mail_identity_id",
+    "not_after",
+    "not_before",
+    "private_key_configured",
+    "private_key_scheme",
+    "updated_at"
+  ],
+  "title": "iCloud CLI S/MIME identity metadata",
+  "type": "object",
+  "x-icloud-contract-version": "1.0.0"
+}

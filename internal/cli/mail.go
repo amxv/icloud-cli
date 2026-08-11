@@ -1331,6 +1331,10 @@ func publicSMIMEStatus(value maildomain.Message) *maildomain.SMIMEStatus {
 		signer.ExtendedKeyUsage = append([]string(nil), copy.Signer.ExtendedKeyUsage...)
 		copy.Signer = &signer
 	}
+	if copy.Decryption != nil {
+		decryption := *copy.Decryption
+		copy.Decryption = &decryption
+	}
 	return &copy
 }
 

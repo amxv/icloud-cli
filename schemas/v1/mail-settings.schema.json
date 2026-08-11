@@ -99,6 +99,21 @@
           ],
           "type": "object"
         },
+        "smime_decryption": {
+          "additionalProperties": false,
+          "properties": {
+            "next_action": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "type": "object"
+        },
         "smime_inspection": {
           "additionalProperties": false,
           "properties": {
@@ -122,6 +137,7 @@
         "hide_my_email_outbound",
         "reply_answered",
         "smime",
+        "smime_decryption",
         "smime_inspection"
       ],
       "type": "object"

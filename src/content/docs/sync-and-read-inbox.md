@@ -296,7 +296,34 @@ icloud mail smime certificates import private-root.pem --email sender@example.co
 icloud mail smime certificates remove smc_…
 ```
 
-Import defaults to `trusted=false`. `--trust` is an explicit account-and-mailbox-scoped verification decision; merely importing a recipient/signer certificate never silently grants trust. Certificate input is one bounded regular PEM/DER public certificate (maximum 64 KiB), and list/JSON output contains only public certificate metadata—never private keys or DER bytes. Changing certificate trust invalidates cached S/MIME verdicts so the next hydrated message read re-verifies the exact canonical raw message. This surface is inbound verification and public-key material only; it does not store S/MIME private keys, decrypt mail, sign outbound mail, or encrypt outbound mail.
+Import defaults to `trusted=false`. `--trust` is an explicit account-and-mailbox-scoped verification decision; merely importing a recipient/signer certificate never silently grants trust. Certificate input is one bounded regular PEM/DER public certificate (maximum 64 KiB), and list/JSON output contains only public certificate metadata—never private keys or DER bytes. Changing certificate trust invalidates cached S/MIME verdicts so the next hydrated message read re-verifies the exact canonical raw message.
+
+To decrypt mail addressed to one of your configured `MailIdentity` addresses, bind that identity to its end-entity S/MIME certificate and an **external** private-key source:
+
+```bash
+cat recipient-key.pem | icloud mail smime identities configure mid_… \
+  --certificate smc_… \
+  --private-key-stdin
+
+icloud mail smime identities configure owner@example.com \
+  --certificate smc_… \
+  --private-key-file ~/.config/icloud-cli/smime-owner-key.pem
+
+icloud mail smime identities list
+```
+
+`--private-key-stdin` requires redirected stdin and stores the key in the native keyring; key bytes are never accepted on argv. `--private-key-file` stores only an external reference and requires a regular non-symlink file with no group/other permissions (for example `0600`). `--private-key-env` stores only an environment-variable reference. Public list/show/JSON reports the key source **scheme** and whether a key is configured, but never the keyring reference, environment-variable name, file path, or private-key bytes. Password-protected PEM/PKCS#8 input is not currently accepted; use OS/keyring/file protection around an unencrypted local key instead.
+
+Decryption is explicit and local:
+
+```bash
+icloud mail message show msg_… --decrypt --full
+icloud mail message show msg_… --decrypt --verbose --json
+```
+
+The CLI matches the CMS recipient information to exactly one configured S/MIME identity whose linked `MailIdentity` is currently enabled, resolves only that identity's external key, decrypts in memory, and parses the plaintext through the same MIME/body/attachment bounds as ordinary mail. Disabling a sender identity therefore also disables use of its private key for decryption without deleting the binding. A missing key, wrong key, unsupported algorithm, malformed ciphertext, or multiple matching enabled identities fails closed. Changing the address of a bound `MailIdentity` is refused until the S/MIME binding is removed, so certificate/address ownership cannot silently drift. Signed content inside an encrypted message is verified after decryption using the outer message sender as the expected signer identity.
+
+Decryption does **not** replace or rewrite the synchronized message. Ordinary reads still show the encrypted-message metadata; `message raw` always returns the exact encrypted provider bytes, and `--decrypt --format raw` is rejected to keep that meaning unambiguous. Decrypted plaintext is not written to SQLite or the blob store and is not silently added to local search. Remove a binding deliberately with `mail smime identities remove smi_… --yes`; an owned native-keyring secret is deleted with the binding, while externally owned file/environment material remains under your control. Outbound S/MIME signing and recipient encryption are separate capabilities and are not implied by inbound decryption.
 
 Use the attachment workflow when you need decoded user files rather than message-body output.
 

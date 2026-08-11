@@ -2,12 +2,16 @@ package mail
 
 import (
 	"bytes"
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/base64"
+	"encoding/pem"
+	"errors"
 	"math/big"
 	"os"
 	"strings"
@@ -16,6 +20,97 @@ import (
 
 	"github.com/smallstep/pkcs7"
 )
+
+func TestPhase33SMIMEEnvelopeMatchesDecryptsAndHonorsBounds(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	cert, key := newSMIMERSATestCertificate(t, "owner@example.test", now)
+	wrongCert, _ := newSMIMERSATestCertificate(t, "other@example.test", now.Add(time.Second))
+	plaintext := []byte("Content-Type: text/plain; charset=utf-8\r\n\r\nphase33 decrypted content")
+	previous := pkcs7.ContentEncryptionAlgorithm
+	pkcs7.ContentEncryptionAlgorithm = pkcs7.EncryptionAlgorithmAES256CBC
+	ciphertext, err := pkcs7.Encrypt(plaintext, []*x509.Certificate{cert})
+	pkcs7.ContentEncryptionAlgorithm = previous
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := []byte("Content-Type: application/pkcs7-mime; smime-type=enveloped-data; name=smime.p7m\r\nContent-Transfer-Encoding: base64\r\n\r\n" + base64.StdEncoding.EncodeToString(ciphertext) + "\r\n")
+	envelope, err := ParseSMIMEEnvelopeContext(context.Background(), bytes.NewReader(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	matched, err := envelope.Matches(cert)
+	if err != nil || !matched {
+		t.Fatalf("recipient match=%v err=%v", matched, err)
+	}
+	matched, err = envelope.Matches(wrongCert)
+	if err != nil || matched {
+		t.Fatalf("wrong recipient match=%v err=%v", matched, err)
+	}
+	decrypted, err := envelope.Decrypt(context.Background(), cert, key, int64(len(plaintext)))
+	if err != nil || !bytes.Equal(decrypted, plaintext) {
+		t.Fatalf("decrypt exact=%v err=%v", bytes.Equal(decrypted, plaintext), err)
+	}
+	if _, err := envelope.Decrypt(context.Background(), cert, key, int64(len(plaintext)-1)); !errors.Is(err, ErrContentLimit) {
+		t.Fatalf("bounded decrypt error=%v", err)
+	}
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := envelope.Decrypt(canceled, cert, key, int64(len(plaintext))); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled decrypt error=%v", err)
+	}
+}
+
+func TestPhase33SMIMEPrivateKeyParsingAndCertificateBinding(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	cert, key := newSMIMERSATestCertificate(t, "owner@example.test", now)
+	der := x509.MarshalPKCS1PrivateKey(key)
+	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: der})
+	parsed, err := ParseSMIMEPrivateKey(pemBytes)
+	if err != nil || !SMIMEPrivateKeyMatchesCertificate(parsed, cert) {
+		t.Fatalf("private key parse/match err=%v", err)
+	}
+	_, wrongKey := newSMIMERSATestCertificate(t, "owner@example.test", now)
+	if SMIMEPrivateKeyMatchesCertificate(wrongKey, cert) {
+		t.Fatal("wrong private key matched certificate")
+	}
+	encrypted := pem.EncodeToMemory(&pem.Block{Type: "ENCRYPTED PRIVATE KEY", Bytes: []byte("synthetic encrypted private key")})
+	if _, err := ParseSMIMEPrivateKey(encrypted); !errors.Is(err, ErrSMIMEPrivateKeyEncrypted) {
+		t.Fatalf("encrypted private key error=%v", err)
+	}
+}
+
+func TestPhase33MalformedEncryptedContainerFailsOnlyOnExplicitDecrypt(t *testing.T) {
+	raw := []byte("From: sender@example.test\r\nContent-Type: application/pkcs7-mime; smime-type=enveloped-data\r\nContent-Transfer-Encoding: base64\r\n\r\nbm90LWNtcw==\r\n")
+	content, err := ParseNormalizedWithAttachmentsAndSMIMEContext(context.Background(), bytes.NewReader(raw), nil, &SMIMEPolicy{Roots: x509.NewCertPool(), Now: time.Now().UTC()})
+	if err != nil || content.SMIME == nil || !content.SMIME.Encrypted {
+		t.Fatalf("ordinary encrypted metadata parse=%+v err=%v", content.SMIME, err)
+	}
+	if _, err := ParseSMIMEEnvelopeContext(context.Background(), bytes.NewReader(raw)); !errors.Is(err, ErrSMIMEEnvelopeInvalid) {
+		t.Fatalf("explicit malformed decrypt parse error=%v", err)
+	}
+}
+
+func newSMIMERSATestCertificate(t *testing.T, email string, now time.Time) (*x509.Certificate, *rsa.PrivateKey) {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(now.UnixNano()), Subject: pkix.Name{CommonName: "Phase 33 RSA"}, EmailAddresses: []string{email},
+		NotBefore: now.Add(-time.Hour), NotAfter: now.Add(24 * time.Hour), BasicConstraintsValid: true,
+		KeyUsage: x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageEmailProtection},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cert, key
+}
 
 type smimeTestIdentity struct {
 	root    *x509.Certificate

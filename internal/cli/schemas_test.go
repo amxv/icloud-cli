@@ -66,7 +66,7 @@ func TestGeneratedSchemasMatchCommittedArtifacts(t *testing.T) {
 			t.Fatalf("public schema mirror drift for %s; run make schemas", name)
 		}
 	}
-	for _, required := range []string{"account", "mail-identity", "folder", "message", "thread", "selection", "purge", "attachment", "checkpoint", "attempt", "outbox", "smime-certificate", "draft", "event", "error"} {
+	for _, required := range []string{"account", "mail-identity", "folder", "message", "thread", "selection", "purge", "attachment", "checkpoint", "attempt", "outbox", "smime-certificate", "smime-identity", "draft", "event", "error"} {
 		name := required + ".schema.json"
 		if _, ok := generated[name]; !ok {
 			t.Fatalf("required public resource schema missing: %s", name)
@@ -92,10 +92,10 @@ func TestCapabilitiesPublishesVersionedAutomationAndSchemaContracts(t *testing.T
 	if !envelope.Data.MailOutbox {
 		t.Fatal("capabilities did not advertise the safe-retry Outbox")
 	}
-	if !envelope.Data.MailSMIMEInspection || !envelope.Data.MailSMIMECertificates {
-		t.Fatalf("capabilities did not advertise Phase 32 S/MIME surfaces: inspection=%v certificates=%v", envelope.Data.MailSMIMEInspection, envelope.Data.MailSMIMECertificates)
+	if !envelope.Data.MailSMIMEInspection || !envelope.Data.MailSMIMECertificates || !envelope.Data.MailSMIMEIdentities || !envelope.Data.MailSMIMEDecryption {
+		t.Fatalf("capabilities did not advertise S/MIME surfaces: inspection=%v certificates=%v identities=%v decryption=%v", envelope.Data.MailSMIMEInspection, envelope.Data.MailSMIMECertificates, envelope.Data.MailSMIMEIdentities, envelope.Data.MailSMIMEDecryption)
 	}
-	for _, target := range []string{"account", "mail-identity", "folder", "message", "thread", "selection", "purge", "attachment", "checkpoint", "attempt", "outbox", "smime-certificate", "draft", "event", "error"} {
+	for _, target := range []string{"account", "mail-identity", "folder", "message", "thread", "selection", "purge", "attachment", "checkpoint", "attempt", "outbox", "smime-certificate", "smime-identity", "draft", "event", "error"} {
 		if got := envelope.Data.Schemas[target]; got != SchemaBaseID+target+".schema.json" {
 			t.Fatalf("schema %s=%q", target, got)
 		}
@@ -240,6 +240,56 @@ func TestCapabilitiesPublishesVersionedAutomationAndSchemaContracts(t *testing.T
 	}
 	if err := validateSchemaValue(schema, value, "$", true); err != nil {
 		t.Fatalf("capabilities envelope does not validate against published schema: %v", err)
+	}
+}
+
+func TestPhase33SMIMEIdentitySchemasExposeReferencesOnlyBySafeSelector(t *testing.T) {
+	generated, err := GeneratedSchemas()
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 8, 11, 4, 30, 0, 0, time.UTC)
+	values := map[string]any{
+		"smime-identity":                   maildomain.SMIMEIdentity{ID: "smi_schema", MailIdentityID: "mid_schema", Email: "owner@example.test", CertificateID: "smc_schema", FingerprintSHA256: strings.Repeat("a", 64), Subject: "CN=Recipient", NotBefore: now.Add(-time.Hour), NotAfter: now.Add(time.Hour), KeyUsage: []string{"key-encipherment"}, ExtendedKeyUsage: []string{"email-protection"}, PrivateKeyScheme: account.CredentialFile, PrivateKeyConfigured: true, PrivateKeyReference: "file:/private/secret.pem", CreatedAt: now, UpdatedAt: now},
+		"smime-identity-list-read-input":   smimeIdentityListReadJSONRequest{Limit: 20},
+		"smime-identity-target-read-input": smimeIdentityTargetJSONRequest{Identity: "smi_schema"},
+		"smime-identity-configure-input":   smimeIdentityConfigureJSONRequest{MailIdentity: "mid_schema", CertificateID: "smc_schema", PrivateKeyEnv: "SMIME_PRIVATE_KEY"},
+		"smime-identity-target-input":      smimeIdentityTargetJSONRequest{Identity: "smi_schema"},
+	}
+	var combined bytes.Buffer
+	for name, typed := range values {
+		encodedSchema, ok := generated[name+".schema.json"]
+		if !ok {
+			t.Fatalf("missing generated Phase 33 schema %s", name)
+		}
+		combined.Write(encodedSchema)
+		var schema map[string]any
+		if err := json.Unmarshal(encodedSchema, &schema); err != nil {
+			t.Fatal(err)
+		}
+		if additional, ok := schema["additionalProperties"].(bool); !ok || additional {
+			t.Fatalf("Phase 33 schema %s must reject unknown fields", name)
+		}
+		encoded, err := json.Marshal(typed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var value any
+		if err := json.Unmarshal(encoded, &value); err != nil {
+			t.Fatal(err)
+		}
+		if err := validateSchemaValue(schema, value, "$", true); err != nil {
+			t.Fatalf("representative %s does not validate: %v", name, err)
+		}
+	}
+	all := strings.ToLower(combined.String())
+	for _, forbidden := range []string{`"private_key_reference"`, `"private_key_bytes"`, `"private_key_pem"`, `"secret"`, `"password"`, `"pkcs12"`, `"pfx"`} {
+		if strings.Contains(all, forbidden) {
+			t.Fatalf("Phase 33 public/request schemas expose private key material field %s", forbidden)
+		}
+	}
+	if !strings.Contains(all, `"private_key_env"`) || !strings.Contains(all, `"private_key_file"`) {
+		t.Fatalf("Phase 33 configure schema does not expose safe external key selectors: %s", all)
 	}
 }
 

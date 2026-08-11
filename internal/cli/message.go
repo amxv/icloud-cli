@@ -57,6 +57,10 @@ type messageImportService interface {
 	MailMessageImport(context.Context, string, string, string, maildomain.MessageImportRequest) (account.Account, folder.Folder, maildomain.MessageImportPlan, maildomain.MessageImport, maildomain.Message, int64, error)
 }
 
+type mailMessageDecryptService interface {
+	MailMessageDecrypt(context.Context, string, string, string) (account.Account, maildomain.Message, maildomain.ContentSource, int64, error)
+}
+
 type mailMessageImportPreviewData struct {
 	AccountID     string                       `json:"account_id"`
 	Plan          maildomain.MessageImportPlan `json:"plan"`
@@ -223,6 +227,7 @@ func newMailMessageShowCommand(state *executionState) *cobra.Command {
 	var options OutputOptions
 	var remote bool
 	var cache bool
+	var decrypt bool
 	var input jsonInputOptions
 	command := &cobra.Command{
 		Use:     "show <message-id>",
@@ -236,12 +241,13 @@ func newMailMessageShowCommand(state *executionState) *cobra.Command {
 			}
 			request := messageShowReadJSONRequest{MessageID: messageID, Format: "compact"}
 			if used, err := readJSONInput(cmd, state, input, &request,
-				"remote", "cache", "full", "verbose", "format", "headers", "body-only", "metadata-only"); err != nil {
+				"remote", "cache", "decrypt", "full", "verbose", "format", "headers", "body-only", "metadata-only"); err != nil {
 				return err
 			} else if used {
 				messageID = request.MessageID
 				remote = request.Remote
 				cache = request.Cache
+				decrypt = request.Decrypt
 				options = request.outputOptions(options.JSON)
 			}
 			if strings.TrimSpace(messageID) == "" {
@@ -260,8 +266,11 @@ func newMailMessageShowCommand(state *executionState) *cobra.Command {
 			if cache && !remote {
 				return NewAppError(ErrorUsage, "--cache requires --remote", false)
 			}
+			if decrypt && format == maildomain.ContentRaw {
+				return NewAppError(ErrorUsage, "--decrypt cannot be combined with raw output; raw always means the exact encrypted provider message", false)
+			}
 			if remote && !cache {
-				if remoteContentExpansionRequested(options, format) {
+				if decrypt || remoteContentExpansionRequested(options, format) {
 					return NewAppError(ErrorUsage, "remote content expansion requires --cache so the verified message can use the normal local read path", false)
 				}
 				accountValue, hit, schemaVersion, err := state.mail.MailRemoteSummary(
@@ -287,9 +296,19 @@ func newMailMessageShowCommand(state *executionState) *cobra.Command {
 				}
 				messageID = outcomes[0].MessageID
 			}
-			accountValue, message, source, schemaVersion, err := state.mail.MailMessage(
-				cmd.Context(), state.global.Home, state.global.Account, messageID,
-			)
+			var accountValue account.Account
+			var message maildomain.Message
+			var source maildomain.ContentSource
+			var schemaVersion int64
+			if decrypt {
+				service, ok := state.mail.(mailMessageDecryptService)
+				if !ok {
+					return NewAppError(ErrorConfiguration, "S/MIME message decryption is unavailable", false)
+				}
+				accountValue, message, source, schemaVersion, err = service.MailMessageDecrypt(cmd.Context(), state.global.Home, state.global.Account, messageID)
+			} else {
+				accountValue, message, source, schemaVersion, err = state.mail.MailMessage(cmd.Context(), state.global.Home, state.global.Account, messageID)
+			}
 			if err != nil {
 				return err
 			}
@@ -366,6 +385,7 @@ func newMailMessageShowCommand(state *executionState) *cobra.Command {
 	command.Flags().BoolVar(&options.MetadataOnly, "metadata-only", false, "Show metadata without a decoded excerpt or content")
 	command.Flags().BoolVar(&remote, "remote", false, "Treat the argument as a stale-safe rem_… provider reference")
 	command.Flags().BoolVar(&cache, "cache", false, "Persist the referenced remote message through the normal local ingestion path")
+	command.Flags().BoolVar(&decrypt, "decrypt", false, "Decrypt S/MIME enveloped-data locally using the matching configured identity")
 	bindReadJSONInput(command, &input)
 	return command
 }
@@ -497,6 +517,7 @@ func renderMessageShow(renderer *CompactTextRenderer, accountID string, message 
 	smimeTrust := maildomain.SMIMETrustNotEvaluated
 	smimeSigned := false
 	smimeEncrypted := false
+	smimeDecryption := ""
 	unsubscribe := ""
 	senderPreferenceExplicit := false
 	senderVIP := false
@@ -517,6 +538,9 @@ func renderMessageShow(renderer *CompactTextRenderer, accountID string, message 
 			smimeTrust = message.Content.SMIME.Trust
 			smimeSigned = message.Content.SMIME.Signed
 			smimeEncrypted = message.Content.SMIME.Encrypted
+			if message.Content.SMIME.Decryption != nil {
+				smimeDecryption = message.Content.SMIME.Decryption.Status
+			}
 		}
 	}
 	if message.Unsubscribe != nil && message.Unsubscribe.Available {
@@ -556,6 +580,7 @@ func renderMessageShow(renderer *CompactTextRenderer, accountID string, message 
 		Field("smime_trust", smimeTrust),
 		Field("smime_signed", smimeSigned),
 		Field("smime_encrypted", smimeEncrypted),
+		Field("smime_decryption", smimeDecryption),
 		Field("unsubscribe", unsubscribe),
 		Field("sender_preference_explicit", senderPreferenceExplicit),
 		Field("sender_vip", senderVIP),
@@ -656,6 +681,13 @@ func renderSMIMEStatus(renderer *CompactTextRenderer, value maildomain.SMIMEStat
 			Field("signer_fingerprint_sha256", value.Signer.FingerprintSHA256), Field("signer_subject", value.Signer.Subject), Field("signer_issuer", value.Signer.Issuer),
 			Field("signer_emails", value.Signer.Emails), Field("signer_not_before", value.Signer.NotBefore), Field("signer_not_after", value.Signer.NotAfter),
 			Field("signer_key_usage", value.Signer.KeyUsage), Field("signer_extended_key_usage", value.Signer.ExtendedKeyUsage), Field("signing_time", value.Signer.SigningTime),
+		)
+	}
+	if value.Decryption != nil {
+		fields = append(fields,
+			Field("decryption", value.Decryption.Status), Field("smime_identity", value.Decryption.SMIMEIdentityID),
+			Field("mail_identity", value.Decryption.MailIdentityID), Field("certificate", value.Decryption.CertificateID),
+			Field("decrypted_content", value.Decryption.ContentAvailable),
 		)
 	}
 	return renderer.Record("smime", value.Path, fields...)

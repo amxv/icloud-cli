@@ -159,6 +159,7 @@ type messageShowReadJSONRequest struct {
 	MessageID    string `json:"message_id"`
 	Remote       bool   `json:"remote,omitempty"`
 	Cache        bool   `json:"cache,omitempty"`
+	Decrypt      bool   `json:"decrypt,omitempty"`
 	Full         bool   `json:"full,omitempty"`
 	Verbose      bool   `json:"verbose,omitempty"`
 	Format       string `json:"format,omitempty"`

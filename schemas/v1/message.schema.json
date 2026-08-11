@@ -323,6 +323,34 @@
         "container": {
           "type": "string"
         },
+        "decryption": {
+          "additionalProperties": false,
+          "properties": {
+            "certificate_id": {
+              "type": "string"
+            },
+            "content_available": {
+              "type": "boolean"
+            },
+            "mail_identity_id": {
+              "type": "string"
+            },
+            "smime_identity_id": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "certificate_id",
+            "content_available",
+            "mail_identity_id",
+            "smime_identity_id",
+            "status"
+          ],
+          "type": "object"
+        },
         "encrypted": {
           "type": "boolean"
         },

@@ -181,7 +181,11 @@ func parseNormalizedWithOptions(ctx context.Context, reader io.Reader, sink Atta
 	result.Preview = previewFromHeader(&header)
 	var inspector *smimeWalkInspector
 	if policy != nil {
-		inspector = newSMIMEWalkInspector(result.Preview.From.Email, policy)
+		expectedEmail := result.Preview.From.Email
+		if strings.TrimSpace(policy.ExpectedSignerEmail) != "" {
+			expectedEmail = policy.ExpectedSignerEmail
+		}
+		inspector = newSMIMEWalkInspector(expectedEmail, policy)
 	}
 
 	var textPreview, htmlPreview string

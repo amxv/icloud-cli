@@ -2,6 +2,10 @@ package mail
 
 import (
 	"bytes"
+	"context"
+	"crypto"
+	"crypto/ecdsa"
+	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/hex"
@@ -12,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/amxv/icloud-cli/internal/account"
 	"github.com/emersion/go-message"
 	"github.com/smallstep/pkcs7"
 )
@@ -66,6 +71,7 @@ type SMIMEStatus struct {
 	Trust           SMIMETrustResult        `json:"trust"`
 	IdentityMatched *bool                   `json:"identity_matched,omitempty"`
 	Signer          *SMIMESigner            `json:"signer,omitempty"`
+	Decryption      *SMIMEDecryptionStatus  `json:"decryption,omitempty"`
 	Reason          string                  `json:"reason,omitempty"`
 	PolicyRevision  int64                   `json:"-"`
 }
@@ -77,10 +83,11 @@ type SMIMECertificateMaterial struct {
 }
 
 type SMIMEPolicy struct {
-	Roots        *x509.CertPool
-	Certificates []SMIMECertificateMaterial
-	Now          time.Time
-	Revision     int64
+	Roots               *x509.CertPool
+	Certificates        []SMIMECertificateMaterial
+	Now                 time.Time
+	Revision            int64
+	ExpectedSignerEmail string
 }
 
 type SMIMECertificate struct {
@@ -108,12 +115,203 @@ type SMIMECertificatePage struct {
 	NextCursor   string             `json:"next_cursor,omitempty"`
 }
 
+const MaxSMIMEIdentitiesPerAccount = 100
+
+type SMIMEIdentity struct {
+	ID                   string                   `json:"id"`
+	AccountID            string                   `json:"account_id,omitempty"`
+	MailIdentityID       string                   `json:"mail_identity_id"`
+	Email                string                   `json:"email"`
+	CertificateID        string                   `json:"certificate_id"`
+	FingerprintSHA256    string                   `json:"fingerprint_sha256"`
+	Subject              string                   `json:"subject,omitempty"`
+	NotBefore            time.Time                `json:"not_before"`
+	NotAfter             time.Time                `json:"not_after"`
+	KeyUsage             []string                 `json:"key_usage,omitempty"`
+	ExtendedKeyUsage     []string                 `json:"extended_key_usage,omitempty"`
+	PrivateKeyScheme     account.CredentialScheme `json:"private_key_scheme"`
+	PrivateKeyConfigured bool                     `json:"private_key_configured"`
+	PrivateKeyReference  string                   `json:"-"`
+	CreatedAt            time.Time                `json:"created_at"`
+	UpdatedAt            time.Time                `json:"updated_at"`
+}
+
+type SMIMEIdentityPage struct {
+	Identities []SMIMEIdentity `json:"identities"`
+	More       bool            `json:"more"`
+	NextCursor string          `json:"next_cursor,omitempty"`
+}
+
+type SMIMEDecryptionStatus struct {
+	Status           string `json:"status"`
+	SMIMEIdentityID  string `json:"smime_identity_id"`
+	MailIdentityID   string `json:"mail_identity_id"`
+	CertificateID    string `json:"certificate_id"`
+	ContentAvailable bool   `json:"content_available"`
+}
+
 var (
 	ErrSMIMECertificateInvalid  = errors.New("S/MIME certificate is invalid")
 	ErrSMIMECertificateNotFound = errors.New("S/MIME certificate not found")
 	ErrSMIMECertificateLimit    = errors.New("S/MIME certificate limit reached")
 	ErrSMIMEInvalidCursor       = errors.New("S/MIME certificate cursor is invalid")
+	ErrSMIMEIdentityInvalid     = errors.New("S/MIME identity is invalid")
+	ErrSMIMEIdentityNotFound    = errors.New("S/MIME identity not found")
+	ErrSMIMEIdentityConflict    = errors.New("S/MIME identity conflicts with existing state")
+	ErrSMIMEIdentityLimit       = errors.New("S/MIME identity limit reached")
+	ErrSMIMEIdentityCursor      = errors.New("S/MIME identity cursor is invalid")
+	ErrSMIMEPrivateKeyInvalid   = errors.New("S/MIME private key is invalid")
+	ErrSMIMEPrivateKeyEncrypted = errors.New("encrypted S/MIME private keys are unsupported")
+	ErrSMIMEPrivateKeyMismatch  = errors.New("S/MIME private key does not match certificate")
+	ErrSMIMEEnvelopeInvalid     = errors.New("S/MIME encrypted envelope is invalid")
+	ErrSMIMERecipientNotFound   = errors.New("S/MIME encrypted recipient was not found")
+	ErrSMIMEDecryptUnsupported  = errors.New("S/MIME decryption algorithm is unsupported")
 )
+
+type SMIMEEnvelope struct {
+	p7 *pkcs7.PKCS7
+}
+
+type smimeRecipientProbe struct{}
+
+var errSMIMERecipientMatched = errors.New("S/MIME recipient matched")
+
+func (smimeRecipientProbe) Public() crypto.PublicKey { return nil }
+
+func (smimeRecipientProbe) Decrypt(_ io.Reader, _ []byte, _ crypto.DecrypterOpts) ([]byte, error) {
+	return nil, errSMIMERecipientMatched
+}
+
+func ParseSMIMEEnvelopeContext(ctx context.Context, reader io.Reader) (*SMIMEEnvelope, error) {
+	if reader == nil {
+		return nil, ErrSMIMEEnvelopeInvalid
+	}
+	entity, err := message.ReadWithOptions(&contextReader{ctx: ctx, reader: reader}, &message.ReadOptions{MaxHeaderBytes: 1 << 20})
+	if entity == nil {
+		return nil, fmt.Errorf("%w: read encrypted MIME entity: %v", ErrSMIMEEnvelopeInvalid, err)
+	}
+	mediaType, params, _ := entity.Header.ContentType()
+	if smimeOpaqueContainerKind(mediaType, params) != SMIMEContainerOpaqueEncrypted {
+		return nil, fmt.Errorf("%w: message is not S/MIME enveloped-data", ErrSMIMEEnvelopeInvalid)
+	}
+	value, err := io.ReadAll(io.LimitReader(&contextReader{ctx: ctx, reader: entity.Body}, maxSMIMEContainerBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(value) == 0 || len(value) > maxSMIMEContainerBytes {
+		return nil, fmt.Errorf("%w: encrypted container exceeds supported bound", ErrSMIMEEnvelopeInvalid)
+	}
+	p7, err := pkcs7.Parse(value)
+	if err != nil {
+		return nil, fmt.Errorf("%w: parse CMS enveloped-data", ErrSMIMEEnvelopeInvalid)
+	}
+	return &SMIMEEnvelope{p7: p7}, nil
+}
+
+func (envelope *SMIMEEnvelope) Matches(cert *x509.Certificate) (bool, error) {
+	if envelope == nil || envelope.p7 == nil || cert == nil {
+		return false, ErrSMIMEEnvelopeInvalid
+	}
+	_, err := envelope.p7.Decrypt(cert, smimeRecipientProbe{})
+	switch {
+	case errors.Is(err, errSMIMERecipientMatched):
+		return true, nil
+	case err != nil && strings.Contains(err.Error(), "no enveloped recipient"):
+		return false, nil
+	case errors.Is(err, pkcs7.ErrUnsupportedAsymmetricEncryptionAlgorithm), errors.Is(err, pkcs7.ErrUnsupportedAlgorithm):
+		return false, ErrSMIMEDecryptUnsupported
+	case err != nil:
+		return false, fmt.Errorf("%w: inspect encrypted recipient", ErrSMIMEEnvelopeInvalid)
+	default:
+		return true, nil
+	}
+}
+
+func (envelope *SMIMEEnvelope) Decrypt(ctx context.Context, cert *x509.Certificate, privateKey crypto.PrivateKey, maximum int64) ([]byte, error) {
+	if envelope == nil || envelope.p7 == nil || cert == nil || privateKey == nil {
+		return nil, ErrSMIMEEnvelopeInvalid
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	value, err := envelope.p7.Decrypt(cert, privateKey)
+	if err != nil {
+		if strings.Contains(err.Error(), "no enveloped recipient") {
+			return nil, ErrSMIMERecipientNotFound
+		}
+		if errors.Is(err, pkcs7.ErrUnsupportedAsymmetricEncryptionAlgorithm) || errors.Is(err, pkcs7.ErrUnsupportedAlgorithm) {
+			return nil, ErrSMIMEDecryptUnsupported
+		}
+		return nil, fmt.Errorf("%w: decrypt CMS enveloped-data", ErrSMIMEEnvelopeInvalid)
+	}
+	if err := ctx.Err(); err != nil {
+		zeroSMIMEBytes(value)
+		return nil, err
+	}
+	if maximum > 0 && int64(len(value)) > maximum {
+		zeroSMIMEBytes(value)
+		return nil, ErrContentLimit
+	}
+	return value, nil
+}
+
+func ParseSMIMEPrivateKey(data []byte) (crypto.PrivateKey, error) {
+	if len(data) == 0 || len(data) > 64<<10 {
+		return nil, ErrSMIMEPrivateKeyInvalid
+	}
+	der := data
+	if block, rest := pem.Decode(data); block != nil {
+		if len(strings.TrimSpace(string(rest))) != 0 {
+			return nil, ErrSMIMEPrivateKeyInvalid
+		}
+		if x509.IsEncryptedPEMBlock(block) || strings.EqualFold(block.Type, "ENCRYPTED PRIVATE KEY") {
+			return nil, ErrSMIMEPrivateKeyEncrypted
+		}
+		der = block.Bytes
+		switch block.Type {
+		case "PRIVATE KEY", "RSA PRIVATE KEY", "EC PRIVATE KEY":
+		default:
+			return nil, ErrSMIMEPrivateKeyInvalid
+		}
+	}
+	if key, err := x509.ParsePKCS8PrivateKey(der); err == nil {
+		switch typed := key.(type) {
+		case *rsa.PrivateKey, *ecdsa.PrivateKey:
+			return typed, nil
+		default:
+			return nil, ErrSMIMEPrivateKeyInvalid
+		}
+	}
+	if key, err := x509.ParsePKCS1PrivateKey(der); err == nil {
+		return key, nil
+	}
+	if key, err := x509.ParseECPrivateKey(der); err == nil {
+		return key, nil
+	}
+	return nil, ErrSMIMEPrivateKeyInvalid
+}
+
+func SMIMEPrivateKeyMatchesCertificate(privateKey crypto.PrivateKey, cert *x509.Certificate) bool {
+	signer, ok := privateKey.(crypto.Signer)
+	if !ok || cert == nil {
+		return false
+	}
+	left, err := x509.MarshalPKIXPublicKey(signer.Public())
+	if err != nil {
+		return false
+	}
+	right, err := x509.MarshalPKIXPublicKey(cert.PublicKey)
+	if err != nil {
+		return false
+	}
+	return bytes.Equal(left, right)
+}
+
+func zeroSMIMEBytes(value []byte) {
+	for index := range value {
+		value[index] = 0
+	}
+}
 
 type boundedSMIMECapture struct {
 	buffer   bytes.Buffer

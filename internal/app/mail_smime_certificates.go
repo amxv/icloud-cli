@@ -77,6 +77,8 @@ func mapSMIMECertificateError(err error) error {
 		return cli.WrapAppError(cli.ErrorNotFound, "S/MIME certificate was not found", false, err)
 	case errors.Is(err, maildomain.ErrSMIMECertificateLimit):
 		return cli.WrapAppError(cli.ErrorConflict, "S/MIME certificate inventory reached its bounded account limit; remove an old certificate first", false, err)
+	case errors.Is(err, maildomain.ErrSMIMEIdentityConflict):
+		return cli.WrapAppError(cli.ErrorConflict, "remove the S/MIME identity configuration before removing this certificate", false, err)
 	case errors.Is(err, maildomain.ErrSMIMECertificateInvalid), errors.Is(err, maildomain.ErrSMIMEInvalidCursor):
 		return cli.WrapAppError(cli.ErrorUsage, "S/MIME certificate request is invalid", false, err)
 	default:

@@ -627,7 +627,7 @@ Available Commands:
   senders     Manage local VIP and blocked sender preferences
   settings    Inspect local Mail settings and truthful provider compatibility
   signatures  Manage local per-identity compose signatures
-  smime       Inspect inbound S/MIME and manage public certificate trust material
+  smime       Inspect inbound S/MIME and manage certificates and decryption identities
   status      Compatibility alias for `mail operations … list`
   sync        Fetch and atomically commit bounded pages from enabled mail folders
   thread      Compatibility namespace for `mail threads show`
@@ -2485,6 +2485,7 @@ Examples:
 Flags:
       --body-only           Write only the selected body representation
       --cache               Persist the referenced remote message through the normal local ingestion path
+      --decrypt             Decrypt S/MIME enveloped-data locally using the matching configured identity
       --format string       Content format: compact, text, html, or raw (default "compact")
       --full                Include the complete decoded text body
       --headers             Include decoded headers (BCC remains omitted)
@@ -3868,13 +3869,14 @@ Global Flags:
 ## `icloud mail smime`
 
 ```text
-Inspect inbound S/MIME and manage public certificate trust material
+Inspect inbound S/MIME and manage certificates and decryption identities
 
 Usage:
   icloud mail smime [command]
 
 Available Commands:
   certificates Manage bounded account-scoped public S/MIME certificates
+  identities   Manage mail-identity S/MIME certificates and external private-key references
 
 Flags:
   -h, --help   help for smime
@@ -3985,6 +3987,140 @@ Examples:
 Flags:
   -h, --help                help for remove
       --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail smime identities`
+
+```text
+Manage mail-identity S/MIME certificates and external private-key references
+
+Usage:
+  icloud mail smime identities [command]
+
+Available Commands:
+  configure   Bind one mail identity to a public certificate and external private key
+  list        List S/MIME identity metadata without private-key references
+  remove      Remove one S/MIME identity and its owned keyring secret
+  show        Show one S/MIME identity without its private-key reference
+
+Flags:
+  -h, --help   help for identities
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+
+Use "icloud mail smime identities [command] --help" for more information about a command.
+```
+
+## `icloud mail smime identities configure`
+
+```text
+Bind one mail identity to a public certificate and external private key
+
+Usage:
+  icloud mail smime identities configure <mail-identity> [flags]
+
+Examples:
+  cat private-key.pem | icloud mail smime identities configure mid_… --certificate smc_… --private-key-stdin
+  icloud mail smime identities configure owner@icloud.com --certificate smc_… --private-key-file ~/.config/icloud-cli/smime-key.pem
+
+Flags:
+      --certificate string        Account-scoped end-entity public certificate ID
+  -h, --help                      help for configure
+      --input-json string         Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                      Emit one stable JSON success envelope
+      --private-key-env string    Persist an environment-variable private-key reference
+      --private-key-file string   Persist a private 0600 regular-file private-key reference
+      --private-key-stdin         Read private key bytes from redirected stdin and store them in the native keyring
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail smime identities list`
+
+```text
+List S/MIME identity metadata without private-key references
+
+Usage:
+  icloud mail smime identities list [flags]
+
+Examples:
+  icloud mail smime identities list
+  icloud mail smime identities list --limit 20 --json
+
+Flags:
+      --cursor string       Continue from a next_cursor for the same account
+  -h, --help                help for list
+      --input-json string   Read one strict JSON read request from a file, or - for stdin; cannot be mixed with equivalent read flags or positional read arguments
+      --json                Emit one stable JSON success envelope
+      --limit int           Maximum identities to return (1-100) (default 20)
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail smime identities remove`
+
+```text
+Remove one S/MIME identity and its owned keyring secret
+
+Usage:
+  icloud mail smime identities remove <identity> [flags]
+
+Examples:
+  icloud mail smime identities remove smi_… --yes
+  icloud mail smime identities remove --input-json remove.json --yes --json
+
+Flags:
+  -h, --help                help for remove
+      --input-json string   Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+      --json                Emit one stable JSON success envelope
+      --yes                 Authorize S/MIME identity removal and owned native-keyring secret deletion without prompting
+
+Global Flags:
+      --account string      Select an account by name, email, or stable ID
+      --home string         Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+      --no-input            Never prompt for interactive input
+      --request-id string   Attach a stable request ID to structured output
+      --timeout duration    Maximum normal command duration; watch applies it per provider/sync attempt (default 30s)
+```
+
+## `icloud mail smime identities show`
+
+```text
+Show one S/MIME identity without its private-key reference
+
+Usage:
+  icloud mail smime identities show <identity> [flags]
+
+Examples:
+  icloud mail smime identities show smi_…
+  icloud mail smime identities show owner@icloud.com --json
+
+Flags:
+  -h, --help                help for show
+      --input-json string   Read one strict JSON read request from a file, or - for stdin; cannot be mixed with equivalent read flags or positional read arguments
       --json                Emit one stable JSON success envelope
 
 Global Flags:

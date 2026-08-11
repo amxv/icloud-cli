@@ -121,6 +121,13 @@ FROM smime_certificates WHERE account_id = ? AND certificate_id = ?`, accountID,
 	if err != nil {
 		return maildomain.SMIMECertificate{}, err
 	}
+	var identityCount int
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM smime_identities WHERE account_id = ? AND certificate_id = ?`, accountID, certificateID).Scan(&identityCount); err != nil {
+		return maildomain.SMIMECertificate{}, fmt.Errorf("check S/MIME certificate identity use: %w", err)
+	}
+	if identityCount != 0 {
+		return maildomain.SMIMECertificate{}, maildomain.ErrSMIMEIdentityConflict
+	}
 	result, err := tx.ExecContext(ctx, `DELETE FROM smime_certificates WHERE account_id = ? AND certificate_id = ?`, value.AccountID, value.ID)
 	if err != nil {
 		return maildomain.SMIMECertificate{}, fmt.Errorf("remove S/MIME certificate: %w", err)

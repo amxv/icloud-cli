@@ -14,6 +14,7 @@ import (
 	"github.com/amxv/icloud-cli/internal/config"
 	"github.com/amxv/icloud-cli/internal/folder"
 	"github.com/amxv/icloud-cli/internal/id"
+	maildomain "github.com/amxv/icloud-cli/internal/mail"
 	"github.com/amxv/icloud-cli/internal/secret"
 	"github.com/amxv/icloud-cli/internal/store"
 	"github.com/amxv/icloud-cli/internal/transport"
@@ -594,15 +595,60 @@ func (commands accountCommands) Remove(ctx context.Context, home, selector strin
 		return account.Account{}, false, state.SchemaVersion(), mapAccountError(err)
 	}
 	manager := secret.NewManager(commands.keyring)
+	smimePage, err := state.SMIMEIdentities().ListPage(ctx, value.ID, "", maildomain.MaxSMIMEIdentitiesPerAccount)
+	if err != nil {
+		return account.Account{}, false, state.SchemaVersion(), mapSMIMEIdentityError(err)
+	}
+	if smimePage.More {
+		return account.Account{}, false, state.SchemaVersion(), mapSMIMEIdentityError(maildomain.ErrSMIMEIdentityLimit)
+	}
+	type removedSMIMEKeyring struct {
+		credential account.Credential
+		backup     []byte
+		found      bool
+	}
+	removedSMIME := make([]removedSMIMEKeyring, 0, len(smimePage.Identities))
+	restoreSMIME := func() error {
+		var failures []error
+		for index := len(removedSMIME) - 1; index >= 0; index-- {
+			entry := removedSMIME[index]
+			if err := restoreKeyringCredential(ctx, manager, entry.credential, entry.backup, entry.found); err != nil {
+				failures = append(failures, err)
+			}
+		}
+		return errors.Join(failures...)
+	}
+	defer func() {
+		for index := range removedSMIME {
+			zeroBytes(removedSMIME[index].backup)
+		}
+	}()
+	for _, identity := range smimePage.Identities {
+		if identity.PrivateKeyScheme != account.CredentialKeyring {
+			continue
+		}
+		keyCredential := account.Credential{AccountID: value.ID, Scheme: identity.PrivateKeyScheme, Reference: identity.PrivateKeyReference, Configured: identity.PrivateKeyConfigured}
+		backup, found, removeErr := removeKeyringCredential(ctx, manager, keyCredential)
+		if removeErr != nil {
+			if restoreErr := restoreSMIME(); restoreErr != nil {
+				return account.Account{}, false, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "account removal stopped and S/MIME keyring restoration did not complete", false, restoreErr)
+			}
+			return account.Account{}, false, state.SchemaVersion(), mapSMIMEPrivateKeyError(removeErr)
+		}
+		removedSMIME = append(removedSMIME, removedSMIMEKeyring{credential: keyCredential, backup: backup, found: found})
+	}
 	backup, hadKeyring, err := removeKeyringCredential(ctx, manager, credential)
 	if err != nil {
+		if restoreErr := restoreSMIME(); restoreErr != nil {
+			return account.Account{}, false, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "account removal stopped and S/MIME keyring restoration did not complete", false, restoreErr)
+		}
 		return account.Account{}, false, state.SchemaVersion(), mapCredentialError(err)
 	}
 	defer zeroBytes(backup)
 
 	removed, removedCredential, err := state.Accounts().Remove(ctx, value.ID)
 	if err != nil {
-		if restoreErr := restoreKeyringCredential(ctx, manager, credential, backup, hadKeyring); restoreErr != nil {
+		if restoreErr := errors.Join(restoreKeyringCredential(ctx, manager, credential, backup, hadKeyring), restoreSMIME()); restoreErr != nil {
 			return account.Account{}, false, state.SchemaVersion(), cli.WrapAppError(cli.ErrorInternal, "account removal failed and native keyring restoration did not complete", false, restoreErr)
 		}
 		return account.Account{}, false, state.SchemaVersion(), mapAccountError(err)
@@ -1174,6 +1220,8 @@ func mapMailIdentityError(err error) error {
 		return cli.WrapAppError(cli.ErrorUsage, "mail identity cursor is invalid for the selected account", false, err)
 	case errors.Is(err, account.ErrIdentityConflict):
 		return cli.WrapAppError(cli.ErrorConflict, "that mail identity address already exists for the selected account", false, err)
+	case errors.Is(err, maildomain.ErrSMIMEIdentityConflict):
+		return cli.WrapAppError(cli.ErrorConflict, "remove the S/MIME identity configuration before removing this mail identity", false, err)
 	case errors.Is(err, account.ErrIdentityProtected):
 		return cli.WrapAppError(cli.ErrorConflict, "the primary mail identity cannot be disabled, removed, or changed away from the account address", false, err)
 	case errors.Is(err, account.ErrIdentityDisabled):

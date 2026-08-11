@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -82,6 +83,7 @@ type messageContentSource struct {
 	store   *blob.Store
 	raw     messageRawSource
 	content maildomain.NormalizedContent
+	bodyRaw []byte
 }
 
 func (source *messageContentSource) WriteRaw(ctx context.Context, writer io.Writer) error {
@@ -109,6 +111,9 @@ func (source *messageContentSource) WriteBody(ctx context.Context, format maildo
 	}
 	if len(paths) == 0 {
 		return errors.New("requested message body is not available")
+	}
+	if len(source.bodyRaw) != 0 {
+		return maildomain.WriteSelectedBody(ctx, bytes.NewReader(source.bodyRaw), format, paths, writer)
 	}
 	reader, err := source.store.OpenVerifiedContext(ctx, source.raw.StorageKey, source.raw.ContentHash, source.raw.ByteSize)
 	if err != nil {

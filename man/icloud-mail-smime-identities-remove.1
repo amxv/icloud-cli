@@ -1,0 +1,62 @@
+.nh
+.TH "ICLOUD" "1" "Jan 1970" "icloud 0.1.0" "iCloud Mail CLI Manual"
+
+.SH NAME
+icloud-mail-smime-identities-remove - Remove one S/MIME identity and its owned keyring secret
+
+
+.SH SYNOPSIS
+\fBicloud mail smime identities remove  [flags]\fP
+
+
+.SH DESCRIPTION
+Remove one S/MIME identity and its owned keyring secret
+
+
+.SH OPTIONS
+\fB-h\fP, \fB--help\fP[=false]
+	help for remove
+
+.PP
+\fB--input-json\fP=""
+	Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+
+.PP
+\fB--json\fP[=false]
+	Emit one stable JSON success envelope
+
+.PP
+\fB--yes\fP[=false]
+	Authorize S/MIME identity removal and owned native-keyring secret deletion without prompting
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--account\fP=""
+	Select an account by name, email, or stable ID
+
+.PP
+\fB--home\fP=""
+	Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+
+.PP
+\fB--no-input\fP[=false]
+	Never prompt for interactive input
+
+.PP
+\fB--request-id\fP=""
+	Attach a stable request ID to structured output
+
+.PP
+\fB--timeout\fP=30s
+	Maximum normal command duration; watch applies it per provider/sync attempt
+
+
+.SH EXAMPLE
+.EX
+  icloud mail smime identities remove smi_… --yes
+  icloud mail smime identities remove --input-json remove.json --yes --json
+.EE
+
+
+.SH SEE ALSO
+\fBicloud-mail-smime-identities(1)\fP

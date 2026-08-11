@@ -1,0 +1,74 @@
+.nh
+.TH "ICLOUD" "1" "Jan 1970" "icloud 0.1.0" "iCloud Mail CLI Manual"
+
+.SH NAME
+icloud-mail-smime-identities-configure - Bind one mail identity to a public certificate and external private key
+
+
+.SH SYNOPSIS
+\fBicloud mail smime identities configure  [flags]\fP
+
+
+.SH DESCRIPTION
+Bind one mail identity to a public certificate and external private key
+
+
+.SH OPTIONS
+\fB--certificate\fP=""
+	Account-scoped end-entity public certificate ID
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for configure
+
+.PP
+\fB--input-json\fP=""
+	Read one strict JSON write request from a file, or - for stdin; cannot be mixed with equivalent write flags or positional write arguments
+
+.PP
+\fB--json\fP[=false]
+	Emit one stable JSON success envelope
+
+.PP
+\fB--private-key-env\fP=""
+	Persist an environment-variable private-key reference
+
+.PP
+\fB--private-key-file\fP=""
+	Persist a private 0600 regular-file private-key reference
+
+.PP
+\fB--private-key-stdin\fP[=false]
+	Read private key bytes from redirected stdin and store them in the native keyring
+
+
+.SH OPTIONS INHERITED FROM PARENT COMMANDS
+\fB--account\fP=""
+	Select an account by name, email, or stable ID
+
+.PP
+\fB--home\fP=""
+	Override the iCloud application data directory (otherwise ICLOUD_HOME or the platform default)
+
+.PP
+\fB--no-input\fP[=false]
+	Never prompt for interactive input
+
+.PP
+\fB--request-id\fP=""
+	Attach a stable request ID to structured output
+
+.PP
+\fB--timeout\fP=30s
+	Maximum normal command duration; watch applies it per provider/sync attempt
+
+
+.SH EXAMPLE
+.EX
+  cat private-key.pem | icloud mail smime identities configure mid_… --certificate smc_… --private-key-stdin
+  icloud mail smime identities configure owner@icloud.com --certificate smc_… --private-key-file ~/.config/icloud-cli/smime-key.pem
+.EE
+
+
+.SH SEE ALSO
+\fBicloud-mail-smime-identities(1)\fP

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/amxv/icloud-cli/internal/account"
+	maildomain "github.com/amxv/icloud-cli/internal/mail"
 )
 
 type MailIdentityRepository struct {
@@ -170,6 +171,15 @@ func (r *MailIdentityRepository) Update(ctx context.Context, accountID, selector
 	}
 	if value.Kind != account.MailIdentityPrimary && kind == account.MailIdentityPrimary {
 		return account.MailIdentity{}, account.ErrIdentityProtected
+	}
+	if !strings.EqualFold(strings.TrimSpace(address), strings.TrimSpace(value.Address)) {
+		var smimeCount int
+		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM smime_identities WHERE account_id = ? AND mail_identity_id = ?`, accountID, value.ID).Scan(&smimeCount); err != nil {
+			return account.MailIdentity{}, fmt.Errorf("check S/MIME identity before mail identity address update: %w", err)
+		}
+		if smimeCount != 0 {
+			return account.MailIdentity{}, maildomain.ErrSMIMEIdentityConflict
+		}
 	}
 	verification := value.Verification
 	if !strings.EqualFold(address, value.Address) || kind != value.Kind {
@@ -449,6 +459,13 @@ func (r *MailIdentityRepository) Remove(ctx context.Context, accountID, selector
 	}
 	if value.Kind == account.MailIdentityPrimary {
 		return account.MailIdentity{}, account.ErrIdentityProtected
+	}
+	var smimeCount int
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM smime_identities WHERE account_id = ? AND mail_identity_id = ?`, accountID, value.ID).Scan(&smimeCount); err != nil {
+		return account.MailIdentity{}, fmt.Errorf("check S/MIME identity before mail identity removal: %w", err)
+	}
+	if smimeCount != 0 {
+		return account.MailIdentity{}, maildomain.ErrSMIMEIdentityConflict
 	}
 	var replacement account.MailIdentity
 	if value.Default {
