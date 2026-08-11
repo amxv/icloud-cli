@@ -2,32 +2,48 @@
 
 Guidance for coding agents working on `amxv/icloud-cli`.
 
-## Product contract
+## What this project is
 
-`icloud` is one local-first executable for iCloud services. The default output of every command is compact, bounded, undecorated plain text for both TTY and non-TTY callers. JSON, JSONL, complete bodies, HTML, raw MIME, headers, body-only views, and verbose diagnostics are explicit command-supported modes, never automatic defaults.
+`icloud` is a command-line interface for Apple's iCloud ecosystem. iCloud Mail is the comprehensive service today, with support for account setup, synchronization, search, reading, attachments, drafts, sending, replies, forwarding, organization, import/export, S/MIME, recovery workflows, and automation.
 
-Follow the authoritative implementation track in:
+The project is intended to grow beyond Mail over time. Future services such as Contacts, Reminders, Calendar, and other parts of iCloud should fit naturally under the same `icloud` command rather than becoming unrelated tools.
 
-- `gg/icloud-mail-implementation-plan-2026-08-05.md`
-- `gg/progress.md`
-- phase-scoped evidence in `gg/icloud-mail-sweep-2026-08-05.md`
+The CLI is designed for both people and agents:
 
-Work directly on the current `main`, pull with fast-forward-only semantics, complete the earliest pending phase, update the ledger, commit coherent work, and push.
+- compact plain text is the normal output;
+- JSON and JSONL are explicit structured modes;
+- complete bodies, HTML, headers, raw content, and verbose diagnostics are explicit expansions;
+- stable IDs make multi-step workflows composable;
+- writes favor dry-run review, deliberate authorization, and idempotency where appropriate.
 
-## Current architecture
+When behavior matters, treat the current executable, tests, and user-facing documentation as the source of truth rather than assuming an old implementation note or planning document is still current.
 
-- `cmd/icloud/main.go`: process startup and final `os.Exit`.
-- `internal/app`: dependency composition and invocation of the CLI boundary.
-- `internal/cli`: Cobra command definitions, global controls, typed errors, compact renderer, structured envelopes, completions, and man pages.
-- `internal/buildinfo`: linker-injected version metadata.
-- `bin/icloud.js`: npm shim for the packaged native binary.
-- `scripts/postinstall.js`: release download and local Go-build fallback.
-- `.github/workflows/release.yml`: CGO-disabled release matrix and npm publication.
-- `src/content/docs`: progressive user-facing documentation.
+## How to orient yourself
 
-Do not add storage, credentials, network behavior, or later-phase commands ahead of the plan boundary.
+Start from the public surface before diving into implementation details:
 
-## Local commands
+```bash
+icloud --help
+icloud capabilities
+icloud mail --help
+```
+
+For a specific task, read that command's `--help` and the matching page in the documentation. The docs are organized around user workflows and are usually the fastest way to understand intended behavior.
+
+At a high level, the repository contains:
+
+- **CLI and application code** — the Go implementation of commands, Mail behavior, local state, provider integration, and supporting domain logic;
+- **tests** — unit, integration, behavioral, and regression coverage close to the code they exercise;
+- **documentation** — the user-facing Astro/ZueDocs site and generated command reference;
+- **automation contracts** — generated schemas and structured-input/output definitions used by agents and scripts;
+- **packaging and release support** — npm packaging, native binaries, shell completion, man pages, and release tooling;
+- **project support files** — build configuration, contributor guidance, and task-specific working material when present.
+
+Do not treat particular implementation files or directories as permanent architecture. Search the current tree, follow the code that owns the behavior you are changing, and use nearby tests and conventions as your guide.
+
+## Useful commands
+
+The Makefile is the best overview of supported development tasks. Common commands are:
 
 ```bash
 make fmt
@@ -37,40 +53,51 @@ make lint
 make check
 make build
 make build-all
-make install-local
-bun run docs:check
-bun run docs:build
+make references
+make reference-check
+make docs-check
+make docs-build
 ```
 
-Run docs check and build serially.
+For docs-only work, `make docs-check` and `make docs-build` validate the site and generated references.
 
-## Output requirements
+For command/reference changes, regenerate derived assets with:
 
-- Add a positive behavior test for every command change.
-- Keep representative default output under explicit line and byte budgets.
-- Reject repeated labels, duplicated request or body payloads, decorative tables, ANSI, unbounded excerpts, and implicit JSON/HTML/raw output.
-- Success output goes to stdout; warnings and failures go to stderr.
-- Every non-streaming command that supports JSON returns one `OutputEnvelope`.
-- Streaming or bulk JSONL is opt-in and emits one typed object per line.
-- Unsupported mode combinations return a typed usage error rather than being ignored.
+```bash
+make references
+```
 
-## Documentation cadence
+Before finishing a meaningful code change, run the narrow tests that cover the behavior you touched and then the broadest relevant repository checks that are practical for the task.
 
-After a substantial public command subset or workflow is usable, update or create a page under `src/content/docs`. Write for a first-time user or agent: goal, prerequisites, safe setup, shortest workflow, representative compact output, supported expansion flags, common errors, and next actions.
+## Working principles
 
-Do not turn public docs into package, schema, migration, phase, or implementation notes. Run `bun run docs:check` and then `bun run docs:build`, and record both in `gg/progress.md`.
+- Understand the user-visible behavior before changing implementation details.
+- Prefer existing public concepts and command patterns over introducing parallel mechanisms.
+- Keep defaults concise and predictable for both humans and agents.
+- Preserve structured output compatibility deliberately; do not make incidental JSON or JSONL changes.
+- Keep network and provider writes explicit. Dry runs should remain genuinely non-mutating when a command promises that behavior.
+- Preserve stable IDs and recovery/idempotency semantics when changing multi-step workflows.
+- Add or update tests for user-visible behavior and regressions introduced by a change.
+- Update user-facing docs when a command, workflow, default, or capability changes materially.
+- Keep generated references, schemas, completion, and man pages synchronized with the command surface when applicable.
+- Prefer the current code and tests over stale assumptions. Historical plans or progress notes can provide context, but they are not standing instructions unless a task explicitly makes them authoritative.
 
-## Release contract
+## Documentation style
 
-- public command: `icloud`
-- Go entrypoint: `./cmd/icloud`
-- local binary: `dist/icloud`
-- release assets: `icloud_<goos>_<goarch>[.exe]`
-- npm-installed native binary: `bin/icloud-bin` or `bin/icloud.exe`
-- npm package: `@amxv/icloud-cli`
+Write documentation for someone trying to use the CLI, including agents using it as a tool. Lead with the goal, the shortest useful command sequence, examples, important behavior, and likely next actions.
 
-Preserve build-time `internal/buildinfo.Version` injection and `CGO_ENABLED=0` cross-platform builds.
+Avoid exposing implementation machinery unless it changes what a user needs to know. Detailed protocol, storage, migration, package, or internal architecture notes belong in code, tests, design material, or a narrowly technical reference—not in ordinary task guides.
+
+The exhaustive generated command reference exists for exact syntax and every flag. Narrative docs should explain how to accomplish tasks without duplicating that reference.
 
 ## Safety and privacy
 
-Never commit credentials, app-specific passwords, live mailbox content, raw MIME, recipient data, local databases, blobs, protocol captures, or private absolute paths. Use fake servers and sanitized fixtures. Preserve noninteractive authorization requirements for future send and destructive operations.
+Treat mailbox data and credentials as private. Never commit app-specific passwords, live credentials, private keys, real mailbox content, raw private messages, local account databases, private blobs, or other user secrets.
+
+Use deliberate test data and preserve the CLI's existing safety boundaries around credentials, outbound mail, destructive actions, raw/binary output, and non-interactive execution. If a change affects one of those boundaries, inspect the current behavior and tests carefully rather than assuming how it works.
+
+## Release and compatibility mindset
+
+The public command is `icloud`, distributed through `@amxv/icloud-cli` and native release binaries. The project supports macOS, Linux, and Windows builds.
+
+Treat the installed command tree, `icloud capabilities`, generated schemas, completion, man pages, and hosted docs as different views of the same public product. When one view changes intentionally, check whether the others need to change with it.
