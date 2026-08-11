@@ -528,7 +528,12 @@ func TestAgentParityPhase18WatchPagesAndStartsSupportedAccountMaximum(t *testing
 	sequences := make(map[string][]uint64, len(accounts))
 	idleAccounts := make(map[string]struct{}, len(accounts))
 	err := commands.MailWatch(ctx, home, "", maildomain.WatchOptions{
-		AllAccounts: true, Limit: 1, OperationTimeout: 5 * time.Second,
+		// This scale regression is about paging/scheduling the full supported worker
+		// ceiling, not filesystem latency on a heavily loaded test runner. Each sync
+		// turn is serialized by the production gate, so give the active turn enough
+		// time to complete local SQLite/blob setup without making a 99/100 timing
+		// lottery out of the worker-count assertion.
+		AllAccounts: true, Limit: 1, OperationTimeout: 30 * time.Second,
 		PollInterval: time.Second, ReconcileInterval: time.Minute,
 	}, func(event maildomain.WatchEvent) error {
 		mu.Lock()
