@@ -1,8 +1,8 @@
 export const siteConfig = {
   name: "icloud",
-  strapline: "iCloud from the command line",
+  strapline: "iCloud Mail from the command line",
   description:
-    "A friendly command-line interface for iCloud, starting with a comprehensive iCloud Mail experience for people, scripts, and agents.",
+    "A friendly command-line interface for reading, searching, composing, organizing, and automating iCloud Mail.",
   repoUrl: "https://github.com/amxv/icloud-cli",
   accentColor: "#0369a1",
   accentColorDark: "#38bdf8",
@@ -10,10 +10,10 @@ export const siteConfig = {
     {
       title: "icloud",
       text:
-        "A command-line interface for iCloud. Mail is available today; more of the iCloud ecosystem can fit under the same CLI over time."
+        "A capable iCloud Mail command-line client for people, scripts, and agents."
     },
     {
-      title: "Mail today",
+      title: "Mail",
       text:
         "Read, search, sync, send, reply, draft, organize, export, automate, and recover iCloud Mail from one command."
     },

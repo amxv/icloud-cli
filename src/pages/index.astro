@@ -5,47 +5,63 @@ import { primaryNav, siteConfig } from "../data/docs";
 
 const docs = (await getCollection("docs")).sort((a, b) => a.data.order - b.data.order);
 const featuredDocs = [
-  "what-is-icloud",
+  "mail",
   "quickstart",
-  "read-mail",
+  "search-mail",
   "send-reply-and-forward",
-  "agent-guide",
-  "supported-features"
+  "organize-mail",
+  "agent-guide"
 ].map((id) => docs.find((entry) => entry.id === id)).filter(Boolean);
 
 const capabilities = [
-  ["Read Mail", "Sync, search, conversations, complete messages, attachments"],
-  ["Compose", "Draft, send, reply, forward, aliases, signatures, S/MIME"],
-  ["Organize", "Folders, archive, move, trash, junk, bulk reviewed actions"],
-  ["Automate", "Compact output, JSON, JSONL, schemas, stable IDs, dry runs"]
+  ["Read", "Sync your mailbox, open complete messages, browse conversations, save attachments"],
+  ["Search", "Find mail locally in an instant or query iCloud directly when freshness matters"],
+  ["Compose", "Draft, send, reply, reply-all, forward, use aliases, signatures, and S/MIME"],
+  ["Organize", "Move, archive, flag, trash, manage folders, and apply reviewed bulk actions"]
 ];
 ---
 
 <BaseLayout
-  title={`${siteConfig.name} | ${siteConfig.strapline}`}
-  description={siteConfig.description}
+  title={`${siteConfig.name} | iCloud Mail from the command line`}
+  description="A fast, capable command-line client for reading, searching, composing, organizing, and automating iCloud Mail."
   siteConfig={siteConfig}
   primaryNav={primaryNav}
 >
   <div class="icloud-home">
     <section class="icloud-hero shell">
       <div class="icloud-hero__intro">
-        <p class="icloud-kicker">iCloud, from the command line</p>
-        <h1>Your iCloud.<br /><em>In your shell.</em></h1>
+        <p class="icloud-kicker">iCloud Mail, from the command line</p>
+        <h1>Your inbox.<br /><em>In your shell.</em></h1>
         <p class="icloud-hero__lede">
-          A clean command-line home for iCloud. Mail is comprehensive today — search, read, draft,
-          send, organize, and automate it from your terminal or an agent.
+          Search, read, draft, send, and organize iCloud Mail without leaving your terminal.
+          Compact for humans, predictable for scripts, and easy for agents to use.
         </p>
         <div class="icloud-hero__actions">
           <a class="icloud-button icloud-button--primary" href="/docs/quickstart">Get started</a>
-          <a class="icloud-button" href="/docs">Read the docs <span aria-hidden="true">↗</span></a>
+          <a class="icloud-button" href="/docs">
+            Read the docs
+            <svg class="icloud-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M7 7h10v10"></path>
+              <path d="M7 17 17 7"></path>
+            </svg>
+          </a>
         </div>
       </div>
 
       <div class="icloud-command" aria-label="Install command">
         <span class="icloud-command__prompt" aria-hidden="true">$</span>
-        <code>npm install -g @amxv/icloud-cli</code>
+        <code id="icloud-install-command">npm install -g @amxv/icloud-cli</code>
         <span class="icloud-command__meta">npm · macOS · Linux · Windows</span>
+        <button class="icloud-command__copy" type="button" data-copy-install aria-label="Copy install command">
+          <svg class="icloud-icon icloud-command__copy-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect>
+            <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path>
+          </svg>
+          <svg class="icloud-icon icloud-command__check-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M20 6 9 17l-5-5"></path>
+          </svg>
+          <span data-copy-label>Copy</span>
+        </button>
       </div>
 
       <div class="icloud-terminal-wrap" aria-label="Example icloud CLI session">
@@ -87,21 +103,21 @@ const capabilities = [
     </section>
 
     <section class="icloud-manifesto shell">
-      <p class="icloud-section-index">01 / Philosophy</p>
+      <p class="icloud-section-index">01 / Mail, end to end</p>
       <div class="icloud-manifesto__copy">
-        <h2>A clean interface to iCloud, not a lesson in how it works.</h2>
+        <h2>Everything you need to work through your mailbox.</h2>
         <p>
-          <code>icloud</code> turns everyday tasks into predictable commands. Mail is the first
-          complete service family; future iCloud capabilities can join the same CLI without making
-          users learn a different tool for each one.
+          Sync new mail, search across messages and attachments, read complete conversations,
+          compose drafts, reply and forward, manage folders, and save files — all through one
+          consistent <code>icloud mail</code> command tree.
         </p>
       </div>
     </section>
 
     <section class="icloud-capabilities shell">
       <div class="icloud-capabilities__head">
-        <p class="icloud-section-index">02 / Surface</p>
-        <h2>Mail is here today.<br />More iCloud can fit tomorrow.</h2>
+        <p class="icloud-section-index">02 / Everyday workflows</p>
+        <h2>From a crowded inbox<br />to the next action.</h2>
       </div>
       <div class="icloud-capabilities__list">
         {capabilities.map(([label, description], index) => (
@@ -117,12 +133,19 @@ const capabilities = [
     <section class="icloud-automation shell">
       <div class="icloud-automation__copy">
         <p class="icloud-section-index">03 / Built for agents</p>
-        <h2>Predictable enough to automate. Careful enough for your inbox.</h2>
+        <h2>Small outputs. Stable IDs. Deliberate writes.</h2>
         <p>
-          Compact output, explicit JSON/JSONL, stable IDs, dry-run previews, and idempotency make
-          the CLI easy for agents to explore without making writes opaque or accidental.
+          Routine commands stay compact. JSON and JSONL are there when you need structure.
+          Stable message and thread IDs, dry-run previews, and idempotent writes make multi-step
+          mail workflows dependable in scripts and agents.
         </p>
-        <a href="/docs/agent-guide">Read the agent guide <span aria-hidden="true">→</span></a>
+        <a href="/docs/agent-guide">
+          Read the agent guide
+          <svg class="icloud-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M5 12h14"></path>
+            <path d="m12 5 7 7-7 7"></path>
+          </svg>
+        </a>
       </div>
       <div class="icloud-code-note" aria-label="Automation example">
         <div class="icloud-code-note__top"><span>request.json</span><span>v1</span></div>
@@ -140,9 +163,15 @@ const capabilities = [
       <div class="icloud-docs__heading">
         <div>
           <p class="icloud-section-index">04 / Documentation</p>
-          <h2>Start small.<br />Go as deep as you need.</h2>
+          <h2>Start with a command.<br />Go deeper when you need to.</h2>
         </div>
-        <a href="/docs">Browse all docs <span aria-hidden="true">→</span></a>
+        <a href="/docs">
+          Browse all docs
+          <svg class="icloud-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M5 12h14"></path>
+            <path d="m12 5 7 7-7 7"></path>
+          </svg>
+        </a>
       </div>
       <div class="icloud-docs__list">
         {featuredDocs.map((entry, index) => entry && (
@@ -152,22 +181,55 @@ const capabilities = [
               <h3>{entry.data.title}</h3>
               <p>{entry.data.summary ?? entry.data.description}</p>
             </div>
-            <b aria-hidden="true">↗</b>
+            <svg class="icloud-icon icloud-doc-link__icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M7 7h10v10"></path>
+              <path d="M7 17 17 7"></path>
+            </svg>
           </a>
         ))}
       </div>
     </section>
 
     <section class="icloud-closing shell">
-      <p>Mail today. A broader iCloud CLI over time.</p>
-      <h2>Put iCloud<br />on the command line.</h2>
+      <p>Your mailbox, from anywhere you have a shell.</p>
+      <h2>Put iCloud Mail<br />on the command line.</h2>
       <div>
         <a class="icloud-button icloud-button--primary" href="/docs/quickstart">Install icloud</a>
-        <a class="icloud-closing__github" href="https://github.com/amxv/icloud-cli">GitHub ↗</a>
+        <a class="icloud-closing__github" href="https://github.com/amxv/icloud-cli">
+          GitHub
+          <svg class="icloud-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M7 7h10v10"></path>
+            <path d="M7 17 17 7"></path>
+          </svg>
+        </a>
       </div>
     </section>
   </div>
 </BaseLayout>
+
+<script>
+  const installCommand = "npm install -g @amxv/icloud-cli";
+  const copyButton = document.querySelector<HTMLButtonElement>("[data-copy-install]");
+  const copyLabel = copyButton?.querySelector<HTMLElement>("[data-copy-label]");
+
+  copyButton?.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(installCommand);
+    } catch {
+      return;
+    }
+
+    copyButton.dataset.copied = "true";
+    copyButton.setAttribute("aria-label", "Install command copied");
+    if (copyLabel) copyLabel.textContent = "Copied";
+
+    window.setTimeout(() => {
+      delete copyButton.dataset.copied;
+      copyButton.setAttribute("aria-label", "Copy install command");
+      if (copyLabel) copyLabel.textContent = "Copy";
+    }, 1800);
+  });
+</script>
 
 <style is:global>
   .icloud-home {
@@ -194,6 +256,17 @@ const capabilities = [
     font-family: "Iowan Old Style", "Baskerville", "Times New Roman", serif;
     font-weight: 400;
     letter-spacing: -0.045em;
+  }
+
+  .icloud-icon {
+    width: 1em;
+    height: 1em;
+    flex: 0 0 auto;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
 
   .icloud-kicker,
@@ -270,6 +343,7 @@ const capabilities = [
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    gap: .45rem;
     min-height: 2.9rem;
     padding: 0.7rem 1.1rem;
     border: 1px solid var(--icloud-rule);
@@ -294,7 +368,7 @@ const capabilities = [
   .icloud-command {
     grid-area: command;
     display: grid;
-    grid-template-columns: auto 1fr auto;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
     align-items: center;
     gap: 0.9rem;
     width: min(620px, 100%);
@@ -311,6 +385,39 @@ const capabilities = [
   .icloud-command__prompt { color: var(--icloud-blue); font-family: var(--font-mono); }
   .icloud-command code { color: var(--icloud-ink); font-family: var(--font-mono); font-size: 0.8rem; }
   .icloud-command__meta { color: var(--muted); font-size: 0.67rem; white-space: nowrap; }
+  .icloud-command__copy {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: .38rem;
+    min-height: 2.25rem;
+    padding: .45rem .65rem;
+    border: 1px solid var(--icloud-rule);
+    border-radius: .62rem;
+    background: color-mix(in srgb, var(--bg) 92%, transparent);
+    color: var(--muted);
+    cursor: pointer;
+    font: 600 .66rem/1 var(--font-mono);
+    transition: border-color 150ms ease, color 150ms ease, background 150ms ease;
+  }
+  .icloud-command__copy:hover {
+    border-color: color-mix(in srgb, var(--icloud-blue) 45%, var(--icloud-rule));
+    color: var(--icloud-ink);
+  }
+  .icloud-command__copy:focus-visible {
+    outline: 2px solid var(--icloud-blue);
+    outline-offset: 2px;
+  }
+  .icloud-command__copy-icon,
+  .icloud-command__check-icon { width: .9rem; height: .9rem; }
+  .icloud-command__check-icon { display: none; }
+  .icloud-command__copy[data-copied="true"] {
+    border-color: color-mix(in srgb, #4f9d69 55%, var(--icloud-rule));
+    background: color-mix(in srgb, #4f9d69 10%, var(--bg));
+    color: #3d8657;
+  }
+  .icloud-command__copy[data-copied="true"] .icloud-command__copy-icon { display: none; }
+  .icloud-command__copy[data-copied="true"] .icloud-command__check-icon { display: block; }
 
   .icloud-terminal-wrap {
     grid-area: terminal;
@@ -428,7 +535,7 @@ const capabilities = [
 
   .icloud-automation__copy h2 { max-width: 560px; margin-top: 2rem; font-size: clamp(2.8rem, 5vw, 5rem); line-height: .98; }
   .icloud-automation__copy > p { max-width: 520px; margin-top: 2rem; color: var(--muted); line-height: 1.7; }
-  .icloud-automation__copy > a { display: inline-flex; gap: .7rem; margin-top: 2rem; color: var(--icloud-blue); font-size: .82rem; font-weight: 600; }
+  .icloud-automation__copy > a { display: inline-flex; align-items: center; gap: .5rem; margin-top: 2rem; color: var(--icloud-blue); font-size: .82rem; font-weight: 600; }
 
   .icloud-code-note {
     overflow: hidden;
@@ -444,20 +551,21 @@ const capabilities = [
 
   .icloud-docs__heading { display: flex; justify-content: space-between; align-items: end; gap: 3rem; margin-bottom: 3.5rem; }
   .icloud-docs__heading h2 { margin-top: 2rem; font-size: clamp(2.8rem, 5vw, 5rem); line-height: .95; }
-  .icloud-docs__heading > a { color: var(--icloud-blue); font-size: .8rem; font-weight: 600; white-space: nowrap; }
+  .icloud-docs__heading > a { display: inline-flex; align-items: center; gap: .45rem; color: var(--icloud-blue); font-size: .8rem; font-weight: 600; white-space: nowrap; }
   .icloud-docs__list { border-top: 1px solid var(--icloud-rule); }
   .icloud-doc-link { display: grid; grid-template-columns: 4rem 1fr auto; gap: 2rem; align-items: center; padding: 1.6rem 0; border-bottom: 1px solid var(--icloud-rule); transition: padding 180ms ease; }
   .icloud-doc-link:hover { padding-right: .7rem; padding-left: .7rem; text-decoration: none; }
   .icloud-doc-link > span { color: var(--muted); font-family: var(--font-mono); font-size: .64rem; }
   .icloud-doc-link h3 { font-size: 1.65rem; }
   .icloud-doc-link p { max-width: 650px; margin-top: .35rem; color: var(--muted); font-size: .78rem; line-height: 1.55; }
-  .icloud-doc-link b { color: var(--muted); font-size: 1rem; font-weight: 400; }
+  .icloud-doc-link__icon { width: 1rem; height: 1rem; color: var(--muted); transition: color 160ms ease, transform 160ms ease; }
+  .icloud-doc-link:hover .icloud-doc-link__icon { color: var(--icloud-blue); transform: translate(2px, -2px); }
 
   .icloud-closing { padding-bottom: 9rem; text-align: center; }
   .icloud-closing > p { color: var(--icloud-blue); font-family: var(--font-mono); font-size: .7rem; letter-spacing: .08em; text-transform: uppercase; }
   .icloud-closing h2 { margin: 2rem auto; font-size: clamp(4rem, 8vw, 8rem); line-height: .84; }
   .icloud-closing > div { display: flex; justify-content: center; align-items: center; gap: 1.3rem; }
-  .icloud-closing__github { color: var(--muted); font-size: .8rem; }
+  .icloud-closing__github { display: inline-flex; align-items: center; gap: .4rem; color: var(--muted); font-size: .8rem; }
 
   @media (max-width: 1180px) {
     .icloud-hero {
@@ -493,8 +601,10 @@ const capabilities = [
     .icloud-hero { padding-top: 4.5rem; }
     .icloud-hero h1 { font-size: clamp(3.8rem, 18vw, 6rem); }
     .icloud-hero__lede { margin-top: 2rem; }
-    .icloud-command { grid-template-columns: auto 1fr; }
+    .icloud-command { grid-template-columns: auto minmax(0, 1fr) auto; gap: .7rem; }
     .icloud-command__meta { display: none; }
+    .icloud-command__copy { padding: .45rem; }
+    .icloud-command__copy > span { display: none; }
     .icloud-terminal__body { min-height: 24rem; padding: 1.1rem; font-size: .62rem; }
     .icloud-terminal__output { margin-left: .9rem; }
     .icloud-capability { grid-template-columns: 2rem 1fr; }
