@@ -18,24 +18,24 @@ import (
 	"github.com/amxv/icloud-cli/internal/transport"
 )
 
-type fakePhase20Page struct {
+type fakeBackfillPage struct {
 	page transport.BackfillPage
 	raw  map[uint32]string
 	err  error
 }
 
-type fakePhase20Client struct {
-	pages          []fakePhase20Page
+type fakeMailOperationsClient struct {
+	pages          []fakeBackfillPage
 	requests       []transport.BackfillFetchRequest
 	status         transport.MailboxStatus
 	statusRequests []string
 }
 
-func (client *fakePhase20Client) ValidateIMAP(context.Context, transport.AuthRequest) (transport.IMAPResult, error) {
+func (client *fakeMailOperationsClient) ValidateIMAP(context.Context, transport.AuthRequest) (transport.IMAPResult, error) {
 	return transport.IMAPResult{}, nil
 }
 
-func (client *fakePhase20Client) FetchBackfillPage(ctx context.Context, _ transport.AuthRequest, request transport.BackfillFetchRequest, stager blob.Stager) (transport.BackfillPage, error) {
+func (client *fakeMailOperationsClient) FetchBackfillPage(ctx context.Context, _ transport.AuthRequest, request transport.BackfillFetchRequest, stager blob.Stager) (transport.BackfillPage, error) {
 	client.requests = append(client.requests, request)
 	if len(client.pages) == 0 {
 		return transport.BackfillPage{}, errors.New("unexpected backfill fetch")
@@ -58,16 +58,16 @@ func (client *fakePhase20Client) FetchBackfillPage(ctx context.Context, _ transp
 	return page, nil
 }
 
-func (client *fakePhase20Client) MailboxStatus(_ context.Context, _ transport.AuthRequest, mailbox string) (transport.MailboxStatus, error) {
+func (client *fakeMailOperationsClient) MailboxStatus(_ context.Context, _ transport.AuthRequest, mailbox string) (transport.MailboxStatus, error) {
 	client.statusRequests = append(client.statusRequests, mailbox)
 	status := client.status
 	status.Mailbox = mailbox
 	return status, nil
 }
 
-func TestPhase20BackfillResumesAcrossCancellationWhileForwardSyncContinues(t *testing.T) {
+func TestBackfillResumesAcrossCancellationWhileForwardSyncContinues(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "state")
-	t.Setenv("ICLOUD_PHASE20_PASSWORD", "synthetic-phase20-secret")
+	t.Setenv("ICLOUD_BACKFILL_PASSWORD", "synthetic-backfill-secret")
 	commands, _ := newTestAccountCommands()
 	commands.folders = &fakeFolderClient{results: map[string][]transport.FolderDiscoveryResult{
 		"owner@icloud.com": {
@@ -76,22 +76,22 @@ func TestPhase20BackfillResumesAcrossCancellationWhileForwardSyncContinues(t *te
 			}},
 		},
 	}}
-	forward23 := syntheticMailFixture(23, "phase20-forward-23@example.test", "Forward 23", "forward body 23", "")
-	forward24 := syntheticMailFixture(24, "phase20-forward-24@example.test", "Forward 24", "forward body 24", "")
+	forward23 := syntheticMailFixture(23, "forward-sync-23@example.test", "Forward 23", "forward body 23", "")
+	forward24 := syntheticMailFixture(24, "forward-sync-24@example.test", "Forward 24", "forward body 24", "")
 	forward := &fakeInboxClient{results: []fakeInboxPageResult{
 		{page: transport.InboxPage{Mailbox: "INBOX", UIDValidity: 100, LastCommittedUID: 23, LastScannedUID: 23, Bootstrap: true, Messages: []transport.FetchedMessage{{UID: 23, InternalDate: time.Date(2026, 8, 6, 23, 0, 0, 0, time.UTC)}}}, raw: map[uint32]string{23: forward23}},
 		{page: transport.InboxPage{Mailbox: "INBOX", UIDValidity: 100, LastCommittedUID: 24, LastScannedUID: 24, Messages: []transport.FetchedMessage{{UID: 24, InternalDate: time.Date(2026, 8, 7, 0, 1, 0, 0, time.UTC)}}}, raw: map[uint32]string{24: forward24}},
 	}}
 	commands.mail = forward
-	backfill10 := syntheticMailFixture(10, "phase20-backfill-10@example.test", "Historical 10", "history body 10", "")
-	backfill5 := syntheticMailFixture(5, "phase20-backfill-5@example.test", "Historical 5", "history body 5", "")
-	operations := &fakePhase20Client{pages: []fakePhase20Page{
+	backfill10 := syntheticMailFixture(10, "backfill-10@example.test", "Historical 10", "history body 10", "")
+	backfill5 := syntheticMailFixture(5, "backfill-5@example.test", "Historical 5", "history body 5", "")
+	operations := &fakeMailOperationsClient{pages: []fakeBackfillPage{
 		{page: transport.BackfillPage{Mailbox: "INBOX", UIDValidity: 100, BeforeUID: 24, NextBeforeUID: 10, Messages: []transport.FetchedMessage{{UID: 10, InternalDate: time.Date(2026, 7, 10, 0, 0, 0, 0, time.UTC)}}}, raw: map[uint32]string{10: backfill10}},
 		{err: context.Canceled},
 		{page: transport.BackfillPage{Mailbox: "INBOX", UIDValidity: 100, BeforeUID: 10, NextBeforeUID: 1, Complete: true, Messages: []transport.FetchedMessage{{UID: 5, InternalDate: time.Date(2026, 7, 5, 0, 0, 0, 0, time.UTC)}}}, raw: map[uint32]string{5: backfill5}},
 	}}
 	commands.imap = operations
-	addAndDiscoverInbox(t, commands, home, "ICLOUD_PHASE20_PASSWORD")
+	addAndDiscoverInbox(t, commands, home, "ICLOUD_BACKFILL_PASSWORD")
 
 	if code, stdout, stderr := runWithAccountCommands(t, commands, "", "--home", home, "mail", "sync", "--limit", "1"); code != 0 || stderr != "" || !strings.Contains(stdout, "last_uid=23") {
 		t.Fatalf("initial sync code=%d stdout=%q stderr=%q", code, stdout, stderr)
@@ -148,16 +148,16 @@ func TestPhase20BackfillResumesAcrossCancellationWhileForwardSyncContinues(t *te
 	}
 }
 
-func TestPhase20RebaselineAndRepairPreserveCacheAndRequireExplicitOrphanCleanup(t *testing.T) {
+func TestRebaselineAndRepairPreserveCacheAndRequireExplicitOrphanCleanup(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "state")
-	t.Setenv("ICLOUD_PHASE20_REPAIR_PASSWORD", "synthetic-phase20-repair-secret")
+	t.Setenv("ICLOUD_REPAIR_PASSWORD", "synthetic-repair-secret")
 	commands, _ := newTestAccountCommands()
 	commands.folders = oneInboxFolderClient()
-	raw := syntheticMailFixture(20, "phase20-repair-20@example.test", "Repair fixture", "repair body", "")
+	raw := syntheticMailFixture(20, "repair-20@example.test", "Repair fixture", "repair body", "")
 	commands.mail = &fakeInboxClient{results: []fakeInboxPageResult{{page: transport.InboxPage{Mailbox: "INBOX", UIDValidity: 100, LastCommittedUID: 20, LastScannedUID: 20, Bootstrap: true, Messages: []transport.FetchedMessage{{UID: 20, InternalDate: time.Date(2026, 8, 6, 20, 0, 0, 0, time.UTC)}}}, raw: map[uint32]string{20: raw}}}}
-	operations := &fakePhase20Client{pages: []fakePhase20Page{{page: transport.BackfillPage{Mailbox: "INBOX", UIDValidity: 100, BeforeUID: 20, NextBeforeUID: 10}}}, status: transport.MailboxStatus{Messages: 30, UIDNext: 31, UIDValidity: 200}}
+	operations := &fakeMailOperationsClient{pages: []fakeBackfillPage{{page: transport.BackfillPage{Mailbox: "INBOX", UIDValidity: 100, BeforeUID: 20, NextBeforeUID: 10}}}, status: transport.MailboxStatus{Messages: 30, UIDNext: 31, UIDValidity: 200}}
 	commands.imap = operations
-	addAndDiscoverInbox(t, commands, home, "ICLOUD_PHASE20_REPAIR_PASSWORD")
+	addAndDiscoverInbox(t, commands, home, "ICLOUD_REPAIR_PASSWORD")
 	if code, _, stderr := runWithAccountCommands(t, commands, "", "--home", home, "mail", "sync"); code != 0 || stderr != "" {
 		t.Fatalf("sync code=%d stderr=%q", code, stderr)
 	}
@@ -197,7 +197,7 @@ func TestPhase20RebaselineAndRepairPreserveCacheAndRequireExplicitOrphanCleanup(
 		t.Fatal(err)
 	}
 	if err := state.WithTx(context.Background(), func(tx *sql.Tx) error {
-		_, err := tx.Exec(`UPDATE message_search_documents SET subject='stale phase20 subject' WHERE account_id=?`, accountValue.ID)
+		_, err := tx.Exec(`UPDATE message_search_documents SET subject='stale repair subject' WHERE account_id=?`, accountValue.ID)
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -234,19 +234,19 @@ func TestPhase20RebaselineAndRepairPreserveCacheAndRequireExplicitOrphanCleanup(
 	}
 }
 
-func TestPhase20RepairUsesTargetedStatusToRecoverUIDValidityWithoutDeletingCache(t *testing.T) {
+func TestRepairUsesTargetedStatusToRecoverUIDValidityWithoutDeletingCache(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "state")
-	t.Setenv("ICLOUD_PHASE20_UID_PASSWORD", "synthetic-phase20-uid-secret")
+	t.Setenv("ICLOUD_UID_REPAIR_PASSWORD", "synthetic-uid-repair-secret")
 	commands, _ := newTestAccountCommands()
 	commands.folders = oneInboxFolderClient()
-	raw := syntheticMailFixture(20, "phase20-uid-20@example.test", "UID fixture", "uid body", "")
+	raw := syntheticMailFixture(20, "uid-repair-20@example.test", "UID fixture", "uid body", "")
 	commands.mail = &fakeInboxClient{results: []fakeInboxPageResult{
 		{page: transport.InboxPage{Mailbox: "INBOX", UIDValidity: 100, LastCommittedUID: 20, LastScannedUID: 20, Bootstrap: true, Messages: []transport.FetchedMessage{{UID: 20, InternalDate: time.Date(2026, 8, 6, 20, 0, 0, 0, time.UTC)}}}, raw: map[uint32]string{20: raw}},
 		{err: &transport.UIDValidityError{Expected: 100, Observed: 300}},
 	}}
-	operations := &fakePhase20Client{status: transport.MailboxStatus{Messages: 40, UIDNext: 41, UIDValidity: 300}}
+	operations := &fakeMailOperationsClient{status: transport.MailboxStatus{Messages: 40, UIDNext: 41, UIDValidity: 300}}
 	commands.imap = operations
-	addAndDiscoverInbox(t, commands, home, "ICLOUD_PHASE20_UID_PASSWORD")
+	addAndDiscoverInbox(t, commands, home, "ICLOUD_UID_REPAIR_PASSWORD")
 	if code, _, stderr := runWithAccountCommands(t, commands, "", "--home", home, "mail", "sync"); code != 0 || stderr != "" {
 		t.Fatalf("initial sync code=%d stderr=%q", code, stderr)
 	}
@@ -272,14 +272,14 @@ func TestPhase20RepairUsesTargetedStatusToRecoverUIDValidityWithoutDeletingCache
 	}
 }
 
-func TestPhase20BackfillUIDValidityRepairWorksWithoutForwardCheckpoint(t *testing.T) {
+func TestBackfillUIDValidityRepairWorksWithoutForwardCheckpoint(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "state")
-	t.Setenv("ICLOUD_PHASE20_BACKFILL_UID_PASSWORD", "synthetic-phase20-backfill-uid-secret")
+	t.Setenv("ICLOUD_BACKFILL_UID_PASSWORD", "synthetic-backfill-uid-secret")
 	commands, _ := newTestAccountCommands()
 	commands.folders = oneInboxFolderClient()
-	firstRaw := syntheticMailFixture(10, "phase20-backfill-uid-10@example.test", "Historical namespace one", "history namespace one", "")
-	operations := &fakePhase20Client{
-		pages: []fakePhase20Page{
+	firstRaw := syntheticMailFixture(10, "backfill-uid-10@example.test", "Historical namespace one", "history namespace one", "")
+	operations := &fakeMailOperationsClient{
+		pages: []fakeBackfillPage{
 			{page: transport.BackfillPage{Mailbox: "INBOX", UIDValidity: 100, BeforeUID: 21, NextBeforeUID: 10, Messages: []transport.FetchedMessage{{UID: 10, InternalDate: time.Date(2026, 7, 10, 0, 0, 0, 0, time.UTC)}}}, raw: map[uint32]string{10: firstRaw}},
 			{err: &transport.UIDValidityError{Expected: 100, Observed: 200}},
 			{page: transport.BackfillPage{Mailbox: "INBOX", UIDValidity: 200, BeforeUID: 31, NextBeforeUID: 1, Complete: true}},
@@ -287,7 +287,7 @@ func TestPhase20BackfillUIDValidityRepairWorksWithoutForwardCheckpoint(t *testin
 		status: transport.MailboxStatus{Messages: 30, UIDNext: 31, UIDValidity: 200},
 	}
 	commands.imap = operations
-	addAndDiscoverInbox(t, commands, home, "ICLOUD_PHASE20_BACKFILL_UID_PASSWORD")
+	addAndDiscoverInbox(t, commands, home, "ICLOUD_BACKFILL_UID_PASSWORD")
 
 	code, stdout, stderr := runWithAccountCommands(t, commands, "", "--home", home, "mail", "sync", "backfill", "--limit", "1")
 	if code != 0 || stderr != "" || !compactContainsAll(stdout, "before_uid=21", "next_before_uid=10") {
@@ -316,15 +316,15 @@ func TestPhase20BackfillUIDValidityRepairWorksWithoutForwardCheckpoint(t *testin
 
 var _ = maildomain.RepairCheck
 
-func TestPhase20RepairReportsMissingCanonicalBlobWithoutInventingReplacement(t *testing.T) {
+func TestRepairReportsMissingCanonicalBlobWithoutInventingReplacement(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "state")
-	t.Setenv("ICLOUD_PHASE20_BLOB_PASSWORD", "synthetic-phase20-blob-secret")
+	t.Setenv("ICLOUD_BLOB_REPAIR_PASSWORD", "synthetic-blob-repair-secret")
 	commands, _ := newTestAccountCommands()
 	commands.folders = oneInboxFolderClient()
-	raw := syntheticMailFixture(20, "phase20-blob-20@example.test", "Blob fixture", "blob body", "")
+	raw := syntheticMailFixture(20, "blob-repair-20@example.test", "Blob fixture", "blob body", "")
 	commands.mail = &fakeInboxClient{results: []fakeInboxPageResult{{page: transport.InboxPage{Mailbox: "INBOX", UIDValidity: 100, LastCommittedUID: 20, LastScannedUID: 20, Bootstrap: true, Messages: []transport.FetchedMessage{{UID: 20, InternalDate: time.Date(2026, 8, 6, 20, 0, 0, 0, time.UTC)}}}, raw: map[uint32]string{20: raw}}}}
-	commands.imap = &fakePhase20Client{}
-	addAndDiscoverInbox(t, commands, home, "ICLOUD_PHASE20_BLOB_PASSWORD")
+	commands.imap = &fakeMailOperationsClient{}
+	addAndDiscoverInbox(t, commands, home, "ICLOUD_BLOB_REPAIR_PASSWORD")
 	if code, _, stderr := runWithAccountCommands(t, commands, "", "--home", home, "mail", "sync"); code != 0 || stderr != "" {
 		t.Fatalf("sync code=%d stderr=%q", code, stderr)
 	}

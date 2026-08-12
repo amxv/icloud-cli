@@ -87,11 +87,11 @@ func TestSenderPreferencesProjectIntoMessagesThreadsAndIndexedSearchFilters(t *t
 	defer state.Close()
 	records := make([]maildomain.IngestRecord, 0, 3)
 	for index, email := range []string{"vip@example.test", "blocked@example.test", "plain@example.test"} {
-		record := mailRecordFixture(accountID, folderID, 100, uint32(index+1), "phase25-"+email)
+		record := mailRecordFixture(accountID, folderID, 100, uint32(index+1), "sender-preference-"+email)
 		record.Parsed.From = maildomain.Address{DisplayName: "Sender", Email: email}
-		record.Parsed.Subject = "Phase 25 " + email
-		record.Parsed.InReplyTo = "phase25-root@example.test"
-		record.Parsed.References = []string{"phase25-root@example.test"}
+		record.Parsed.Subject = "Sender preference " + email
+		record.Parsed.InReplyTo = "sender-preference-root@example.test"
+		record.Parsed.References = []string{"sender-preference-root@example.test"}
 		records = append(records, record)
 	}
 	_, err := state.Mail().CommitInboxPage(ctx, maildomain.CommitPage{

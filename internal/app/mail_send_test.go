@@ -110,10 +110,10 @@ func TestMailSendDryRunAndNonTTYGuardCreateNoAttemptOrSMTPCall(t *testing.T) {
 		"--cc", "Visible Copy <copy@example.com>",
 		"--bcc", "Hidden Copy <hidden@example.com>",
 		"--reply-to", "Replies <reply@example.com>",
-		"--subject", "Phase 14 dry run",
+		"--subject", "Send dry run",
 		"--body", "dry-run-body-token",
 		"--html-body", "<p>dry-run-html-token</p>",
-		"--header", "X-Synthetic: phase14",
+		"--header", "X-Synthetic: send-fixture",
 		"--idempotency-key", "dry-run-key",
 		"--dry-run", "--headers",
 	}
@@ -126,13 +126,13 @@ func TestMailSendDryRunAndNonTTYGuardCreateNoAttemptOrSMTPCall(t *testing.T) {
 		"to=\"Primary Person <primary@example.com>\"",
 		"cc=\"Visible Copy <copy@example.com>\"",
 		"bcc=\"Hidden Copy <hidden@example.com>\"",
-		"subject=\"Phase 14 dry run\"", "body_parts=2", "attachments=0",
+		"subject=\"Send dry run\"", "body_parts=2", "attachments=0",
 		"header\nFrom value=\"Ashray Sender <owner@icloud.com>\"",
 		"header\nTo value=\"Primary Person <primary@example.com>\"",
 		"header\nCc value=\"Visible Copy <copy@example.com>\"",
 		"header\nReply-To value=\"Replies <reply@example.com>\"",
-		"header\nSubject value=\"Phase 14 dry run\"",
-		"header\nX-Synthetic value=phase14",
+		"header\nSubject value=\"Send dry run\"",
+		"header\nX-Synthetic value=send-fixture",
 		"text-body\ndry-run-body-token\n", "smtp_contacted=false", "attempt_created=false",
 	) || strings.Count(stdout, "dry-run-body-token") != 1 {
 		t.Fatalf("dry-run output = %q", stdout)
@@ -243,10 +243,10 @@ func TestMailSendAcceptedIdempotentSearchableAndPayloadFree(t *testing.T) {
 		"--cc", "Visible Copy <copy@example.com>",
 		"--bcc", "Hidden Copy <hidden@example.com>",
 		"--reply-to", "Replies <reply@example.com>",
-		"--subject", "Phase 14 accepted",
+		"--subject", "Send accepted",
 		"--body", "accepted-search-token plain body",
 		"--html-body", "<p>accepted-search-token HTML body</p>",
-		"--header", "X-Synthetic: phase14",
+		"--header", "X-Synthetic: send-fixture",
 		"--idempotency-key", "accepted-send-key",
 		"--yes", "--json",
 	}
@@ -267,7 +267,7 @@ func TestMailSendAcceptedIdempotentSearchableAndPayloadFree(t *testing.T) {
 	if envelope.Data.Reused || attempt.Status != maildomain.OutboundSent || !strings.HasPrefix(attempt.ID, "send_") || !strings.HasPrefix(attempt.MessageID, "msg_") || !strings.HasPrefix(attempt.ThreadID, "thr_") || attempt.Reconciliation != maildomain.ReconciliationPending {
 		t.Fatalf("send envelope = %+v", envelope)
 	}
-	for _, forbidden := range []string{"accepted-search-token", "hidden@example.com", "Phase 14 accepted", "synthetic-send-secret", "idempotency_key", "raw_storage"} {
+	for _, forbidden := range []string{"accepted-search-token", "hidden@example.com", "Send accepted", "synthetic-send-secret", "idempotency_key", "raw_storage"} {
 		if strings.Contains(stdout, forbidden) {
 			t.Fatalf("send success exposed %q: %s", forbidden, stdout)
 		}

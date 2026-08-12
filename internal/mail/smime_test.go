@@ -21,11 +21,11 @@ import (
 	"github.com/smallstep/pkcs7"
 )
 
-func TestPhase33SMIMEEnvelopeMatchesDecryptsAndHonorsBounds(t *testing.T) {
+func TestSMIMEEnvelopeMatchesDecryptsAndHonorsBounds(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	cert, key := newSMIMERSATestCertificate(t, "owner@example.test", now)
 	wrongCert, _ := newSMIMERSATestCertificate(t, "other@example.test", now.Add(time.Second))
-	plaintext := []byte("Content-Type: text/plain; charset=utf-8\r\n\r\nphase33 decrypted content")
+	plaintext := []byte("Content-Type: text/plain; charset=utf-8\r\n\r\nsmime decrypted content")
 	previous := pkcs7.ContentEncryptionAlgorithm
 	pkcs7.ContentEncryptionAlgorithm = pkcs7.EncryptionAlgorithmAES256CBC
 	ciphertext, err := pkcs7.Encrypt(plaintext, []*x509.Certificate{cert})
@@ -60,7 +60,7 @@ func TestPhase33SMIMEEnvelopeMatchesDecryptsAndHonorsBounds(t *testing.T) {
 	}
 }
 
-func TestPhase33SMIMEPrivateKeyParsingAndCertificateBinding(t *testing.T) {
+func TestSMIMEPrivateKeyParsingAndCertificateBinding(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	cert, key := newSMIMERSATestCertificate(t, "owner@example.test", now)
 	der := x509.MarshalPKCS1PrivateKey(key)
@@ -79,7 +79,7 @@ func TestPhase33SMIMEPrivateKeyParsingAndCertificateBinding(t *testing.T) {
 	}
 }
 
-func TestPhase33MalformedEncryptedContainerFailsOnlyOnExplicitDecrypt(t *testing.T) {
+func TestMalformedEncryptedContainerFailsOnlyOnExplicitDecrypt(t *testing.T) {
 	raw := []byte("From: sender@example.test\r\nContent-Type: application/pkcs7-mime; smime-type=enveloped-data\r\nContent-Transfer-Encoding: base64\r\n\r\nbm90LWNtcw==\r\n")
 	content, err := ParseNormalizedWithAttachmentsAndSMIMEContext(context.Background(), bytes.NewReader(raw), nil, &SMIMEPolicy{Roots: x509.NewCertPool(), Now: time.Now().UTC()})
 	if err != nil || content.SMIME == nil || !content.SMIME.Encrypted {
@@ -97,7 +97,7 @@ func newSMIMERSATestCertificate(t *testing.T, email string, now time.Time) (*x50
 		t.Fatal(err)
 	}
 	template := &x509.Certificate{
-		SerialNumber: big.NewInt(now.UnixNano()), Subject: pkix.Name{CommonName: "Phase 33 RSA"}, EmailAddresses: []string{email},
+		SerialNumber: big.NewInt(now.UnixNano()), Subject: pkix.Name{CommonName: "S/MIME RSA"}, EmailAddresses: []string{email},
 		NotBefore: now.Add(-time.Hour), NotAfter: now.Add(24 * time.Hour), BasicConstraintsValid: true,
 		KeyUsage: x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageEmailProtection},
 	}
@@ -119,7 +119,7 @@ type smimeTestIdentity struct {
 	leafKey *ecdsa.PrivateKey
 }
 
-func TestPhase32DetachedSMIMETrustedExactBytesAndControlPartIsNotAttachment(t *testing.T) {
+func TestDetachedSMIMETrustedExactBytesAndControlPartIsNotAttachment(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	identity := newSMIMETestIdentity(t, "alice@example.test", now, x509.KeyUsageDigitalSignature, []x509.ExtKeyUsage{x509.ExtKeyUsageEmailProtection})
 	signed := []byte("Content-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: 7bit\r\n\r\nhello exact signed world")
@@ -154,12 +154,12 @@ func TestPhase32DetachedSMIMETrustedExactBytesAndControlPartIsNotAttachment(t *t
 	}
 }
 
-func TestPhase32OpenSSLDetachedSMIMEInteroperabilityFixture(t *testing.T) {
-	raw, err := os.ReadFile("testdata/phase32_openssl_signed.eml")
+func TestOpenSSLDetachedSMIMEInteroperabilityFixture(t *testing.T) {
+	raw, err := os.ReadFile("testdata/openssl_smime_signed.eml")
 	if err != nil {
 		t.Fatal(err)
 	}
-	rootPEM, err := os.ReadFile("testdata/phase32_openssl_root.pem")
+	rootPEM, err := os.ReadFile("testdata/openssl_smime_root.pem")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,10 +193,10 @@ func TestPhase32OpenSSLDetachedSMIMEInteroperabilityFixture(t *testing.T) {
 	}
 }
 
-func TestPhase32DetachedSMIMEStatusMatrixKeepsOrdinaryContentReadable(t *testing.T) {
+func TestDetachedSMIMEStatusMatrixKeepsOrdinaryContentReadable(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	trusted := newSMIMETestIdentity(t, "alice@example.test", now, x509.KeyUsageDigitalSignature, []x509.ExtKeyUsage{x509.ExtKeyUsageEmailProtection})
-	signed := []byte("Content-Type: text/plain\r\n\r\nsigned phase32 content")
+	signed := []byte("Content-Type: text/plain\r\n\r\nsigned smime content")
 	signature := detachedSignature(t, signed, trusted)
 	roots := x509.NewCertPool()
 	roots.AddCert(trusted.root)
@@ -214,7 +214,7 @@ func TestPhase32DetachedSMIMEStatusMatrixKeepsOrdinaryContentReadable(t *testing
 		{name: "trusted", from: "alice@example.test", body: signed, signature: signature, policy: &SMIMEPolicy{Roots: roots, Now: now}, want: SMIMEStatusValidTrusted, valid: true, trust: SMIMETrustTrusted},
 		{name: "untrusted", from: "alice@example.test", body: signed, signature: signature, policy: &SMIMEPolicy{Roots: x509.NewCertPool(), Now: now}, want: SMIMEStatusValidUntrusted, valid: true, trust: SMIMETrustUntrusted},
 		{name: "identity mismatch", from: "mallory@example.test", body: signed, signature: signature, policy: &SMIMEPolicy{Roots: roots, Now: now}, want: SMIMEStatusIdentityMismatch, valid: true, trust: SMIMETrustTrusted},
-		{name: "tampered", from: "alice@example.test", body: []byte("Content-Type: text/plain\r\n\r\ntampered phase32 content"), signature: signature, policy: &SMIMEPolicy{Roots: roots, Now: now}, want: SMIMEStatusInvalid, valid: false, trust: SMIMETrustNotEvaluated},
+		{name: "tampered", from: "alice@example.test", body: []byte("Content-Type: text/plain\r\n\r\ntampered smime content"), signature: signature, policy: &SMIMEPolicy{Roots: roots, Now: now}, want: SMIMEStatusInvalid, valid: false, trust: SMIMETrustNotEvaluated},
 		{name: "malformed", from: "alice@example.test", body: signed, signature: []byte("not cms"), policy: &SMIMEPolicy{Roots: roots, Now: now}, want: SMIMEStatusMalformed, valid: false, trust: SMIMETrustNotEvaluated},
 	}
 	for _, testCase := range tests {
@@ -227,16 +227,16 @@ func TestPhase32DetachedSMIMEStatusMatrixKeepsOrdinaryContentReadable(t *testing
 			if content.SMIME == nil || content.SMIME.Status != testCase.want || content.SMIME.SignatureValid != testCase.valid || content.SMIME.Trust != testCase.trust {
 				t.Fatalf("status=%+v", content.SMIME)
 			}
-			if !strings.Contains(content.Preview.Snippet, "phase32 content") {
+			if !strings.Contains(content.Preview.Snippet, "smime content") {
 				t.Fatalf("ordinary body disappeared after S/MIME failure: %+v", content.Preview)
 			}
 		})
 	}
 }
 
-func TestPhase32DetachedSMIMEExpiredWrongUsageAndMultipleSigner(t *testing.T) {
+func TestDetachedSMIMEExpiredWrongUsageAndMultipleSigner(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
-	signed := []byte("Content-Type: text/plain\r\n\r\nphase32 policy matrix")
+	signed := []byte("Content-Type: text/plain\r\n\r\nsmime policy matrix")
 
 	t.Run("expired at evaluation time", func(t *testing.T) {
 		identity := newSMIMETestIdentityWithLifetime(t, "alice@example.test", now.Add(-time.Hour), now.Add(time.Hour), x509.KeyUsageDigitalSignature, []x509.ExtKeyUsage{x509.ExtKeyUsageEmailProtection})
@@ -284,7 +284,7 @@ func TestPhase32DetachedSMIMEExpiredWrongUsageAndMultipleSigner(t *testing.T) {
 	})
 }
 
-func TestPhase32OpaqueEncryptedIsControlNotAttachment(t *testing.T) {
+func TestOpaqueEncryptedIsControlNotAttachment(t *testing.T) {
 	raw := []byte("From: alice@example.test\r\nSubject: encrypted\r\nContent-Type: application/pkcs7-mime; smime-type=enveloped-data; name=smime.p7m\r\nContent-Disposition: attachment; filename=smime.p7m\r\nContent-Transfer-Encoding: base64\r\n\r\nYWJj\r\n")
 	content, err := ParseNormalizedWithAttachmentsAndSMIMEContext(t.Context(), bytes.NewReader(raw), nil, &SMIMEPolicy{Roots: x509.NewCertPool(), Now: time.Now().UTC()})
 	if err != nil {
@@ -298,7 +298,7 @@ func TestPhase32OpaqueEncryptedIsControlNotAttachment(t *testing.T) {
 	}
 }
 
-func TestPhase32OpaqueSignedAndLargeOrdinaryAttachmentCoexistence(t *testing.T) {
+func TestOpaqueSignedAndLargeOrdinaryAttachmentCoexistence(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	identity := newSMIMETestIdentity(t, "alice@example.test", now, x509.KeyUsageDigitalSignature, []x509.ExtKeyUsage{x509.ExtKeyUsageEmailProtection})
 	roots := x509.NewCertPool()
@@ -332,8 +332,8 @@ func TestPhase32OpaqueSignedAndLargeOrdinaryAttachmentCoexistence(t *testing.T) 
 	})
 
 	t.Run("detached signed mixed with large attachment", func(t *testing.T) {
-		innerBoundary := "phase32-mixed-boundary"
-		large := bytes.Repeat([]byte("phase32-large-attachment-"), 16384)
+		innerBoundary := "smime-mixed-boundary"
+		large := bytes.Repeat([]byte("smime-large-attachment-"), 16384)
 		var signed bytes.Buffer
 		signed.WriteString("Content-Type: multipart/mixed; boundary=\"" + innerBoundary + "\"\r\n\r\n")
 		signed.WriteString("--" + innerBoundary + "\r\nContent-Type: text/plain\r\n\r\nlarge coexistence body\r\n")
@@ -363,10 +363,10 @@ func TestPhase32OpaqueSignedAndLargeOrdinaryAttachmentCoexistence(t *testing.T) 
 
 func detachedSMIMEFixture(t *testing.T, from string, signed, signature []byte) []byte {
 	t.Helper()
-	boundary := "phase32-signed-boundary"
+	boundary := "smime-signed-boundary"
 	var raw bytes.Buffer
 	raw.WriteString("From: " + from + "\r\n")
-	raw.WriteString("Subject: Phase 32 signed fixture\r\n")
+	raw.WriteString("Subject: S/MIME signed fixture\r\n")
 	raw.WriteString("MIME-Version: 1.0\r\n")
 	raw.WriteString("Content-Type: multipart/signed; protocol=\"application/pkcs7-signature\"; micalg=sha-256; boundary=\"" + boundary + "\"\r\n\r\n")
 	raw.WriteString("--" + boundary + "\r\n")
@@ -409,7 +409,7 @@ func newSMIMETestIdentityWithLifetime(t *testing.T, email string, notBefore, not
 	if err != nil {
 		t.Fatal(err)
 	}
-	rootTemplate := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "Phase 32 Test Root"}, NotBefore: notBefore.Add(-time.Hour), NotAfter: notAfter.Add(24 * time.Hour), IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageCRLSign}
+	rootTemplate := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "S/MIME Test Root"}, NotBefore: notBefore.Add(-time.Hour), NotAfter: notAfter.Add(24 * time.Hour), IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageCRLSign}
 	rootDER, err := x509.CreateCertificate(rand.Reader, rootTemplate, rootTemplate, &rootKey.PublicKey, rootKey)
 	if err != nil {
 		t.Fatal(err)
@@ -422,7 +422,7 @@ func newSMIMETestIdentityWithLifetime(t *testing.T, email string, notBefore, not
 	if err != nil {
 		t.Fatal(err)
 	}
-	leafTemplate := &x509.Certificate{SerialNumber: big.NewInt(2), Subject: pkix.Name{CommonName: "Phase 32 Signer"}, EmailAddresses: []string{email}, NotBefore: notBefore, NotAfter: notAfter, BasicConstraintsValid: true, KeyUsage: usage, ExtKeyUsage: extUsage}
+	leafTemplate := &x509.Certificate{SerialNumber: big.NewInt(2), Subject: pkix.Name{CommonName: "S/MIME Signer"}, EmailAddresses: []string{email}, NotBefore: notBefore, NotAfter: notAfter, BasicConstraintsValid: true, KeyUsage: usage, ExtKeyUsage: extUsage}
 	leafDER, err := x509.CreateCertificate(rand.Reader, leafTemplate, root, &leafKey.PublicKey, rootKey)
 	if err != nil {
 		t.Fatal(err)

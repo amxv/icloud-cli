@@ -512,7 +512,7 @@ func TestMailWatchAllAccountsRunsOneOrderedWorkerPerAccount(t *testing.T) {
 	}
 }
 
-func TestAgentParityPhase18WatchPagesAndStartsSupportedAccountMaximum(t *testing.T) {
+func TestWatchPagesAndStartsSupportedAccountMaximum(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("ICLOUD_WATCH_SCALE_PASSWORD", "synthetic-watch-scale-secret")
 	commands, _ := newTestAccountCommands()
@@ -579,7 +579,7 @@ func TestAgentParityPhase18WatchPagesAndStartsSupportedAccountMaximum(t *testing
 	}
 }
 
-func TestAgentParityPhase18WatchRejectsAccountBeyondProcessMaximumWithoutStartingWorkers(t *testing.T) {
+func TestWatchRejectsAccountBeyondProcessMaximumWithoutStartingWorkers(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("ICLOUD_WATCH_SCALE_PASSWORD", "synthetic-watch-scale-secret")
 	commands, _ := newTestAccountCommands()
@@ -602,7 +602,7 @@ func TestAgentParityPhase18WatchRejectsAccountBeyondProcessMaximumWithoutStartin
 	}
 }
 
-func TestAgentParityPhase18WatchSyncGateIsFIFOAndCancellationAware(t *testing.T) {
+func TestWatchSyncGateIsFIFOAndCancellationAware(t *testing.T) {
 	gate := &watchSyncGate{}
 	releaseNoisy, err := gate.acquire(context.Background())
 	if err != nil {

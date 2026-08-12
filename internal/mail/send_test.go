@@ -165,11 +165,11 @@ func TestComposeOutboundMessageOmitsBccHeaderAndParsesTextHTML(t *testing.T) {
 		Subject:  "Project update",
 		TextBody: "Plain body café.\nSecond line.",
 		HTMLBody: "<p>HTML body café.</p>",
-		Headers:  []CustomHeader{{Key: "X-Synthetic", Value: "phase14"}},
+		Headers:  []CustomHeader{{Key: "X-Synthetic", Value: "send-fixture"}},
 	}
 	var raw bytes.Buffer
 	sentAt := time.Date(2026, 8, 6, 13, 0, 0, 0, time.UTC)
-	if err := ComposeOutboundMessage(&raw, request, "phase14@example.test", sentAt); err != nil {
+	if err := ComposeOutboundMessage(&raw, request, "send-fixture@example.test", sentAt); err != nil {
 		t.Fatal(err)
 	}
 	text := raw.String()
@@ -178,8 +178,8 @@ func TestComposeOutboundMessageOmitsBccHeaderAndParsesTextHTML(t *testing.T) {
 		"To: \"Primary\" <primary@example.com>",
 		"Cc: \"Visible\" <copy@example.com>",
 		"Reply-To: \"Replies\" <reply@example.com>",
-		"Message-Id: <phase14@example.test>",
-		"X-Synthetic: phase14",
+		"Message-Id: <send-fixture@example.test>",
+		"X-Synthetic: send-fixture",
 		"multipart/alternative",
 	} {
 		if !strings.Contains(text, value) {
@@ -193,7 +193,7 @@ func TestComposeOutboundMessageOmitsBccHeaderAndParsesTextHTML(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if content.Preview.RFCMessageID != "phase14@example.test" || content.Preview.From.DisplayName != "Ashray Sender" || content.Preview.From.Email != "owner@icloud.com" {
+	if content.Preview.RFCMessageID != "send-fixture@example.test" || content.Preview.From.DisplayName != "Ashray Sender" || content.Preview.From.Email != "owner@icloud.com" {
 		t.Fatalf("parsed preview = %+v", content.Preview)
 	}
 	if len(content.Preview.To) != 1 || len(content.Preview.CC) != 1 || len(content.Preview.BCC) != 0 || len(content.TextPaths) != 1 || len(content.HTMLPaths) != 1 {

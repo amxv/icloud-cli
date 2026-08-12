@@ -306,7 +306,7 @@ func TestOutboundAcceptedTransactionRollbackLeavesPendingAttemptAndNoMessage(t *
 	if _, err := state.db.Exec(`
 CREATE TRIGGER synthetic_outbound_complete_failure
 BEFORE INSERT ON message_search_documents
-WHEN NEW.subject = 'Phase 14 accepted'
+WHEN NEW.subject = 'Outbound accepted'
 BEGIN
     SELECT RAISE(ABORT, 'synthetic outbound completion failure');
 END;`); err != nil {
@@ -531,14 +531,14 @@ func outboundStoreFixture(t *testing.T, accountID string, now time.Time) (maildo
 		CC:               []maildomain.Address{{DisplayName: "Visible", Email: "visible@example.com"}},
 		BCC:              []maildomain.Address{{DisplayName: "Hidden", Email: "hidden@example.com"}},
 		ReplyTo:          &maildomain.Address{DisplayName: "Replies", Email: "reply@example.com"},
-		Subject:          "Phase 14 accepted", TextBody: "outbound-search-token plain body",
+		Subject:          "Outbound accepted", TextBody: "outbound-search-token plain body",
 		HTMLBody: "<p>outbound-search-token HTML body</p>",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	var raw bytes.Buffer
-	if err := maildomain.ComposeOutboundMessage(&raw, request, "phase14-store@example.test", now); err != nil {
+	if err := maildomain.ComposeOutboundMessage(&raw, request, "outbound-store@example.test", now); err != nil {
 		t.Fatal(err)
 	}
 	content, err := maildomain.ParseNormalized(strings.NewReader(raw.String()))

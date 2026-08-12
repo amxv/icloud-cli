@@ -1209,7 +1209,7 @@ func TestAccountWritesReturnConflictWhileAccountLockIsHeld(t *testing.T) {
 
 func TestAccountTestPersistsUsernameFallbackCapabilitiesAndHealthyState(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "state")
-	t.Setenv("ICLOUD_TEST_APP_PASSWORD", "synthetic-phase4-secret")
+	t.Setenv("ICLOUD_TEST_APP_PASSWORD", "synthetic-account-secret")
 	commands, _ := newTestAccountCommands()
 	imapValidator := &fakeIMAPValidator{
 		results: map[string]transport.IMAPResult{
@@ -1281,7 +1281,7 @@ func TestAccountTestPersistsUsernameFallbackCapabilitiesAndHealthyState(t *testi
 	if strings.Join(stored.IMAPCapabilities, ",") != "IDLE,IMAP4REV1,SPECIAL-USE" || strings.Join(stored.SMTPCapabilities, ",") != "AUTH,SMTPUTF8" {
 		t.Fatalf("stored capabilities: imap=%v smtp=%v", stored.IMAPCapabilities, stored.SMTPCapabilities)
 	}
-	for _, private := range []string{"synthetic-phase4-secret", "ICLOUD_TEST_APP_PASSWORD", "provider text"} {
+	for _, private := range []string{"synthetic-account-secret", "ICLOUD_TEST_APP_PASSWORD", "provider text"} {
 		if strings.Contains(stdout, private) || strings.Contains(stderr, private) {
 			t.Fatalf("public output contains private value %q", private)
 		}
@@ -1899,14 +1899,14 @@ func TestMailThreadReconstructionWorkflowAndCompactBudgets(t *testing.T) {
 		}}}},
 	}}
 	rootRaw := syntheticThreadMailFixture(
-		201, "phase11-root@example.test", "Phase 11 thread", "Root chronological body",
+		201, "thread-root@example.test", "Thread reconstruction fixture", "Root chronological body",
 		"Fixture Sender <sender@example.test>", "owner@icloud.com", nil, "", "",
 		time.Date(2026, 8, 6, 9, 20, 0, 0, time.UTC),
 	)
 	replyRaw := syntheticThreadMailFixture(
-		202, "phase11-reply@example.test", "Re: Phase 11 thread", "Reply chronological body",
-		"owner@icloud.com", "Fixture Sender <sender@example.test>", []string{"phase11-root@example.test"},
-		"phase11-root@example.test", "hidden-thread-bcc@example.test",
+		202, "thread-reply@example.test", "Re: Thread reconstruction fixture", "Reply chronological body",
+		"owner@icloud.com", "Fixture Sender <sender@example.test>", []string{"thread-root@example.test"},
+		"thread-root@example.test", "hidden-thread-bcc@example.test",
 		time.Date(2026, 8, 6, 9, 21, 0, 0, time.UTC),
 	)
 	commands.mail = &fakeInboxClient{results: []fakeInboxPageResult{{
@@ -1928,7 +1928,7 @@ func TestMailThreadReconstructionWorkflowAndCompactBudgets(t *testing.T) {
 
 	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "latest")
 	if code != 0 || stderr != "" || compactBlockCount(stdout, "thread") != 1 ||
-		!compactContainsAll(stdout, `subject="Phase 11 thread"`, "messages=2", "unread=1", "reconstruction=local_rfc_graph", "threads\n", "count=1", "more=false") {
+		!compactContainsAll(stdout, `subject="Thread reconstruction fixture"`, "messages=2", "unread=1", "reconstruction=local_rfc_graph", "threads\n", "count=1", "more=false") {
 		t.Fatalf("latest compact code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 	if strings.Contains(stdout, "hidden-thread-bcc") || strings.Count(stdout, "\n") > 20 || len(stdout) > 1100 {
@@ -1955,7 +1955,7 @@ func TestMailThreadReconstructionWorkflowAndCompactBudgets(t *testing.T) {
 	}
 	thread := latestEnvelope.Data.Threads[0]
 	if !strings.HasPrefix(thread.ID, "thr_") || thread.MessageCount != 2 || thread.UnreadCount != 1 ||
-		thread.Reconstruction != "local_rfc_graph" || thread.RootRFCMessageID != "phase11-root@example.test" {
+		thread.Reconstruction != "local_rfc_graph" || thread.RootRFCMessageID != "thread-root@example.test" {
 		t.Fatalf("latest thread = %+v", thread)
 	}
 
@@ -2033,7 +2033,7 @@ func TestMailThreadReconstructionWorkflowAndCompactBudgets(t *testing.T) {
 
 	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "thread", "show", thread.ID, "--metadata-only", "--verbose", "--json")
 	if code != 0 || stderr != "" || strings.Count(stdout, `"status":"resolved"`) != 2 ||
-		!strings.Contains(stdout, `"root_rfc_message_id":"phase11-root@example.test"`) ||
+		!strings.Contains(stdout, `"root_rfc_message_id":"thread-root@example.test"`) ||
 		!strings.Contains(stdout, `"message_count":2`) || !strings.Contains(stdout, `"count":2`) {
 		t.Fatalf("thread metadata JSON code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
@@ -2127,8 +2127,8 @@ func TestMailSentTailBootstrapAndNewObservationMerge(t *testing.T) {
 			},
 		}}},
 	}}
-	inboxRaw := syntheticMailFixture(21, "phase10-shared@example.test", "Phase 10 shared", "Inbox representative body", "")
-	sentRaw := syntheticMailFixture(51, "phase10-shared@example.test", "Phase 10 shared", "Sent representative body", "hidden-sent-bcc@example.test")
+	inboxRaw := syntheticMailFixture(21, "shared-copy@example.test", "Shared provider copy", "Inbox representative body", "")
+	sentRaw := syntheticMailFixture(51, "shared-copy@example.test", "Shared provider copy", "Sent representative body", "hidden-sent-bcc@example.test")
 	mailClient := &fakeInboxClient{results: []fakeInboxPageResult{
 		{
 			page: transport.InboxPage{
@@ -2475,7 +2475,7 @@ func TestMailMessageContentWorkflowRawRoundTripAndPrivacy(t *testing.T) {
 	}
 	for _, want := range []string{
 		"message\n", messageID + " account=acct_", `from="Fixture Sender <sender@example.test>"`,
-		"to=owner@icloud.com", `subject="Phase 7 content fixture"`, "flagged=true",
+		"to=owner@icloud.com", `subject="Message content fixture"`, "flagged=true",
 		"attachments=1", "content=text,html", "raw=true", "parts=5", "excerpt=",
 		"hint=\"use --full, --format html, --headers, or message raw\"",
 	} {
@@ -2511,7 +2511,7 @@ func TestMailMessageContentWorkflowRawRoundTripAndPrivacy(t *testing.T) {
 	}
 
 	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "message", "show", messageID, "--headers")
-	if code != 0 || stderr != "" || !strings.Contains(stdout, "headers\n") || !strings.Contains(stdout, "Message-Id: <phase7-content@example.test>") || strings.Contains(strings.ToLower(stdout), "bcc:") {
+	if code != 0 || stderr != "" || !strings.Contains(stdout, "headers\n") || !strings.Contains(stdout, "Message-Id: <message-content@example.test>") || strings.Contains(strings.ToLower(stdout), "bcc:") {
 		t.Fatalf("headers code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "message", "show", messageID, "--verbose")
@@ -2815,8 +2815,8 @@ func multipartMessageFixture() (raw, plainBody, htmlBody string) {
 		"Cc: copy@example.test",
 		"Bcc: hidden-bcc@example.test",
 		"Date: Thu, 06 Aug 2026 05:30:00 +0000",
-		"Message-ID: <phase7-content@example.test>",
-		"Subject: Phase 7 content fixture",
+		"Message-ID: <message-content@example.test>",
+		"Subject: Message content fixture",
 		"Content-Type: multipart/mixed; boundary=mixed",
 		"",
 		"--mixed",

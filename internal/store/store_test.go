@@ -182,7 +182,7 @@ INSERT INTO mail_identities (
 				}
 				if version == 20 {
 					rawHash := strings.Repeat("a", 64)
-					if _, err := database.Exec(`INSERT INTO raw_blobs (content_hash, storage_key, byte_size, created_at) VALUES (?, ?, 1, ?)`, rawHash, "raw/phase5-migration.eml", stamp); err != nil {
+					if _, err := database.Exec(`INSERT INTO raw_blobs (content_hash, storage_key, byte_size, created_at) VALUES (?, ?, 1, ?)`, rawHash, "raw/identity-migration.eml", stamp); err != nil {
 						database.Close()
 						t.Fatal(err)
 					}
@@ -191,7 +191,7 @@ INSERT INTO mail_identities (
 INSERT INTO messages (
     message_id, account_id, rfc_message_id, direction, from_name, from_email,
     subject, snippet, sort_at, date_source, created_at, updated_at
-) VALUES (?, ?, 'phase5-migrated-draft@example.test', 'outbound', ?, ?, 'Migrated draft', 'draft', ?, 'header', ?, ?)`,
+) VALUES (?, ?, 'identity-migrated-draft@example.test', 'outbound', ?, ?, 'Migrated draft', 'draft', ?, 'header', ?, ?)`,
 						messageID, accountID, fmt.Sprintf("Legacy %d", version), fmt.Sprintf("legacy-%d@example.test", version), stamp, stamp, stamp); err != nil {
 						database.Close()
 						t.Fatal(err)
@@ -208,7 +208,7 @@ INSERT INTO outbound_attempts (
     raw_content_hash, raw_storage_key, raw_byte_size, to_count, body_part_count,
     outbound_kind, reconciliation, created_at, updated_at
 ) VALUES ('send_019fda7b-3ba1-7000-8000-000000000020', ?, 'msg_019fda7b-3ba1-7000-8000-000000000021', ?, 'failed',
-          'phase5-migrated-send@example.test', ?, 'raw/phase5-migration.eml', 1, 1, 1, 'send', 'none', ?, ?)`,
+          'identity-migrated-send@example.test', ?, 'raw/identity-migration.eml', 1, 1, 1, 'send', 'none', ?, ?)`,
 						accountID, strings.Repeat("b", 64), rawHash, stamp, stamp); err != nil {
 						database.Close()
 						t.Fatal(err)

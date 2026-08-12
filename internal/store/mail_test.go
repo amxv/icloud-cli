@@ -714,7 +714,7 @@ INSERT INTO messages (
 	); err != nil {
 		t.Fatal(err)
 	}
-	generatedID := "generated-phase10@example.test"
+	generatedID := "generated-message@example.test"
 	if err := state.Mail().RegisterGeneratedMessageID(context.Background(), accountID, localMessageID, generatedID, now); err != nil {
 		t.Fatal(err)
 	}
@@ -942,9 +942,9 @@ func TestReconcileLocationReportsOnlyActualStateChangesForWatchIdentity(t *testi
 	defer state.Close()
 	ctx := context.Background()
 	now := time.Date(2026, 8, 11, 5, 45, 0, 0, time.UTC)
-	record := mailRecordFixture(accountID, folderID, 100, 611, "phase26-reconcile@example.test")
+	record := mailRecordFixture(accountID, folderID, 100, 611, "reconcile-location@example.test")
 	if _, err := state.Mail().CommitInboxPage(ctx, maildomain.CommitPage{
-		CheckpointID: "chk_phase26_reconcile", AccountID: accountID, FolderID: folderID, UIDValidity: 100,
+		CheckpointID: "chk_reconcile_location", AccountID: accountID, FolderID: folderID, UIDValidity: 100,
 		LastCommittedUID: 611, LastScannedUID: 611, Bootstrap: true, AttemptedAt: now,
 		Records: []maildomain.IngestRecord{record},
 	}); err != nil {
@@ -952,7 +952,7 @@ func TestReconcileLocationReportsOnlyActualStateChangesForWatchIdentity(t *testi
 	}
 
 	unchanged, err := state.Mail().CommitInboxPage(ctx, maildomain.CommitPage{
-		CheckpointID: "chk_phase26_reconcile", AccountID: accountID, FolderID: folderID, UIDValidity: 100,
+		CheckpointID: "chk_reconcile_location", AccountID: accountID, FolderID: folderID, UIDValidity: 100,
 		LastCommittedUID: 611, LastScannedUID: 611, AttemptedAt: now.Add(time.Minute),
 		Reconciled: []maildomain.ReconcileRecord{{UID: 611, Flags: maildomain.ParseLocationFlags([]string{`\Flagged`}), Present: true}},
 	})
@@ -961,7 +961,7 @@ func TestReconcileLocationReportsOnlyActualStateChangesForWatchIdentity(t *testi
 	}
 
 	changed, err := state.Mail().CommitInboxPage(ctx, maildomain.CommitPage{
-		CheckpointID: "chk_phase26_reconcile", AccountID: accountID, FolderID: folderID, UIDValidity: 100,
+		CheckpointID: "chk_reconcile_location", AccountID: accountID, FolderID: folderID, UIDValidity: 100,
 		LastCommittedUID: 611, LastScannedUID: 611, AttemptedAt: now.Add(2 * time.Minute),
 		Reconciled: []maildomain.ReconcileRecord{{UID: 611, Flags: maildomain.ParseLocationFlags([]string{`\Flagged`, `\Seen`}), ModSequence: 9, Present: true}},
 	})

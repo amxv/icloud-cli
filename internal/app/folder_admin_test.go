@@ -62,16 +62,16 @@ func TestFolderAdministrationCLIIsPreviewableSafeAndPreservesStableID(t *testing
 	commands.folderAdmin = admin
 	addAndDiscoverInbox(t, commands, home, "ICLOUD_FOLDER_ADMIN_PASSWORD")
 
-	code, stdout, stderr := runWithAccountCommands(t, commands, "", "--home", home, "mail", "folders", "create", "Projects/Phase19-日本語", "--dry-run")
-	if code != 0 || stderr != "" || admin.calls != 0 || !compactContainsAll(stdout, "folder-admin-preview", "action=create", "requested_name=Projects/Phase19-日本語", "imap_contacted=false") {
+	code, stdout, stderr := runWithAccountCommands(t, commands, "", "--home", home, "mail", "folders", "create", "Projects/FolderAdmin-日本語", "--dry-run")
+	if code != 0 || stderr != "" || admin.calls != 0 || !compactContainsAll(stdout, "folder-admin-preview", "action=create", "requested_name=Projects/FolderAdmin-日本語", "imap_contacted=false") {
 		t.Fatalf("create dry-run code=%d stdout=%q stderr=%q calls=%d", code, stdout, stderr, admin.calls)
 	}
-	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "folders", "create", "Projects/Phase19-日本語")
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "folders", "create", "Projects/FolderAdmin-日本語")
 	if code != cli.ExitSafety || stdout != "" || !strings.Contains(stderr, "requires --yes") || admin.calls != 0 {
 		t.Fatalf("create authorization code=%d stdout=%q stderr=%q calls=%d", code, stdout, stderr, admin.calls)
 	}
-	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "folders", "create", "Projects/Phase19-日本語", "--yes")
-	if code != 0 || stderr != "" || admin.calls != 1 || !compactContainsAll(stdout, "folder-admin", "action=create", "name=Projects/Phase19-日本語", "present=yes", "sync=disabled") {
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "folders", "create", "Projects/FolderAdmin-日本語", "--yes")
+	if code != 0 || stderr != "" || admin.calls != 1 || !compactContainsAll(stdout, "folder-admin", "action=create", "name=Projects/FolderAdmin-日本語", "present=yes", "sync=disabled") {
 		t.Fatalf("create code=%d stdout=%q stderr=%q calls=%d", code, stdout, stderr, admin.calls)
 	}
 	state, err := openState(context.Background(), home)
@@ -83,7 +83,7 @@ func TestFolderAdministrationCLIIsPreviewableSafeAndPreservesStableID(t *testing
 		_ = state.Close()
 		t.Fatal(err)
 	}
-	created, err := state.Folders().Resolve(context.Background(), accountValue.ID, "Projects/Phase19-日本語")
+	created, err := state.Folders().Resolve(context.Background(), accountValue.ID, "Projects/FolderAdmin-日本語")
 	if err != nil {
 		_ = state.Close()
 		t.Fatal(err)
@@ -101,15 +101,15 @@ func TestFolderAdministrationCLIIsPreviewableSafeAndPreservesStableID(t *testing
 		t.Fatalf("parent rename code=%d stdout=%q stderr=%q calls=%d", code, stdout, stderr, admin.calls)
 	}
 
-	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "folders", "rename", createdID, "Projects/Phase19-Renamed", "--yes")
-	if code != 0 || stderr != "" || !compactContainsAll(stdout, "action=rename", "previous_name=Projects/Phase19-日本語", "name=Projects/Phase19-Renamed") {
+	code, stdout, stderr = runWithAccountCommands(t, commands, "", "--home", home, "mail", "folders", "rename", createdID, "Projects/FolderAdmin-Renamed", "--yes")
+	if code != 0 || stderr != "" || !compactContainsAll(stdout, "action=rename", "previous_name=Projects/FolderAdmin-日本語", "name=Projects/FolderAdmin-Renamed") {
 		t.Fatalf("rename code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 	state, err = openState(context.Background(), home)
 	if err != nil {
 		t.Fatal(err)
 	}
-	renamed, err := state.Folders().Resolve(context.Background(), created.AccountID, "Projects/Phase19-Renamed")
+	renamed, err := state.Folders().Resolve(context.Background(), created.AccountID, "Projects/FolderAdmin-Renamed")
 	if err != nil || renamed.ID != createdID {
 		_ = state.Close()
 		t.Fatalf("stable rename = %+v err=%v", renamed, err)

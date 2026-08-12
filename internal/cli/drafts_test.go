@@ -169,7 +169,7 @@ func TestDraftCommandHelpExposesLifecycleAndSafetyControls(t *testing.T) {
 	}
 }
 
-func TestPhase5DraftSenderFlagsAndJSONReachTheNormalServicePath(t *testing.T) {
+func TestDraftSenderFlagsAndJSONReachTheNormalServicePath(t *testing.T) {
 	service := &draftTestMailService{show: privateDraftFixture()}
 	result, stdout, stderr := executeDraftCLITest(t, service, "", "mail", "draft", "create",
 		"--from", "mid_alias", "--smime", "sign-encrypt", "--to", "recipient@example.test", "--subject", "Flag sender", "--body", "hello")

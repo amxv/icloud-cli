@@ -19,28 +19,28 @@ import (
 	"github.com/smallstep/pkcs7"
 )
 
-func TestPhase34OutboundSMIMESignEncryptPreservesRFCEnvelopeAndVerifiesAfterDecrypt(t *testing.T) {
+func TestOutboundSMIMESignEncryptPreservesRFCEnvelopeAndVerifiesAfterDecrypt(t *testing.T) {
 	now := time.Date(2026, 8, 11, 6, 0, 0, 0, time.UTC)
-	senderCert, senderKey := phase34MailCertificate(t, "sender@example.test", now)
-	recipientCert, recipientKey := phase34MailCertificate(t, "recipient@example.test", now.Add(time.Second))
+	senderCert, senderKey := smimeOutboundMailCertificate(t, "sender@example.test", now)
+	recipientCert, recipientKey := smimeOutboundMailCertificate(t, "recipient@example.test", now.Add(time.Second))
 	request := SendRequest{
 		From:     Address{DisplayName: "Sender", Email: "sender@example.test"},
 		To:       []Address{{DisplayName: "Recipient", Email: "recipient@example.test"}},
 		BCC:      []Address{{Email: "hidden@example.test"}},
-		Subject:  "Phase 34 sign encrypt",
-		TextBody: "phase34 signed encrypted body",
-		HTMLBody: `<p>phase34 signed encrypted body<img src="cid:inline-phase34@example.test"></p>`,
+		Subject:  "S/MIME sign encrypt",
+		TextBody: "smime signed encrypted body",
+		HTMLBody: `<p>smime signed encrypted body<img src="cid:inline-smime@example.test"></p>`,
 		Attachments: []OutboundAttachment{
-			phase34OutboundAttachment("inline.png", "image/png", AttachmentDispositionInline, "inline-phase34@example.test", []byte("phase34-inline-image")),
-			phase34OutboundAttachment("report.txt", "text/plain", AttachmentDispositionAttachment, "", []byte("phase34-attachment-body")),
+			smimeOutboundAttachment("inline.png", "image/png", AttachmentDispositionInline, "inline-smime@example.test", []byte("smime-inline-image")),
+			smimeOutboundAttachment("report.txt", "text/plain", AttachmentDispositionAttachment, "", []byte("smime-attachment-body")),
 		},
 	}
 	var ordinary bytes.Buffer
-	if err := ComposeOutboundMessage(&ordinary, request, "phase34-sign-encrypt@example.test", now); err != nil {
+	if err := ComposeOutboundMessage(&ordinary, request, "smime-sign-encrypt@example.test", now); err != nil {
 		t.Fatal(err)
 	}
 	plan := SMIMEOutboundPlan{
-		Mode: SMIMEComposeSignEncrypt, SMIMEIdentityID: "smi_phase34", SenderCertificateID: "smc_sender",
+		Mode: SMIMEComposeSignEncrypt, SMIMEIdentityID: "smi_smime_outbound", SenderCertificateID: "smc_sender",
 		SenderFingerprintSHA256: SMIMECertificateFromX509(senderCert).FingerprintSHA256,
 		RecipientCertificates:   []SMIMERecipientCertificate{{Email: "recipient@example.test", CertificateID: "smc_recipient", FingerprintSHA256: SMIMECertificateFromX509(recipientCert).FingerprintSHA256}},
 	}
@@ -53,10 +53,10 @@ func TestPhase34OutboundSMIMESignEncryptPreservesRFCEnvelopeAndVerifiesAfterDecr
 	}
 	raw := wrapped.String()
 	lowerRaw := strings.ToLower(raw)
-	if !strings.Contains(lowerRaw, "message-id: <phase34-sign-encrypt@example.test>") || !strings.Contains(lowerRaw, "to:") || !strings.Contains(lowerRaw, "recipient@example.test") || !strings.Contains(lowerRaw, "smime-type=enveloped-data") {
+	if !strings.Contains(lowerRaw, "message-id: <smime-sign-encrypt@example.test>") || !strings.Contains(lowerRaw, "to:") || !strings.Contains(lowerRaw, "recipient@example.test") || !strings.Contains(lowerRaw, "smime-type=enveloped-data") {
 		t.Fatalf("wrapped RFC envelope missing required visible metadata:\n%s", raw)
 	}
-	if strings.Contains(lowerRaw, "\r\nbcc:") || strings.Contains(lowerRaw, "hidden@example.test") || strings.Contains(raw, "phase34 signed encrypted body") {
+	if strings.Contains(lowerRaw, "\r\nbcc:") || strings.Contains(lowerRaw, "hidden@example.test") || strings.Contains(raw, "smime signed encrypted body") {
 		t.Fatalf("wrapped ciphertext leaked Bcc or plaintext:\n%s", raw)
 	}
 	envelope, err := ParseSMIMEEnvelopeContext(context.Background(), strings.NewReader(raw))
@@ -71,7 +71,7 @@ func TestPhase34OutboundSMIMESignEncryptPreservesRFCEnvelopeAndVerifiesAfterDecr
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(decrypted, []byte("multipart/signed")) || !bytes.Contains(decrypted, []byte("phase34 signed encrypted body")) || !bytes.Contains(decrypted, []byte("inline-phase34@example.test")) || !bytes.Contains(decrypted, []byte("report.txt")) || bytes.Contains(bytes.ToLower(decrypted), []byte("message-id:")) {
+	if !bytes.Contains(decrypted, []byte("multipart/signed")) || !bytes.Contains(decrypted, []byte("smime signed encrypted body")) || !bytes.Contains(decrypted, []byte("inline-smime@example.test")) || !bytes.Contains(decrypted, []byte("report.txt")) || bytes.Contains(bytes.ToLower(decrypted), []byte("message-id:")) {
 		t.Fatalf("decrypted MIME entity=%q", decrypted)
 	}
 	roots := x509.NewCertPool()
@@ -92,24 +92,24 @@ func TestPhase34OutboundSMIMESignEncryptPreservesRFCEnvelopeAndVerifiesAfterDecr
 	}
 }
 
-func TestPhase34OutboundSMIMEDetachedSignatureIsVerifiableAndHeadersRemainVisible(t *testing.T) {
+func TestOutboundSMIMEDetachedSignatureIsVerifiableAndHeadersRemainVisible(t *testing.T) {
 	now := time.Date(2026, 8, 11, 6, 5, 0, 0, time.UTC)
-	cert, key := phase34MailCertificate(t, "sender@example.test", now)
+	cert, key := smimeOutboundMailCertificate(t, "sender@example.test", now)
 	request := SendRequest{
 		From: Address{Email: "sender@example.test"}, To: []Address{{Email: "recipient@example.test"}},
-		Subject: "Phase 34 signed", TextBody: "signed body",
+		Subject: "S/MIME signed", TextBody: "signed body",
 	}
 	var ordinary bytes.Buffer
-	if err := ComposeOutboundMessage(&ordinary, request, "phase34-signed@example.test", now); err != nil {
+	if err := ComposeOutboundMessage(&ordinary, request, "smime-signed@example.test", now); err != nil {
 		t.Fatal(err)
 	}
-	plan := SMIMEOutboundPlan{Mode: SMIMEComposeSign, SMIMEIdentityID: "smi_phase34", SenderCertificateID: "smc_sender", SenderFingerprintSHA256: SMIMECertificateFromX509(cert).FingerprintSHA256}
+	plan := SMIMEOutboundPlan{Mode: SMIMEComposeSign, SMIMEIdentityID: "smi_smime_outbound", SenderCertificateID: "smc_sender", SenderFingerprintSHA256: SMIMECertificateFromX509(cert).FingerprintSHA256}
 	var wrapped bytes.Buffer
 	if err := WrapOutboundSMIME(&wrapped, ordinary.Bytes(), SMIMEOutboundMaterial{Plan: plan, SignerCertificate: cert, SignerPrivateKey: key}); err != nil {
 		t.Fatal(err)
 	}
 	lowerWrapped := strings.ToLower(wrapped.String())
-	if !strings.Contains(lowerWrapped, "message-id: <phase34-signed@example.test>") || !strings.Contains(lowerWrapped, "multipart/signed") || !strings.Contains(wrapped.String(), "signed body") {
+	if !strings.Contains(lowerWrapped, "message-id: <smime-signed@example.test>") || !strings.Contains(lowerWrapped, "multipart/signed") || !strings.Contains(wrapped.String(), "signed body") {
 		t.Fatalf("signed output=%q", wrapped.String())
 	}
 	_, expectedEntity, err := splitOutboundRFCEntity(ordinary.Bytes())
@@ -159,12 +159,12 @@ func TestPhase34OutboundSMIMEDetachedSignatureIsVerifiableAndHeadersRemainVisibl
 	}
 }
 
-func TestPhase34SMIMEPlanNormalizationAndRecipientUsabilityFailClosed(t *testing.T) {
+func TestSMIMEPlanNormalizationAndRecipientUsabilityFailClosed(t *testing.T) {
 	if _, err := NormalizeSMIMEComposeMode("downgrade"); !errors.Is(err, ErrSMIMEOutboundInvalid) {
 		t.Fatalf("invalid mode error=%v", err)
 	}
 	now := time.Date(2026, 8, 11, 6, 10, 0, 0, time.UTC)
-	cert, _ := phase34MailCertificate(t, "recipient@example.test", now)
+	cert, _ := smimeOutboundMailCertificate(t, "recipient@example.test", now)
 	roots := x509.NewCertPool()
 	policy := &SMIMEPolicy{Roots: roots, Now: now, Certificates: []SMIMECertificateMaterial{{ID: "smc_recipient", Email: "recipient@example.test", Certificate: cert}}}
 	if SMIMERecipientCertificateUsable(cert, "recipient@example.test", policy, now) {
@@ -176,14 +176,14 @@ func TestPhase34SMIMEPlanNormalizationAndRecipientUsabilityFailClosed(t *testing
 	}
 }
 
-func phase34MailCertificate(t *testing.T, email string, now time.Time) (*x509.Certificate, *rsa.PrivateKey) {
+func smimeOutboundMailCertificate(t *testing.T, email string, now time.Time) (*x509.Certificate, *rsa.PrivateKey) {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatal(err)
 	}
 	template := &x509.Certificate{
-		SerialNumber: big.NewInt(now.UnixNano()), Subject: pkix.Name{CommonName: "Phase 34 " + email}, EmailAddresses: []string{email},
+		SerialNumber: big.NewInt(now.UnixNano()), Subject: pkix.Name{CommonName: "S/MIME outbound " + email}, EmailAddresses: []string{email},
 		NotBefore: now.Add(-24 * time.Hour), NotAfter: now.Add(24 * time.Hour), BasicConstraintsValid: true,
 		KeyUsage: x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageEmailProtection},
 	}
@@ -198,7 +198,7 @@ func phase34MailCertificate(t *testing.T, email string, now time.Time) (*x509.Ce
 	return cert, key
 }
 
-func phase34OutboundAttachment(filename, mediaType string, disposition AttachmentDisposition, contentID string, value []byte) OutboundAttachment {
+func smimeOutboundAttachment(filename, mediaType string, disposition AttachmentDisposition, contentID string, value []byte) OutboundAttachment {
 	digest := sha256.Sum256(value)
 	copyValue := append([]byte(nil), value...)
 	return OutboundAttachment{

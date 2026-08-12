@@ -19,7 +19,7 @@ func TestOutboxPrivateEnvelopePersistsAndInterruptedRetryFailsClosed(t *testing.
 	source, _, err := state.Outbound().Begin(ctx, maildomain.BeginOutboundAttempt{
 		AttemptID: "send_0198d704-6c00-7000-8000-000000031001", AccountID: accountID,
 		SenderIdentityID: primaryMailIdentityID(accountID), ProposedMessageID: "msg_0198d704-6c00-7000-8000-000000031001",
-		RequestHash: strings.Repeat("b", 64), IdempotencyKey: "phase31-source", RFCMessageID: "phase31-outbox@example.test",
+		RequestHash: strings.Repeat("b", 64), IdempotencyKey: "outbox-source", RFCMessageID: "outbox@example.test",
 		RawContentHash: hash, RawStorageKey: key, RawByteSize: 512, ToCount: 1, CCCount: 0, BCCCount: 1, BodyPartCount: 1,
 		Kind: maildomain.OutboundKindSend, Now: now,
 	})
@@ -88,7 +88,7 @@ func TestOutboxPrivateEnvelopePersistsAndInterruptedRetryFailsClosed(t *testing.
 	if _, _, err := state.Outbound().Begin(ctx, maildomain.BeginOutboundAttempt{
 		AttemptID: retryID, AccountID: accountID, SenderIdentityID: item.SenderIdentityID,
 		ProposedMessageID: "msg_0198d704-6c00-7000-8000-000000031003", RequestHash: item.RequestHash,
-		IdempotencyKey: "phase31-retry", RFCMessageID: item.RFCMessageID, RawContentHash: item.RawContentHash,
+		IdempotencyKey: "outbox-retry", RFCMessageID: item.RFCMessageID, RawContentHash: item.RawContentHash,
 		RawStorageKey: item.RawStorageKey, RawByteSize: item.RawByteSize, ToCount: item.ToCount, CCCount: item.CCCount,
 		BCCCount: item.BCCCount, BodyPartCount: item.BodyPartCount, Kind: item.Kind, RetryOfAttemptID: source.ID, Now: now.Add(4 * time.Minute),
 	}); err != nil {

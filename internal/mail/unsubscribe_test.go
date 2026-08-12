@@ -56,7 +56,7 @@ func TestParseUnsubscribeCapabilityRejectsUnsafeOrNoncompliantAlternatives(t *te
 	}
 }
 
-func TestPhase35ParseUnsubscribeCapabilityFailsClosedOnTooManyMethods(t *testing.T) {
+func TestParseUnsubscribeCapabilityFailsClosedOnTooManyMethods(t *testing.T) {
 	values := make([]string, 0, maxUnsubscribeMethods+1)
 	for index := 0; index < maxUnsubscribeMethods+1; index++ {
 		values = append(values, fmt.Sprintf("<mailto:list-%d@example.test>", index))

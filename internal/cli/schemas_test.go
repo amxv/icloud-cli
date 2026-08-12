@@ -243,7 +243,7 @@ func TestCapabilitiesPublishesVersionedAutomationAndSchemaContracts(t *testing.T
 	}
 }
 
-func TestPhase33SMIMEIdentitySchemasExposeReferencesOnlyBySafeSelector(t *testing.T) {
+func TestSMIMEIdentitySchemasExposeReferencesOnlyBySafeSelector(t *testing.T) {
 	generated, err := GeneratedSchemas()
 	if err != nil {
 		t.Fatal(err)
@@ -260,7 +260,7 @@ func TestPhase33SMIMEIdentitySchemasExposeReferencesOnlyBySafeSelector(t *testin
 	for name, typed := range values {
 		encodedSchema, ok := generated[name+".schema.json"]
 		if !ok {
-			t.Fatalf("missing generated Phase 33 schema %s", name)
+			t.Fatalf("missing generated S/MIME identity schema %s", name)
 		}
 		combined.Write(encodedSchema)
 		var schema map[string]any
@@ -268,7 +268,7 @@ func TestPhase33SMIMEIdentitySchemasExposeReferencesOnlyBySafeSelector(t *testin
 			t.Fatal(err)
 		}
 		if additional, ok := schema["additionalProperties"].(bool); !ok || additional {
-			t.Fatalf("Phase 33 schema %s must reject unknown fields", name)
+			t.Fatalf("S/MIME identity schema %s must reject unknown fields", name)
 		}
 		encoded, err := json.Marshal(typed)
 		if err != nil {
@@ -285,15 +285,15 @@ func TestPhase33SMIMEIdentitySchemasExposeReferencesOnlyBySafeSelector(t *testin
 	all := strings.ToLower(combined.String())
 	for _, forbidden := range []string{`"private_key_reference"`, `"private_key_bytes"`, `"private_key_pem"`, `"secret"`, `"password"`, `"pkcs12"`, `"pfx"`} {
 		if strings.Contains(all, forbidden) {
-			t.Fatalf("Phase 33 public/request schemas expose private key material field %s", forbidden)
+			t.Fatalf("S/MIME identity public/request schemas expose private key material field %s", forbidden)
 		}
 	}
 	if !strings.Contains(all, `"private_key_env"`) || !strings.Contains(all, `"private_key_file"`) {
-		t.Fatalf("Phase 33 configure schema does not expose safe external key selectors: %s", all)
+		t.Fatalf("S/MIME identity configure schema does not expose safe external key selectors: %s", all)
 	}
 }
 
-func TestPhase3ReadRequestSchemasAreStrictPublicAndPrivateFieldFree(t *testing.T) {
+func TestReadRequestSchemasAreStrictPublicAndPrivateFieldFree(t *testing.T) {
 	generated, err := GeneratedSchemas()
 	if err != nil {
 		t.Fatal(err)
@@ -369,7 +369,7 @@ func TestPhase3ReadRequestSchemasAreStrictPublicAndPrivateFieldFree(t *testing.T
 	}
 }
 
-func TestPhase4MailIdentityRequestSchemasAreStrictAndSecretFree(t *testing.T) {
+func TestMailIdentityRequestSchemasAreStrictAndSecretFree(t *testing.T) {
 	generated, err := GeneratedSchemas()
 	if err != nil {
 		t.Fatal(err)
@@ -418,7 +418,7 @@ func TestPhase4MailIdentityRequestSchemasAreStrictAndSecretFree(t *testing.T) {
 	}
 }
 
-func TestPhase31OutboxSchemasAreStrictAndPrivateReplayDataFree(t *testing.T) {
+func TestOutboxSchemasAreStrictAndPrivateReplayDataFree(t *testing.T) {
 	generated, err := GeneratedSchemas()
 	if err != nil {
 		t.Fatal(err)
@@ -464,7 +464,7 @@ func TestPhase31OutboxSchemasAreStrictAndPrivateReplayDataFree(t *testing.T) {
 	}
 }
 
-func TestPhase32SMIMECertificateSchemasAreStrictAndPrivateKeyFree(t *testing.T) {
+func TestSMIMECertificateSchemasAreStrictAndPrivateKeyFree(t *testing.T) {
 	generated, err := GeneratedSchemas()
 	if err != nil {
 		t.Fatal(err)
@@ -480,7 +480,7 @@ func TestPhase32SMIMECertificateSchemasAreStrictAndPrivateKeyFree(t *testing.T) 
 	for name, typed := range values {
 		encodedSchema, ok := generated[name+".schema.json"]
 		if !ok {
-			t.Fatalf("missing generated Phase 32 schema %s", name)
+			t.Fatalf("missing generated S/MIME certificate schema %s", name)
 		}
 		combined.Write(encodedSchema)
 		var schema map[string]any
@@ -488,7 +488,7 @@ func TestPhase32SMIMECertificateSchemasAreStrictAndPrivateKeyFree(t *testing.T) 
 			t.Fatal(err)
 		}
 		if additional, ok := schema["additionalProperties"].(bool); !ok || additional {
-			t.Fatalf("Phase 32 schema %s must reject unknown fields", name)
+			t.Fatalf("S/MIME certificate schema %s must reject unknown fields", name)
 		}
 		encoded, err := json.Marshal(typed)
 		if err != nil {
@@ -505,7 +505,7 @@ func TestPhase32SMIMECertificateSchemasAreStrictAndPrivateKeyFree(t *testing.T) 
 	all := strings.ToLower(combined.String())
 	for _, forbidden := range []string{`"der"`, `"private_key"`, `"private-key"`, `"password"`, `"credential"`, `"pkcs12"`, `"pfx"`} {
 		if strings.Contains(all, forbidden) {
-			t.Fatalf("Phase 32 public/request schemas expose private key/certificate bytes field %s", forbidden)
+			t.Fatalf("S/MIME certificate public/request schemas expose private key/certificate bytes field %s", forbidden)
 		}
 	}
 }

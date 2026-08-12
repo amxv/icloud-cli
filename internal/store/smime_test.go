@@ -16,11 +16,11 @@ import (
 	maildomain "github.com/amxv/icloud-cli/internal/mail"
 )
 
-func TestPhase32SMIMECertificateLifecycleIsScopedBoundedAndExplicitTrust(t *testing.T) {
+func TestSMIMECertificateLifecycleIsScopedBoundedAndExplicitTrust(t *testing.T) {
 	state, accountID, _ := newMailStoreFixture(t)
 	defer state.Close()
 	now := time.Date(2026, 8, 11, 2, 0, 0, 0, time.UTC)
-	cert := phase32StoreCertificate(t, "sender@example.test", now)
+	cert := smimeStoreCertificate(t, "sender@example.test", now)
 	value, err := state.SMIMECertificates().Import(context.Background(), accountID, "smc_0198d704-6c00-7000-8000-000000032001", "sender@example.test", cert, false, now)
 	if err != nil || value.Trusted || value.Email != "sender@example.test" || value.FingerprintSHA256 == "" || len(value.DER) == 0 {
 		t.Fatalf("import=%+v err=%v", value, err)
@@ -58,11 +58,11 @@ func TestPhase32SMIMECertificateLifecycleIsScopedBoundedAndExplicitTrust(t *test
 	}
 }
 
-func TestPhase32SMIMECertificateImportRollsBackWhenPolicyRevisionFails(t *testing.T) {
+func TestSMIMECertificateImportRollsBackWhenPolicyRevisionFails(t *testing.T) {
 	state, accountID, _ := newMailStoreFixture(t)
 	defer state.Close()
 	now := time.Date(2026, 8, 11, 2, 10, 0, 0, time.UTC)
-	cert := phase32StoreCertificate(t, "sender@example.test", now)
+	cert := smimeStoreCertificate(t, "sender@example.test", now)
 	if _, err := state.db.ExecContext(context.Background(), `DROP TABLE smime_policy_state`); err != nil {
 		t.Fatal(err)
 	}
@@ -79,11 +79,11 @@ func TestPhase32SMIMECertificateImportRollsBackWhenPolicyRevisionFails(t *testin
 	}
 }
 
-func TestPhase32SMIMECertificateInventoryHasExplicitAccountBound(t *testing.T) {
+func TestSMIMECertificateInventoryHasExplicitAccountBound(t *testing.T) {
 	state, accountID, _ := newMailStoreFixture(t)
 	defer state.Close()
 	now := time.Date(2026, 8, 11, 2, 20, 0, 0, time.UTC)
-	cert := phase32StoreCertificate(t, "sender@example.test", now)
+	cert := smimeStoreCertificate(t, "sender@example.test", now)
 	timestamp := now.Format(time.RFC3339Nano)
 	tx, err := state.db.BeginTx(context.Background(), nil)
 	if err != nil {
@@ -101,7 +101,7 @@ VALUES (?, ?, ?, ?, ?, 0, ?, ?)`, id, accountID, "sender@example.test", fingerpr
 	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
-	other := phase32StoreCertificate(t, "other@example.test", now)
+	other := smimeStoreCertificate(t, "other@example.test", now)
 	_, err = state.SMIMECertificates().Import(context.Background(), accountID, "smc_limit_overflow", "other@example.test", other, false, now.Add(time.Minute))
 	if err != maildomain.ErrSMIMECertificateLimit {
 		t.Fatalf("overflow error=%v", err)
@@ -112,22 +112,22 @@ VALUES (?, ?, ?, ?, ?, 0, ?, ?)`, id, accountID, "sender@example.test", fingerpr
 	}
 }
 
-func TestPhase32SMIMEPolicyRevisionMakesCachedVerdictStaleWithoutMailboxRewrite(t *testing.T) {
+func TestSMIMEPolicyRevisionMakesCachedVerdictStaleWithoutMailboxRewrite(t *testing.T) {
 	state, accountID, folderID := newMailStoreFixture(t)
 	defer state.Close()
 	now := time.Date(2026, 8, 11, 2, 25, 0, 0, time.UTC)
-	record := mailRecordFixture(accountID, folderID, 100, 32, "phase32-policy@example.test")
+	record := mailRecordFixture(accountID, folderID, 100, 32, "smime-policy@example.test")
 	record.Content = &maildomain.NormalizedContent{
 		Preview: record.Parsed,
-		Headers: []maildomain.HeaderField{{Key: "Message-ID", Value: "<phase32-policy@example.test>"}},
+		Headers: []maildomain.HeaderField{{Key: "Message-ID", Value: "<smime-policy@example.test>"}},
 		SMIME: &maildomain.SMIMEStatus{
 			Status: maildomain.SMIMEStatusValidUntrusted, Signed: true, SignatureValid: true,
 			Trust: maildomain.SMIMETrustUntrusted, PolicyRevision: 0,
 		},
-		Parts: []maildomain.MIMEPart{{ID: "prt_phase32_policy", Ordinal: 0, Path: "0", MediaType: "text/plain"}},
+		Parts: []maildomain.MIMEPart{{ID: "prt_smime_policy", Ordinal: 0, Path: "0", MediaType: "text/plain"}},
 	}
 	if _, err := state.Mail().CommitInboxPage(context.Background(), maildomain.CommitPage{
-		CheckpointID: "chk_phase32_policy", AccountID: accountID, FolderID: folderID,
+		CheckpointID: "chk_smime_policy", AccountID: accountID, FolderID: folderID,
 		UIDValidity: 100, Bootstrap: true, LastCommittedUID: 32, LastScannedUID: 32,
 		AttemptedAt: now, Records: []maildomain.IngestRecord{record},
 	}); err != nil {
@@ -149,13 +149,13 @@ func TestPhase32SMIMEPolicyRevisionMakesCachedVerdictStaleWithoutMailboxRewrite(
 	}
 }
 
-func phase32StoreCertificate(t *testing.T, email string, now time.Time) *x509.Certificate {
+func smimeStoreCertificate(t *testing.T, email string, now time.Time) *x509.Certificate {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
-	template := &x509.Certificate{SerialNumber: big.NewInt(32), Subject: pkix.Name{CommonName: "Phase32 Store"}, EmailAddresses: []string{email}, NotBefore: now.Add(-time.Hour), NotAfter: now.Add(time.Hour), BasicConstraintsValid: true, KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageEmailProtection}}
+	template := &x509.Certificate{SerialNumber: big.NewInt(32), Subject: pkix.Name{CommonName: "S/MIME Store"}, EmailAddresses: []string{email}, NotBefore: now.Add(-time.Hour), NotAfter: now.Add(time.Hour), BasicConstraintsValid: true, KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageEmailProtection}}
 	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
 	if err != nil {
 		t.Fatal(err)

@@ -11,7 +11,7 @@ import (
 	maildomain "github.com/amxv/icloud-cli/internal/mail"
 )
 
-func TestPhase33SMIMEIdentityLifecycleIsBoundedScopedAndProtectsDependencies(t *testing.T) {
+func TestSMIMEIdentityLifecycleIsBoundedScopedAndProtectsDependencies(t *testing.T) {
 	state, accountID, _ := newMailStoreFixture(t)
 	defer state.Close()
 	ctx := context.Background()
@@ -34,12 +34,12 @@ func TestPhase33SMIMEIdentityLifecycleIsBoundedScopedAndProtectsDependencies(t *
 		}); err != nil {
 			t.Fatal(err)
 		}
-		cert := phase32StoreCertificate(t, fixture.email, now)
+		cert := smimeStoreCertificate(t, fixture.email, now)
 		if _, err := state.SMIMECertificates().Import(ctx, accountID, fixture.cert, fixture.email, cert, false, now); err != nil {
 			t.Fatal(err)
 		}
-		value, err := state.SMIMEIdentities().Configure(ctx, accountID, fixture.smi, fixture.id, fixture.cert, account.CredentialEnv, "env:PHASE33_PRIVATE_KEY", now)
-		if err != nil || value.ID != fixture.smi || value.MailIdentityID != fixture.id || value.Email != fixture.email || value.PrivateKeyScheme != account.CredentialEnv || !value.PrivateKeyConfigured || value.PrivateKeyReference != "env:PHASE33_PRIVATE_KEY" {
+		value, err := state.SMIMEIdentities().Configure(ctx, accountID, fixture.smi, fixture.id, fixture.cert, account.CredentialEnv, "env:SMIME_PRIVATE_KEY", now)
+		if err != nil || value.ID != fixture.smi || value.MailIdentityID != fixture.id || value.Email != fixture.email || value.PrivateKeyScheme != account.CredentialEnv || !value.PrivateKeyConfigured || value.PrivateKeyReference != "env:SMIME_PRIVATE_KEY" {
 			t.Fatalf("configure=%+v err=%v", value, err)
 		}
 	}
