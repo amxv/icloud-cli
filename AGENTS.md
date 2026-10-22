@@ -56,10 +56,9 @@ make build-all
 make references
 make reference-check
 make docs-check
-make docs-build
 ```
 
-For docs-only work, `make docs-check` and `make docs-build` validate the site and generated references.
+For docs-only work, use `make docs-check`; production Astro builds run in GitHub Actions.
 
 For command/reference changes, regenerate derived assets with:
 
@@ -101,3 +100,7 @@ Use deliberate test data and preserve the CLI's existing safety boundaries aroun
 The public command is `icloud`, distributed through `@amxv/icloud-cli` and native release binaries. The project supports macOS, Linux, and Windows builds.
 
 Treat the installed command tree, `icloud capabilities`, generated schemas, completion, man pages, and hosted docs as different views of the same public product. When one view changes intentionally, check whether the others need to change with it.
+
+### Docs deployment
+
+The Docs GitHub Actions workflow deploys production only for the watched site paths; Vercel Git auto-deployments and `ignoreCommand` stay disabled. Keep the project-scoped `VERCEL_TOKEN` Actions secret and ID variables configured. Check Astro locally; builds run in CI.

@@ -4,7 +4,6 @@
   "installCommand": "bun install --ignore-scripts",
   "buildCommand": "bun run docs:build",
   "outputDirectory": "dist",
-  "ignoreCommand": "node scripts/should-build-docs.mjs",
   "redirects": [
     {
       "source": "/docs/account-setup-and-credentials",
@@ -196,5 +195,8 @@
       "destination": "/docs/sync-mail.md",
       "permanent": true
     }
-  ]
+  ],
+  "git": {
+    "deploymentEnabled": false
+  }
 }
