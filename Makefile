@@ -7,7 +7,7 @@ CMD_NAME ?= icloud
 CMD_PATH ?= ./cmd/$(CMD_NAME)
 DIST_DIR ?= dist
 BIN_PATH ?= $(DIST_DIR)/$(BIN_NAME)
-VERSION ?= $(shell node -p "require('./package.json').version" 2>/dev/null)
+VERSION ?= $(shell node -p "require('./npm/package.json').version" 2>/dev/null)
 LDFLAGS ?= -s -w -X github.com/amxv/icloud-cli/internal/buildinfo.Version=$(if $(VERSION),$(VERSION),dev)
 
 .PHONY: help fmt test vet lint schemas references reference-check check docs-check docs-build build build-all install-local clean release-tag
@@ -33,7 +33,7 @@ help:
 	@echo "  make release-tag VERSION=x.y.z - create and push a tag for GitHub Actions"
 
 fmt:
-	@$(GOFMT) -w $$(find . -type f -name '*.go' -not -path './dist/*')
+	@$(GOFMT) -w $$(find cmd internal -type f -name '*.go')
 
 test:
 	@$(GO) test ./...
@@ -42,7 +42,8 @@ vet:
 	@$(GO) vet ./...
 
 lint:
-	@npm run lint
+	@npm --prefix npm run lint
+	@node --test scripts/packaging.test.js scripts/docs-contract.test.js
 
 schemas:
 	@$(GO) run ./scripts/schema-gen.go
@@ -57,10 +58,10 @@ reference-check:
 check: fmt reference-check test vet lint
 
 docs-check: reference-check
-	@bun run docs:check
+	@cd docs && bun run check
 
 docs-build: reference-check
-	@bun run docs:build
+	@cd docs && bun run build
 
 build:
 	@mkdir -p $(DIST_DIR)
@@ -83,7 +84,7 @@ install-local: build
 	@echo "Installed $(BIN_NAME) to $$HOME/.local/bin/$(BIN_NAME)"
 
 clean:
-	@rm -rf $(DIST_DIR)
+	@rm -rf $(DIST_DIR) npm/.publish docs/dist docs/.astro .vercel/output
 
 release-tag:
 	@test -n "$(VERSION)" || (echo "Usage: make release-tag VERSION=x.y.z" && exit 1)

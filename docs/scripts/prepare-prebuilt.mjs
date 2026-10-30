@@ -5,17 +5,17 @@ import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } fr
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-export function preparePrebuilt(docsRoot = process.cwd()) {
+export function preparePrebuilt(docsRoot = process.cwd(), deploymentRoot = path.resolve(docsRoot, '..')) {
   const dist = path.join(docsRoot, 'dist');
   if (!existsSync(path.join(dist, 'index.html'))) {
     throw new Error('Astro dist/index.html is missing. Run bun run build in GitHub Actions.');
   }
-  const output = path.join(docsRoot, '.vercel', 'output');
+  const output = path.join(deploymentRoot, '.vercel', 'output');
   rmSync(output, { recursive: true, force: true });
   mkdirSync(output, { recursive: true });
   cpSync(dist, path.join(output, 'static'), { recursive: true });
   // Keep the historical docs redirects when using Vercel's prebuilt output.
-  const projectConfig = JSON.parse(readFileSync(path.join(docsRoot, 'vercel.json'), 'utf8'));
+  const projectConfig = JSON.parse(readFileSync(path.join(deploymentRoot, 'vercel.json'), 'utf8'));
   const redirects = (projectConfig.redirects ?? []).map(({ source, destination, permanent }) => ({
     src: source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
     status: permanent ? 308 : 307,

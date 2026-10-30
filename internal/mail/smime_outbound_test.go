@@ -20,7 +20,8 @@ import (
 )
 
 func TestOutboundSMIMESignEncryptPreservesRFCEnvelopeAndVerifiesAfterDecrypt(t *testing.T) {
-	now := time.Date(2026, 8, 11, 6, 0, 0, 0, time.UTC)
+// CMS signing timestamps use the real clock, so test certificates must be valid now.
+now := time.Now().UTC()
 	senderCert, senderKey := smimeOutboundMailCertificate(t, "sender@example.test", now)
 	recipientCert, recipientKey := smimeOutboundMailCertificate(t, "recipient@example.test", now.Add(time.Second))
 	request := SendRequest{
@@ -93,7 +94,7 @@ func TestOutboundSMIMESignEncryptPreservesRFCEnvelopeAndVerifiesAfterDecrypt(t *
 }
 
 func TestOutboundSMIMEDetachedSignatureIsVerifiableAndHeadersRemainVisible(t *testing.T) {
-	now := time.Date(2026, 8, 11, 6, 5, 0, 0, time.UTC)
+now := time.Now().UTC()
 	cert, key := smimeOutboundMailCertificate(t, "sender@example.test", now)
 	request := SendRequest{
 		From: Address{Email: "sender@example.test"}, To: []Address{{Email: "recipient@example.test"}},

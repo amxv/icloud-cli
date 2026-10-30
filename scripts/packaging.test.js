@@ -6,17 +6,18 @@ const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 
-const pkg = require("../package.json");
+const pkg = require("../npm/package.json");
 const project = require("../project.config.json");
-const { createInstallPlan, parseChecksums } = require("./postinstall");
+const { createInstallPlan, parseChecksums } = require("../npm/scripts/postinstall");
 const { npmExecutable, npmSpawnOptions } = require("./package-install-smoke");
 const { assetName, writeReleaseMetadata } = require("./release-metadata");
 
 function packedFileNames() {
+  childProcess.execFileSync(process.execPath, ["npm/scripts/prepare-package.mjs"], { cwd: path.join(__dirname, "..") });
   const result = childProcess.spawnSync(
     "npm",
     ["pack", "--dry-run", "--ignore-scripts", "--json"],
-    { cwd: path.join(__dirname, ".."), encoding: "utf8" }
+    { cwd: path.join(__dirname, "..", "npm", ".publish"), encoding: "utf8" }
   );
   assert.equal(result.status, 0, result.stderr || result.error?.message || "npm pack --dry-run failed");
   const packed = JSON.parse(result.stdout);
@@ -27,14 +28,14 @@ test("npm exposes one public icloud command", () => {
   assert.deepEqual(pkg.bin, { icloud: "bin/icloud.js" });
   assert.equal(pkg.config.cliName, "icloud");
   assert.equal(pkg.config.cliBinaryName, "icloud");
-  assert.ok(fs.existsSync(path.join(__dirname, "..", pkg.bin.icloud)));
+  assert.ok(fs.existsSync(path.join(__dirname, "..", "npm", pkg.bin.icloud)));
   assert.ok(pkg.files.includes("go.sum"));
   assert.ok(pkg.files.includes("schemas"));
   assert.ok(pkg.files.includes("man"));
   assert.ok(pkg.files.includes("completions"));
   assert.deepEqual(pkg.man, ["man/icloud.1"]);
-  assert.equal(pkg.packageManager, "bun@1.3.14");
-  assert.ok(fs.existsSync(path.join(__dirname, "..", "bun.lock")));
+  assert.equal(pkg.packageManager, undefined);
+  assert.ok(fs.existsSync(path.join(__dirname, "..", "docs", "bun.lock")));
   assert.ok(fs.existsSync(path.join(__dirname, "..", "schemas", "v1", "message.schema.json")));
   assert.ok(fs.existsSync(path.join(__dirname, "..", "man", "icloud.1")));
   for (const completion of ["_icloud", "icloud.bash", "icloud.fish", "icloud.ps1"]) {

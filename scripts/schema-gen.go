@@ -13,7 +13,7 @@ import (
 )
 
 func main() {
-	outputs := []string{"schemas/v1", "public/schemas/v1"}
+	outputs := []string{"schemas/v1", "docs/public/schemas/v1"}
 	if len(os.Args) == 2 {
 		outputs = []string{os.Args[1]}
 	} else if len(os.Args) > 2 {

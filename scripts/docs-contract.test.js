@@ -4,7 +4,7 @@ const path = require("node:path");
 const test = require("node:test");
 
 const root = path.resolve(__dirname, "..");
-const docsDir = path.join(root, "src", "content", "docs");
+const docsDir = path.join(root, "docs", "src", "content", "docs");
 
 function titleSlug(title) {
   return title
@@ -110,7 +110,7 @@ test("project positioning says Mail is available today without presenting future
   const ecosystem = read("the-icloud-ecosystem.md");
   const supported = read("supported-features.md");
   const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
-  const siteData = fs.readFileSync(path.join(root, "src", "data", "docs.ts"), "utf8");
+  const siteData = fs.readFileSync(path.join(root, "docs", "src", "data", "docs.ts"), "utf8");
 
   for (const source of [overview, ecosystem, supported, readme, siteData]) {
     assert.match(source, /Mail/i);
@@ -138,16 +138,16 @@ test("generated command reference and docs deployment boundary stay explicit", (
   }
 
   const workflow = fs.readFileSync(path.join(root, ".github/workflows/docs-deploy.yml"), "utf8");
-  for (const docsPath of ['"src/**"', '"public/**"', '"package.json"']) {
+  for (const docsPath of ['"docs/**"', '"vercel.json"', '".github/workflows/docs-deploy.yml"']) {
     assert.ok(workflow.includes(docsPath), `GitHub docs deployment filter missing ${docsPath}`);
   }
   for (const unrelated of ['"internal/**"', '"cmd/**"', '"gg/**"']) {
     assert.ok(!workflow.includes(unrelated), `Docs would deploy for unrelated ${unrelated}`);
   }
 
-  assert.ok(fs.existsSync(path.join(root, "src", "pages", "docs.md.ts")));
-  assert.ok(fs.existsSync(path.join(root, "src", "pages", "docs", "[...slug].md.ts")));
-  assert.match(fs.readFileSync(path.join(root, "astro.config.mjs"), "utf8"), /https:\/\/icloud\.ashray\.xyz/);
+  assert.ok(fs.existsSync(path.join(root, "docs", "src", "pages", "docs.md.ts")));
+  assert.ok(fs.existsSync(path.join(root, "docs", "src", "pages", "docs", "[...slug].md.ts")));
+  assert.match(fs.readFileSync(path.join(root, "docs", "astro.config.mjs"), "utf8"), /https:\/\/icloud\.ashray\.xyz/);
 });
 
 test("docs deployment filtering happens before Vercel receives a build", () => {
@@ -155,6 +155,6 @@ test("docs deployment filtering happens before Vercel receives a build", () => {
   assert.equal(config.git.deploymentEnabled, false);
   assert.equal(Object.hasOwn(config, "ignoreCommand"), false);
   const workflow = fs.readFileSync(path.join(root, ".github/workflows/docs-deploy.yml"), "utf8");
-  assert.match(workflow, /paths:\s*\n\s*- "src\/\*\*"/);
+  assert.match(workflow, /paths:\s*\n\s*- "docs\/\*\*"/);
   assert.match(workflow, /vercel@latest deploy --prebuilt --prod/);
 });

@@ -54,13 +54,24 @@ jobs:
         run: go vet ./...
 
       - name: Node checks
-        run: npm run test
+        run: npm --prefix npm run test
+
+      - name: Validate npm packaging contracts
+        run: node --test scripts/packaging.test.js scripts/docs-contract.test.js
+
+      - name: Build Go fallback from staged npm package
+        run: |
+          node npm/scripts/prepare-package.mjs "${GITHUB_REF_NAME#v}"
+          (cd npm/.publish && go build -o "$RUNNER_TEMP/icloud-npm-fallback" ./cmd/icloud)
+          npm pack ./npm/.publish --dry-run --ignore-scripts
 
       - name: Install docs dependencies
+        working-directory: docs
         run: bun install --frozen-lockfile --ignore-scripts
 
       - name: Docs check and build
-        run: bun run docs:check && bun run docs:build
+        working-directory: docs
+        run: bun run check && bun run build
 
   build-binaries:
     needs: quality
@@ -190,12 +201,15 @@ jobs:
       - name: Set npm version from tag
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          VERSION="$VERSION" node -e "const fs=require('fs');const p=require('./package.json');p.version=process.env.VERSION;fs.writeFileSync('package.json', JSON.stringify(p, null, 2)+'\\n');"
+          node npm/scripts/prepare-package.mjs "$VERSION"
 
       - name: Regenerate packaged reference assets for release version
         run: make references VERSION="${GITHUB_REF_NAME#v}"
 
+      - name: Stage updated npm distribution
+        run: node npm/scripts/prepare-package.mjs "${GITHUB_REF_NAME#v}"
+
       - name: Publish to npm
-        run: npm publish --access public
+        run: npm publish ./npm/.publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

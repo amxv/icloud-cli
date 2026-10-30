@@ -150,7 +150,8 @@ func TestDecryptsNestedSignedContentWithOuterSenderIdentity(t *testing.T) {
 	home := t.TempDir()
 	commands, _ := newTestAccountCommands()
 	addSendAccount(t, commands, home)
-	now := time.Date(2026, 8, 11, 4, 45, 0, 0, time.UTC)
+// PKCS#7 emits a real signing timestamp; certificates must cover it.
+now := time.Now().UTC()
 	commands.now = func() time.Time { return now }
 	recipientCert, recipientKey := smimeDecryptionRSACertificate(t, "owner@icloud.com", now)
 	signerCert, signerKey := smimeDecryptionRSACertificate(t, "outside@example.test", now.Add(time.Second))

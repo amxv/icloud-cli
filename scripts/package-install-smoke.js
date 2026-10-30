@@ -6,7 +6,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 
-const pkg = require("../package.json");
+const pkg = require("../npm/package.json");
 const repoRoot = path.resolve(__dirname, "..");
 
 function npmExecutable(platform = process.platform) {
@@ -38,8 +38,9 @@ function main() {
   const npmOptions = npmSpawnOptions();
   let tarball = "";
   try {
-    const packed = JSON.parse(run(npm, ["pack", "--ignore-scripts", "--json"], npmOptions));
-    tarball = path.join(repoRoot, packed[0].filename);
+    run(process.execPath, ["npm/scripts/prepare-package.mjs"]);
+    const packed = JSON.parse(run(npm, ["pack", "--ignore-scripts", "--json"], { ...npmOptions, cwd: path.join(repoRoot, "npm", ".publish") }));
+    tarball = path.join(repoRoot, "npm", ".publish", packed[0].filename);
     run(npm, ["install", "--global", "--prefix", prefix, tarball], {
       ...npmOptions,
       env: { ...process.env, ICLOUD_CLI_FORCE_BUILD: "1" }

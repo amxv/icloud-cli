@@ -14,8 +14,8 @@ make check
 make build
 ./dist/icloud --help
 ./dist/icloud capabilities
-bun run docs:check
-bun run docs:build
+cd docs && bun run check
+cd docs && bun run build
 ```
 
 Run the documentation commands serially. Use `make build-all` when changing command paths, linker flags, packaging, or release behavior.
@@ -23,7 +23,7 @@ Run the documentation commands serially. Use `make build-all` when changing comm
 ## Release process
 
 1. Ensure `main` is clean, current, and fully validated.
-2. Update `src/content/docs/changelog.md` with user-visible changes.
+2. Update `docs/src/content/docs/changelog.md` with user-visible changes.
 3. Commit and push the changelog and any release metadata.
 4. Create and push a `v*` tag:
 
@@ -43,7 +43,7 @@ Keep these surfaces aligned in one change:
 
 - executable and help name: `icloud`
 - Go entrypoint: `cmd/icloud`
-- npm shim: `bin/icloud.js`
+- npm shim: `npm/bin/icloud.js`
 - native asset base: `icloud`
 - package: `@amxv/icloud-cli`
 - docs: `https://icloud.ashray.xyz`

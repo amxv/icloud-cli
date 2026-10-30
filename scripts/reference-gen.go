@@ -23,7 +23,7 @@ func main() {
 	}
 
 	files := map[string][]byte{
-		filepath.FromSlash("src/content/docs/command-reference.md"): assets.CommandReference,
+		filepath.FromSlash("docs/src/content/docs/command-reference.md"): assets.CommandReference,
 	}
 	for name, data := range assets.Completions {
 		files[filepath.Join("completions", name)] = data

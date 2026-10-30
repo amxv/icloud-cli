@@ -2,6 +2,8 @@
 
 `icloud` is a command-line interface for Apple's iCloud ecosystem. **iCloud Mail is the comprehensive service today**: read, search, synchronize, draft, send, reply, organize, import, export, secure, and automate your mailbox from one predictable command tree.
 
+The Go module stays at the repository root, the Astro site lives in `docs/`, and the npm CLI package is assembled from `npm/` (including a Go source-build fallback).
+
 The project is designed to grow beyond Mail over time. Contacts, Reminders, Calendar, and other iCloud services can live under the same `icloud` command as they become implemented and reliable.
 
 ## Install

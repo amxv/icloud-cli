@@ -56,7 +56,7 @@ func TestGeneratedSchemasMatchCommittedArtifacts(t *testing.T) {
 			t.Fatalf("generated schema not committed: %s", name)
 		}
 	}
-	publicDirectory := filepath.Join(root, "public", "schemas", "v1")
+	publicDirectory := filepath.Join(root, "docs", "public", "schemas", "v1")
 	for name, want := range generated {
 		got, err := os.ReadFile(filepath.Join(publicDirectory, name))
 		if err != nil {
